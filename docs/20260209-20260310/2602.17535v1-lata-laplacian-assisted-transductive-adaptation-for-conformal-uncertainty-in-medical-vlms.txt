@@ -1,0 +1,1013 @@
+Title: LATA: Laplacian-Assisted Transductive Adaptation for Conformal Uncertainty in Medical VLMs
+
+URL Source: https://arxiv.org/pdf/2602.17535v1
+
+Published Time: Fri, 20 Feb 2026 02:00:46 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# LATA: Laplacian-Assisted Transductive Adaptation for Conformal Uncertainty in Medical VLMs 
+
+## Behzad Bozorgtabar 1 Dwarikanath Mahapatra 2 Sudipta Roy 3
+
+## Muzammal Naseer 2 Imran Razzak 4 Zongyuan Ge 51Aarhus University ( A3 Lab ) 2Khalifa University 3Jio Institute 
+
+> 4
+
+## MBZUAI 5Monash University 
+
+> {behzad }@ece.au.dk
+
+## Abstract 
+
+Medical vision–language models (VLMs) are strong zero-shot recognizers for medical imaging, but their reliability under domain shift hinges on calibrated uncertainty with guarantees. Split conformal prediction (SCP) offers finite-sample coverage, yet prediction sets often become large (low efficiency) and class-wise coverage unbalanced—high class-conditioned coverage gap (CCV), especially in few-shot, imbalanced regimes; moreover, naively adapting to calibration labels breaks exchangeability and voids guar-antees. We propose LATA (Laplacian-Assisted Transduc-tive Adaptation), a training- and label-free refinement that operates on the joint calibration and test pool by smoothing zero-shot probabilities over an image–image kNN graph us-ing a small number of CCCP mean-field updates, preserv-ing SCP validity via a deterministic transform. We further introduce a failure-aware conformal score that plugs into the vision–language uncertainty (ViLU) framework, provid-ing instance-level difficulty and label plausibility to improve prediction set efficiency and class-wise balance at fixed cov-erage. LATA is black-box (no VLM updates), compute-light (windowed transduction, no backprop), and includes an optional prior knob that can run strictly label-free or, if desired, in a label-informed variant using calibration marginals once. Across three medical VLMs and nine 
+
+downstream tasks, LATA consistently reduces set size and CCV while matching or tightening target coverage, outper-forming prior transductive baselines and narrowing the gap to label-using methods, while using far less compute. Com-prehensive ablations and qualitative analyses show that 
+
+LATA sharpens zero-shot predictions without compromis-ing exchangeability. 
+
+## 1. Introduction 
+
+Foundation-scale vision–language models (VLMs) such as CLIP [23] have emerged as strong zero-shot recog-nizers across many visual domains, including healthcare. Modality-specialized variants (e.g., radiology [37], com-putational pathology [11, 20], ophthalmology [32]) inherit broad transfer from generalist pretraining while exposing practical failure modes when classes are fine-grained, label marginals are imbalanced, or domain frequencies at pre-training diverge from deployment. In safety–critical set-tings, the central question is therefore not only how ac-curate a model is, but how reliably it communicates un-certainty —ideally with guarantees that hold at deployment time. 
+
+Conformal background. Conformal prediction (CP) [8, 34, 35] is a model-agnostic framework that wraps around any predictive model—treated as a black box—to produce set-valued outputs with finite-sample marginal coverage guarantees. Its inductive variant, split conformal predic-tion (SCP) [19, 21, 35], computes a threshold on noncon-formity scores using a held-out calibration set. Provided the calibration and test samples are exchangeable [35], SCP produces prediction sets that include the correct label with a guaranteed confidence level across the test distribu-tion. Because SCP relies solely on the model’s nonconfor-mity scores, it applies equally well to zero-shot and lightly adapted VLMs, offering finite-sample coverage without re-training. However, for medical VLMs, two persistent chal-lenges remain: (i) efficiency and fairness —prediction sets often become overly large or imbalanced across classes (as measured by class-conditioned coverage gap (CCV) [7]), especially under distribution shift or when calibration data is limited and skewed; and (ii) underutilized multimodal signals —standard nonconformity scores such as LAC [26], APS [25], and RAPS [2] overlook informative image–text cues that correlate with failure cases and label plausibility.                                                 
+
+> arXiv:2602.17535v1 [cs.CV] 19 Feb 2026 𝐣𝐨𝐢𝐧𝐭 𝐩𝐨𝐨𝐥 𝑫 𝒄𝒂𝒍 ∪𝓓 𝒕𝒆𝒔𝒕
+> 𝐂𝐚𝐥𝐢𝐛𝐫𝐚𝐭𝐢𝐨𝐧
+> 𝓓 𝒄𝒂𝒍
+> 𝐓𝐞𝐬𝐭 (𝐮𝐧𝐥𝐚𝐛𝐞𝐥𝐞𝐝 )
+> 𝓓 𝒕𝒆𝒔𝒕
+> example
+> test image 𝑥 𝑗
+> Vision enc.
+> Text enc.
+> ”
+> “
+> Zero -shot probs
+> 𝑞 𝑥 =softmax 1
+> 𝜏 𝜙 𝑥 ⊺𝑇
+> image -to -image
+> 𝑘𝑁𝑁 affinity 𝑊 𝑔
+> ViLU
+> 𝑢 𝑥 ∈0,1,𝛼 𝑥 ∈△𝐶 −1
+> LATA (transductive)
+> CCCP few iters on 𝒰
+> ǁ
+> 𝑧 𝑥 ∈△𝐶 −1
+> Failure -aware score
+> 𝑆 ∗=𝑆 𝑏𝑎𝑠𝑒 ǁ𝑧 ,𝑦 1+𝜆𝑢 −𝜂 𝛼 𝑦
+> melanoma
+> epithelial tumor
+> Optional prior 𝛽
+> 𝜙 𝑥
+> 𝑇 =𝑡 1,⋯,𝑡 𝐶
+
+Figure 1. LATA pipeline and coverage–efficiency trade-off. (a) LATA pipeline. Frozen vision/text encoders yield zero-shot scores q(x),optionally adjusted via calibration-informed priors. LATA then refines predictions on the joint unlabeled pool U using a sparse kNN graph and CCCP updates, producing ˜z(x). A frozen ViLU module estimates difficulty u(x) and attention α(x), forming a failure-aware score 
+
+S⋆, which is conformalized into calibrated prediction sets. (b) Coverage–efficiency frontier (α=0 .10 , APS). LATA-LF (β=0 ) achieves SCP-level coverage with lower set size and CCV. LATA-LI (β=0 .2) improves coverage further with minimal cost, outperforming SCA-T in both efficiency and balance. 
+
+Adapting without breaking validity. In practice, one might try to narrow the domain gap by fitting a linear probe/adapter on the few calibration labels and then confor-malize on the same split—yet this double dipping re-adjusts nonconformity scores, induces a calibration–test covariate shift, breaks exchangeability, and invalidates finite-sample coverage, even when accuracy or alignment appears to im-prove [31], as illustrated in Fig. 4 (b) . This raises a central question: Can we adapt zero-shot medical VLMs to the 
+
+target distribution while retaining split-conformal guar-antees, and do so without training new task-specific pa-rameters or consuming additional labeled subsets? Clas-sical full conformal prediction (FCP) [27] preserves validity in a transductive manner, but its per-query, label-wise refits are prohibitive for deep VLMs. We thus pursue a black-box, training-free transductive refinement that keeps SCP’s simplicity intact and avoids reusing calibration labels. 
+
+Our remedy. We propose LATA , a deterministic, label- and training-free transductive refinement that sharpens zero-shot probabilities over a shared image–image k-nearest neighbor ( kNN) graph, preserving SCP validity. We also introduce a failure-aware conformal score that reweights nonconformity using a frozen vision–language uncertainty (ViLU) module [18], inflating scores on predicted hard inputs and deflating them for image-consistent labels. Fig. 1 summarizes the pipeline and the empirical coverage-efficiency frontier (Fig. 1 (b) ). The main contributions are: • LATA : label– and training–free transductive refine-ment. A deterministic mean–field update over a sparse image–image kNN graph built on the joint calibration and test pool refines zero–shot posteriors. The symmet-ric transform preserves exchangeability and SCP valid-ity, enabling sharper zero-shot posteriors with smaller 
+
+prediction sets and lower CCV—achieved entirely with-out gradient updates or VLM finetuning. • Failure-aware conformal scoring. We introduce a plug-in scoring mechanism that leverages a vi-sion–language failure-prediction module [18] to 
+
+reweight nonconformity: predicted hard inputs have their nonconformity amplified, while image-consistent labels receive gentler penalties. In practice, this yields tighter sets at the target coverage with more uniform class-wise behaviour. As a controllable knob, we also allow a label-informed prior (from calibration label marginals) computed once and applied symmetrically to calibration and test. Overall, this scoring—within 
+
+LATA —approaches the set-efficiency of label-using calibrations while remaining black-box, training-free, and substantially more compute-efficient. • Comprehensive evaluation. Across three medi-cal VLMs and nine adaptation tasks—spanning fine-grained, imbalanced, and cross-domain settings— LATA 
+
+consistently reduces set size and CCV at target coverage 
+
+(LAC/APS/RAPS, α ∈ { 0.05 , 0.10 }). Sensitivity studies show robustness to graph/solver choices and windowing, and quantify clear compute–quality trade-offs. A com-plexity audit against competitive baselines highlights that LATA delivers these gains with markedly lower compute and no transfer-time labels ( Appendix C .). 
+
+## 2. Related Work 
+
+Prior work on reliable adaptation with VLMs spans two key directions. Transfer learning methods such as prompt tuning and black-box adapters /linear probes [10, 29, 38, 42] adapt few-shot VLMs but are inductive and often break calibration–test exchangeability. Recent transductive adapters improve accuracy using test data but lack coverage guarantees [40]. In parallel, conformal prediction with VLMs [25, 30, 33] extends split CP [21, 35] to zero-shot logits, but existing approaches typically rely on labels, as-sume i.i.d. conditions, or require costly refits to maintain coverage [2, 25, 26, 30, 31, 33]. Our method is transduc-tive, label-free, and fully black-box. For a detailed review of VLM transfer methods and conformal prediction ap-proaches, see Appendix B .
+
+## 3. Method 
+
+We build on contrastive VLMs of the CLIP [23] family and its modality-specialized medical variants. We begin by for-malizing the zero-shot predictive distributions these mod-els produce and briefly reviewing split conformal prediction (SCP). We then introduce a multimodal failure-prediction module, followed by our core contributions: the LATA 
+
+transductive refinement procedure and a failure-aware con-formal scoring scheme. 
+
+3.1. Zero-shot VLM probabilities 
+
+Contrastive VLMs align images and text by projecting both modalities into a shared ℓ2-normalized embedding space. Let ϕ : X → RD be the frozen image encoder and W =[w1, . . . , w C ] ∈ RD×C the matrix of class prototypes. For an image x with feature v = ϕ(x) and a fixed temperature 
+
+τ > 0, class probabilities are obtained by a temperature-scaled softmax over similarity scores: 
+
+pc(W, v ) = exp  v⊤wc/τ PCj=1 exp  v⊤wj /τ , p(W, v ) ∈ ∆C−1.
+
+(1) 
+
+Text-driven zero-shot predictions. In the zero-shot regime, we do not learn W . Instead, each prototype is fixed to the corresponding text embedding, i.e., wc = tc for class c. To construct tc, we encode a small set of class-specific tem-plates (optionally including synonyms), ℓ2-normalize each embedding, and average them, giving tc = 1
+
+> J
+
+PJj=1 t(j) 
+
+> c
+
+.Using these prototypes in Eq. (1) yields the standard zero-shot VLM predictive distribution. For brevity, we denote it by q(x) = p(W, ϕ (x)) ∈ ∆C−1 for the base zero-shot distribution used by all subsequent components. 
+
+3.2. Split conformal prediction (SCP) 
+
+SCP wraps a classifier with a calibration step to produce set-valued predictions at a user–chosen error level α ∈ (0 , 1) ,targeting marginal coverage 1−α. Let Dcal = {(xi, y i)}ni=1 
+
+be a labeled calibration split and Dtest = {xj }mj=1 an un-labeled test pool, assumed exchangeable with Dcal . Given a fixed nonconformity score S(z, y )—which quantifies how incompatible a candidate label y is with a prediction vec-tor z for input x—we first compute calibration scores as 
+
+si = S(z(xi), y i) for all (xi, y i) ∈ D cal . Next, we deter-mine the empirical (1 −α) quantile of the calibration scores, which serves as the threshold for set inclusion: 
+
+ˆs = inf 
+
+
+
+s : 1
+
+n {i : si ≤ s} ≥ ⌈(n + 1)(1 − α)⌉
+
+n
+
+
+
+.
+
+(2) Finally, for a new test input x, SCP constructs the predic-tion set as C(x) = { y ∈ { 1, . . . , C } : S(z(x), y ) ≤ ˆs },which includes all labels whose nonconformity scores fall below the calibrated threshold ˆs. Under calibration–test ex-changeability and a fixed scoring rule S, SCP guarantees 
+
+finite-sample marginal coverage : Pr {Y ∈ C (X)} ≥ 1 − α.
+
+3.3. Multimodal failure prediction 
+
+Standard conformity scores [2, 25, 26] used in vision clas-sification operate solely on class probabilities and there-fore overlook the richer image–text structure available in VLMs. To exploit this additional signal, we employ the vision–language uncertainty (ViLU) framework [18] as a black-box module that outputs two signals for each image 
+
+x: an instance-level failure probability u(x) ∈ [0 , 1] and an image-conditioned label-attention vector α(x) ∈ ∆C−1.These will later modulate the nonconformity score to im-prove set efficiency and class-wise balance, without chang-ing the underlying VLM. Concretely, given the normalized image embedding v = ϕ(x) and the bank of normalized class text embeddings T = [ t1, . . . , t C ], ViLU applies a sin-gle cross-attention layer from v to T to produce α(x) and a contextual text summary zαt (x) (see [18] for details). A small MLP g then predicts the failure probability as: 
+
+u(x) = σ g [ v, t ˆc(x), z αt (x) ]  , (3) where ˆc(x) = arg max j qj (x) is the predicted class, and 
+
+σ(a) = 1/(1 + e−a) is the logistic sigmoid. ViLU is pretrained once on separate labeled source data to classify VLM errors using weighted binary cross-entropy, and is then frozen. At adaptation time, we apply the same fixed mapping (u, α ) to both calibration and test examples, which preserves calibration–test exchangeability when these sig-nals are incorporated into conformal scoring. 
+
+3.4. LATA : A label- and training-free transductive refinement 
+
+We refine zero-shot probabilities without touching VLM weights by adapting only the output distributions over the joint calibration and test pool. Inspired by graph Laplacian regularization [3, 13], we propose a label-free, graph-based refinement method that is applied identically to both cali-bration and test samples, thereby preserving the exchange-ability assumptions required by SCP. The core idea is to pro-duce refined distributions that stay close to the initial zero-shot predictions while varying smoothly across a sparse im-age–image kNN graph. 
+
+Graph over the joint pool. Let U = Dcal ∪ D test denote the joint unlabeled pool with N = n + m total samples. Let ˜v(x) = ϕ(x)/∥ϕ(x)∥2 be the ℓ2-normalized image em-bedding. We collect {˜vi}Ni=1 and build a symmetric (union) 
+
+kNN graph in this space, storing affinities in a sparse matrix 
+
+W g ∈ RN ×N :
+
+W g 
+
+> ij
+
+=
+
+(exp  −∥ ˜vi − ˜vj ∥22/σ 2 , if i ∼ j, 
+
+0, otherwise , (4) where i ∼ j indicates that i and j are mutual kNN neigh-bors (i.e., i ∈ kNN (j) or j ∈ kNN (i)), and σ is set to the median neighbor distance unless otherwise noted. We also define the degree matrix D = diag( W g1) and Laplacian 
+
+L = D − W g for reference. Let qi = q(xi) be the zero-shot probability vector for image xi, and stack these into a matrix Q = [ q⊤ 
+
+> 1
+
+; . . . ; q⊤ 
+
+> N
+
+] ∈ RN ×C .
+
+Objective. We formulate LATA ’s refinement objective as a regularized optimization problem over smoothed predic-tion vectors ˜zi ∈ ∆C−1, where ∆C−1 is the probability simplex over C classes. The goal is to find refined distribu-tions {˜zi ∈ ∆C−1}Ni=1 that (i) remain faithful to the initial zero-shot scores qi, and (ii) vary smoothly across the im-age–image graph: 
+
+min 
+
+> {˜zi∈∆C−1}
+> N
+
+X
+
+> i=1
+
+KL(˜ zi∥qi)
+
+| {z }
+
+> fidelity
+
++ γ
+
+2
+
+X
+
+> i,j
+
+W g 
+
+> ij
+
+∥˜zi − ˜zj ∥22
+
+| {z }
+
+> graph smoothness
+
+, (5) where γ > 0 controls the degree of smoothing. Expanding the quadratic gives γ
+
+> 2
+
+P 
+
+> i,j
+
+W g 
+
+> ij
+
+∥˜zi−˜zj ∥22 = γ P 
+
+> i
+
+di∥˜zi∥22−
+
+γ P 
+
+> i,j
+
+W g 
+
+> ij
+
+˜z⊤ 
+
+> i
+
+˜zj , where di = Dii denotes the degree of node i in the affinity graph. This decomposition separates the expression into a convex (quadratic norm) term and a concave (bilinear interaction) term. Following the Con-cave–Convex Procedure (CCCP) [39], we group the convex components—including the KL fidelity term and the diag-onal norm P 
+
+> i
+
+di|˜zi|2—into the main objective, while the concave interaction term −γ P 
+
+> i,j
+
+W g 
+
+> ij
+
+˜z⊤ 
+
+> i
+
+˜zj is linearized around the current estimate. This results in an efficient fixed-point update, as shown below. 
+
+Efficient solver (CCCP / mean-field). Linearizing the con-cave part at iterate t leads to the multiplicative update fol-lowed by row normalization: 
+
+˜z(t+1)  
+
+> ik
+
+∝ qik exp 
+
+
+
+γ X
+
+> j
+
+W g 
+
+> ij
+
+˜z(t)
+
+> jk
+
+
+
+,
+
+> C
+
+X
+
+> k=1
+
+˜z(t+1)  
+
+> ik
+
+= 1 ,
+
+(6) initialized with ˜z(0) = Q and run for Titer iterations (typ-ically 5–10 ). CCCP ensures the objective in Eq. (5) does not increase and converges to a stationary point [39]. The refinement is deterministic and label-free, preserving ex-changeability needed for conformal guarantees. 
+
+Optional prior bias. Let m ∈ ∆C−1 denote aclass–frequency prior (e.g., Dirichlet-smoothed calibration marginals). We inject this prior as a fixed bias applied iden-tically to calibration and test: 
+
+qik ← qik mβk
+
+PCℓ=1 qiℓ mβℓ
+
+. (7) This is equivalent to adding a class-dependent bias to the pre-softmax logits zik , updating them as zik ← zik +
+
+β log mk. Here β ∈ [0 , 1] controls the strength of the bias. When β=0 , m0
+
+> k
+
+=1 for all k, yielding no effec-tive prior—our default ( LATA-LF ). For β> 0, we obtain a label-informed variant ( LATA-LI ) that uses calibra-tion marginals once, applied symmetrically to calibration and test, preserving exchangeability. Throughout, LATA (ours) , LATA , and LATA-LF refer to the label-free vari-ant unless stated otherwise. 
+
+3.5. Failure-aware conformal nonconformity 
+
+We enrich the conformal score with multimodal difficulty and plausibility signals from ViLU [18]. Let u(x) ∈
+
+[0 , 1] denote the (frozen) failure probability and α(x) ∈
+
+∆C−1 the image–conditioned label–attention vector. Given class–probabilities ˜z(x) refined by LATA (Eq. (6)), we de-fine the failure-aware nonconformity built on a standard nonconformity score (LAC/APS/RAPS): 
+
+S⋆(x, y ) = Sbase (˜ z(x), y )  1 + λ u (x) − η α y (x), (8) where Sbase ∈ { LAC , APS , RAPS } and λ, η ≥ 0 are small weights. The term u(x) inflates scores on hard inputs to protect coverage, while αy (x) discounts labels that the im-age–text attention deems plausible, preventing unnecessar-ily large sets. 
+
+SCP with failure-aware scoring. We compute calibration scores si = S⋆(xi, y i) on Dcal , determine the threshold ˆs
+
+via Eq. (2), and return C(x) = y : S⋆(x, y ) ≤ ˆs for each test input. See Appendix A for the full LATA algorithm. 
+
+## 4. Experiments 
+
+4.1. Experimental setup 
+
+Medical VLMs. We evaluate three VLMs specialized for distinct medical imaging modalities. For histology , we use CONCH [20], which leverages a ViT-B/16 visual back-bone. In ophthalmology , we adopt FLAIR [32], while for 
+
+chest X-rays (CXR) , we use CONVIRT [41], pre-trained on the MIMIC-CXR dataset [15]. Both FLAIR and CON-VIRT share a ResNet-50 image encoder and a BioClinical-BERT [1] text encoder. 
+
+Datasets and tasks. We benchmark our models across a va-riety of medical imaging tasks spanning fine-grained clas-sification, class imbalance, and domain shifts. Histology: We evaluate on colorectal tissue classification using NCT-CRC [16] (fine-grained, balanced), prostate Gleason grad-ing with SICAPv2 [28] (fine-grained), and skin lesion clas-sification on SkinCancer [17] (imbalanced). Ophthalmol-ogy: We include diabetic retinopathy grading on MESSI-DOR [6] (fine-grained, imbalanced), myopic maculopathy staging with MMAC [22] (fine-grained, imbalanced), and multi-label disease classification from FIVES [14] (imbal-anced). CXR: We use five diagnostic labels from CheX-pert [12] (imbalanced), fine-grained and long-tailed find-ings from NIH-LT [9, 36], and cross-domain pneumonia classification with COVID [5, 24] (imbalanced, domain-shifted). 
+
+Baselines and comparison strategies. We compare against state-of-the-art black-box transductive adapters and confor-mal wrappers: (i) TIM [4] (gradient-based; same train-ing setup); (ii) TransCLIP [40] (unsupervised GMM-based adaptation on VLM logits); (iii) SCA-T [31] (entropy-minimization on the joint calibration and test pool with a marginal prior) (iv) SCP [2] (vanilla split conformal on zero-shot probabilities); (v) LinearProbe+SCP (linear probe trained on the same calibration labels, then wrapped with SCP—used as a negative control since it violates ex-changeability.) For context, we also report FCA [33] as a label-aware oracle, but exclude it from black-box compar-isons as it fits per-label adapters on calibration data. 
+
+Implementation details. All experiments were run on a single GeForce RTX 4090 GPU. All methods share the same frozen vision and text encoders and identical prompts. Image features are ℓ2–normalized, and a symmetric kNN graph is constructed via union, using Gaussian affinities with kernel bandwidth σ set to the median neighbor dis-tance. LATA runs in a windowed transductive setting with 
+
+W =256 , k=15 neighbors, and Titer =8 CCCP/mean-field it-erations (training-free, no gradients). We fix a single graph weight γ=0 .35 , selected once on a disjoint source split and reused across datasets. For large label spaces, we op-tionally truncate to top-κ entries only within LATA /ViLU (κ=128 ); final conformal scores always use all C labels. We default to τ =1 .0 without tuning on the target do-main ( Appendix D.5 ). The marginal prior is applied once to logits and held fixed across splits. LATA (ours) 
+
+uses β=0 , while LATA-LI applies β=0 .2 from calibra-tion marginals. We consider standard nonconformity rules 
+
+LAC [26], APS [25], and RAPS [2] (defaults kreg =1 ,
+
+γraps =10 −3). The frozen ViLU head outputs per-sample risk u(x) and image-conditioned label attention α(x); un-less otherwise stated we fix λ=0 .5 and η=0 .25 once on dis-joint source data. Target error rates are α ∈ { 0.10 , 0.05 }.Additional sensitivity analyses on the temperature parame-ter τ , along with the full hyperparameter grids for the graph-based and failure-aware components (e.g., k, Titer , γ, κ, β,
+
+(λ, η )), are provided in Appendix D .
+
+Evaluation protocol. For each task, we form a labeled cal-ibration split of size ncal = C × K with K=16 shots per class, sampled to match the task’s label marginals. We re-port balanced classwise accuracy ( ACA ) and standard con-formal metrics [33]: marginal coverage ( Cov. ), average set size ( Size ), and class-conditioned coverage gap ( CCV ) [7]. Computational efficiency is measured by peak GPU mem-ory ( GPU , in GB) and wall-clock inference time ( T, in sec-onds). Unsupervised transductive ( UT ) methods operate on a sliding window Uw of fixed size W =256 , drawn from the union of the calibration split and the current test mini-batch. Calibration scores use refined probabilities for UT methods (zero-shot for SCP); we take the empirical (1 −α) quantile and conformalize test points as in Eq. (2). All results are averaged over 100 seeds by re-sampling the K-shot calibra-tion split. Formal definitions of nonconformity scores and evaluation metrics appear in Appendix F . A detailed com-parison of per-window compute cost and access assump-tions versus baselines is given in Appendix C .
+
+4.2. Main results 
+
+Conformal prediction analysis. Table 1 summarizes per-formance across three nonconformity scores (LAC, APS, RAPS) and two target error levels ( α ∈ { 0.10 , 0.05 }). We separate label-using methods (Labeled-Cal.) that adapt on calibration labels (Adapt+SCP, FCA) from unsupervised transductive (UT) methods (Conf-OT, SCA-T, LATA ). Since LATA never touches calibration labels at transfer time, we treat the labeled calibration block as contextual rather than directly comparable. To ensure an apples-to-apples comparison, we focus our evaluation within the UT track. 
+
+Does a label-free UT method improve efficiency and fair-ness without breaking coverage? Across all scores and both α’s, LATA-LF (β=0 ; our default “ LATA (ours) ”) consistently attains nominal or higher coverage while 
+
+Pareto-dominating strong UT baselines in both efficiency and class-wise balance. Relative to SCA-T at α=0 .10 ,
+
+LATA-LF shrinks average set size by roughly 7–12% (e.g., APS: 3.35 → 2.95 ; LAC: 3.30 → 3.07 ) and reduces CCV by about 10–15% (e.g., LAC: 7.47 → 6.40 , APS: 7.18 → 6.32 ), with similar gains at α=0 .05 (e.g., LAC size 4.03 → 3.76 ,CCV 4.03 → 3.35 ). Compared to Conf-OT, LATA achieves comparable or smaller sets (e.g., APS size 3.13 → 2.95 )but substantially lower CCV (APS 8.64 → 6.32 ), indicating more balanced per-class coverage under medical domain shift. At the same time, LATA improves calibrated accu-racy (ACA) over SCA-T by about 1–2.5% across scores (e.g., APS: 55 .2 → 57 .1), suggesting that its gains are not obtained by trivially inflating prediction sets. 
+
+How much does a weak label-informed prior help? Turn-ing on the calibration-marginal prior in LATA-LI (β=0 .2)yields a simple, fixed knob to trade a bit of efficiency for Table 1. Conformal prediction results with 16-shot calibration across three nonconformity scores and two error levels, α ∈ { 0.05 , 0.10 }.Results are averaged over tasks and modalities. “ ↓” indicates smaller is better; red marks error violations. Subscripted margins denote absolute gains w.r.t. the SCP baseline. 
+
+Group Method ACA ↑ α = 0 .10 α = 0 .05 
+
+Cov. Size ↓ CCV ↓ Cov. Size ↓ CCV ↓
+
+> LAC
+
+Baseline SCP 50.2 0.890 3.99 9.96 0.951 4.88 5.68 Labeled-Cal. Adapt+SCP 67 .1+16 .9 0.842 2.40 −1.59 11 .17 +1 .21 0.921 3.07 −1.81 6.87 +1 .19 
+
+Labeled-Cal. FCA [33] 67 .1+16 .9 0.896 2.91 −1.08 8.38 −1.58 0.952 3.56 −1.32 5.02 −0.66 
+
+UT Conf-OT [30] 53 .1+2 .9 0.899 3.18 −0.81 9.07 −0.89 0.950 3.81 −1.07 5.34 −0.34 
+
+UT SCA-T [31] 55 .2+5 .0 0.898 3.30 −0.69 7.47 −2.49 0.952 4.03 −0.85 4.03 −1.65 
+
+UT LATA-LF (β=0 ) 57 .0+6 .8 0.900 3.07 −0.92 6.40 −3.56 0.952 3.76 −1.12 3.35 −2.33 
+
+UT LATA-LI (β=0 .2) 57.4 +7 .2 0.910 3.15 −0.84 6.25 −3.71 0.962 3.86 −1.02 3.40 −2.28 
+
+> APS
+
+Baseline SCP 50.2 0.900 4.05 9.59 0.952 4.88 5.54 Labeled-Cal. Adapt+SCP 67 .1+16 .9 0.858 2.56 −1.49 8.57 −1.02 0.924 3.19 −1.69 6.08 +0 .54 
+
+Labeled-Cal. FCA [33] 67 .1+16 .9 0.898 3.06 −0.99 6.12 −3.47 0.949 3.67 −1.21 4.24 −1.30 
+
+UT Conf-OT [30] 53 .1+2 .9 0.899 3.13 −0.92 8.64 −0.95 0.950 3.63 −1.25 5.12 −0.42 
+
+UT SCA-T [31] 55 .2+5 .0 0.900 3.35 −0.70 7.18 −2.41 0.954 4.08 −0.80 3.97 −1.57 
+
+UT LATA-LF (β=0 ) 57 .1+6 .9 0.900 2.95 −1.10 6.32 −3.27 0.954 3.78 −1.10 3.55 −1.99 
+
+UT LATA-LI (β=0 .2) 57.5 +7 .3 0.910 3.03 −1.02 6.25 −3.34 0.963 3.88 −1.00 3.45 −2.09 
+
+> RAPS
+
+Baseline SCP 50.2 0.901 4.16 9.55 0.952 5.12 5.57 Labeled-Cal. Adapt+SCP 67 .1+16 .9 0.856 2.55 −1.61 8.64 −0.91 0.923 3.17 −1.95 6.12 +0 .55 
+
+Labeled-Cal. FCA [33] 67 .1+16 .9 0.898 3.05 −1.11 6.21 −3.34 0.951 3.66 −1.46 4.23 −1.34 
+
+UT Conf-OT [30] 53 .1+2 .9 0.899 3.42 −0.74 8.53 −1.02 0.950 4.09 −1.03 5.21 −0.36 
+
+UT SCA-T [31] 55 .2+5 .0 0.903 3.40 −0.76 7.50 −2.05 0.954 4.18 −0.94 4.57 −1.0
+
+UT LATA-LF (β=0 ) 56 .4+6 .2 0.903 3.29 −0.87 6.85 −2.70 0.954 4.02 −1.10 4.25 −1.32 
+
+UT LATA-LI (β=0 .2) 56.8 +6 .6 0.913 3.36 −0.80 6.75 −2.80 0.962 4.10 −1.02 4.22 −1.35 
+
+Figure 2. SICAPv2 — coverage, efficiency, and set structure (LAC, α=0 .10 ). (a) Left: Coverage–efficiency trade-off as calibration shots increase ( K ∈ { 4, 8, 16 }; dot size encodes K). LATA (ours) defines the best label-free frontier—achieving smaller sets with equal or better coverage, approaching FCA without using labels at transfer. Right: Test-time coverage on K=16 splits (same seeds). Adapt+SCP under-covers; SCP/SCA-T reduce violations but remain dispersed; LATA concentrates near/above nominal with the lowest CCV. (b) Qualitative results at K=16 : per-class set-size distributions (left) and label co-occurrence (right). LATA focuses uncertainty on adjacent grades (G3–G4), reducing CCV while preserving coverage. 
+
+extra coverage. For instance, under APS at α=0 .10 , cover-age increases from 0.900 to 0.910 while set size grows only slightly ( 2.95 → 3.03 ) and CCV even improves ( 6.32 →
+
+6.25 ); analogous patterns hold for LAC and RAPS, and for α=0 .05 . Thus LATA-LI provides a principled way to tighten empirical coverage with minimal loss in efficiency, still preserving SCP validity since the prior is applied once and identically to calibration and test. 
+
+Approaching label-using methods without labels. De-spite being fully label-free at transfer time, LATA ap-proaches the behaviour of FCA, which performs full con-formal adaptation on calibration labels. Under APS at 
+
+α=0 .10 , LATA-LI attains coverage 0.910 with size 3.03 
+
+and CCV 6.25 , closely matching FCA (coverage 0.898 , size 
+
+3.06 , CCV 6.12 ) while using no target-domain labels during adaptation. Crucially, Adapt+SCP, which reuses calibration labels in an exchangeability-violating way, systematically under-covers (e.g., APS: 0.858 at α=0 .10 ), whereas LATA 
+
+maintains nominal coverage. Overall, these results show that a lightweight, training-free, label-free transductive re-finement can recover much of the efficiency and fairness of label-using methods, while strictly respecting the conformal Figure 3. Ablations on shots and window size (LAC, α=0 .10 ; averages across tasks). (a) Effect of calibration shots K. (b) Effect of query/window size W (dashed line marks the full-batch limit). Across both sweeps, LATA achieves smaller prediction sets and lower CCV than baselines while preserving nominal coverage. Table 2. Transductive solvers at α=0 .10 . Best and second-best results are shown in bold and underline, respectively. Red indi-cates violations of the target error rate.                                                                                                
+
+> Method ACA ↑Runtime T↓GPU ↓Cov. Size ↓CCV ↓
+> LAC 50.2 0.00 –0.890 3.99 9.96 TIM [4] 53.5 +3.3 1.12 0.6 0.888 3.96 -0.03 8.08 -1.88
+> TransCLIP [40] 54.8 +4.6 0.47 1.1 0.726 2.16 -1.83 22.31 +12.35
+> Conf-OT [30] 53.1 +2.9 0.60 –0.899 3.18 -0.81 9.07 -0.89
+> SCA-T [31] 55.2 +5.0 1.04 0.6 0.898 3.30 -0.69 7.47 -2.49
+> LATA-LF (β=0 )57.0 +6.8 0.05 0.8 0.900 3.07 -0.92 6.40 -3.56
+> LATA-LI (β=0 .2)57.4 +7.2 0.05 0.8 0.910 3.15 -0.84 6.25 -3.71
+> APS 50.2 0.00 –0.900 4.05 9.59 TIM [4] 53.5 +3.3 1.18 0.6 0.887 3.16 -0.89 7.47 -2.12
+> TransCLIP [40] 54.8 +4.6 0.40 1.1 0.733 2.52 -1.53 21.78 +12.19
+> Conf-OT [30] 53.1 +2.9 0.70 –0.899 3.13 -0.92 8.64 -0.95
+> SCA-T [31] 55.2 +5.0 1.15 0.6 0.900 3.35 -0.70 7.18 -2.41
+> LATA-LF (β=0 )57.1 +6.9 0.06 0.8 0.900 2.95 -1.10 6.32 -3.27
+> LATA-LI (β=0 .2)57.5 +7.3 0.06 0.8 0.910 3.03 -1.02 6.25 -3.34
+
+prediction assumptions. 
+
+Gleason Grading: coverage, and efficiency. Fig. 2 (a) 
+
+evaluates our most challenging task—Gleason grading on 
+
+SICAPv2 (histology, LAC, α=0 .10 ). The left panel of Fig. 2 (a) shows the coverage–efficiency trade-off as the number of calibration shots increases ( K ∈ 4, 8, 16 ;marker size encodes K). While Adapt+SCP and FCA pro-duce compact prediction sets, they fluctuate around the target coverage and rely on calibration labels. Among label-free methods, LATA (ours) consistently defines the best top-left frontier—achieving smaller sets than SCP and SCA-T at comparable or slightly higher coverage, even in the low-shot regime. This reinforces the trends seen in Table 1, confirming that LATA offers strong effi-ciency gains without sacrificing validity. The right panel 
+
+of Fig. 2 (a) plots test-time coverage distributions averaged over random-seed trials on the K=16 calibration splits (same seeds for all methods) to compare conformal strate-gies under identical conditions. Reusing calibration la-bels for both adaptation and conformalization (Adapt+SCP) breaks exchangeability and under-covers (mass left of 
+
+(1 −α)). SCP centers nearer the target but remains dis-persed with elevated CCV; SCA-T tightens dispersion. In contrast, LATA (ours) (label-free, black-box) concen-trates at/above nominal with the lowest CCV, delivering cal-ibrated and uniformly reliable uncertainty under few-shot, fine-grained conditions. Further per-dataset coverage plots and K-sweeps across all nine tasks are provided in Ap-pendix E .
+
+Gleason Grading: qualitative assessment. We demon-strate the practical value of conformal prediction in med-ical image analysis, highlighting its utility in histopatho-logical grading tasks characterized by high uncertainty. Fig. 2 (b) visualizes the prediction–set size distribution 
+
+(left) and class co-occurrence within sets (right) for LATA (ours) on SICAPv2 at α=0 .10 . As expected, extreme categories behave confidently: NC and G5 are mostly singletons (63% and 80% size-1, respectively), while the ambiguous mid-grades G3/G4 concentrate on size-2 sets (60–68%) with only modest size-3 mass ( ∼7–9%). The co-occurrence heatmap shows strong diagonals (NC/G3/G5 
+
+≥93%, G4 = 72% reflecting known inter-rater ambiguity) and clinically plausible adjacency: G3 ↔G4 co-appear fre-quently (66%/91%), whereas far pairs are suppressed (e.g., NC ↔G5 ≤2%). Together, these patterns explain LATA ’s lower CCV and smaller sets in Table 1: uncertainty concen-trates on adjacent grades while suppressing spurious over-lap—offering more trustworthy, efficient prediction sets. 
+
+Transductive solvers. Table 2 asks: Can we improve set efficiency and class-wise fairness without sacrificing cov-erage or incurring high compute cost? Within the UT block, both SCA-T and LATA outperform the SCP base-lines (LAC/APS), but LATA achieves the strongest results overall. The label-free variant LATA-LF (β=0 ) yields the smallest average sets (LAC: 3.07; APS: 2.95) and Figure 4. Exchangeability and per-dataset ∆accuracy– ∆set-size (APS, α=0 .10 ). (a) Across datasets, LATA-LI yields 
+
+∆Accuracy >0 and ∆Set Size <0 vs. SCP, with a weak linear fit (small R2), indicating efficiency gains are not merely due to ac-curacy increases. (b) Exchangeability sanity check: the invalid 
+
+Probe@cal + SCP@same under-covers, while LATA-LF (shared, label-free transform) stays near the nominal (1 −α) across random seed trials. 
+
+the lowest class-conditioned coverage gap (CCV: LAC 6.40; APS 6.32), indicating more balanced per-class cov-erage than both SCA-T and Conf-OT—all while maintain-ing or exceeding nominal coverage. The label-informed 
+
+LATA-LI (β=0 .2) tightens coverage (e.g., APS: 0.910) with only a minor size increase and further CCV reduction. By contrast, TIM and TransCLIP shrink sets but under-cover , with TransCLIP also exhibiting high CCV. Despite its improvements, LATA remains lightweight : the deter-ministic CCCP refinement over a kNN graph adds only 
+
+∼ 0.05 –0.06 s /img and ∼ 0.8 GB , and—crucially—is applied identically to calibration and test, preserving split-conformal validity while outperforming existing transduc-tive solvers. 
+
+4.3. Ablation studies 
+
+Effect of calibration shots K and window size W .
+
+Fig. 3 (LAC, α=0 .10 ) explores the impact of (a) calibra-tion shots K and (b) transductive window size W . Across all settings, LATA (ours) consistently delivers the best trade-off—maintaining the smallest sets and lowest CCV at nominal coverage. As K increases, its set size stays tight ( 3.18 → 3.08 ) with CCV dropping slightly ( 6.45 →
+
+6.28 ). In contrast, SCA-T remains near 3.30 (CCV ≈
+
+7.4–7.6), and SCP, while valid, lags in efficiency. Increas-ing W leads to mild gains for all UT methods. For LATA ,performance improves from ∼ 3.12 to ∼ 3.06 (CCV ∼ 6.3
+
+to ∼ 6.2) as W grows from 64 to 512 , saturating near 
+
+W ≈256 (dashed). Overall, LATA (ours) remains effi-ciently fair, with minimal sensitivity to K or W and a low, stable compute footprint. 
+
+Component analysis. Table 3 isolates the effect of each module in our framework. Starting from SCP (no LATA ,no ViLU), adding only the risk term u reduces CCV mod-estly with almost unchanged set size, while adding only the 
+
+Table 3. Component ablations (LAC) at α ∈ { 0.10 , 0.05 }; av-erages across tasks. Columns LATA /u/α indicate active modules. SCP: no LATA , no ViLU. LATA (no ViLU) : LATA with λ=η=0 
+
+(both u and α off). LATA (ours) : LATA +u+α with β=0 .Best and second-best in bold /underline.                                                                   
+
+> Components α= 0 .10 α= 0 .05
+> Variant LATA uαACA ↑Cov. Size ↓CCV ↓Cov. Size ↓CCV ↓
+> SCP ×××50.2 0.890 3.99 9.96 0.951 4.88 5.68
+> u-only ×✓×50.6 0.900 3.95 9.15 0.952 4.80 5.35
+> α-only ××✓50.8 0.900 3.60 8.85 0.952 4.62 5.20
+> LATA (no ViLU) ✓××55.6 0.900 3.14 6.65 0.952 3.86 3.60
+> LATA (ours) ✓✓✓57.0 0.900 3.07 6.40 0.952 3.76 3.35
+
+image-conditioned α shrinks sets but yields limited fair-ness gains. Turning on the refinement alone— LATA (no ViLU) with λ=η=0 —delivers the bulk of the improve-ment at fixed coverage, cutting Size from 3.99 → 3.14 and CCV from 9.96 → 6.65 at α=0 .10 (similarly at α=0 .05 :
+
+4.88 → 3.86 , 5.68 → 3.60 ). Combining all components in 
+
+LATA (ours) (LATA +u+α) yields the best trade-off and highest ACA (Size 3.07 , CCV 6.40 at α=0 .10 ; 3.76 and 
+
+3.35 at α=0 .05 ), while maintaining nominal coverage. 
+
+Exchangeability & accuracy–efficiency. Fig. 4 (a) plots, per dataset, the change relative to SCP (APS, α=0 .10 ): most points for LATA-LI lie in the desirable quadrant (∆Accuracy >0, ∆Set Size <0), and the small R2 of the fitted line indicates only a weak correlation—i.e., LATA ’s set-size reductions are not a trivial by-product of accuracy gains. Fig. 4 (b) demonstrates that “double-dipping” (train-ing a probe on calibration labels and conformalizing on the same split) breaks exchangeability and leads to under-coverage, whereas LATA-LF , which applies a determinis-tic, label-free mapping identically to calibration and test, remains close to the nominal (1 −α) across random seed trials. 
+
+Additional Ablations. To comprehensively assess the ro-bustness, efficiency, and practicality of our method, we con-duct a series of ablation studies—covering hyperparame-ter sensitivity grids, compute–quality trade-offs , the im-pact of ViLU domain mismatch , and a resource-aware gating variant (both under LAC). Full results are provided in Appendix D .
+
+## 5. Conclusion 
+
+We introduced LATA , a deterministic, training- and label-free transductive refinement for medical VLMs that improves zero-shot predictions through KL-regularized smoothing over a sparse kNN graph, optimized via mean-field inference. This fixed, black-box mapping preserves split-conformal validity while producing smaller and more balanced prediction sets. Across three modality-specialized VLMs and nine medical tasks, LATA consistently reduces set size and CCV at target coverage, outperforms prior label-free transductive baselines, and narrows the gap to label-using methods at substantially lower compute. 
+
+Limitations. LATA ’s gains depend on embedding qual-ity and the ViLU signals; severe domain mismatch can blunt benefits. It also assumes a modest calibration split and is instantiated for multi-class classification. Extend-ing to dense/structured outputs, very large label spaces, and stronger shift robustness is left for future work. 
+
+## A. Algorithm of LATA 
+
+The end-to-end LATA procedure is summarized in Algo-rithm 1. 
+
+## B. Related Work 
+
+Transfer learning in VLMs. Foundation VLMs deliver strong zero-shot recognition, but performance can dete-riorate when downstream concepts are under-represented during pretraining, motivating few-shot transfer. Popular strategies include prompt learning (optimizing task-specific textual tokens) [38, 42] and black-box adapters /linear probes that operate on frozen embeddings; the latter of-ten yields competitive accuracy at lower compute by blend-ing visual and text logits (e.g., constrained or text-informed probes such as CLAP [29] or LP++ [10]). While effective, these methods are typically inductive : they adapt from the labeled calibration split but do not exploit the unlabeled test distribution, and—when the same labels are reused for conformal calibration—can compromise exchangeabil-ity. Recent transductive black-box approaches (e.g., Tran-sCLIP [40]) incorporate unlabeled test data via simple gen-erative priors, improving accuracy but leaving coverage guarantees unaddressed. Our work departs from accuracy-only transfer by targeting reliable few-shot adaptation: 
+
+LATA is label-free, training-free, and transductive, and we couple it with a failure-aware conformal score—preserving split-conformal validity while improving set efficiency and class-wise balance at fixed coverage. 
+
+Conformal prediction with VLMs. Conformal predic-tion (CP) [8, 34] provides finite-sample coverage guar-antees; in vision, it is commonly used in its split form SCP [21, 35] with black-box models and standard noncon-formity scores (LAC [26], APS [25], RAPS [2]). How-ever, these methods rely on models trained under the as-sumption that the training and test data are independently and identically distributed (i.i.d.)—an assumption that does not hold for pre-trained VLMs, which are the focus of our work. Extending CP beyond image-only classifiers to VLMs is recent: Conf-OT [30] rebalances zero-shot log-its via optimal transport before SCP, improving size but offering limited control of class-wise balance; FCA [33] performs full-conformal adaptation with labeled calibration data. To preserve exchangeability, it evaluates test queries via per-label refits—effectively O(C) gradient-based up-dates per query/window. This delivers strong accuracy and compact sets, but at the expense of heavy compute, higher latency, and a departure from the black-box setting; and SCA-T [31] regularizes predictions transductively on the unlabeled pool, improving coverage/efficiency without la-bels but without leveraging multimodal failure/plausibility cues. Our method differs by being label-free, training-free, and black-box : it smooths zero-shot probabilities over an image–image kNN graph built on the joint calibration and test pool and augments SCP with a vision–language uncer-tainty head for failure-aware scoring. The transform is de-terministic and applied identically to both splits (preserving SCP validity), while delivering smaller sets and lower CCV at the desired coverage. 
+
+## C. Computational Complexity 
+
+In this section, we compare the computational profile of 
+
+LATA against competitive baselines. Let n=|D cal |=C ×K,let m denote the number of test samples processed together, and let N =n+m be the joint pool size used for transductive refinement. Let d be the embedding dimension, k the kNN degree, and Titer the number of mean-field (CCCP) [39] passes. 
+
+LATA is training-free and label-free at transfer time: it applies a deterministic refinement to the joint pool, then performs standard conformal prediction over all C classes. This preserves exchangeability and SCP validity while en-abling transductive adaptation. 
+
+Complexity of LATA :
+
+• Graph build: approximate kNN on ℓ2-normalized em-beddings: O(N log N · d) time; O(kN ) memory. • LATA updates (mean-field / CCCP): sparse neigh-bor aggregation over all C labels: O(Titer k N C ) time; 
+
+O(kN +N C ) memory; no backprop. • Failure-aware head: lightweight per-sample forward over C labels: O(N C ) time; O(N C ) memory. • Conformalization (exact): compute calibration scores over C labels ( O(nC ); APS/RAPS add O(C log C) for sorting), then test set filtering O(mC ).
+
+Protocol (joint-pool, transductive). Given calibration 
+
+Dcal and a batch of m test queries, form the joint pool of size N =n+m, build a symmetric kNN graph on ℓ2-normalized embeddings, run Titer mean-field passes, com-pute the (1 −α) quantile on the calibration subset, and con-formalize the m queries with this threshold. In our runs we use a fixed budget (k=15 , T iter =8) ; time/memory numbers in Table S1 reflect this setting. 
+
+Contrasts to baselines (same backbones/prompts). SCA-T [31] performs unsupervised entropy minimization on Algorithm 1: LATA with Failure-Aware Conformal Prediction 
+
+Inputs : Frozen VLM (ϕ, W ); labeled calibration Dcal = {(xi, y i)}ni=1 ; unlabeled test Dtest = {xj }mj=1 ; frozen ViLU; error level α; nonconformity rule Sbase ∈ { LAC , APS , RAPS }; hyperparameters (k, σ, γ, T iter , λ, η ); optional prior (β, m ).
+
+Output: Prediction sets {C (xj )}mj=1 . 
+
+> 1
+
+U ← D cal ∪ D test ; // joint pool  
+
+> 2
+
+foreach x ∈ U do  
+
+> 3
+
+q(x) ← p(W, ϕ (x)) ; // Eq. (1) ; zero-shot probs, q(x) ∈ ∆C−1
+
+; // Block 1: LATA (deterministic transductive refinement)  
+
+> 4
+
+Build a symmetric kNN graph W g on {ϕ(x)/∥ϕ(x)∥2 : x ∈ U} using union; weights via Gaussian kernel with bandwidth σ ;
+
+// Sec. 3.4  
+
+> 5
+
+if β > 0 then  
+
+> 6
+
+foreach x ∈ U do  
+
+> 7
+
+q(x) ← Renorm  q(x) ⊙ mβ  ; // [qik ← qik mβk / P 
+
+> ℓ
+
+qiℓ mβℓ ] 
+
+> 8
+
+Initialize ˜z(0) (x) ← q(x) for all x ∈ U ; 
+
+> 9
+
+for t = 1 to Titer do  
+
+> 10
+
+foreach xi ∈ U do  
+
+> 11
+
+for c = 1 to C do  
+
+> 12
+
+mic ← P 
+
+> j
+
+W g 
+
+> ij
+
+˜z(t−1)  
+
+> jc
+
+; 
+
+> 13
+
+˜z(t) 
+
+> ic
+
+← qic exp  γ m ic 
+
+ 
+
+> 14
+
+˜z(t) 
+
+> i
+
+← ˜z(t)
+
+> i
+
+ P Cc=1 ˜z(t) 
+
+> ic
+
+; // row-normalize  
+
+> 15
+
+Set ˜z(x) ← ˜z(Titer )(x) for all x ∈ U ; // Eq. (6) ; // Block 2: Failure-aware conformal prediction  
+
+> 16
+
+foreach x ∈ U do  
+
+> 17
+
+(u(x), α (x)) ← ViLU (x) ; // frozen head; identical on cal & test  
+
+> 18
+
+for i = 1 to n do  
+
+> 19
+
+si ← Sbase (˜ z(xi), y i)  1 + λ u (xi) − η α yi (xi) ; // Eq. (8)  
+
+> 20
+
+ˆs ← empirical (1 − α) quantile of {si}ni=1 ; // Eq. (2)  
+
+> 21
+
+foreach xj ∈ D test do  
+
+> 22
+
+C(xj ) ←  y ∈ { 1, . . . , C } : Sbase (˜ z(xj ), y ) 1 + λu (xj ) − η α y (xj ) ≤ ˆs ; 
+
+> 23
+
+return {C (xj )}mj=1 
+
+Table S1. Complexity & compute profile . Asymptotics in N =n+m, C, K, d.                                                   
+
+> Method Labels at transfer? Training? Per-query refits Dominant complexity Memory Time/img (s) †SCP validity LATA (ours) No No None O(Nlog N·d) + O(Titer k N C ) + O(nC )O(kN +N C )0.05–0.06 Yes SCA-T No Yes (unsup.) None O(T′N C ) + O(nC )logits+buffers 1.04–1.15 Yes Conf-OT No No None O(S K (N+m)) + O(nC )OT matrices 0.60–0.70 Yes FCA Yes (cal.) Yes O(C)O(C×fit cost ) + O(nC )probe heads+logits — (solver-dep.) Yes
+> †
+
+Measured on our setup (same backbone, prompts, hardware) and averaged over LAC/APS at α=0 .10 .
+
+the joint pool (calibration +test), regularized by a label-marginal prior. Its solver operates at the logits level and incurs a per joint-pool complexity of O(T ′N C ), where T ′
+
+is the number of optimization steps, followed by standard conformal scoring at O(nC ).
+
+Conf-OT [30] rebalances zero-shot logits using Sinkhorn optimal transport [43] over a K×N similarity matrix (with 
+
+K calibration shots per class and N =n+m total items in the joint pool). The dominant cost per joint-pool pass is 
+
+O(SKN ) for S Sinkhorn iterations, plus O(nC ) for con-formalization. With small S and K, the wall-clock over-head remains low. 
+
+FCA [33] performs full conformal adaptation using labeled calibration data. For each class y, it fits a linear probe (via SS-Text [33]) in a transductive conformal adaptation loop. Test-time inference entails O(C) separate refits per joint pool, plus O(nC ) for scoring. Although gradients are avoided by the SS-Text optimizer [33], runtime and mem-ory scale linearly with C, making FCA less efficient than single-solver black-box methods like LATA .As shown in Table S1, LATA ’s per–joint-pool cost is dominated by (i) approximate kNN graph construction on 
+
+ℓ2-normalized embeddings and (ii) Titer sparse mean-field passes over that graph. Conformalization then adds an ex-Table S2. Sensitivity to failure-aware weights (λ, η ) (APS,                                                         
+
+> α= 0 .10 , LATA-LF). All configurations remain near the nomi-nal coverage ( ≈0.90 ) and retain clear gains in set size and CCV compared to SCP (Size = 4 .05 , CCV = 9 .59 ) and SCA-T (Size
+> = 3 .35 , CCV = 7 .18 ).
+> ληCov. Size ↓/ CCV ↓
+> 0.25 0.10 0.897 2.90 /6.55 0.25 0.25 0.898 2.88 /6.40 0.25 0.50 0.895 2.82 /6.50 0.50 0.10 0.900 2.96 /6.45
+> 0.50 0.25 0.900 2.95 /6.32
+> 0.50 0.50 0.898 2.88 /6.35 1.00 0.10 0.907 3.08 /6.25 1.00 0.25 0.907 3.07 /6.15 1.00 0.50 0.905 3.00 /6.20
+
+act O(nC ) to compute the calibration quantile and O(mC )
+
+to apply it to the m queries (with N = n+m total items in the joint pool). LATA requires no gradients, no O(C)
+
+per-class refits, and uses a single deterministic, symmetry-preserving transform on calibration and test, maintaining SCP validity. Compared to SCA-T and Conf-OT, LATA 
+
+avoids dense logits-level optimization or optimal-transport solves, relying instead on lightweight neighbor aggregation with a frozen failure-aware head—while keeping black-box usage and conformal guarantees. Versus FCA, LATA re-moves the cost of repeated per-class refits yet still confor-malizes over the full label space without sacrificing cover-age. 
+
+## D. Additional Ablation Studies 
+
+D.1. Sensitivity to failure-aware weights 
+
+We study the robustness of the failure-aware score (Eq. (8)) in the main manuscript by varying the difficulty weight λ
+
+and plausibility weight η around our default setting (λ, η ) = (0 .5, 0.25) , while keeping all other hyperparameters fixed (APS, α = 0 .10 , LATA-LF , averaged over all tasks). Ta-ble S2 reports marginal coverage, average set size, and CCV. Across (λ, η ) ∈ [0 .25 , 1.0] × [0 .10 , 0.50] , coverage re-mains tightly concentrated around 0.90 (max deviation 
+
+≤ 0.01 ). Larger λ mildly raises coverage and Size while improving CCV (e.g., λ: 0 .25 →1.0 at η=0 .10 : Cov. 
+
+0.897 →0.907 , Size 2.90 →3.08 , CCV 6.55 →6.25 ). In-creasing η tends to shrink sets with negligible impact on coverage, with CCV flat to slightly worse at very high η;the mid-range η≈0.25 is strongest. Our default (λ, η ) = (0 .5, 0.25) lies near the center of this Pareto region, offering a robust efficiency–validity balance without task-specific tuning.                       
+
+> Table S3. Sensitivity to Laplacian weight γ(APS, α=0 .10 ,LATA-LF). All settings stay near nominal coverage and retain clear gains in Size/CCV vs. SCP (Size = 4 .05 , CCV = 9 .59 )and SCA-T (Size = 3 .35 , CCV = 7 .18 ).
+> γCov. Size ↓CCV ↓
+> 0.20 0.899 3.00 6.55
+> 0.35 0.900 2.95 6.32
+> 0.50 0.901 2.98 6.30
+
+Note on the truncation parameter κ. In all primary benchmarks considered in the main manuscript, the num-ber of classes C is relatively small. As a result, our default choice of κ = 128 has no practical effect: the LATA re-finement and conformal scoring procedures operate over all classes since κ ≥ C. The parameter κ is included primarily as a scalability control for settings with a large number of labels, where it can limit the number of neighbors consid-ered per step during aggregation. Importantly, κ does not affect the validity of the final SCP thresholds, which are al-ways computed using the full set of C classes. 
+
+D.2. Sensitivity to Laplacian weight 
+
+The hyperparameter γ controls the strength of the graph–smoothness term in Eq. (5) of the main manuscript: small γ keeps the refined distributions close to the zero-shot predictor, while larger values enforce stronger agree-ment among neighbors on the kNN graph. We vary γ ∈{0.20 , 0.35 , 0.50 } for LATA-LF (APS, α=0 .10 ), keeping all other hyperparameters fixed. As presented in Table S3, across γ ∈ [0 .20 , 0.50] , cover-age remains tightly clustered around the nominal 0.90 , and all settings yield substantially smaller, more class-balanced sets than SCP and SCA-T. Variation in efficiency and CCV is mild: weaker smoothing ( γ=0 .20 ) slightly increases CCV, while stronger smoothing ( γ=0 .50 ) produces only marginal changes in Size and CCV. The default γ=0 .35 
+
+provides a robust middle ground; LATA-LF does not re-quire task-specific tuning of this parameter to maintain its coverage and fairness gains. 
+
+D.3. Sensitivity to graph degree 
+
+The parameter k controls the sparsity of the image–image 
+
+kNN graph: smaller k yields weaker (more local) smooth-ing, while larger k increases connectivity and the strength of transductive propagation. We vary k ∈ { 10 , 15 , 20 } for 
+
+LATA-LF (APS, α=0 .10 ), keeping all other hyperparame-ters fixed. As shown in Table S4, across k ∈ [10 , 20] , LATA-LF con-sistently stays near the nominal coverage ( ≈ 0.90 ) while substantially improving Size and CCV over SCP and SCA-T. Sparser graphs ( k=10 ) slightly weaken the smoothing ef-fect, yielding marginally larger sets and higher CCV; denser Table S4. Sensitivity to graph degree k (APS, α=0 .10 ,
+
+LATA-LF ). All settings remain near nominal coverage and main-tain clear gains over SCP (Size = 4 .05 , CCV = 9 .59 ) and SCA-T (Size = 3 .35 , CCV = 7 .18 ). 
+
+k Cov. Size ↓ CCV ↓
+
+10 0.899 3.02 6.60 
+
+15 0.900 2.95 6.32 
+
+20 0.900 2.97 6.35 
+
+Figure S1. Compute–accuracy trade-off for LATA at α=0 .10 .Time per image (x-axis) vs. average set size (y-axis) for Titer ∈{4, 8, 12 }. Colors denote LAC/APS/RAPS; marker size encodes CCV. Annotations show Cov., CCV, and GPU memory. Default 
+
+Titer =8 balances speed and reliability; Titer =4 is faster with mild trade-offs; Titer =12 yields limited gains. 
+
+graphs ( k=20 ) produce only tiny changes relative to the default. Overall, k=15 is a robust operating point, and 
+
+LATA-LF does not require task-specific tuning of k to re-tain its coverage and fairness gains. 
+
+D.4. Compute–accuracy trade-off 
+
+Fig. S1 analyzes LATA as we vary the number of mean-field passes Titer ∈ { 4, 8, 12 } at α = 0 .10 . Our default choice 
+
+Titer = 8 (approximately 0.06 s /img and 0.80 GB ) achieves nominal coverage with strong efficiency (APS: size 3.10 ,CCV 6.90 ; LAC: 3.22 /7.05 ; RAPS: 3.29 /6.85 ). Reducing to Titer = 4 (< 0.045 s /img) speeds up in-ference by about 25% with a mild increase in Size/CCV (e.g., APS: ∆+0 .08 Size, ∆+0 .05 CCV). Increasing to 
+
+Titer = 12 yields only marginal gains (APS: 3.06 /6.85 ). Across scores, APS is the most size-efficient; RAPS attains the lowest CCV and slightly higher coverage ( ≈ 0.903 ) at the cost of larger sets, while LAC lies between them. Tim-ings were measured on a single RTX 4090 with identical backbones and prompts. 
+
+Table S5. Component ablation (APS) at α ∈ { 0.10 , 0.05 }.Setup/notation follow Table 3 in the main manuscript.                                               
+
+> Variant ACA ↑α= 0 .10 α= 0 .05
+> Cov. Size ↓CCV ↓Cov. Size ↓CCV ↓
+> SCP 50.2 0.900 4.05 9.59 0.952 4.88 5.54
+> u-only 50.6 0.900 3.98 9.15 0.952 4.82 5.30
+> α-only 50.8 0.900 3.55 8.80 0.952 4.62 5.15
+> LATA (no ViLU) 55.6 0.900 3.05 6.60 0.954 3.88 3.70
+> LATA (ours) 57.1 0.900 2.95 6.32 0.954 3.78 3.55
+
+D.5. Temperature Sensitivity 
+
+Conformal inference is closely related to other uncertainty quantification frameworks—particularly calibration. Prior work often incorporates post-hoc calibration techniques such as temperature scaling to sharpen or smooth predictive probabilities before score computation (e.g., [2]). Tempera-ture scaling rescales logits in Eq. (1) of the main manuscript by a factor τ , which can change score tails and thus effi-ciency (average set size) even when coverage remains valid. We therefore assess robustness to τ by applying the same scaling to both calibration and test (preserving exchange-ability) and measuring conformal sets at α=0 .10 .As shown in Fig. S2, for LAC the size curve is mildly U-shaped with small variation across τ ∈ [0 .6, 1.4] . For APS and RAPS, larger τ softens distributions and increases set size, as expected. Crucially, LATA-LF stays strictly below the Base (SCP) curve across all τ while maintaining nomi-nal coverage, indicating that the graph-based refinement is robust to temperature perturbations. We default to τ =1 .0
+
+(main draft) and do not tune τ on target domains; perfor-mance is stable for τ ∈ [0 .8, 1.2] , and compute overhead is unaffected by τ .
+
+D.6. Component analysis 
+
+The APS ablation in Table S5 mirrors the LAC trend: 
+
+LATA without ViLU [18] already secures most of the cov-erage–efficiency gains (Size 3.05 , CCV 6.60 at α=0 .10 ), and the full LATA (ours) variant delivers the strongest results while keeping coverage at nominal. The u and 
+
+α terms provide complementary benefits— u reduces CCV with minimal size change, whereas α shrinks sets mod-estly—yet their combination with the graph refinement yields the best overall trade-off. 
+
+D.7. Sensitivity to label-informed prior 
+
+The label-informed prior β serves as a gentle cover-age–efficiency knob. As shown in Table S6 and Table S7, increasing β tightens marginal coverage with a small in-crease in set size. CCV improves for LAC at α=0 .10 and for APS at both error levels, while for LAC at α=0 .05 
+
+the fairness gains are neutral or slightly negative due to the tighter target. We therefore report LATA-LF (β=0 ) as Figure S2. Temperature sensitivity at α=0 .10 . Average set size versus temperature for LAC, APS, and RAPS under Base (SCP) and 
+
+LATA-LF . LATA-LF preserves nominal coverage and remains strictly more efficient than Base across τ ∈ [0 .6, 1.4] .Table S6. Sensitivity to the label-informed prior (β). We apply the prior as q ← Renorm  q ⊙ mβ  (equivalently, logits z ← z +
+
+β log m), where m are Dirichlet-smoothed calibration marginals (fixed once) and the same transform is applied to calibration and test. Numbers are averaged across tasks. 
+
+LAC , α=0 .10 LAC , α=0 .05 
+
+β ACA ↑ Cov. Size ↓ CCV ↓ Cov. Size ↓ CCV ↓
+
+0.0 57.0 0.900 3.07 6.40 0.952 3.76 3.35 
+
+0.1 57.2 0.905 3.11 6.32 0.958 3.82 3.40 0.2 57.4 0.910 3.15 6.25 0.962 3.86 3.40 0.3 57.4 0.914 3.20 6.22 0.966 3.92 3.45 
+
+Table S7. Prior sensitivity for APS . Same prior application and setup as Table S6. 
+
+APS , α=0 .10 APS , α=0 .05 
+
+β ACA ↑ Cov. Size ↓ CCV ↓ Cov. Size ↓ CCV ↓
+
+0.0 57.1 0.900 2.95 6.32 0.954 3.78 3.55 0.1 57.3 0.905 2.99 6.28 0.959 3.83 3.50 0.2 57.5 0.910 3.03 6.25 0.963 3.88 3.45 
+
+0.3 57.5 0.914 3.08 6.23 0.966 3.93 3.44 
+
+the default and LATA-LI (β=0 .2) as a practical, validity-preserving variant; the prior is applied once and identically to calibration and test, preserving exchangeability. 
+
+D.8. ViLU pretraining source 
+
+In Table S8, we ablate the source domain used to pretrain the frozen ViLU head that provides the difficulty u(x) and plausibility α(x) signals in the failure-aware score (Eq. (8), main manuscript). Matched ViLU denotes a head pretrained on data with the same modality and label granularity as the target task (e.g., histopathology for SICAPv2), while Mis-matched ViLU is pretrained on a different modality/dataset family (e.g., chest X-ray). No ViLU disables these sig-nals by setting (λ, η ) = (0 , 0) . Under a fixed unsuper-vised transductive (UT) setup ( N =256 , k=15 , Titer =8 ), and LAC at α=0 .10 , coverage remains nominal in all cases. Matched ViLU achieves the smallest sets and lowest CCV ; using a mismatched source causes only a small ef-ficiency/fairness drift ( ∼+0 .05 size, ∼+0 .12 CCV), while removing ViLU has a clearer impact ( ∼+0 .15 size, ∼+0 .50 
+
+CCV) at identical compute. Unless otherwise stated, we use the default weights (λ, η ) = (0 .5, 0.25) and β=0 
+
+(LATA-LF ). 
+
+Table S8. Effect of ViLU pretraining source (LAC, α=0 .10 ). UT window: N =256 , k=15 , Titer =8 ; averaged over random seeds.                     
+
+> Setting Cov. Size ↓CCV ↓T (s/img) / GPU (GB)
+> LATA (ours) (matched ViLU) 0.900 3.07 6.40 0.05 / 0.80
+> LATA (ours) (mismatched ViLU) 0.900 3.12 6.52 0.05 / 0.80
+> LATA (ours) (no ViLU: λ=η=0 )0.900 3.22 6.90 0.05 / 0.80
+
+D.9. Resource-aware gating 
+
+We study a simple speed–memory knob that skips the mean-field/CCCP refinement for easy inputs, identified by a low ViLU risk u(x). Specifically, for any x with u(x) < τ u,we bypass the update in Eq. (6) of the main manuscript and pass the base probabilities through unchanged (i.e., 
+
+˜z(x) = q(x) after any fixed prior bias), while applying the standard refinement to the remaining samples. The gating rule is applied identically to calibration and test, preserving exchangeability and split-conformal validity. Table S9 reports results under our fixed UT setup (N =256 , k=15 , Titer =8 ), using LAC at α=0 .10 . Increasing 
+
+τu reduces compute (time ↓ 10 –20% , GPU ↓ 12 .5–18 .8% )while maintaining nominal coverage and inducing only modest changes in Size/CCV. Table S9. Resource-aware u-gating under LATA (ours)                                                     
+
+> (LAC, α=0 .10 ). Averaged over random seeds; UT: N=256 ,
+> k=15 ,Titer =8 . We skip CCCP updates for inputs with u(x)< τ u.Raising τulowers time/memory (e.g., τu=0 .30 : T −20% , GPU
+> −18 .8% ) with no coverage loss .
+> τuCov. Size ↓CCV ↓T (s/img) /GPU (GB) 0.00 (no gating) 0.900 3.07 6.40 0.050 /0.80 0.20 0.900 3.12 6.48 0.045 /0.70 0.30 0.900 3.16 6.55 0.040 /0.65
+> Figure S3. Qualitative comparison of prediction sets on Gleason grading (SICAPv2, APS, α=0 .10 ). LATA(ours)
+> produces smaller sets than FCA—especially for ambiguous G3/G4—while preserving strong diagonals and clinically plau-sible adjacency (G3 ↔G4) and further suppressing unlikely NC ↔G5 co-occurrences.
+
+## E. Additional Qualitative Results 
+
+Qualitative comparison with FCA on Gleason grad-ing. Fig. S3 contrasts FCA [33] and LATA(ours) on SICAPv2 Gleason grading (APS, α=0 .10 ), showing per-grade set-size distributions (top) and class co-occurrence within prediction sets (bottom). Both methods behave sen-sibly—extreme grades NC/G5 are mostly singletons—yet 
+
+LATA(ours) consistently shifts probability mass from large to small sets, especially for the ambiguous mid-grades G3/G4 (e.g., size-3 frequency drops from roughly 14–12% with FCA to 9–8% with LATA(ours) ). In the co-occurrence maps, LATA(ours) maintains strong diagonals (NC/G3/G5 ≥ 95% , G4 ≈ 91% ) and pre-serves clinically plausible adjacency (frequent G3 ↔G4 co-appearance), while further suppressing far pairs such as NC ↔G5 and G3/G4 ↔G5 compared to FCA. Over-all, LATA(ours) produces more selective, adjacency-focused uncertainty—smaller sets and reduced spurious co-occurrences—while retaining the grading structure cap-tured by FCA. 
+
+Coverage analysis across datasets. Fig. S4 and Fig. S5 show that LATA stays closest to the nominal target (1 − α)
+
+while yielding compact sets across all nine datasets (LAC, 
+
+α=0 .10 ). In Fig. S4, LATA ’s distributions are tightly con-centrated at or slightly to the right of the dashed line (valid-ity with low dispersion), whereas SCP is roughly centered but wider (higher CCV), and Adapt+SCP is systematically left-shifted (under-coverage), most visibly on SICAPv2 ,
+
+MMAC , and COVID . SCA-T narrows dispersion relative to SCP but remains broader and slightly left-biased com-pared to LATA . Fig. S5 corroborates this: across datasets, 
+
+LATA occupies the desirable top-left frontier—matching or exceeding target coverage with smaller sets than SCP/SCA-T and without the exchangeability violation of Adapt+SCP. Notably, on long-tailed NIH it reduces set size substantially while keeping coverage near 0.91–0.93; on CheXpert , MES-SIDOR , and FIVES it attains high coverage with sets around 1–2; and on the harder COVID shift it pulls coverage back toward the target with markedly smaller sets. Overall, these figures illustrate the same trend: LATA improves efficiency and class-wise balance while remaining reliably on target. 
+
+## F. Scoring Rules, Evaluation Metrics, and Dataset Details 
+
+Setup and notation. Let Dcal = {(xi, y i)}ni=1 be the la-beled calibration split and Dtest = {xj }mj=1 the unlabeled test pool; assume exchangeability. Let z(x) ∈ ∆C−1 de-note the class–probability vector used for conformal scoring (either zero-shot q(x) or LATA -refined ˜z(x); cf. Sec. 3.4 of the main manuscript). A nonconformity score S(x, y ) ∈ R
+
+quantifies how incompatible label y is for input x (larger is worse ). The global threshold ˆs is the split-conformal 
+
+(1 − α) quantile defined in Eq. (2) of the main manuscript. Given the threshold ˆs computed from the calibration set, the prediction set for a test input x is defined as C(x) = 
+
+, y ∈ 1, . . . , C : S(x, y ) ≤ ˆs, . For each input x, let πx de-note the permutation that sorts the score vector z(x) in de-scending order, and let rank x(y) ∈ 1, . . . , C represent the rank position of label y under this ordering. 
+
+Least–Ambiguous Classifier (LAC). LAC [26] constructs conformal prediction sets by ranking class probabilities and selecting the most confident labels up to a fixed threshold. The underlying nonconformity score is defined as: 
+
+SLAC (x, y ) = 1 − zy (x), (9) where zy (x) denotes the softmax probability assigned to class y for input x. When model probabilities are well-calibrated, high-probability labels yield small scores, pro-ducing compact sets at fixed coverage. However, it lacks adaptivity to class imbalance or distributional uncertainty. Figure S4. Coverage analysis under LAC at α = 0 .10 . The dashed line indicates the nominal coverage level. LATA (ours) consistently achieves coverage closest to the target across all datasets. 
+
+Adaptive Prediction Sets (APS). To improve adaptive-ness over fixed-threshold methods like LAC, APS [25] con-structs prediction sets by accumulating probability mass over the most likely classes. The nonconformity score for a label y is defined as: 
+
+SAPS (x, y ) = X
+
+> j: rank x(j)<rank x(y)
+
+zj (x) + U · zy (x), (10) where zj (x) is the softmax probability of class j, and U ∼
+
+Unif[0 , 1] introduces randomization to ensure exact finite-sample coverage in the presence of ties. For deterministic behavior, U can be fixed to 1. The score reflects the cumula-tive mass of all labels more confident than y, plus a fraction of y’s own score. Thus, hard or ambiguous examples— where probability is spread across many labels—receive higher scores and larger prediction sets, improving adap-tation to uncertainty and class imbalance. 
+
+Regularized Adaptive Prediction Sets (RAPS). While APS improves class-wise coverage over LAC by adapt-ing to uncertainty, it can lead to overly large prediction sets—particularly in ambiguous examples. RAPS [2] ad-dresses this by introducing a soft penalty on including lower-ranked classes beyond a fixed cutoff. The noncon-formity score is defined as: 
+
+SRAPS (x, y ) = X
+
+> j: rank x(j)<rank x(y)
+
+zj (x)+ γraps · max {0, rank x(y) − kreg }
+
++ U · zy (x),
+
+(11) where γraps controls the regularization strength, kreg spec-ifies the rank threshold after which penalties are applied, and U ∼ Unif[0 , 1] enables randomized tie-breaking as in APS. The term max {0, rank x(y) − kreg } penalizes includ-ing labels with low confidence (i.e., high rank), effectively taming the tail of the score distribution. This regularization helps balance the trade-off between prediction set size and adaptivity across subgroups. 
+
+Coverage and set size. To evaluate the reliability and ef-ficiency of conformal prediction, we compute two standard metrics on a labeled test set {(xi, y i)}ntest 
+
+> i=1
+
+.The empirical coverage measures the proportion of test instances for which the true label is contained in the predic-tion set: 
+
+Cov = 1
+
+ntest 
+
+> ntest
+
+X
+
+> i=1
+
+⊮{yi ∈ C (xi)}, (12) Figure S5. Conformal prediction results across datasets using α = 0 .10 and LAC [26]. Each point represents a performance, with bubble size indicating the number of adaptation shots K ∈ { 4, 8, 16 }.
+
+where ⊮{·} is the indicator function. A conformal method satisfies marginal validity if Cov ≈ 1 − α.The average set size , also referred to as inefficiency, quantifies the expected number of labels returned per pre-diction: 
+
+Size = 1
+
+ntest 
+
+> ntest
+
+X
+
+> i=1
+
+|C (xi)| . (13) Smaller prediction sets imply higher efficiency, provided that coverage remains close to the target level. Together, these metrics characterize the trade-off between reliability and compactness of the output sets. 
+
+ACA (Balanced Accuracy). Balanced accuracy, also known as classwise or macro accuracy, evaluates how well the model performs across all classes irrespective of imbal-ance. Let nc = |{ i : yi = c}| be the number of test samples in class c. Then, ACA is defined as: 
+
+ACA = 1
+
+C
+
+> C
+
+X
+
+> c=1
+
+1
+
+nc
+
+X 
+
+> i:yi=c
+
+⊮
+
+
+
+arg max  
+
+> j
+
+zj (xi) = c
+
+
+
+, (14) where zj (xi) is the predicted confidence for class j on sam-ple xi. This metric treats all classes equally, making it well-suited for imbalanced settings. 
+
+CCV (Class-Conditioned Coverage Gap). To assess how well conformal prediction methods balance coverage across different classes, we compute the classwise empirical cov-erage: 
+
+dCov c = 1
+
+nc
+
+X 
+
+> i:yi=c
+
+⊮{yi ∈ C (xi)}, (15) and define the class-conditioned coverage gap (CCV) as: [CCV = 1
+
+C
+
+> C
+
+X
+
+> c=1
+
+dCov c − (1 − α) . (16) This metric captures the average deviation from the target coverage (1 − α) across all classes. A lower [CCV indicates more uniform and fair coverage, with [CCV = 0 signifying perfect per-class alignment with the coverage goal. In all experiments, the predicted class-probability vec-tor is denoted by z(x). Under LATA , we use its trans-ductively refined version ˜z(x); otherwise we use the raw model output q(x). The same deterministic transformation (e.g., LATA smoothing) is applied to both calibration and test samples, preserving exchangeability. 
+
+Dataset details. For all datasets and experiments, we adopt the dataset preparation protocol and train/calibration/test splits provided in the FCA codebase [33]. 
+
+## References 
+
+[1] Emily Alsentzer, John R Murphy, Willie Boag, Wei-Hung Weng, Di Jin, Tristan Naumann, and Matthew McDermott. Publicly available clinical bert embeddings. arXiv preprint arXiv:1904.03323, 2019. 4 [2] Anastasios Angelopoulos, Stephen Bates, Jitendra Ma-lik, and Michael I Jordan. Uncertainty sets for im-age classifiers using conformal prediction. arXiv preprint arXiv:2009.14193, 2020. 1, 3, 5, 9, 12, 15 [3] Mikhail Belkin, Partha Niyogi, and Vikas Sindhwani. Man-ifold regularization: A geometric framework for learning from labeled and unlabeled examples. Journal of machine learning research, 7(11), 2006. 3 [4] Malik Boudiaf, Imtiaz Ziko, J´ erˆ ome Rony, Jos´ e Dolz, Pablo Piantanida, and Ismail Ben Ayed. Information maximiza-tion for few-shot learning. Advances in Neural Information Processing Systems, 33:2445–2457, 2020. 5, 7 [5] Muhammad EH Chowdhury, Tawsifur Rahman, Amith Khandakar, Rashid Mazhar, Muhammad Abdul Kadir, Zaid Bin Mahbub, Khandakar Reajul Islam, Muham-mad Salman Khan, Atif Iqbal, Nasser Al Emadi, et al. Can ai help in screening viral and covid-19 pneumonia? Ieee Access, 8:132665–132676, 2020. 5 [6] Etienne Decenci` ere, Xiwei Zhang, Guy Cazuguel, Bruno Lay, B´ eatrice Cochener, Caroline Trone, Philippe Gain, John-Richard Ord´ o˜ nez-Varela, Pascale Massin, Ali Erginay, et al. Feedback on a publicly distributed image database: the messidor database. Image Analysis & Stereology, pages 231–234, 2014. 5 [7] Tiffany Ding, Anastasios Angelopoulos, Stephen Bates, Michael Jordan, and Ryan J Tibshirani. Class-conditional conformal prediction with many classes. Advances in neural information processing systems, 36:64555–64576, 2023. 1, 5[8] Alex Gammerman, Volodya Vovk, and Vladimir Vapnik. Learning by transduction. arXiv preprint arXiv:1301.7375, 2013. 1, 9 [9] Gregory Holste, Song Wang, Ziyu Jiang, Thomas CShen, George Shih, Ronald M Summers, Yifan Peng, and Zhangyang Wang. Long-tailed classification of thorax diseases on chest x-ray: A new benchmark study. In MICCAI Workshop on Data Augmentation, Labelling, and Imperfections, pages 22–32. Springer, 2022. 5 [10] Yunshi Huang, Fereshteh Shakeri, Jose Dolz, Malik Boudiaf, Houda Bahig, and Ismail Ben Ayed. Lp++: A surprisingly strong linear probe for few-shot clip. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 23773–23782, 2024. 2, 9 [11] Zhi Huang, Federico Bianchi, Mert Yuksekgonul, Thomas J Montine, and James Zou. A visual–language foundation model for pathology image analysis using medical twitter. Nature medicine, 29(9):2307–2316, 2023. 1 [12] Jeremy Irvin, Pranav Rajpurkar, Michael Ko, Yifan Yu, Sil-viana Ciurea-Ilcus, Chris Chute, Henrik Marklund, Behzad Haghgoo, Robyn Ball, Katie Shpanskaya, et al. Chexpert: A large chest radiograph dataset with uncertainty labels and expert comparison. In Proceedings of the AAAI conference on artificial intelligence, pages 590–597, 2019. 5 [13] Ahmet Iscen, Giorgos Tolias, Yannis Avrithis, and Ondrej Chum. Label propagation for deep semi-supervised learning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 5070–5079, 2019. 3 [14] Kai Jin, Xingru Huang, Jingxing Zhou, Yunxiang Li, Yan Yan, Yibao Sun, Qianni Zhang, Yaqi Wang, and Juan Ye. Fives: A fundus image dataset for artificial intelligence based vessel segmentation. Scientific data, 9(1):475, 2022. 5 [15] Alistair EW Johnson, Tom J Pollard, Seth J Berkowitz, Nathaniel R Greenbaum, Matthew P Lungren, Chih-ying Deng, Roger G Mark, and Steven Horng. Mimic-cxr, a de-identified publicly available database of chest radiographs with free-text reports. Scientific data, 6(1):317, 2019. 4 [16] Jakob Nikolas Kather, Niels Halama, and Alexander Marx. 100,000 histological images of human colorectal cancer and healthy tissue (v0.1), 2018. 5 [17] Katharina Kriegsmann, Frithjof Lobers, Christiane Zgorzel-ski, Joerg Kriegsmann, Charlotte Janssen, Rolf R¨ udinger Meliß, Thomas Muley, Ulrich Sack, Georg Steinbuss, and Mark Kriegsmann. Deep learning for the detection of anatomical tissue structures and neoplasms of the skin on scanned histopathological tissue sections. Frontiers in Oncology, 12:1022967, 2022. 5 [18] Marc Lafon, Yannis Karmim, Julio Silva-Rodr´ ıguez, Paul Couairon, Cl´ ement Rambour, Rapha¨ el Fournier S’niehotta, Ismail Ben Ayed, Jose Dolz, and Nicolas Thome. ViLU: Learning Vision-Language Uncertainties for Failure Predic-tion. International Conference on Computer Vision (ICCV 2025), 2025. 2, 3, 4, 12 [19] Jing Lei, Max G’Sell, Alessandro Rinaldo, Ryan J Tibshi-rani, and Larry Wasserman. Distribution-free predictive in-ference for regression. Journal of the American Statistical Association, 113(523):1094–1111, 2018. 1 [20] Ming Y Lu, Bowen Chen, Drew FK Williamson, Richard J Chen, Ivy Liang, Tong Ding, Guillaume Jaume, Igor Odintsov, Long Phi Le, Georg Gerber, et al. A visual-language foundation model for computational pathology. Nature medicine, 30(3):863–874, 2024. 1, 4 [21] Harris Papadopoulos, Kostas Proedrou, Volodya Vovk, and Alex Gammerman. Inductive confidence machines for re-gression. In European conference on machine learning, pages 345–356. Springer, 2002. 1, 2, 9 [22] Bo Qian, Bin Sheng, Hao Chen, Xiangning Wang, Tingyao Li, Yixiao Jin, Zhouyu Guan, Zehua Jiang, Yilan Wu, Jinyuan Wang, et al. A competition for the diagnosis of myopic maculopathy by artificial intelligence algorithms. JAMA ophthalmology, 142(11):1006–1015, 2024. 5 [23] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervi-sion. In International conference on machine learning, pages 8748–8763. PMLR, 2021. 1, 3 [24] Tawsifur Rahman, Amith Khandakar, Yazan Qiblawey, Anas Tahir, Serkan Kiranyaz, Saad Bin Abul Kashem, Moham-mad Tariqul Islam, Somaya Al Maadeed, Susu M Zughaier, Muhammad Salman Khan, et al. Exploring the effect of image enhancement techniques on covid-19 detection using chest x-ray images. Computers in biology and medicine, 132:104319, 2021. 5 [25] Yaniv Romano, Matteo Sesia, and Emmanuel Candes. Clas-sification with valid and adaptive coverage. Advances in neural information processing systems, 33:3581–3591, 2020. 1, 2, 3, 5, 9, 15 [26] Mauricio Sadinle, Jing Lei, and Larry Wasserman. Least ambiguous set-valued classifiers with bounded error levels. Journal of the American Statistical Association, 114(525): 223–234, 2019. 1, 3, 5, 9, 14, 16 [27] C Saunders, A Gammerman, and V Vovk. Transduc-tion with confidence and credibility. In Proceedings of the 16th international joint conference on Artificial intelligence-Volume 2, pages 722–726, 1999. 2 [28] Julio Silva-Rodr´ ıguez, Adri´ an Colomer, Mar´ ıa A Sales, Rafael Molina, and Valery Naranjo. Going deeper through the gleason scoring scale: An automatic end-to-end system for histology prostate grading and cribriform pattern detec-tion. Computer methods and programs in biomedicine, 195: 105637, 2020. 5 [29] Julio Silva-Rodriguez, Sina Hajimiri, Ismail Ben Ayed, and Jose Dolz. A closer look at the few-shot adaptation of large vision-language models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 23681–23690, 2024. 2, 9 [30] Julio Silva-Rodr´ ıguez, Ismail Ben Ayed, and Jose Dolz. Con-formal prediction for zero-shot models. In Proceedings of the Computer Vision and Pattern Recognition Conference, pages 19931–19941, 2025. 2, 3, 6, 7, 9, 10 [31] Julio Silva-Rodr´ ıguez, Ismail Ben Ayed, and Jose Dolz. Trustworthy few-shot transfer of medical vlms through split conformal prediction. In International Conference on Medical Image Computing and Computer-Assisted Intervention, pages 658–668. Springer, 2025. 2, 3, 5, 6, 7, 9[32] Julio Silva-Rodriguez, Hadi Chakor, Riadh Kobbi, Jose Dolz, and Ismail Ben Ayed. A foundation language-image model of the retina (flair): Encoding expert knowledge in text supervision. Medical Image Analysis, 99:103357, 2025. 1, 4 [33] Julio Silva-Rodr´ ıguez, Leo Fillioux, Paul-Henry Courn` ede, Maria Vakalopoulou, Stergios Christodoulidis, Ismail Ben Ayed, and Jose Dolz. Full conformal adaptation of medi-cal vision-language models. In International Conference on Information Processing in Medical Imaging, pages 278–293. Springer, 2025. 2, 3, 5, 6, 9, 10, 14, 17 [34] Vladimir Vovk. Conditional validity of inductive conformal predictors. In Asian conference on machine learning, pages 475–490. PMLR, 2012. 1, 9 [35] Vladimir Vovk, Alexander Gammerman, and Glenn Shafer. Algorithmic learning in a random world. Springer, 2005. 1, 2, 9 [36] Xiaosong Wang, Yifan Peng, Le Lu, Zhiyong Lu, Mo-hammadhadi Bagheri, and Ronald M Summers. Chestx-ray8: Hospital-scale chest x-ray database and benchmarks on weakly-supervised classification and localization of common thorax diseases. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 2097–2106, 2017. 5 [37] Zifeng Wang, Zhenbang Wu, Dinesh Agarwal, and Jimeng Sun. Medclip: Contrastive learning from unpaired med-ical images and text. In Proceedings of the Conference on Empirical Methods in Natural Language Processing. Conference on Empirical Methods in Natural Language Processing, page 3876, 2022. 1 [38] Hantao Yao, Rui Zhang, and Changsheng Xu. Visual-language prompt tuning with knowledge-guided context op-timization. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 6757–6767, 2023. 2, 9 [39] Alan L Yuille and Anand Rangarajan. The concave-convex procedure (cccp). Advances in neural information processing systems, 14, 2001. 4, 9 [40] Maxime Zanella, Benoˆ ıt G´ erin, and Ismail Ayed. Boost-ing vision-language models with transduction. Advances in Neural Information Processing Systems, 37:62223–62256, 2024. 2, 5, 7, 9 [41] Yuhao Zhang, Hang Jiang, Yasuhide Miura, Christopher D Manning, and Curtis P Langlotz. Contrastive learning of medical visual representations from paired images and text. In Machine learning for healthcare conference, pages 2–25. PMLR, 2022. 4 [42] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Zi-wei Liu. Learning to prompt for vision-language mod-els. International Journal of Computer Vision, 130(9):2337– 2348, 2022. 2, 9 [43] Hao Zhu and Piotr Koniusz. Ease: Unsupervised discrim-inant subspace learning for transductive few-shot learning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 9078–9088, 2022. 10

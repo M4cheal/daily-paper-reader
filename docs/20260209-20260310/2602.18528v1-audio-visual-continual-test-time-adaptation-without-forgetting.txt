@@ -1,0 +1,1554 @@
+Title: Audio-Visual Continual Test-Time Adaptation without Forgetting
+
+URL Source: https://arxiv.org/pdf/2602.18528v1
+
+Published Time: Tue, 24 Feb 2026 01:03:35 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Audio-Visual Continual Test-Time Adaptation without Forgetting 
+
+Sarthak Kumar Maharana 1 * Akshay Mehra 2 Bhavya Ramakrishna 2 Yunhui Guo 1 Guan-Ming Su 2
+
+Abstract 
+
+Audio-visual continual test-time adaptation in-volves continually adapting a source audio-visual model at test-time, to unlabeled non-stationary domains, where either or both modalities can be distributionally shifted, which hampers on-line cross-modal learning and eventually leads to poor accuracy. While previous works have tackled this problem, we find that SOTA meth-ods suffer from catastrophic forgetting where the model’s performance drops well below the source model due to continual parameter updates at test-time. In this work, we first show that adapting only the modality fusion layer to a target domain not only improves performance on that domain but can also enhance performance on subsequent domains. Based on this strong cross-task trans-ferability of the fusion layer’s parameters, we propose a method, AV-CTTA , that improves test-time performance of the models without access to any source data. Our approach works by us-ing a selective parameter retrieval mechanism that dynamically retrieves the best fusion layer param-eters from a buffer using only a small batch of test data. These parameters are then integrated into the model, adapted to the current test distribution, and saved back for future use. Extensive experiments on benchmark datasets involving unimodal and bi-modal corruptions show our proposed AV-CTTA 
+
+significantly outperforms existing methods while minimizing catastrophic forgetting. 
+
+1 Introduction 
+
+The development of audio-visual models has accelerated rapidly in recent years (Likhosherstov et al., 2021; Akbari et al., 2021; Gong et al., 2022b;c; Huang et al., 2023; Kim et al., 2024; Araujo et al., 2025). However, most prior work 
+
+> ∗
+
+Work done during an internship at Dolby Laboratories. 
+
+> 1
+
+The University of Texas at Dallas, USA 2Dolby Labora-tories, USA. Correspondence to: Sarthak Kumar Maharana 
+
+<SKM200005@utdallas.edu >.
+
+Preprint. February 24, 2026. A deployed agent for 
+
+> scene understanding w/
+> audio -visual sensors
+
+# 𝜃 ! Continual adaptation to evolving target environments 
+
+> Distributional shifts may a7ect the audio
+> modality, the visual modality, or both
+
+Audio -Visual Continual Test -Time Adaptation    
+
+> Crowd Concert Snow Rain
+
+Figure 1. We illustrate audio-visual continual test-time adap-tation using an example of a deployed agent with audio-visual sensors for scene understanding. Starting from a source model parameterized by θS , the agent encounters a sequence of evolv-ing target environments where distributional shifts may affect the audio modality, the visual modality, or both, motivating continual adaptation at test-time. The goal is to maintain robust performance without access to the source data and task boundaries. 
+
+evaluates these models under in-distribution settings that closely mirror their pre-training data. In real-world deploy-ment, models operate under evolving test-time distribution shifts that significantly hinder generalization (Taori et al., 2020; Liu et al., 2022). Consider safety-critical scenarios such as self-driving cars equipped with audio-visual sensors. As the vehicle encounters changing visual conditions (e.g., snow, fog) or diverse acoustic environments, cross-modal associations learned during training may no longer hold, leading to degraded perception. The challenge becomes even more severe when both modalities shift simultane-ously, such as in a robot deployed for scene understanding in a crowded street (Maharana et al., 2025a). Test-time adaptation (TTA) has emerged as an effective paradigm for improving model robustness under distribu-tion shifts (Wang et al., 2020; Liang et al., 2025). In realistic scenarios with privacy and real-time constraints (Mai et al., 2022), source data is unavailable, and adaptation must be efficient. Consequently, updates are typically limited to a single forward pass per test sample (Niu et al., 2022; Danilowski et al., 2025), while ensuring that source knowl-edge is not catastrophically forgotten (Goodfellow et al., 2013). Although there is a long TTA literature on vision models (Niu et al., 2022; 2023; Chen et al., 2022; Choi et al., 2022; Zhang et al., 2022a), it has been recently gaining trac-tion for audio-visual models too (Yang et al., 2024; Guo & Jin, 2025; Li & Feng, 2025; Wang et al., 2025; Maharana et al., 2025a). We name such methods as AV-TTA. 1
+
+> arXiv:2602.18528v1 [cs.LG] 20 Feb 2026 AV-CTTA
+
+But, this single-domain assumption is unrealistic in real-world deployment, where models face dynamic and unpre-dictable domain changes without explicit task boundaries (Wang et al., 2022). This setting, termed continual TTA or CTTA, introduces two key challenges: catastrophic forget-ting of the source knowledge due to continual parameter updates across domains, and error accumulation , where mis-calibrated (Guo et al., 2017) pseudo-labels compound over time. Although CTTA has been widely studied in vision-only models (Song et al., 2023; Wang et al., 2024; Maharana et al., 2025b; Zhang et al., 2024), it is substantially harder in multimodal settings. Shifts may affect audio and visual modalities differently, creating a modality gap (Maharana et al., 2025a) that hinders cross-modal alignment (Dong et al., 2023). Continual updates under such bimodal shifts further amplify error accumulation, leading to progressive performance degradation (see Figure 2). We use the terms distribution, domain, and corruption interchangeably. In this work, we study source-free audio-visual continual test-time adaptation under both unimodal and challenging bimodal corruptions, as illustrated in Figure 1. Although existing AV-TTA methods can be extended to the contin-ual setting, they exhibit limitations. Prior work (Maharana et al., 2025a) shows that, even in single-domain AV-TTA, READ (Yang et al., 2024) suffers from increasing atten-tion imbalance between modality tokens under bimodal corruptions, causing performance degradation. We observe a consequence in the CTTA setting: when extending READ to VGGSound-2C (Maharana et al., 2025a), performance initially improves but progressively declines as new do-mains arrive (see Figure 2). Furthermore, BriMPR (Li & Feng, 2025), an AV-TTA method which relies on source data, degrades significantly when source access is removed in our continual setting; we denote this source-free variant as BriMPR*. With the dual goals of minimizing source knowledge for-getting and enhancing test-time performance, we propose a new framework AV-CTTA . In Section 4.1, we present a key observation: adapting only the attention weights of the fusion layer to a single target domain not only improves performance over the source model on related domains within the same category, but also achieves better or compet-itive improvements on unseen domains of other categories. This reveals both intra- and cross-task transferability of the adapted fusion parameters. For the continual setting, how-ever, this suggests that, at any time-step, we can retrieve 
+
+similar parameters from past time-steps and reuse them for further adaptation, instead of the continual overwriting of shared parameters that could result in poor accuracy (see Figure 2). In Section 4.2, we leverage this core insight and propose a selective parameter retrieval scheme to obtain the most relevant parameter state for adaptation. We intro-duce a shared buffer to store “snapshots” of the attention Gaussian 
+
+> Impulse
+> Shot
+> Speckle
+> Compression
+> Snow
+> Frost
+> Spatter
+> Wind
+> Rain
+> Underwater
+> Concert
+> Smoke
+> Crowd
+> Interference
+> 0
+> 20
+> 40
+> Accuracy
+
+Results on VGGSound-2C          
+
+> SOURCE
+> EATA
+> TENT
+> SAR
+> READ
+> SuMi
+> PTA
+> BriMPR*
+> Ours
+> Figure 2. AV-CTTA achieves SOTA performance on audio-visual CTTA. We report task-wise accuracy on VGGSound-2C (Maharana et al., 2025a) at severity level 5 under correlated bi-modal corruptions in the continual setting. CAV-MAE (Gong et al., 2022c) is used as the SOURCE model. We extend TTA ( TENT ,
+> EATA ,SAR ) and AV-TTA ( READ ,PTA ,SuMi ,BriMPR* ) meth-ods to the continual setting. Existing AV-TTA methods struggle under severe correlated bimodal corruptions.
+
+weights, inspired by replay-based methods (Rebuffi et al., 2017; Chaudhry et al., 2018; 2019), but adhering to strict data privacy rules (Shokri & Shmatikov, 2015) by storing only modality-specific input-level statistics and the attention weights, without retaining or revisiting past domain data. At every time-step, we compute current modality-specific statistics to guide the selection. To bound buffer growth (Section 4.3), we merge statistically similar buffer elements. This effectively avoids overfitting and largely minimizes 
+
+catastrophic forgetting (see Figure 7). Our contributions are as follows: 1) We comprehensively study audio-visual CTTA under unimodal and bimodal cor-ruptions. 2) We show that the attention fusion layer shows intra- and cross-task transferability, suggesting that param-eters from previous time-steps can be selectively retrieved and used for adaptation (see Section 4.1). Our method 
+
+AV-CTTA then proposes maintaining a buffer, under a mem-ory budget, to selectively retrieve such parameters based on a proposed criterion. Crucially, AV-CTTA substantially mitigates catastrophic forgetting , incurring only a 2.9% 
+
+performance drop compared to 27.9% with READ on a diffi-cult test set like VGGSound-2C. 3) Our method outperforms all baselines for audio-visual CTTA across datasets. 
+
+2 Related Work 
+
+Audio-Visual Test-Time Adaptation (AV-TTA). TTA aims to adapt a source model to unlabeled target data without access to source samples, mitigating source–target domain gaps under privacy and real-time constraints (Wang et al., 2020; Chen et al., 2022; Niu et al., 2022; 2023; 2024). Typ-ically, adaptation is performed independently per domain with a single forward pass per sample (Mai et al., 2022). TENT (Wang et al., 2020) minimizes the Shannon entropy of model predictions by fine-tuning the affine parameters 2AV-CTTA 
+
+of normalization layers. EATA (Niu et al., 2022) penalizes high entropy samples while minimizing the entropy. SAR (Niu et al., 2023) identified that model adaptation is affected by samples with large gradients. TTA has also been widely studied in audio-visual settings. The first work, READ (Yang et al., 2024), proposed adapting the attention weights of the joint encoder to ensure robust cross-modal fusion. SuMi (Guo & Jin, 2025) employs a mutual information sharing loss to enhance the alignment between modalities. PTA (Wang et al., 2025) argues that under bimodal domain shifts, the source model results in overlapping class representations, leading to biased pre-dictions. PTA partitions samples by prediction bias and jointly reweighs bias and confidence. BriMPR (Li & Feng, 2025) introduces modality-specific prompts to enhance re-alignment. While prompts are optimized for a specific do-main, a layer-wise discrepancy loss is minimized between the statistics of the intermediate features and their corre-sponding source features. 
+
+Continual TTA (CTTA). The research community has ex-tensively studied CTTA in the visual domain (Wang et al., 2022; Gong et al., 2022a; Song et al., 2023; Gan et al., 2023; Liu et al., 2023; Wang et al., 2024; Maharana et al., 2025b; Zhang et al., 2024). However, CTTA for audio-visual data has been relatively underexplored. We notice that only PTA (Wang et al., 2025) and BriMPR (Li & Feng, 2025) provide limited extensions of their respective AV-TTA methods to the continual setting (see their Appendices). A comprehen-sive study of audio–visual CTTA is still missing, which is the primary focus of this paper. 
+
+Remarks. While promising in performance, prior vision-based CTTA methods (Song et al., 2023; Liu et al., 2023; Zhang et al., 2024) use a small amount of source data to warm-start meta-networks/adapters or guide visual prompt tuning (Jia et al., 2022) at test-time, respectively. Though it might be a common practice, under strict real-time and privacy-constrained settings, even limited source access may be unavailable. Similarly, BriMPR reports using only 32 source samples. Interestingly, we notice that when the unlabeled source data is absent, the performance drastically drops, as in Figure 2. Moving forward, we abide by strict test-time settings and provide a realistic source-free audio-visual CTTA method. 
+
+3 Preliminaries 
+
+Notations. Let fa and fv denote two unimodal transformer encoders that process audio and visual inputs, respectively. These are followed by a joint transformer encoder fj , which operates on the concatenated audio-visual output tokens, and a final prediction head h for classification. The total pa-rameter set is θS = {θa, θv , θj , θh}, where θa, θv , θj , and θh
+
+are the parameters of the mentioned modules, respectively. In essence, let za = fa(xa; θa) where za ∈ RTa×D be the audio tokens and zv = fv (xv ; θv ) where zv ∈ RTv ×D
+
+be the visual tokens. Ta and Tv represent the respective number of output tokens and D refers to the embedding dimension (usually D = 768 ). For cross-modal fusion, these features are concatenated along the token dimension to form zc = [ za; zv ], resulting in a joint representation 
+
+zc ∈ R(Ta+Tv )×D . The final logits, mapped to the concept space, are l = h(fj (zc; θj ); θh). xa may represent raw au-dio or its corresponding spectrogram, while xv denotes the corresponding video frames. Specific to CAV-MAE (Gong et al., 2022c), there are 11 attention blocks in each of fa and 
+
+fv and 1 attention block in fj . We denote the weights of the query, key, and value projection matrices in fj as WQ, WK,and WV ∈ RD×D, respectively. 
+
+Problem Setting. We begin with a model pre-trained on a source domain T S = {(xSa,i , x Sv,i , y Si )}ni=1 , where 
+
+xSi = ( xSa,i , x Sv,i ) represents a pair of source audio and vi-sual inputs and ySi denotes the corresponding ground-truth labels. In the CTTA setting (Wang et al., 2022), this source model encounters a sequence of U target tasks/domains at test-time, T = {T u}Uu=1 . The objective is to continually adapt the model to each incoming domain in an online fash-ion, without any parameter reset. For a given task Tu, the model receives a stream of B unlabeled batches. At each time step t, the input is a multimodal batch xt = {xta, x tv },with labels unknown. We assume a strictly online setting where each batch is available only once for a single forward pass . Crucially, the distribution of the source domain differs from the target domain, i.e., p(xSi )̸ = p(xti) but p(ySi ) = 
+
+p(yti ) for an ith sample. Target domains also differ from one another. Throughout, the task boundaries are unknown. We assume that the sequence of tasks at test-time are disjoint, i.e., Tu ∩
+
+Su−1 
+
+> i=1
+
+Ti
+
+
+
+= ∅. Each Tu introduces a unique domain that has not been seen earlier, but the concept spaces remain the same. To be noted, either the audio, visual, or both modalities can be shifted/corrupted, i.e., unimodal or bimodal corruptions, respectively. 
+
+4 Method 
+
+In this section, we introduce our proposed method 
+
+AV-CTTA for audio-visual continual test-time adaptation. Before diving in, we provide a motivating rationale. 
+
+4.1 Motivation 
+
+Cross-domain generalization (Huang et al., 2020; Wang et al., 2019; Zhang et al., 2022b; Li et al., 2017) is a well-studied problem in computer vision that aims to improve performance on unseen and unlabeled test domains by train-ing models on diverse labeled source domains. Although 3AV-CTTA Gaussian    
+
+> Shot
+> Impulse
+> Defocus
+> Glass
+> Motion
+> Zoom
+> Snow
+> Frost
+> Fog
+> Brightness
+> Contrast
+> Elastic Trans.
+> Pixelate
+> Jpeg Comp.
+> 0
+> 5
+> 10
+> over SOURCE
+> Noise Blur Weather Digital
+
+Kinetics50-C: Cross-domain generalization of attention fusion layer 
+
+> Gaussian Learned Params.
+> Defocus Learned Params.
+> Snow Learned Params.
+> Contrast Learned Params.
+
+(a) Kinetics50-C with visual corruptions. Gaussian   
+
+> Impulse
+> Shot
+> Speckle
+> Compression
+> Snow
+> Frost
+> Spatter
+> Wind
+> Rain
+> Underwater
+> Concert
+> Smoke
+> Crowd
+> Interference
+> 0
+> 5
+> over SOURCE
+> Digital Environmental Human-Related
+
+Kinetics50-2C: Cross-domain generalization of attention fusion layer  
+
+> Gaussian Learned Params.
+> Snow Learned Params.
+> Concert Learned Params.
+
+(b) Kinetics50-2C with bimodal corruptions. 
+
+Figure 3. Attention fusion layer adapted on a single domain successfully transfers, achieving performance exceeding or comparable to the source model, motivating us to store parameter snapshots in a buffer that can be reused during audio-visual CTTA. We adapt the projection matrices {W Q, WK , WV } of the joint encoder fj of a pre-trained CAV-MAE (SOURCE) (Gong et al., 2022c) on the first unseen domain of each corruption category, following READ (Yang et al., 2024). This adapted state is then frozen and inferred on the remaining sequence of unseen domains. We report the accuracy change ∆ (in %) over SOURCE. 
+
+most previous works focus on improving generalization through training (Carlucci et al., 2019; Zhou et al., 2020), we slightly abuse the setting here as the source data is ab-sent. In this section, we present an interesting observation by studying cross-domain generalization at test-time. Specifi-cally, we show that when adapting the attention fusion layer, i.e., (WQ, WK , WV ) of a source model on an unlabeled test/target domain of a corruption category, the learned model parameters exhibit improved/competitive transfer to other unseen test/target domains within the same category. 
+
+We illustrate the results in Figure 3. We evaluate on Kinetics50-C (Yang et al., 2024) with visual-only corruptions (Hendrycks & Dietterich, 2019), grouped into Noise , Blur , Weather , and Digital categories (Hendrycks & Dietterich, 2019). Starting from a CAV-MAE source model (Gong et al., 2022c), pre-trained on Kinet-ics50, we adapt only the attention fusion layer ( WQ, WK,and WV of fj ) following READ (Yang et al., 2024). For each category, we perform single-domain TTA by adapt-ing on the first domain and evaluating on the remaining domains. We see that across nearly all corruption cate-gories, the adapted WQ, WK , WV consistently outperform the SOURCE baseline (pre-trained). We see strong intra-category generalization; WQ, WK , WV learned on Gaus-sian Noise generalize effectively to Shot and Impulse Noise .This is consistent in other categories, too. We also no-tice cross-category transferability. In Blur , the parameters learned on Gaussian Noise perform slightly better than SOURCE, but are outperformed by the Blur -specific pa-rameters. Similar trends are in Digital , too. This suggests 
+
+that the attention fusion layer captures domain-invariant cor-relations, enabling a reuse of past parameters across related corruption categories. We perform a similar evaluation on Kinetics50-2C, con-structed by applying challenging bimodal audio-visual cor-ruptions from Maharana et al. (2025a) to the Kinetics50 test set. Following their taxonomy, corruptions are grouped into Digital , Environmental , and Human-Related categories. We draw similar conclusions as earlier. Now, with the audio also being shifted, causing more data challenges, 
+
+WQ, WK , WV learned on Gaussian Noise consistently out-perform SOURCE throughout, while also generalizing re-ally well to other domains within Digital . We also observe patterns of cross-category transferability, as earlier. 
+
+Major takeaway. As observed, the adapted WQ, WK, and 
+
+WV of the joint-encoder fj on a single domain (for in-stance, Gaussian Noise ) yields strong intra-category and cross-category transfers, beating the SOURCE baseline. To exploit this transfer to unseen tasks/domains in a contin-ual audio-visual setting, specifically, we propose using a shared buffer that can save model “snapshots”. This way, we can selectively retrieve a previously optimized state and regain high performance. This leverages past successful adaptations to enable further, ongoing adaptation. When an input-level shift is detected, the model queries the buffer for the most “relevant” parameters rather than continuing from a drifted state, as seen in the results of Figure 2. Con-sequently, two critical design questions remain unanswered: 1) Selective retrieval : How do we identify and retrieve the optimal {W Q, WK , WV } for adaptation at time-step t? 2) 
+
+Buffer expansion : What criterion determines the addition of a new element to the shared buffer? Can we constrain the buffer size due to memory requirements? We answer these questions below. In Appendix A.2, we provide a neat algorithm of our proposed method. Figure 4 illustrates our approach. 
+
+4.2 Selective retrieval of WQ, WK , WV
+
+In Figure 2, we see that continual adaptation of 
+
+WQ, WK , WV in joint-encoder fj to bimodal shifts, follow-ing READ (Yang et al., 2024), leads to eventual overfitting. This is due to poor and degraded online cross-modal learn-4AV-CTTA Predictions 
+
+Visual frames 𝐱 𝐯 
+
+> 𝐭
+
+Spectrograms 𝐱 𝐚      
+
+> 𝐭
+> Visual Encoder Audio Encoder
+> Joint Encoder
+> Classifier
+> 𝓦 𝓠 𝓦 𝓚 𝓦 𝓥
+> 🔥 🔥 🔥
+> Concat.
+> Visual tokens Audio tokens
+> ❄❄
+> ❄
+> ❄
+> Attention fusion layer
+
+At time -step t Selective retrieval of 𝓦 𝓠 , 𝓦 𝓚 , 𝓦 𝓥 
+
+𝛍 𝐚  
+
+> 𝐭
+
+, 𝚺 𝐚 
+
+> 𝐭
+
+𝛍 𝐯  
+
+> 𝐭
+
+, 𝚺 𝐯 
+
+> 𝐭
+
+If g! t, n + g" t, n < τ
+
+Bu/er expansion 
+
+Shared Bu*er 𝓚 
+
+𝐧 ∗ = 𝐚𝐫𝐠𝐦𝐢 𝐧 𝐧 ∈𝓜 𝐠 𝐯 𝐭 , 𝐧 + 𝐠 𝐚 𝐭 , 𝐧 < 𝛕   
+
+> Retrieve the element from bu>er that is
+> statistically the closest to current input statistics
+
+n∗
+
+> matched element
+
+{μ) 
+
+> *
+
+, Σ) 
+
+> *
+
+, μ+ 
+
+> *
+
+, Σ+ 
+
+> *
+
+, 𝒲 𝒬  
+
+> *
+
+, 𝒲 𝒦  
+
+> *
+
+, 𝒲 𝒱  
+
+> *
+
+}             
+
+> EMA update
+> Add current statistics and
+> parameters as an element
+> 𝐢 ,𝐣 =𝐚𝐫𝐠𝐦𝐢 𝐧 𝐢 ,𝐣 ∈𝓜 ,𝐢 &𝐣 𝐠 𝐯 𝐢 ,𝐣 +𝐠 𝐚 𝐢 ,𝐣
+> find statistically redundant elements and average
+
+if | 𝓚 | ≥ 𝜼 
+
+Plug retrieved 𝓦 𝓠 , 𝓦 𝓚 , 𝓦 𝓥 
+
+into attention fusion layer 
+
+and take gradient step; else 
+
+continue with parameters 
+
+from t - 1
+
+If g! t, n + g" t, n ≥ τ, ∀n ∈ ℳ 
+
+> current statistics current parameters
+
+Frozen 
+
+Tuned 
+
+❄
+
+🔥 
+
+Figure 4. Illustration of AV-CTTA . At time-step t, audio-visual inputs via μta, Σta, μ tv , Σtv are modeled as Gaussian distributions. The 
+
+selection retrieval stage uses KL divergence g(·) to compare current statistics against all elements in the shared buffer K (M is the current set of indices). For the best match within threshold τ , stored parameters ( WQ, WK , WV ) are retrieved for adaptation at time-step 
+
+t. If not, the buffer expansion stage involves adding current statistics and parameters in K. Redundant elements are merged to maintain a memory budget η. Continual adaptation proceeds with current parameters, i.e., from time-step t − 1.
+
+ing and fusion, with unrestricted continual parameter up-dates. In 4.1, we observed robust cross-domain generaliza-tion of the adapted attention fusion layer, outperforming the source model. To leverage this transferability during contin-ual parameter updates, we propose utilizing a shared buffer that can save parameter snapshots, i.e., WQ, WK , WV , to enable selective retrieval during audio-visual CTTA. At t = 0, i.e., before adaptation begins with source model parameters θS , the buffer K = ϕ. At t = 1 when the first set of inputs arrive ( x1), we follow READ and only online adapt WQ, WK , WV where the loss function is described in 4.4 and θS → θ1. For t > 1 and to enable selective retrieval of these parameters that can be plugged back and adapted, we characterize each xt by its underlying distribution. To note, the true distribution p(xt, y t) is unavailable. Our selec-tion criterion, instead, depends on the statistics (mean and covariance) of the raw data xt to capture modality-specific information via Gaussian distributions, owing to their sim-plicity and compactness. We assume a diagonal covariance structure for independence, i.e, Σ = diag (σ21 , · · · , σ 2 
+
+> r
+
+). Let the visual frames be xtv ∈ RB×H×W ×C , where H, W, C, de-note the height, width, and channel dimension, respectively. The corresponding spectrograms are xta ∈ RB×T ×F , where 
+
+T and F denote the time and frequency axes, respectively. For the visual modality, we compute the channel-wise mean and covariance as, 
+
+μtv = 1
+
+BHW 
+
+> B
+
+X
+
+> b=1
+> H
+
+X
+
+> h=1
+> W
+
+X
+
+> w=1
+
+xtv (b, h, w ), (1) 
+
+Σtv = 1
+
+BHW 
+
+> B
+
+X
+
+> b=1
+> H
+
+X
+
+> h=1
+> W
+
+X
+
+> w=1
+
+ xtv (b, h, w ) − μtv
+
+2 (2) Similarly, for the audio modality, we compute the mean and variance along the time axis T to capture the frequency information of the spectrogram. That is, 
+
+μta = 1
+
+BT 
+
+> B
+
+X
+
+> b=1
+> T
+
+X
+
+> e=1
+
+xta(b, e ), (3) 
+
+Σta = 1
+
+BT 
+
+> B
+
+X
+
+> b=1
+> T
+
+X
+
+> e=1
+
+ xta(b, e ) − μta
+
+2 (4) Clearly, μtv , Σtv ∈ RC and μta, Σta ∈ RF . At t = 1, the buffer K is first initialized with an element consisting of {μ1 
+
+> v
+
+, Σ1 
+
+> v
+
+, μ 2
+
+> a
+
+, Σ2
+
+> a
+
+, W1
+
+> Q
+
+, W1 
+
+> K
+
+, W1 
+
+> V
+
+}, where W1
+
+> Q
+
+, W1 
+
+> K
+
+, W1
+
+> V
+
+refer to the parameters after adaptation. We assume that, throughout, the buffer takes the form K ={d1, bθ1}, {d2, bθ2}, {d3, bθ3}, . . . . An element in index n
+
+is K[n] = {dn, bθn} where dn = (μnv , Σnv , μ na , Σna ) and bθn =
+
+(WnQ, WnK , WnV ).5AV-CTTA 
+
+For t > 1 with multimodal inputs xta and xtv and correspond-ing input-statistics (μtv , Σtv , μ ta, Σta), we perform a selective retrieval to identify the most compatible parameter state within the buffer. Our goal is to select the buffer element that is closest to the current input-statistics, retrieve its cor-responding parameter state, and plug it back into the model for further adaptation. This way, as illustrated by Figure 3, we can possibly exploit transferability at any time-step when inputs arrive continually. This directly operationalizes the strong intra-category and cross-category generalizations, as observed earlier. For this, we model two modality-specific Gaussian distributions as P tv = N (μtv , Σtv ) and P ta =
+
+N (μta, Σta). We define a distance metric gu(t, n )u∈{ a,v }
+
+(say, KL divergence), which is the distance between modal-ity u’s distribution at time-step t and a stored buffer ele-ment n (modeled as a corresponding distribution). Ideally, 
+
+gu(t, n ) = DKL (N (μtu, Σtu) ∥ N (μnu , Σnu )) or DuKL as a short-hand. This degenerates to a closed-form solution (see Appendix A.1). Now, we sum the modality-specific dis-tances g∗(t, n ) = ga(t, n ) + gv (t, n ) to best capture the complete audio-visual input distance at time-step t. In the case of a unimodal corruption setting, let’s say with visual-only corruptions, ga(t, n ) might be negligible and gv (t, n )
+
+drives the retrieval. In a bimodal corruption setting, however, 
+
+gv (t, n ) and ga(t, n ) both contribute. Now, from here, two cases arise. For a threshold τ ,
+
+g∗(t, n ) < τ or g∗(t, n ) ≥ τ . g∗(t, n ) < τ indicates that the nth element is distributionally closer to xta and xtv , i.e, in the raw input space. As seen earlier in Figure 3, for exam-ple, attention fusion parameters adapted to Gaussian Noise 
+
+transferred to Shot Noise and Impulse Noise with improved performances over the source model. Hence, at any t, we are interested in finding the best or matched buffer element that is the closest to xta and xtv . To select, we solve the following optimization problem, 
+
+n∗ = argmin 
+
+> n∈M
+
+[g∗(t, n ) < τ ] (5) where M is the current set of indices in K. The selected buffer element is K[n∗]. Based on this, we retrieve the cor-responding parameters (Wn∗ 
+
+> Q
+
+, Wn∗ 
+
+> K
+
+, Wn∗ 
+
+> V
+
+). These selected parameters represent the configuration of the attention fu-sion layer projection matrices that most closely align with the current inputs xt. We plug these specific parameters into fj , indicating that the model had already seen a statis-tically similar audio-visual shift. In this way, from the raw input-space with domain shift, we exploit the intra-category and cross-category transferability. Following losses as pro-posed by READ (see 4.4), we adapt the parameters once, i.e., θt−1 → θt where θt refers to (Wn∗ 
+
+> Q
+
+, Wn∗ 
+
+> K
+
+, Wn∗ 
+
+> V
+
+) in joint-encoder fj .In addition to this, we perform a moment-preserving ex-ponential moving average (EMA) update of the retrieved input-statistics (μn∗ 
+
+> v
+
+, Σn∗ 
+
+> v
+
+, μ n∗ 
+
+> a
+
+, Σn∗ 
+
+> a
+
+) and parameter state 
+
+(Wn∗ 
+
+> Q
+
+, Wn∗ 
+
+> K
+
+, Wn∗ 
+
+> V
+
+). This ensures a smooth transition and encourages transferability, i.e, intra-task and cross-task. Let 
+
+β (usually 0.99) be the EMA smoothing factor. For brevity, we denote O ∈ { Q, K, V }. Each parameter in the selected element of K is then updated as, 
+
+W′n∗ 
+
+> O
+
+← βWn∗ 
+
+> O
+
++ (1 − β)WtO (6) An EMA update of the input-statistics is done as follows, 
+
+μ′n∗ 
+
+> u
+
+← βμ n∗ 
+
+> u
+
++ (1 − β)μtu (7) 
+
+Σ′n∗ 
+
+> u
+
+← β
+
+h
+
+Σn∗ 
+
+> u
+
++ ( μn∗ 
+
+> u
+
+− μ′n∗ 
+
+> u
+
+)2i
+
++ (1 − β)
+
+h
+
+Σtu + ( μtu − μ′n∗ 
+
+> u
+
+)2i
+
+(8) where μ′n∗ 
+
+> u
+
+and Σ′n∗ 
+
+> u
+
+denote updated modality-specific mean and diagonal covariance, and u ∈ { a, v }. Overall, the different components of the selected element are updated to 
+
+K[n∗] ← { μ′n∗ 
+
+> v
+
+, Σ′n∗ 
+
+> v
+
+, μ ′n∗ 
+
+> a
+
+, Σ′n∗ 
+
+> a
+
+, W′n∗ 
+
+> Q
+
+, W′n∗ 
+
+> K
+
+, W′n∗ 
+
+> V
+
+} via Eqns. (6), (7), and (8). 
+
+4.3 Buffer expansion 
+
+In our method, an element is added to K only when 
+
+g∗(t, n ) ≥ τ , ∀n ∈ M . This means that all the current elements in K are distributionally distinct from xta and xtv .Since no parameters were retrieved, we optimize the cur-rent model parameters as-is, following 4.4. Once a gra-dient step is taken, we add a new element to K as K ∪ {μtv , Σtv , μ ta, Σta, WtQ, WtK , WtV }. This new element will serve as an anchor for future occurrences. A possibility in such a scenario is the unconstrained growth of the buffer, a key consideration in memory-constrained continual learning (Smith et al., 2021). To address this, we explore a variant of element merging , i.e, for a fixed buffer budget/size η, we perform a pairwise comparison (when |K| ≥ η) to find out the two nearest elements based on their statistics and merge them. That is, for indices n1 and n2, we solve, 
+
+(n1, n 2) = argmin 
+
+> i,j ∈M ,i ̸=j
+
+g∗(i, j ) (9) Once the most similar pair (n1, n 2) is identified, we merge them to maintain the fixed budget η. As an approximation, we average the corresponding elements in K[n1] and K[n2]
+
+and add the element back in K. Now, |K| = η − 1. We show an ablation in 5.2 and explore another strategy in Appendix C.3. 
+
+4.4 Losses 
+
+At every time-step t, we optimize following the loss func-tions proposed in READ (Yang et al., 2024). For a notational purpose, let σ denote the softmax operation. Let the pre-diction confidence of the ith input be pmax = max( σ(li)) ,6AV-CTTA 
+
+where li refers to the logits from the classifier. For a batch of B inputs, the confidence-based loss function Lconf is, 
+
+Lconf = Ei∼B [−pi,max log( pi,max )] (10) In addition, a negative entropy loss (Li et al., 2024) as below is also used, 
+
+Lne =
+
+AX
+
+a=1 
+
+σ(ka)log( σ(ka)) (11) where, ka = PBi=1 σ(li). A refers to the specific class. The complete loss function is, L = Lconf + Lne , where only 
+
+WQ, WK , WV of the the joint-encoder fj are continually 
+
+adapted. 
+
+5 Experiments 
+
+Settings. We evaluate in two main corruption settings -unimodal and bimodal. Corruptions are applied to either one modality or both, respectively. Here, tasks arrive se-quentially (see Section 3), and parameter updates happen continually without any reset. Each corruption spans the entire test set and defines a task. 
+
+Datasets. We evaluate on the test sets of Kinetics50 (Car-reira & Zisserman, 2017) and VGGSound (Chen et al., 2020), following READ (Yang et al., 2024). For unimodal corruptions, we use Kinetics50-C and VGGSound-C, which include 15 visual (Hendrycks & Dietterich, 2019) and 6 audio corruptions at severity level 5. For bimodal corrup-tions, we adopt 15 corruptions from AVRobustBench (Ma-harana et al., 2025a), applied to both modalities, resulting in Kinetics50-2C and VGGSound-2C. Kinetics50 is visually dominant , while VGGSound is audio dominant , meaning task-relevant cues primarily reside in the visual and audio modalities, respectively. More details are provided in Ap-pendix B.1. 
+
+Baselines. We compare our proposed AV-CTTA to pop-ular TTA baselines (extensible to continual) like TENT (Wang et al., 2020), EATA (Niu et al., 2022), and SAR (Niu et al., 2023). The prior audio-visual baselines include READ (Yang et al., 2024), SuMi (Guo & Jin, 2025), PTA (Wang et al., 2025), and BriMPR* (Li & Feng, 2025). As discussed in Section 2, we eliminate access to the source data in BriMPR to make it more deployment-friendly in a real-world setting. 
+
+Implementation Details. Following previous works, we use CAV-MAE (Gong et al., 2022c) as the source model, trained on Kinetics50 or VGGSound. We use a batch size of 32 across all experiments (see Appendix 5.2 for an ablation). We optimize with Adam using a learning rate of 1 × 10 −4.For unimodal corruptions, we set τ to 0.005 and 0.01 for bimodal corruptions. For all the baselines, we adopt their SOURCE EATA TENT SAR READ SuMi PTA BriMPR* Ours       
+
+> Mean Accuracy
+> gaussian → impulse → shot → speckle → compression → snow → frost → spatter → wind → rain →
+> underwater → concert → smoke → crowd → interference
+> Mean accuracy (%) on Kinetics50-2C.
+> 48.20 48.13
+> 3.85
+> 46.92 48.81 42.01 45.16 47.58 50.29
+
+(a) Kinetics50-2C SOURCE EATA TENT SAR READ SuMi PTA BriMPR* Ours     
+
+> Mean Accuracy
+> gaussian → impulse → shot → speckle → compression → snow → frost → spatter → wind → rain →
+> underwater → concert → smoke → crowd → interference
+> Mean accuracy (%) on VGGSound-2C.
+> 37.23 36.57
+> 0.54
+> 30.69 29.74
+> 37.24 35.84
+> 24.91
+> 43.51
+
+(b) VGGSound-2C 
+
+Figure 5. AV-CTTA achieves SOTA results on Kinetics50-2C 
+
+(left) and VGGSound-2C (right). We report mean accuracy (%) at a severity level of 5 in the continual setting. Here, buffer size 
+
+η = ∞.
+
+recommended hyperparameters. We expand on the details in Appendix B.3, B.4. All experiments are conducted on an NVIDIA RTX A5000 GPU. 
+
+5.1 Main Results Results on the unimodal corruption setting. In Tables 1 and 2, we present results for unimodal video and audio corruptions, respectively. Under visual corruptions in Ta-ble 1, particularly on Kinetics50-C, where task information is heavily degraded, TENT exhibits severe overfitting, as entropy minimization updates all LayerNorm (Ba et al., 2016) affine parameters across attention blocks in all en-coders. This update is independent of any modality interac-tion or cross-modal fusion. In contrast, EATA and SAR also update norm parameters but maintain performance due to their respective loss functions, achieving accuracy compa-rable to the source model. In READ, continual updates to WQ, WV , WV lead to an eventual decline, as contin-ual adaptation amplifies modality imbalance (Maharana et al., 2025a) and error accumulation, ultimately biasing the attention mechanism. Without access to source data, the randomly initialized visual prompts in BriMPR* strug-gle to maintain semantic alignment and fail to effectively adapt to the target domains. At a small budget η = 50 ,
+
+AV-CTTA achieves a relative improvement of 2.7% over the next best method, SuMi, on average. On a larger test set like VGGSound-C with audio corruptions, we have similar ob-servations and AV-CTTA obtains a relative improvement of 4.95% over PTA. On VGGSound-C with visual corruptions and Kinetics50-C with audio corruptions, i.e., where task-dominant information is clean, AV-CTTA achieves compa-rable to better mean accuracies even for η = ∞. We show more results with varying η in 5.2 (ablation), Tables 4, and 6. 
+
+Results on the bimodal corruption setting. In Figures 5a and 5b, we illustrate the mean results in the challenging bimodal corruptions. In this, the task-wise accuracies are in Appendix C.2. First off, TENT overfits drastically due to continual norm updates across domains. On Kinetics50-2C, the proposed AV-CTTA obtains an improvement of 1.25% over READ (next best). Interestingly, most methods fall short of a pre-trained SOURCE model under continual parameter updates with bimodal corruptions since cross-modal learning is hampered. A similar trend is observed on 7AV-CTTA 
+
+Table 1. AV-CTTA achieves SOTA results on Kinetics50-C (top) and VGGSound-C (below) with video corruptions (unimodal). We report the task-wise accuracy (%) at a severity level of 5, in the continual setting. 
+
+Method Noise Blur Weather Digital Mean 
+
+Gaussian Shot Impulse Defocus Glass Motion Zoom Snow Frost Fog Brightness Contrast Elastic Transform Pixelate JPEG 
+
+> Kinetics50-C
+
+SOURCE 46.55 47.36 46.51 67.23 61.70 70.67 66.39 62.22 60.54 47.32 74.88 51.36 64.14 66.39 61.98 59.68 TENT 45.55 42.51 27.84 22.76 8.33 3.64 2.24 2.40 2.08 2.00 2.04 2.28 2.04 2.00 2.00 11.31 EATA 46.80 47.62 46.81 67.62 63.02 70.77 66.94 60.65 60.65 48.23 75.48 52.42 65.40 66.45 62.22 60.07 SAR 46.83 47.00 46.64 65.71 62.30 69.99 66.35 60.54 60.22 52.60 73.96 50.76 65.99 63.42 59.90 59.48 READ 49.96 51.80 51.56 68.07 65.63 65.38 61.50 52.20 49.48 42.19 54.93 28.93 39.82 33.17 27.32 49.46 SuMi 45.75 45.43 44.95 64.30 65.38 69.23 67.91 62.86 66.67 63.22 69.23 50.16 71.15 66.31 63.94 61.10 PTA 46.84 45.95 45.91 56.17 55.73 55.49 54.81 51.80 52.60 50.24 54.73 49.80 53.32 52.24 51.12 51.78 BriMPR* 49.12 49.48 48.64 58.25 59.82 58.57 58.53 53.69 55.49 54.33 59.13 50.32 59.98 57.77 57.61 55.38 
+
+AV-CTTA (η = 50 ) 48.88 51.00 48.72 68.23 64.78 70.99 68.47 65.02 66.35 61.58 72.52 53.81 66.79 68.19 65.99 62.75 
+
+AV-CTTA (η = 100 ) 48.52 50.52 48.08 67.95 63.86 71.59 67.75 65.14 67.19 62.14 72.80 54.17 66.43 67.59 65.18 62.59 
+
+AV-CTTA (η = ∞) 48.52 50.24 48.32 67.91 63.18 71.60 68.03 64.86 67.15 62.10 72.80 53.57 65.43 67.87 64.02 62.37 
+
+> VGGSound-C
+
+SOURCE 52.78 52.69 52.73 57.19 57.21 58.52 57.61 56.25 56.58 55.31 58.95 53.66 56.95 55.81 56.89 55.94 TENT 52.58 51.82 51.20 53.85 53.90 54.49 54.39 51.80 52.39 52.59 52.14 51.08 52.49 51.70 51.87 52.55 EATA 52.79 52.81 52.46 56.60 55.90 57.43 56.16 54.36 54.54 53.35 57.06 51.94 54.56 53.23 54.51 54.51 SAR 52.92 52.86 52.92 57.03 56.66 58.65 57.61 55.95 56.74 56.22 58.25 54.21 57.13 55.42 56.46 55.94 READ 52.43 52.65 52.44 55.85 55.22 56.07 55.69 54.51 54.96 54.69 55.38 54.34 54.79 54.65 54.65 54.55 SuMi 53.14 53.42 53.43 57.01 56.69 57.67 56.91 55.60 56.22 51.73 56.91 53.67 56.37 55.16 55.25 55.28 PTA 51.06 49.86 49.46 52.88 52.12 52.31 51.94 50.96 51.21 51.17 51.92 50.46 51.59 51.03 51.05 51.27 BriMPR* 43.24 39.11 38.86 39.99 41.22 39.41 37.97 33.12 30.76 31.47 30.71 26.08 31.95 34.30 36.15 35.62 
+
+AV-CTTA (η = 300 ) 52.87 52.87 52.86 57.16 56.97 58.65 58.02 56.66 57.13 56.67 58.18 54.66 57.42 56.22 56.71 56.20 
+
+AV-CTTA (η = 400 ) 52.86 52.83 52.91 57.30 57.25 58.66 57.95 56.50 56.76 56.47 57.89 54.80 57.40 55.82 56.54 56.13 
+
+AV-CTTA (η = ∞) 52.87 52.83 52.91 57.42 57.29 58.68 57.77 56.38 56.80 55.50 59.13 53.88 57.07 55.96 57.01 56.10 
+
+Table 2. AV-CTTA achieves SOTA results on Kinetics50-C (top) 
+
+and VGGSound-C (below) with audio corruptions (unimodal). We report the task-wise accuracy (%) at a severity level of 5, in the 
+
+continual setting.                                                                                                                                                                                 
+
+> Method Noise Weather Mean
+> Gaussian Traffic Crowd Rain Thunder Wind
+> Kinetics50-C  SOURCE 73.48 65.30 67.59 70.11 67.67 70.11 69.04 TENT 73.84 68.55 70.51 69.59 73.12 70.15 70.96 EATA 73.56 65.30 67.71 70.11 68.07 70.15 69.15 SAR 73.36 65.95 68.11 69.71 69.15 69.71 69.33 READ 74.28 69.63 70.63 70.35 71.76 69.39 71.01 SuMi 73.76 68.19 70.59 69.27 73.24 69.43 70.75 PTA 72.68 69.03 69.79 68.83 71.79 69.75 70.31 BriMPR* 72.84 67.67 67.43 65.95 69.07 63.70 67.78
+> AV-CTTA (η= 50 )73.72 68.35 70.27 70.11 72.88 69.91 70.87
+> AV-CTTA (η= 100 )73.72 68.47 69.79 70.27 72.56 70.39 70.87
+> AV-CTTA (η=∞)74.15 68.90 70.30 70.62 72.06 70.57 71.10
+> VGGSound-C  SOURCE 37.36 21.12 16.80 21.64 27.29 25.54 24.96 TENT 6.20 0.46 0.29 0.28 0.28 0.28 1.30 EATA 37.51 21.64 17.58 22.82 27.98 25.34 25.48 SAR 36.53 8.01 4.12 4.49 13.43 3.34 11.65 READ 28.01 15.10 17.35 13.69 20.24 14.37 18.13 SuMi 37.66 19.28 14.79 20.73 28.82 28.05 24.89 PTA 36.30 28.79 28.42 25.35 30.60 26.09 29.26 BriMPR* 23.12 14.95 15.15 13.85 20.08 15.24 17.07
+> AV-CTTA (η= 300 )39.52 28.43 24.36 29.81 33.58 20.85 29.42
+> AV-CTTA (η= 400 )39.52 28.43 24.32 29.37 35.65 26.38 30.61
+> AV-CTTA (η=∞)39.52 28.43 24.31 29.44 35.52 27.05 30.71
+
+the more challenging VGGSound-2C benchmark with 309 classes and 14,046 samples in each task, where AV-CTTA 
+
+achieves a substantial 6.28% improvement over SOURCE. In contrast, most methods progressively overfit and perform worse than SOURCE. The ablation results on buffer budget 
+
+η are in Table 5 of the Appendix. 
+
+5.2 Ablation Studies Effect of threshold τ . In Figure 6, we ablate the distance threshold τ and report results on both datasets. We sweep 
+
+τ ∈ { 0.001 , 0.005 , 0.01 , 0.05 , 0.1, 0.5, 1, 1.5, 2}. Perfor-mance gradually degrades as τ increases, with a more pro-nounced drop under bimodal corruptions. Larger τ leads to larger buffers that allow minor distributional fluctuations to be added, as elements that reduce cross-domain trans-ferability. In contrast, a smaller τ value strikes a favorable balance. 0.001 
+
+> 0.005
+> 0.01
+> 0.05
+> 0.1
+> 0.5  1
+> 1.5 2
+
+50 
+
+60 
+
+70 
+
+> Accuracy
+> 0.001
+> 0.005
+> 0.01
+> 0.05
+> 0.1
+> 0.5  1
+> 1.5 2
+
+25 
+
+50 
+
+## Ablation on 
+
+<-------------------- ---------------------> 
+
+Figure 6. Ablation on τ . Results on Kinetics50 (left) under audio ,
+
+visual , and bimodal corruptions, and on VGGSound (right) under 
+
+visual , audio , and bimodal corruptions. 
+
+Catastrophic forgetting. We evaluate the final adapted parameters back on the source test set. We continually adapt on Kinetics50-2C and VGGSound-2C, and illustrate the results in Figure 7. For Kinetics50-2C, this corresponds to 
+
+15 × 2466 updates and 15 × 14046 updates for VGGSound-2C. As seen, in the presence of challenging bimodal cor-ruptions, selective parameter retrieval, as done in our work, significantly preserves the source knowledge. In prior works, long-term continual parameter adaptation can lead to major source knowledge forgetting, as in Figure 7. 
+
+Buffer budget η. In Figure 8, we study the scalability of AV-CTTA with a fixed buffer size η on VGGSound-C (w/ audio corruptions) and VGGSound-2C. Each task com-prises approximately 439 batches ( 14 ,046 32 ) across 6/15 tasks 8AV-CTTA READ PTA BriMPR* Ours 
+
+-30 
+
+-20 
+
+-10 
+
+0  
+
+> Accuracy Drop
+> -12.8 -13.0
+> -19.1
+> -1.8
+> -27.9
+> -19.9 -22.0
+> -2.9
+> Minimal
+> Forgetting
+
+Catastrophic Forgetting 
+
+Kinetics50 
+
+VGGSound 
+
+Figure 7. AV-CTTA minimizes catastrophic forgetting to a large extent. We indicate the accuracy drop after continual adaptation to Kinetics50-2C and VGGSound-2C compared to the respective source performance of CAV-MAE. Gaussian Noise  
+
+> Traffic
+> Crowd
+> Rain
+> Thunder
+> Wind
+> 250
+> 500
+> 750
+> 1000
+> Buffer Size  = 100 w/ acc. 25.61%
+> = 200 w/ acc. 28.54%
+> = 300 w/ acc. 29.42%
+> = 400 w/ acc. 30.61%
+> =w/ acc. 30.71%
+
+(a) VGGSound-C w/ audio cor-ruptions. Gaussian  
+
+> Impulse
+> Shot
+> Speckle
+> Compression
+> Snow
+> Frost
+> Spatter
+> Wind
+> Rain
+> Underwater
+> Concert
+> Smoke
+> Crowd
+> Interference
+> 0
+> 1000
+> 2000
+> Buffer Size  = 100 w/ acc. 39.15%
+> = 200 w/ acc. 43.90%
+> = 300 w/ acc. 43.81%
+> = 400 w/ acc. 43.75%
+> =w/ acc. 43.51%
+
+(b) VGGSound-2C w/ bimodal corruptions. 
+
+Figure 8. Effect of buffer size η. Mean accuracy (%) on VGGSound-C (left) and VGGSound-2C (right). 
+
+Table 3. Alternative distance metric gu(t, n ). Results are re-ported on Kinetics50-C (w/ visual corruptions) and Kinetics50-2C. 
+
+Metric gu(t, n ) Kinetics50-C Kinetics50-2C 
+
+∥μtu − μnu ∥2 + ∥σtu − σnu ∥2 49.47 48.79 
+
+DvKL 61.53 49.28 
+
+DaKL 60.52 49.70 
+
+Da+vKL (Ours) 62.37 50.29 
+
+respectively. For VGGSound-C, we notice that at a fixed budget η ≥ 300 throughout, AV-CTTA still achieves bet-ter or competitive accuracies compared to baselines. On VGGSound-2C, with a tighter budget of η = 200 , we notice improved performances. Element merging indeed consol-idates task-specific knowledge and remains stable in long-term continual adaptation. 
+
+Distance metric gu(t, n ). In Table 3, we experiment with a norm-based distance as gu(t, n ) = ∥μtu − μnu ∥2
+
++ ∥σtu − σnu ∥2, where u ∈ {a, v }. Then, g∗(t, n ) =
+
+ga(t, n ) + gv (t, n ). As expected, with only DaKL and visual corruptions in Kinetics50-C, we see a drop in performance since retrieval is independent of the corrupted video modal-ity. In general, there is a need to capture both audio and visual distances via Da+vKL .
+
+Effect of batch size. Here, we investigate the sensitivity of AV-CTTA to the choice of batch size B. We evaluate a range of values B ∈ { 8, 16 , 32 , 64 } to assess the frame-work’s robustness across varying computational constraints. 8 16 32 64 
+
+Batch size 
+
+> 40
+> 50
+> 60
+> Accuracy
+
+Kinetics50-C 
+
+> Ours
+> READ
+> PTA
+> SOURCE
+
+(a) Kinetics50-C (video corrup-tions) 8 16 32 64 
+
+Batch size 
+
+> 30
+> 40
+> 50
+> Accuracy
+
+Kinetics50-2C 
+
+> Ours
+> READ
+> PTA
+> SOURCE
+
+(b) Kinetics50-2C (bimodal cor-ruptions) 
+
+Figure 9. AV-CTTA maintains stable performance under small batch sizes. The x-axis shows batch size, and the y-axis reports mean accuracy for AV-CTTA and baselines. 
+
+The effect of batch size can be critical in our setting. In Eqns. (1) , (2) , (3) , and (4) , the mean and covariance are computed along the batch axis, where a smaller batch size can po-tentially introduce noise into these statistics. We demon-strate results on Kinetics50-C (w/ video corruptions) and Kinetics50-2C. Our results in Figures 9a and 9b demonstrate that AV-CTTA maintains competitive performance even at 
+
+B = 8 . This highlights the suitability of our proposed method under memory limitations, especially on small data streams. 
+
+Additional ablation studies. In the Appendix, we present additional experimental results and analyses. 
+
+6 Conclusion 
+
+In this paper, we comprehensively study audio-visual contin-ual test-time adaptation, taking a major step forward in the real-time deployment of audio-visual models in continually changing target environments. We propose AV-CTTA , a novel method to address the same. Our motivation stems from the fact that the attention fusion layer exhibits intra-and cross-task transferability, suggesting that attention pa-rameters from previous domains can be retrieved, plugged, and reused for continual adaptation. Inspired by the replay-based continual learning literature (Rebuffi et al., 2017), we introduce a shared buffer across tasks to store and selectively retrieve these generalizable attention parameters based on low-level input statistics. This effectively mitigates catas-trophic forgetting and offers a scalable, memory-efficient framework. Through extensive evaluations on benchmark datasets involving unimodal and bimodal audio-visual cor-ruptions, we establish SOTA baselines for robust audio-visual continual adaptation. 
+
+References 
+
+Akbari, H., Yuan, L., Qian, R., Chuang, W.-H., Chang, S.-F., Cui, Y., and Gong, B. Vatt: Transformers for multimodal self-supervised learning from raw video, audio and text. 
+
+Advances in neural information processing systems , 34: 24206–24221, 2021. 9AV-CTTA 
+
+Araujo, E., Rouditchenko, A., Gong, Y., Bhati, S., Thomas, S., Kingsbury, B., Karlinsky, L., Feris, R., Glass, J. R., and Kuehne, H. Cav-mae sync: Improving contrastive audio-visual mask autoencoders via fine-grained align-ment. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 18794–18803, 2025. Ba, J. L., Kiros, J. R., and Hinton, G. E. Layer normalization. 
+
+arXiv preprint arXiv:1607.06450 , 2016. Carlucci, F. M., D’Innocente, A., Bucci, S., Caputo, B., and Tommasi, T. Domain generalization by solving jigsaw puzzles. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 2229–2238, 2019. Carreira, J. and Zisserman, A. Quo vadis, action recogni-tion? a new model and the kinetics dataset. In proceed-ings of the IEEE Conference on Computer Vision and Pattern Recognition , pp. 6299–6308, 2017. Chaudhry, A., Ranzato, M., Rohrbach, M., and Elhoseiny, M. Efficient lifelong learning with a-gem. arXiv preprint arXiv:1812.00420 , 2018. Chaudhry, A., Rohrbach, M., Elhoseiny, M., Ajanthan, T., Dokania, P. K., Torr, P. H., and Ranzato, M. On tiny episodic memories in continual learning. arXiv preprint arXiv:1902.10486 , 2019. Chen, D., Wang, D., Darrell, T., and Ebrahimi, S. Con-trastive test-time adaptation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 295–305, 2022. Chen, H., Xie, W., Vedaldi, A., and Zisserman, A. Vg-gsound: A large-scale audio-visual dataset. In ICASSP 2020-2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pp. 721–725. IEEE, 2020. Choi, S., Yang, S., Choi, S., and Yun, S. Improving test-time adaptation via shift-agnostic weight regularization and nearest source prototypes. In European Conference on Computer Vision , pp. 440–458. Springer, 2022. Danilowski, M., Chatterjee, S., and Ghosh, A. Botta: Bench-marking on-device test time adaptation. arXiv preprint arXiv:2504.10149 , 2025. Dong, H., Nejjar, I., Sun, H., Chatzi, E., and Fink, O. Simm-mdg: A simple and effective framework for multi-modal domain generalization. Advances in Neural Information Processing Systems , 36:78674–78695, 2023. Gan, Y., Bai, Y., Lou, Y., Ma, X., Zhang, R., Shi, N., and Luo, L. Decorate the newcomers: Visual domain prompt for continual test time adaptation. In Proceedings of the AAAI conference on artificial intelligence , volume 37, pp. 7595–7603, 2023. Georgescu, M.-I., Fonseca, E., Ionescu, R. T., Lucic, M., Schmid, C., and Arnab, A. Audiovisual masked autoen-coders. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 16144–16154, 2023. Gong, T., Jeong, J., Kim, T., Kim, Y., Shin, J., and Lee, S.-J. Note: Robust continual test-time adaptation against temporal correlation. Advances in Neural Information Processing Systems , 35:27253–27266, 2022a. Gong, Y., Liu, A. H., Rouditchenko, A., and Glass, J. Uavm: Towards unifying audio and visual models. IEEE Signal Processing Letters , 29:2437–2441, 2022b. Gong, Y., Rouditchenko, A., Liu, A. H., Harwath, D., Karlinsky, L., Kuehne, H., and Glass, J. Con-trastive audio-visual masked autoencoder. arXiv preprint arXiv:2210.07839 , 2022c. Goodfellow, I. J., Mirza, M., Xiao, D., Courville, A., and Bengio, Y. An empirical investigation of catastrophic for-getting in gradient-based neural networks. arXiv preprint arXiv:1312.6211 , 2013. Guo, C., Pleiss, G., Sun, Y., and Weinberger, K. Q. On calibration of modern neural networks. In International conference on machine learning , pp. 1321–1330. PMLR, 2017. Guo, Z. and Jin, T. Smoothing the shift: Towards stable test-time adaptation under complex multimodal noises. 
+
+arXiv preprint arXiv:2503.02616 , 2025. Hendrycks, D. and Dietterich, T. Benchmarking neural network robustness to common corruptions and perturba-tions. arXiv preprint arXiv:1903.12261 , 2019. Huang, P.-Y., Sharma, V., Xu, H., Ryali, C., Li, Y., Li, S.-W., Ghosh, G., Malik, J., Feichtenhofer, C., et al. Mavil: Masked audio-video learners. Advances in neural infor-mation processing systems , 36:20371–20393, 2023. Huang, Z., Wang, H., Xing, E. P., and Huang, D. Self-challenging improves cross-domain generalization. In 
+
+European conference on computer vision , pp. 124–140. Springer, 2020. Jia, M., Tang, L., Chen, B.-C., Cardie, C., Belongie, S., Hariharan, B., and Lim, S.-N. Visual prompt tuning. In 
+
+European conference on computer vision , pp. 709–727. Springer, 2022. Kim, J., Lee, H., Rho, K., Kim, J., and Chung, J. S. Equiav: Leveraging equivariance for audio-visual con-trastive learning. arXiv preprint arXiv:2403.09502 , 2024. 10 AV-CTTA 
+
+Li, D., Yang, Y., Song, Y.-Z., and Hospedales, T. M. Deeper, broader and artier domain generalization. In Proceedings of the IEEE international conference on computer vision ,pp. 5542–5550, 2017. Li, J. and Feng, S. Bridging modalities via progressive re-alignment for multimodal test-time adaptation. arXiv preprint arXiv:2511.22862 , 2025. Li, J., Yu, Z., Du, Z., Zhu, L., and Shen, H. T. A compre-hensive survey on source-free domain adaptation. IEEE Transactions on Pattern Analysis and Machine Intelli-gence , 46(8):5743–5762, 2024. Liang, J., He, R., and Tan, T. A comprehensive survey on test-time adaptation under distribution shifts. Interna-tional Journal of Computer Vision , 133(1):31–64, 2025. Likhosherstov, V., Arnab, A., Choromanski, K., Lucic, M., Tay, Y., Weller, A., and Dehghani, M. Polyvit: Co-training vision transformers on images, videos and audio. 
+
+arXiv preprint arXiv:2111.12993 , 2021. Liu, J., Yang, S., Jia, P., Zhang, R., Lu, M., Guo, Y., Xue, W., and Zhang, S. Vida: Homeostatic visual domain adapter for continual test time adaptation. arXiv preprint arXiv:2306.04344 , 2023. Liu, Z., Xu, Y., Xu, Y., Qian, Q., Li, H., Jin, R., Ji, X., and Chan, A. B. An empirical study on distribution shift robustness from the perspective of pre-training and data augmentation. arXiv preprint arXiv:2205.12753 , 2022. Maharana, S. K., Kushwaha, S. S., Zhang, B., Rodriguez, A., Wei, S., Tian, Y., and Guo, Y. Avrobustbench: Bench-marking the robustness of audio-visual recognition mod-els at test-time. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025a. Maharana, S. K., Zhang, B., and Guo, Y. Palm: Pushing adaptive learning rate mechanisms for continual test-time adaptation. In Proceedings of the AAAI Conference on Ar-tificial Intelligence , volume 39, pp. 19378–19386, 2025b. Maharana, S. K., Zhang, B., Karlinsky, L., Feris, R., and Guo, Y. Batclip: Bimodal online test-time adaptation for clip. In Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025c. Mai, Z., Li, R., Jeong, J., Quispe, D., Kim, H., and Sanner, S. Online continual learning in image classification: An empirical survey. Neurocomputing , 469:28–51, 2022. Niu, S., Wu, J., Zhang, Y., Chen, Y., Zheng, S., Zhao, P., and Tan, M. Efficient test-time model adaptation with-out forgetting. In International conference on machine learning , pp. 16888–16905. PMLR, 2022. Niu, S., Wu, J., Zhang, Y., Wen, Z., Chen, Y., Zhao, P., and Tan, M. Towards stable test-time adaptation in dynamic wild world. In Internetional Conference on Learning Representations , 2023. Niu, S., Miao, C., Chen, G., Wu, P., and Zhao, P. Test-time model adaptation with only forward passes. arXiv preprint arXiv:2404.01650 , 2024. Rebuffi, S.-A., Kolesnikov, A., Sperl, G., and Lampert, C. H. icarl: Incremental classifier and representation learning. In Proceedings of the IEEE conference on Computer Vision and Pattern Recognition , pp. 2001–2010, 2017. Shokri, R. and Shmatikov, V. Privacy-preserving deep learn-ing. In Proceedings of the 22nd ACM SIGSAC conference on computer and communications security , pp. 1310– 1321, 2015. Smith, J., Balloch, J., Hsu, Y.-C., and Kira, Z. Memory-efficient semi-supervised continual learning: The world is its own replay buffer. In 2021 International Joint Conference on Neural Networks (IJCNN) , pp. 1–8. IEEE, 2021. Song, J., Lee, J., Kweon, I. S., and Choi, S. Ecotta: Memory-efficient continual test-time adaptation via self-distilled regularization. In Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition , pp. 11920–11929, 2023. Taori, R., Dave, A., Shankar, V., Carlini, N., Recht, B., and Schmidt, L. Measuring robustness to natural distribu-tion shifts in image classification. Advances in Neural Information Processing Systems , 33:18583–18599, 2020. Wang, D., Shelhamer, E., Liu, S., Olshausen, B., and Darrell, T. Tent: Fully test-time adaptation by entropy minimiza-tion. arXiv preprint arXiv:2006.10726 , 2020. Wang, G., Lyu, F., and Ding, C. Partition-then-adapt: Com-bating prediction bias for reliable multi-modal test-time adaptation. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. Wang, H., He, Z., Lipton, Z. C., and Xing, E. P. Learning robust representations by projecting superficial statistics out. arXiv preprint arXiv:1903.06256 , 2019. Wang, Q., Fink, O., Van Gool, L., and Dai, D. Continual test-time domain adaptation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pp. 7201–7211, 2022. Wang, Y., Hong, J., Cheraghian, A., Rahman, S., Ahmedt-Aristizabal, D., Petersson, L., and Harandi, M. Continual 11 AV-CTTA 
+
+test-time domain adaptation via dynamic sample selec-tion. In Proceedings of the IEEE/CVF Winter Confer-ence on Applications of Computer Vision , pp. 1701–1710, 2024. Yang, M., Li, Y., Zhang, C., Hu, P., and Peng, X. Test-time adaptation against multi-modal reliability bias. In The twelfth international conference on learning representa-tions , 2024. Zhang, M., Levine, S., and Finn, C. Memo: Test time robustness via adaptation and augmentation. Advances in neural information processing systems , 35:38629–38642, 2022a. Zhang, X., Zhou, L., Xu, R., Cui, P., Shen, Z., and Liu, H. Towards unsupervised domain generalization. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 4910–4920, 2022b. Zhang, Y., Mehra, A., Niu, S., and Hamm, J. Dpcore: Dy-namic prompt coreset for continual test-time adaptation. 
+
+arXiv preprint arXiv:2406.10737 , 2024. Zhou, K., Yang, Y., Hospedales, T., and Xiang, T. Learning to generate novel domains for domain generalization. In 
+
+European conference on computer vision , pp. 561–578. Springer, 2020. 12 AV-CTTA 
+
+# Appendix 
+
+A Additional Details of AV-CTTA 
+
+A.1 KL Divergence Between Modality-Specific Gaussian Distributions 
+
+In Section 4.2, we utilize the KL divergence as a distance metric between the current modality-specific statistics and the stored buffer elements. We define the distributions at time-step t and for the nth buffer element as P tu = N (μtu, Σtu)
+
+and P nu = N (μnu , Σnu ), respectively. For simplicity and to ensure real-time retrieval efficiency as the buffer grows, we assume a diagonal covariance structure, Σ = diag (σ21 , · · · , σ 2 
+
+> r
+
+). The PDF of a multivariate Gaussian is defined as 
+
+p(x) = (2 π)−r/ 2|Σ|−1/2 exp  − 12 (x − μ)⊤Σ−1(x − μ), where r is the feature dimension. The closed-form solution for the KL divergence is derived as follows: 
+
+gu(t, n ) = DKL (P tu ∥ P nu ) = EP tu
+
+ ln ptu(x)ln pnu (x)
+
+
+
+(12) Now, upon substituting the PDF of a multivariate Gaussian in Eqn. (12), 
+
+ln ptu(x)
+
+pnu (x) = 12 ln |Σnu ||Σtu| − 12 (x − μtu)⊤(Σ tu)−1(x − μtu) + 12 (x − μnu )⊤(Σ nu )−1(x − μnu ) (13) This simplifies to, 
+
+gu(t, n ) = 12 ln |Σnu ||Σtu| − 12 EP tu
+
+(x − μtu)⊤(Σ tu)−1(x − μtu) + 12 EP tu
+
+(x − μnu )⊤(Σ nu )−1(x − μnu ) (14) Using the identity EP [x⊤Ax ] = tr (AΣ) + μ⊤Aμ for a distribution with mean μ and covariance Σ, we evaluate the quadratic forms as, EP tu [( x − μtu)⊤(Σ tu)−1(x − μtu)] = tr ((Σ tu)−1Σtu) = tr (Ir ) = r. Similarly, EP tu [( x − μnu )⊤(Σ nu )−1(x − μnu )] = 
+
+tr ((Σ nu )−1Σtu) + ( μtu − μnu )⊤(Σ nu )−1(μtu − μnu ). Upon substituting these into Eqn. (14), we obtain 
+
+gu(t, n ) = 12
+
+tr ((Σ nu )−1Σtu)
+
+| {z }
+
+A
+
++ ( μtu − μnu )⊤(Σ nu )−1(μtu − μnu )
+
+| {z }
+
+B
+
+−r + ln |Σnu ||Σtu|
+
+| {z }
+
+C
+
+ (15) In our formulation, we assume a diagonal covariance matrix to maintain computational efficiency. Under this assumption, the individual terms simplify substantially. Term A in Eqn. (15) reduces to Pri=1 (σtu,i )2 
+
+> (σnu,i )2
+
+, i.e, a sum over diagonal entries only. Term B reduces to a weighted Euclidean distance as Pri=1 (μtu,i −μnu,i )2 
+
+> (σnu,i )2
+
+. In addition, log-det term C simplifies as the log-product of diagonal elements as ln  
+
+> Q(σnu,i )2
+> Q(σtu,i )2
+
+= Pri=1 ln (σnu,i )2 
+
+> (σtu,i )2
+
+= 2 Pri=1 ln σnu,i 
+
+> σtu,i
+
+. Putting all of them back in Eqn. (14) ,
+
+gu(t, n ) = 12
+
+> r
+
+X
+
+> i=1
+
+" (σtu,i )2
+
+(σnu,i )2 + (μtu,i − μnu,i )2
+
+(σnu,i )2 − 1 + ln σnu,i 
+
+σtu,i 
+
+#
+
+=
+
+> r
+
+X
+
+> i=1
+
+" (σtu,i )2 + ( μtu,i − μnu,i )2
+
+2( σnu,i )2 − 12 + ln σnu,i 
+
+σtu,i 
+
+# (16) For audio, r = 128 and for visual frames, r = 3. 13 AV-CTTA 
+
+A.2 AV-CTTA Algorithm 
+
+In Alg. 1, we present the full pipeline of our proposed AV-CTTA for audio-visual CTTA. 
+
+Algorithm 1 AV-CTTA : Selective Parameter Retrieval and Buffer Expansion  
+
+> 1:
+
+Inputs: Multimodal batch at time-step t, xt = {(xt,i a , x t,i v )}Bi=1 , model parameters θt−1 (where θ ∈ {W Q, WK , WV }), threshold τ , buffer size η, EMA smoothing factor β, learning rate α 
+
+> 2:
+
+Outputs: Predictions yt = {yi}Bi=1  
+
+> 3:
+
+Initialize empty buffer K ← ∅  
+
+> 4:
+
+Compute input-level statistics (μtu, Σtu) for u ∈ { a, v } # Eqns. (1), (2), (3), (4)  
+
+> 5:
+
+n∗ ← ∅, dist ← ∞  
+
+> 6:
+
+if K is empty then  
+
+> 7:
+
+K ← K ∪ { (μtu, Σtu, θ )} for u ∈ { a, v } 
+
+> 8:
+
+continue  
+
+> 9:
+
+end if  
+
+> 10:
+
+if K is not empty then  
+
+> 11:
+
+n∗, dist ← arg min n∈K (DaKL (N ta ∥ N na ) + DvKL (N tv ∥ N nv ))  
+
+> 12:
+
+end if  
+
+> 13:
+
+if dist < τ then  
+
+> 14:
+
+θ ← K [n∗].params # Selective Parameter Retrieval of WQ, WK , WV 
+
+> 15:
+
+EMA update K[n∗].params # Eqn. (6)  
+
+> 16:
+
+EMA update K[n∗].stats # Eqns. (7), (8)  
+
+> 17:
+
+else  
+
+> 18:
+
+if |K| ≥ η then  
+
+> 19:
+
+K ← MERGE CLOSEST ELEMENTS (K) 
+
+> 20:
+
+end if  
+
+> 21:
+
+K ← K ∪ { (μtu, Σtu, θ )} for u ∈ { a, v } 
+
+> 22:
+
+end if  
+
+> 23:
+
+L ← L conf (fθ (xta, x tv )) − L ne (fθ (xta, x tv ))  
+
+> 24:
+
+θt ← θt−1 − α∇θ L # Adaptation step of WQ, WK , WV 
+
+> 25:
+
+yt ← fθ (xta, x tv )
+
+B Experimental Details 
+
+B.1 Datasets 
+
+Our experiments are conducted on the test sets of popular audio-visual datasets like Kinetics50 (Carreira & Zisserman, 2017), and VGGSound (Chen et al., 2020), following READ (Yang et al., 2024) and other baselines. Specifically, we adopt Kinetics50-C and VGGSound-C from READ, which contain unimodal corruptions and include 50 and 309 classes, respectively. Kinetics50-C includes 2,466, while VGGSound-C contains 14,046 audio–visual test pairs. We apply 15 visual (Hendrycks & Dietterich, 2019) and 6 audio corruptions at a severity level of 5, following READ. For the bimodal corruption setting, we borrow the 15 corruptions from AVRobustBench (Maharana et al., 2025a), i.e., Gaussian, Impulse, Shot, Speckle . . . Interference , and apply them to the Kinetics50 and VGGSound source test sets. We name them Kinetics50-2C and VGGSound-2C, respectively, following their nomenclature. These reflect realistic , co-occurring , and correlated bimodal corruptions, giving the feel of a real-world setting. It is worth mentioning that Kinetics50 (Carreira & Zisserman, 2017) and VGGSound (Chen et al., 2020) are visual-dominant and audio-dominant, respectively. This means that task-specific information is in the visual and audio modalities, respectively. 
+
+B.2 Source Model Architecture 
+
+Following all prior AV-TTA methods, we use CAV-MAE (Gong et al., 2022c) as the default audio-visual recognition model. CAV-MAE consists of 11-layer transformer encoders for both audio and visual modalities. Each video clip is sampled at 10 frames, with one randomly selected frame used as input to the visual encoder, while the corresponding 10-second audio waveform is converted into a spectrogram and processed by the audio encoder. The joint-encoder has only 1 transformer 14 AV-CTTA 
+
+layer. Following prior work (Yang et al., 2024), spectrogram inputs are normalized using a dataset mean of −5.081 and a standard deviation of 4.4849. 
+
+B.3 Implementation of the Baselines 
+
+Here, we outline the implementation schemes of all the baselines used in our study. Throughout, we use a batch size of 32. 
+
+SOURCE 1 (Gong et al., 2022c) : We follow (Yang et al., 2024) and adopt CAV-MAE (Gong et al., 2022c) as the source model, which is used for inference. We use pre-trained weights of Kinetics50 and VGGSound, as released by (Yang et al., 2024). 
+
+TENT 2 (Wang et al., 2020) : We adapt all the affine parameters of all LayerNorms and minimize the entropy of model predictions with a learning rate of 1 × 10 −4 and an Adam optimizer. 
+
+EATA 3 (Niu et al., 2022) : With LayerNorm affine parameters being continually adapted, we optimize using Adam with a learning rate of 1 × 10 −4. The entropy threshold is set to 0.4 ×log(C), where C denotes the number of classes. As source data is not accessible during adaptation, we do not apply Fisher regularization to preserve source-domain knowledge. 
+
+SAR 4 (Niu et al., 2023) : We continually adapt only the LayerNorm affine parameters, optimized with Adam at a constant learning rate of 1 × 10 −4. To stabilize entropy minimization, we employ the same confidence filtering strategy used in EATA (Niu et al., 2022), and trigger model recovery when the confidence drops below 0.2. Model predictions are smoothed using ENA with a momentum coefficient of 0.9. 
+
+READ 5 (Yang et al., 2024) : Following their core implementation, we continually adapt WQ, WK , and WV of the joint-encoder with a learning rate of 1 × 10 −4 and an Adam optimizer. 
+
+SuMi 6 (Guo & Jin, 2025) : We use learning rates of 1 × 10 −4 and 1 × 10 −5 on the derivatives of Kinetics50 and VGGSound, respectively, with an Adam optimizer. Throughout, LayerNorm affine parameters are continually adapted. For bimodal corruptions, the mutual information loss is applied once every two iterations. All remaining hyperparameters follow the original paper. 
+
+PTA 7 (Wang et al., 2025) : For the test sets from Kinetics50, we use a recommended learning rate of 2 × 10 −4 and 
+
+1 × 10 −4 for VGGSound derivatives. WQ, WK , and WV of the joint-encoder are continually adapted using the loss-specific hyperparameters recommended in the original method. 
+
+BriMPR* 8 (Li & Feng, 2025) : As discussed earlier, we remove access to the 32 source-domain samples. We use 10 prompt tokens for both the audio and visual encoders. During adaptation, the visual prompts are continually adapted using a cross-modal masked embedding loss together with an instance-wise contrastive loss. The mask ratio is set to 0.5, and the contrastive temperature is fixed to 0.7. Additional implementation details follow the original paper. 
+
+B.4 Implementation Details of AV-CTTA 
+
+At the onset of adaptation, we initialize a shared rehearsal buffer, K = ∅. Each element in K is a tuple of modality-specific statistics and their corresponding adapted parameters: (μiv , Σiv , μ ia, Σia, WiQ, WiK , WiV ). Here, μ and Σ denote the mean and covariance for the visual ( v) and audio ( a) modalities, while {W Q, WK , WV } are the Query, Key, and Value projection weights of the attention fusion layer. We use a batch size of 32 and optimize with a learning rate of 1 × 10 −4 using an Adam optimizer, for all the benchmark datasets. On datasets involving unimodal corruptions, i.e., Kinetics50-C and VGGSound-C (Yang et al., 2024), we set τ to be 0.005. For Kinetics50-C and VGGSound-2C (Maharana et al., 2025a) that involve bimodal corruptions, τ is set to be 0.01. 
+
+> 1https://github.com/YuanGongND/cav-mae
+> 2https://github.com/DequanWang/tent
+> 3https://github.com/mr-eggplant/EATA
+> 4https://github.com/mr-eggplant/SAR
+> 5https://github.com/XLearning-SCU/2024-ICLR-READ
+> 6https://github.com/zrguo/SuMi
+> 7https://github.com/MPI-Lab/PTA
+> 8https://github.com/Luchicken/BriMPR
+
+15 AV-CTTA 
+
+Table 4. AV-CTTA achieves SOTA results on Kinetics50-C with video corruptions (unimodal). We report the task-wise accuracy (%) at a severity level of 5, in the continual setting. We also report results with varying buffer sizes η.
+
+Method Noise Blur Weather Digital Mean 
+
+Gaussian Shot Impulse Defocus Glass Motion Zoom Snow Frost Fog Brightness Contrast Elastic Transform Pixelate JPEG 
+
+> Kinetics50-C
+
+SOURCE 46.55 47.36 46.51 67.23 61.70 70.67 66.39 62.22 60.54 47.32 74.88 51.36 64.14 66.39 61.98 59.68 TENT 45.55 42.51 27.84 22.76 8.33 3.64 2.24 2.40 2.08 2.00 2.04 2.28 2.04 2.00 2.00 11.31 EATA 46.80 47.62 46.81 67.62 63.02 70.77 66.94 60.65 60.65 48.23 75.48 52.42 65.40 66.45 62.22 60.07 SAR 46.83 47.00 46.64 65.71 62.30 69.99 66.35 60.54 60.22 52.60 73.96 50.76 65.99 63.42 59.90 59.48 READ 49.96 51.80 51.56 68.07 65.63 65.38 61.50 52.20 49.48 42.19 54.93 28.93 39.82 33.17 27.32 49.46 SuMi 45.75 45.43 44.95 64.30 65.38 69.23 67.91 62.86 66.67 63.22 69.23 50.16 71.15 66.31 63.94 61.10 PTA 46.84 45.95 45.91 56.17 55.73 55.49 54.81 51.80 52.60 50.24 54.73 49.80 53.32 52.24 51.12 51.78 BriMPR* 49.12 49.48 48.64 58.25 59.82 58.57 58.53 53.69 55.49 54.33 59.13 50.32 59.98 57.77 57.61 55.38 
+
+AV-CTTA (η = 50 ) 48.88 51.00 48.72 68.23 64.78 70.99 68.47 65.02 66.35 61.58 72.52 53.81 66.79 68.19 65.99 62.75 
+
+AV-CTTA (η = 100 ) 48.52 50.52 48.08 67.95 63.86 71.59 67.75 65.14 67.19 62.14 72.80 54.17 66.43 67.59 65.18 62.59 
+
+AV-CTTA (η = 200 ) 48.52 50.24 48.44 67.91 63.18 71.68 68.03 64.94 66.99 61.58 72.80 53.97 66.11 67.87 64.42 62.45 
+
+AV-CTTA (η = 300 ) 48.52 50.24 48.48 67.91 63.18 71.60 68.07 64.94 67.15 62.10 72.96 53.57 65.67 67.87 64.54 62.45 
+
+AV-CTTA (η = 400 ) 48.52 50.24 48.16 67.91 63.22 71.60 67.99 64.90 67.15 62.06 72.76 53.57 65.55 67.83 64.66 62.41 
+
+AV-CTTA (η = ∞) 48.52 50.24 48.32 67.91 63.18 71.60 68.03 64.86 67.15 62.10 72.80 53.57 65.43 67.87 64.02 62.37 
+
+> VGGSound-C
+
+SOURCE 52.78 52.69 52.73 57.19 57.21 58.52 57.61 56.25 56.58 55.31 58.95 53.66 56.95 55.81 56.89 55.94 TENT 52.58 51.82 51.20 53.85 53.90 54.49 54.39 51.80 52.39 52.59 52.14 51.08 52.49 51.70 51.87 52.55 EATA 52.79 52.81 52.46 56.60 55.90 57.43 56.16 54.36 54.54 53.35 57.06 51.94 54.56 53.23 54.51 54.51 SAR 52.92 52.86 52.92 57.03 56.66 58.65 57.61 55.95 56.74 56.22 58.25 54.21 57.13 55.42 56.46 55.94 READ 52.43 52.65 52.44 55.85 55.22 56.07 55.69 54.51 54.96 54.69 55.38 54.34 54.79 54.65 54.65 54.55 SuMi 53.14 53.42 53.43 57.01 56.69 57.67 56.91 55.60 56.22 51.73 56.91 53.67 56.37 55.16 55.25 55.28 PTA 51.06 49.86 49.46 52.88 52.12 52.31 51.94 50.96 51.21 51.17 51.92 50.46 51.59 51.03 51.05 51.27 BriMPR* 43.24 39.11 38.86 39.99 41.22 39.41 37.97 33.12 30.76 31.47 30.71 26.08 31.95 34.30 36.15 35.62 
+
+AV-CTTA (η = 50 ) 52.83 52.66 52.63 57.18 57.04 58.52 58.02 55.85 56.39 56.24 57.44 54.50 57.22 55.23 55.79 55.84 
+
+AV-CTTA (η = 100 ) 52.81 52.76 52.81 57.13 56.74 58.33 58.02 55.87 56.35 56.17 57.52 54.40 56.17 55.32 55.95 55.76 
+
+AV-CTTA (η = 200 ) 52.84 52.83 52.83 57.18 56.91 58.68 58.20 56.33 56.83 56.45 57.82 54.76 57.47 55.99 56.78 56.13 
+
+AV-CTTA (η = 300 ) 52.87 52.87 52.86 57.16 56.97 58.65 58.02 56.66 57.13 56.67 58.18 54.66 57.42 56.22 56.71 56.20 
+
+AV-CTTA (η = 400 ) 52.86 52.83 52.91 57.30 57.25 58.66 57.95 56.50 56.76 56.47 57.89 54.80 57.40 55.82 56.54 56.13 
+
+AV-CTTA (η = ∞) 52.87 52.83 52.91 57.42 57.29 58.68 57.77 56.38 56.80 55.50 59.13 53.88 57.07 55.96 57.01 56.10 
+
+Table 5. AV-CTTA achieves SOTA results on Kinetics50-2C and VGGSound-2C (bimodal). We report the task-wise accuracy (%) at a severity level of 5, in the continual setting. We also report results with varying buffer sizes η.
+
+Method Digital Environmental Human-Related Mean 
+
+Gaussian Impulse Shot Speckle Compression Snow Frost Spatter Wind Rain Underwater Concert Smoke Crowd Interference 
+
+> Kinetics50-2C
+
+SOURCE 32.29 29.69 28.97 36.46 54.85 46.43 50.12 52.40 66.83 45.95 16.43 67.07 49.96 72.68 72.88 48.20 TENT 22.76 3.93 2.00 2.12 6.81 1.96 2.00 2.00 2.36 1.96 1.96 1.96 1.96 2.00 1.96 3.85 EATA 32.29 29.33 29.01 36.42 54.85 46.39 50.12 52.40 66.79 45.35 16.35 67.03 50.00 72.68 73.00 48.13 SAR 32.05 29.53 28.12 35.54 53.40 45.67 49.12 50.44 64.50 44.15 17.43 64.38 47.32 69.99 72.20 46.92 READ 37.62 36.74 38.22 42.83 59.66 48.64 55.25 52.48 59.02 47.52 37.86 57.33 40.87 58.53 59.58 48.81 SuMi 35.34 31.85 26.76 42.47 56.97 42.79 40.70 44.79 61.02 34.13 7.69 52.72 28.49 61.82 62.54 42.01 PTA 33.13 30.81 31.37 31.97 46.59 40.70 46.87 45.27 56.29 45.91 39.18 58.41 44.71 62.78 63.46 45.16 BriMPR* 38.18 37.02 37.94 45.31 57.93 46.59 51.24 48.36 54.13 46.31 39.54 54.77 43.15 57.25 56.01 47.58 
+
+AV-CTTA (η = 50 ) 34.13 30.77 33.73 37.62 58.97 50.00 59.02 57.01 65.38 56.17 19.35 66.79 51.16 70.39 72.32 50.85 
+
+AV-CTTA (η = 100 ) 34.13 31.01 33.69 36.94 59.05 49.36 57.25 56.85 66.07 56.21 13.30 67.15 51.08 72.07 73.20 50.49 
+
+AV-CTTA (η = 200 ) 34.13 30.73 33.69 36.86 59.02 48.36 55.13 55.73 66.83 55.61 13.34 67.23 51.44 72.36 73.28 50.25 
+
+AV-CTTA (η = 300 ) 34.13 31.01 33.77 36.86 59.02 48.32 55.09 56.29 66.95 55.21 12.74 67.11 51.88 72.40 73.04 50.25 
+
+AV-CTTA (η = 400 ) 34.13 30.81 33.77 36.86 59.02 48.32 55.13 56.61 66.87 55.09 13.90 67.15 51.60 72.44 73.32 50.33 
+
+AV-CTTA (η = ∞) 34.13 31.09 33.73 36.82 59.02 48.32 55.21 56.57 66.87 55.13 14.50 66.83 51.12 71.87 73.12 50.29 
+
+> VGGSound-2C
+
+SOURCE 30.11 23.63 20.77 25.77 34.57 24.48 46.39 48.43 50.40 29.50 42.15 47.60 31.83 47.64 55.21 37.23 TENT 2.87 0.33 0.33 0.37 0.89 0.33 0.33 0.33 0.33 0.33 0.33 0.33 0.33 0.33 0.33 0.54 EATA 30.16 23.81 20.97 26.36 34.73 24.55 46.69 47.94 49.50 28.26 40.90 46.00 29.27 45.95 53.46 36.57 SAR 12.74 10.90 13.30 18.97 36.62 18.21 43.16 46.75 49.01 19.70 41.63 31.10 23.26 43.85 51.09 30.69 READ 43.74 38.89 40.23 26.72 25.54 22.65 27.92 29.26 30.81 22.08 25.53 26.18 25.04 28.38 33.09 29.74 SuMi 33.23 25.37 24.70 27.67 35.44 20.79 46.54 48.04 49.66 24.99 38.67 47.76 31.93 48.43 55.42 37.24 PTA 40.82 34.35 33.69 28.21 29.71 32.52 39.27 41.44 41.59 32.35 36.44 36.41 34.52 35.96 40.37 35.84 BriMPR* 30.47 24.53 25.02 24.12 26.15 21.54 27.77 26.88 26.73 20.81 23.24 23.55 18.83 25.85 28.20 24.91 
+
+AV-CTTA (η = 50 ) 40.63 34.77 37.70 31.37 34.95 41.07 50.02 49.03 52.51 38.79 29.37 29.85 24.06 28.40 35.58 37.21 
+
+AV-CTTA (η = 100 ) 40.42 33.95 37.66 30.05 34.80 40.81 50.07 49.86 52.58 44.52 39.74 34.44 28.85 31.85 37.68 39.15 
+
+AV-CTTA (η = 200 ) 40.42 33.58 37.02 29.60 34.63 40.33 49.81 49.49 51.96 44.63 45.90 49.47 46.10 51.00 54.55 43.90 
+
+AV-CTTA (η = 300 ) 40.42 33.90 36.86 29.57 34.61 40.22 49.84 49.35 51.54 44.31 45.71 49.34 46.04 50.69 54.79 43.81 
+
+AV-CTTA (η = 400 ) 40.42 33.75 37.03 29.55 34.59 40.07 49.83 49.26 51.45 44.29 45.65 49.20 46.04 50.18 54.89 43.75 
+
+AV-CTTA (η = ∞) 40.42 33.78 36.79 29.33 34.62 39.96 49.73 49.12 51.12 44.21 45.34 48.66 46.14 48.53 54.91 43.51 
+
+16 AV-CTTA 
+
+Table 6. AV-CTTA achieves SOTA results on Kinetics-50C and VGGSound-C with audio corruptions (unimodal). We report the task-wise accuracy (%) at a severity level of 5, in the continual setting. We also report results with varying buffer sizes η.                                                                                                                                                                                                                                      
+
+> Method Noise Weather Mean
+> Gaussian Traffic Crowd Rain Thunder Wind
+> Kinetics50-C
+> SOURCE 73.48 65.30 67.59 70.11 67.67 70.11 69.04 TENT 73.84 68.55 70.51 69.59 73.12 70.15 70.96 EATA 73.56 65.30 67.71 70.11 68.07 70.15 69.15 SAR 73.36 65.95 68.11 69.71 69.15 69.71 69.33 READ 74.28 69.63 70.63 70.35 71.76 69.39 71.01 SuMi 73.76 68.19 70.59 69.27 73.24 69.43 70.75 PTA 72.68 69.03 69.79 68.83 71.79 69.75 70.31 BriMPR* 72.84 67.67 67.43 65.95 69.07 63.70 67.78
+> AV-CTTA (η= 50 )73.72 68.35 70.27 70.11 72.88 69.91 70.87
+> AV-CTTA (η= 100 )73.72 68.47 69.79 70.27 72.56 70.39 70.87
+> AV-CTTA (η= 200 )73.72 68.47 69.87 70.19 71.63 70.51 70.73
+> AV-CTTA (η= 300 )73.72 68.47 69.87 70.19 71.63 70.15 70.67
+> AV-CTTA (η= 400 )73.72 68.47 69.87 70.19 71.63 70.15 70.67
+> AV-CTTA (η=∞)74.15 68.90 70.30 70.62 72.06 70.57 71.10
+> VGGSound-C
+> SOURCE 37.36 21.12 16.80 21.64 27.29 25.54 24.96 TENT 6.20 0.46 0.29 0.28 0.28 0.28 1.30 EATA 37.51 21.64 17.58 22.82 27.98 25.34 25.48 SAR 36.53 8.01 4.12 4.49 13.43 3.34 11.65 READ 28.01 15.10 17.35 13.69 20.24 14.37 18.13 SuMi 37.66 19.28 14.79 20.73 28.82 28.05 24.89 PTA 36.30 28.79 28.42 25.35 30.60 26.09 29.26 BriMPR* 23.12 14.95 15.15 13.85 20.08 15.24 17.07
+> AV-CTTA (η= 50 )39.67 27.99 17.31 16.99 19.05 14.12 22.52
+> AV-CTTA (η= 100 )39.55 28.63 23.15 25.50 21.49 15.34 25.61
+> AV-CTTA (η= 200 )39.55 28.42 24.45 30.14 30.90 17.81 28.54
+> AV-CTTA (η= 300 )39.52 28.43 24.36 29.81 33.58 20.85 29.42
+> AV-CTTA (η= 400 )39.52 28.43 24.32 29.37 35.65 26.38 30.61
+> AV-CTTA (η=∞)39.52 28.43 24.31 29.44 35.52 27.05 30.71
+
+C Additional Results 
+
+C.1 Results on a fixed buffer budget η
+
+In Tables 4 and 6, we report additional results on Kinetics50-C and VGGSound, respectively. In Kinetics50-C, the video is corrupted, whereas in VGGSound, the audio is corrupted. As a reminder, the task-specific information lies in the visual and audio modalities for Kinetics50 and VGGSound, respectively. The results indicate that AV-CTTA maintains superior performance even when the ”primary” modality is corrupted. We observe distinct scaling behaviors across these datasets. On Kinetics50-C, AV-CTTA achieves stable and competitive performance with a buffer size as small as η = 50 . Given that the test set comprises 36 , 990 samples ( 2, 466 × 15 tasks), a budget of η = 50 represents a compression ratio of nearly 740 : 1 , yet it is sufficient. Conversely, on VGGSound-C, comparable or superior performance is achieved at η ≥ 200 . We attribute this to the size. VGGSound-C has a significantly larger amount of data ( 14046 × 6 tasks), necessitating a slightly larger set of buffer elements to adequately cover the expanded distribution. Despite these differences in scale, the overall results confirm that AV-CTTA effectively bounds memory growth without sacrificing adaptation quality, making it ideal for large-scale, long-term deployment. 
+
+C.2 Task-wise results of bimodal corruptions 
+
+In Table 5, we report the task-wise accuracies on Kinetics50-2C (top) and VGGSound-2C (bottom). For our proposed 
+
+AV-CTTA , we also report the performances for various buffer sizes. Despite the increased complexity of the bimodal shifts, 
+
+AV-CTTA consistently achieves superior performance compared to existing baselines. Our rationale and findings remain the same as in Section C.1. Over a wide range of buffer budgets, we observe consistent performances on Kinetics50-2C, which has about 2, 466 × 15 test samples. On a larger dataset like VGGSound-2C, η ≥ 100 achieves SOTA results. 
+
+C.3 Alternatives to maintaining a buffer budget 
+
+In our proposed method, to maintain a strict budget η of buffer K, we perform statistical merging of the most redundant elements. We perform pairwise comparisons of all stored elements in K by solving Eqn. (9) . Here, we explore another strategy following (Zhang et al., 2024), where the oldest element in K is removed when |K| ≥ η. We conduct experiments on 17 AV-CTTA 
+
+Table 7. AV-CTTA remains stable in performance when the oldest element is removed from the buffer to maintain the budget. We report the mean accuracies on Kinetics50-2C and VGGSound-2C with varying buffer sizes η.
+
+Buffer budget η Kinetics50-2C VGGSound-2C 
+
+η = 50 50.38 44.10 
+
+η = 100 50.43 43.81 
+
+η = 200 50.28 43.51 
+
+Kinetics50-2C and VGGSound-2C. In Table 7, we observe that removing the oldest element maintains robust performance for both datasets involving bimodal corruptions. On VGGSound-2C, with η as low as 50, AV-CTTA maintains a stronger performance compared to merging by averaging elements (see Table 5). However, we do posit that this strategy is highly dependent on the order of tasks. In settings where tasks arrive in a random order, discarding the oldest element may prove detrimental. This risks prematurely removing statistically relevant elements that belong to corruption categories, which may recur later in the stream, as evidenced by the cross-task transferability observed in Section 4.1. Interference 
+
+> Crowd
+> Smoke
+> Concert
+> Underwater
+> Rain
+> Wind
+> Spatter
+> Frost
+> Snow
+> Compression
+> Speckle
+> Shot
+> Impulse
+> Gaussian
+> 20
+> 40
+> 60
+> Accuracy
+
+Reverse (Kinetics50-2C) 
+
+> SOURCE, Mean = 48.19
+> READ, Mean = 49.75
+> PTA, Mean = 49.74
+> Ours, Mean = 50.38 Compression
+> Snow
+> Underwater
+> Impulse
+> Shot
+> Wind
+> Smoke
+> Concert
+> Speckle
+> Crowd
+> Interference
+> Spatter
+> Frost
+> Gaussian
+> Rain
+> 20
+> 40
+> 60
+> Accuracy
+
+Random Shuffle I. (Kinetics50-2C) 
+
+> SOURCE, Mean = 48.17
+> READ, Mean = 48.27
+> PTA, Mean = 51.79
+> Ours, Mean = 50.67 Impulse
+> Underwater
+> Rain
+> Snow
+> Concert
+> Shot
+> Speckle
+> Spatter
+> Wind
+> Compression
+> Gaussian
+> Interference
+> Smoke
+> Frost
+> Crowd
+> 20
+> 40
+> 60
+> Accuracy
+
+Random Shuffle II. (Kinetics50-2C) 
+
+> SOURCE, Mean = 48.19
+> READ, Mean = 49.75
+> PTA, Mean = 49.74
+> Ours, Mean = 50.38 Interference
+> Crowd
+> Smoke
+> Concert
+> Underwater
+> Rain
+> Wind
+> Spatter
+> Frost
+> Snow
+> Compression
+> Speckle
+> Shot
+> Impulse
+> Gaussian
+> 20
+> 30
+> 40
+> 50
+> Accuracy
+
+Reverse (VGGSound-2C) 
+
+> SOURCE, Mean = 37.23
+> READ, Mean = 45.73
+> PTA, Mean = 38.54
+> Ours, Mean = 44.78 Compression
+> Snow
+> Underwater
+> Impulse
+> Shot
+> Wind
+> Smoke
+> Concert
+> Speckle
+> Crowd
+> Interference
+> Spatter
+> Frost
+> Gaussian
+> Rain
+> 20
+> 40
+> Accuracy
+
+Random Shuffle I. (VGGSound-2C) 
+
+> SOURCE, Mean = 37.24
+> READ, Mean = 19.47
+> PTA, Mean = 35.03
+> Ours, Mean = 44.28 Impulse
+> Underwater
+> Rain
+> Snow
+> Concert
+> Shot
+> Speckle
+> Spatter
+> Wind
+> Compression
+> Gaussian
+> Interference
+> Smoke
+> Frost
+> Crowd
+> 20
+> 40
+> Accuracy
+
+Random Shuffle II. (VGGSound-2C) 
+
+> SOURCE, Mean = 37.25
+> READ, Mean = 24.51
+> PTA, Mean = 34.37
+> Ours, Mean = 43.67
+
+Figure 10. AV-CTTA is robust to variations in task ordering. The top row reports results on Kinetics50-2C, while the bottom row shows results on VGGSound-2C. In each plot, the x-axis denotes the task order in the continual setting, and the y-axis reports task-wise accuracy. The legend summarizes the mean accuracy achieved by each baseline and by our method. 
+
+C.4 Sensitivity to Task Orders 
+
+In real-world continual learning, the sequence of tasks arriving is often unpredictable. To assess the robustness of AV-CTTA 
+
+and competing baselines against this, we evaluate their performance across three alternative task orderings in the challenging bimodal corruption setting. While the standard sequence follows a fixed progression (e.g., Gaussian → Impulse →· · · → Interference ), we introduce: 1) Reverse: The original sequence is inverted. 2) Random Shuffle I & II: Two distinct permutations of the 15 bimodal tasks. The objective of this study is to study whether the selective retrieval mechanism in 
+
+AV-CTTA is dependent on a specific curriculum or not. We conduct experiments on Kinetics50-2C and VGGSound-2C and illustrate the results in Figure 10. On average, AV-CTTA demonstrates strong robustness to task order variations compared to baselines, particularly in the difficult bimodal setting. Although a performance drop is observed during the initial tasks, continual adaptation allows the model to stabilize over time and converge to comparable accuracy across different task orderings. Overall, the selective retrieval mechanism remains effective without long-term degradation and remains resilient to variations in task ordering. 
+
+D Limitations and Discussions 
+
+While AV-CTTA demonstrates significant advancements in audio-visual CTTA, several avenues remain for further explo-ration. 
+
+Latency and scalibility. The selective parameter retrieval mechanism described in Section 4.2 performs an O(N ) linear search over the buffer K at each time-step t. Although effective, this design introduces non-trivial computational overhead 18 AV-CTTA 
+
+that may become prohibitive as the number of encountered target environments grows. Improving retrieval efficiency, or eliminating the need for an explicit buffer, remains an open challenge. 
+
+Model architectural assumptions. Our method AV-CTTA is developed under the assumption that audio-visual recognition models employ modality-specific encoders followed by a joint encoder for late cross-modal fusion, as commonly adopted in prior architectures (Gong et al., 2022c;b; Georgescu et al., 2023; Huang et al., 2023). Consequently, its applicability to alternative fusion paradigms or more heterogeneous architectures is not guaranteed, limiting its generality. 
+
+Threshold τ . The method relies on a single hyperparameter τ to control selective parameter retrieval. In practical test-time deployment settings, hyperparameter tuning is often infeasible or costly (Maharana et al., 2025c). 19

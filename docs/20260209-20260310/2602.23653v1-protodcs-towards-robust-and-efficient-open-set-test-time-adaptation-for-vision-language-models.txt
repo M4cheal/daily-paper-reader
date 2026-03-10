@@ -1,0 +1,1074 @@
+Title: ProtoDCS: Towards Robust and Efficient Open-Set Test-Time Adaptation for Vision-Language Models
+
+URL Source: https://arxiv.org/pdf/2602.23653v1
+
+Published Time: Mon, 02 Mar 2026 01:23:47 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+> JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 1
+
+# ProtoDCS: Towards Robust and Efficient Open-Set Test-Time Adaptation for Vision-Language Models 
+
+Wei Luo *,1,2 , Yangfan Ou *,3 , Jin Deng 1, Zeshuai Deng 3, Xiquan Yan 4, Zhiquan Wen †,3 , and Mingkui Tan †,2 
+
+Abstract —Large-scale Vision-Language Models (VLMs) ex-hibit strong zero-shot recognition, yet their real-world deploy-ment is challenged by distribution shifts. While Test-Time Adaptation (TTA) can mitigate this, existing VLM-based TTA methods operate under a closed-set assumption, failing in open-set scenarios where test streams contain both covariate-shifted in-distribution (csID) and out-of-distribution (csOOD) data. This leads to a critical difficulty: the model must discriminate un-known csOOD samples to avoid interference while simultaneously adapting to known csID classes for accuracy. Current open-set TTA (OSTTA) methods rely on hard thresholds for separation and entropy minimization for adaptation. These strategies are brittle, often misclassifying ambiguous csOOD samples and inducing overconfident predictions, and their parameter-update mechanism is computationally prohibitive for VLMs. To address these limitations, we propose Prototype-based Double-Check Separation (ProtoDCS), a robust framework for OSTTA that effectively separates csID and csOOD samples, enabling safe and efficient adaptation of VLMs to csID data. Our main contributions are: (1) a novel double-check separation mechanism employing probabilistic Gaussian Mixture Model (GMM) verifi-cation to replace brittle thresholding; and (2) an evidence-driven adaptation strategy utilizing uncertainty-aware loss and efficient prototype-level updates, mitigating overconfidence and reduc-ing computational overhead. Extensive experiments on CIFAR-10/100-C and Tiny-ImageNet-C demonstrate that ProtoDCS achieves state-of-the-art performance, significantly boosting both known-class accuracy and OOD detection metrics. Code will be available at https://github.com/O-YangF/ProtoDCS. Index Terms —Test-Time Adaptation, Open-Set Recognition, Vision-Language Models, Prototype Learning, Uncertainty Es-timation. 
+
+I. I NTRODUCTION 
+
+# PRETRAINED large-scale vision-language models (VLMs), such as CLIP [1], ALIGN [2], and the BLIP series [3], [4], have demonstrated remarkable zero-shot capabilities across various downstream tasks [5]. However, their deployment in dynamic real-world environments faces significant challenges due to distribution shifts [6], [7]. To address this problem, test-time adaptation (TTA) [8]–[11] 
+
+Wei Luo and Jin Deng are with the 1South China Agricultural Uni-versity. Email: {cswluo, jindsmu }@gmail.com . Mingkui Tan is with the 
+
+> 2
+
+Pazhou Laboratory. Email:mingkuitan@scut.edu.cn . Yangfan Ou, Zeshuai Deng, and Zhiquan Wen are with the 3South China University of Technol-ogy. Email:swouyangfan@163.com, sedengzeshuai@mail.scut.edu.cn , sewen-zhiquan@gmail.com. Xiquan Yan is with the 4Hunan Normal University. 
+
+Email:yanxiquan@126.com . Wei Luo is also with the 2Pazhou Laboratory. This work was supported in the part by National Natural Science Foundation of China (Grant No.82550116), Joint Funds of the National Natural Science Foundation of China (Grant No.U24A20327), the Young Scholar Project of Pazhou Lab (Grant No.PZL2021KF0021). * Authors contributed equally. †Corresponding authors. This paper was produced by the IEEE Publication Technology Group. They are in Piscataway, NJ. Manuscript received April 19, 2021; revised August 16, 2021. 75 80 85 90 95  
+
+> OOD Detection Performance (AUROC )
+> 58
+> 60
+> 62
+> 64
+> 66
+> 68
+> Known-Class Accuracy (Acc  )
+
+Fig. 1. Performance comparison on CIFAR-10-C. Our ProtoDCS simulta-neously achieves the highest known-class accuracy (ACC) and the best OOD detection performance (AUROC), significantly outperforming all baseline methods. The top-right region indicates better performance. 
+
+has emerged as a promising solution, enabling models to adapt using only unlabeled target data. Therefore, recent studies have tended to combine VLMs and TTA to achieve a more powerful adaptation effect [12]–[17], addressing tasks ranging from visual question answering [18] to personalized estimation [19]. Yet, existing VLM-based TTA methods are mainly designed for the covariate-shifted in-distribution (csID) scenario, in which every test class is known beforehand [12]–[16], [20], [21]. This closed-set assumption, however, breaks down in safety-critical applications such as autonomous driving, where the data stream inevitably contains covariate-shifted out-of-distribution (csOOD) instances drawn from previously unseen classes [22]–[25]. For instance, an autonomous vehicle might encounter unusual construction equipment (csOOD) while driving in foggy conditions (covariate shift). Compulsorily classifying such previous unseen objects into seen categories could lead to severe traffic risks. This open-set condition [26]– [28] presents a fundamental difficulty for TTA: the model must simultaneously perform two conflicting tasks on the unlabeled test stream – discriminate csOOD data to avoid interference, while adapting to csID data to maintain accuracy .Recent open-set TTA (OSTTA) methods are primarily designed for small-scale networks [22], [23], [29]. Among them, UniEnt [22] separates csID and csOOD samples by their similarity to non-adapted known class prototypes of the source domain, while [23] leverages the absolute difference of prediction confidence between the original and updated  
+
+> arXiv:2602.23653v1 [cs.CV] 27 Feb 2026 JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 2
+
+model for separation and MoTTA [29] filters samples based on representation stability under pruning. Despite these ad-vancements, these methods suffer from several key limitations when applying them to VLM-based TTA. 1) Brittle Separa-tion from Hard Thresholding. These methods universally depend on rigid thresholds (e.g., fixed similarity or confi-dence difference) for csID/csOOD separation. This paradigm is intrinsically mismatched with the highly compact and well-structured embedding space of VLMs [30], where hard thresholds are prone to misclassifying ambiguous boundary samples. Consequently, erroneous gradients from misclassified csOOD data corrupt the representations of known classes, distort the decision boundary, and ultimately impair csID ac-curacy. 2) Unsafe Adaptation from Entropy Minimization. 
+
+The adaptation relies heavily on entropy minimization (EM), which blindly sharpens predictions without discerning their correctness. This not only fosters overconfidence on noisy or boundary samples but, more critically, disrupts the inherent calibration of pre-trained VLMs [31], [32]. The corruption of this crucial property destabilizes the adaptation process and leads to performance degradation. Moreover, these methods intrinsically rely on gradient-based parameter updates, making their computational cost prohibitive for large-scale VLMs. These fundamental limitations collectively hinder their direct and effective extension to the VLM regime. Given these limitations, developing an effective VLM-based OSTTA model must confront two major challenges: 1) Towards robust csID/csOOD separation beyond hard thresholding . The model requires a separation mechanism that moves beyond brittle, hard thresholds. It must adaptively handle the ambiguous region where csID and csOOD distribu-tions overlap, preventing misclassified csOOD samples from corrupting the adaptation process and thus preserving csID ac-curacy. 2) Towards safe and efficient adaptation for VLMs .The adaptation strategy must satisfy a dual requirement. First, it should replace entropy minimization with an objective that explicitly models predictive uncertainty to prevent overcon-fident predictions on noisy or boundary samples. Second, to be feasible for large-scale VLMs, the strategy must be highly efficient, ideally avoiding computationally expensive gradient computations through the entire backbone. To address these challenges, we propose Prototype-based 
+
+Double-Check Separation ( ProtoDCS ), a novel framework that systematically resolves the OSTTA difficulties through a cohesive design centered on reliable separation and efficient adaptation. To achieve robust separation beyond hard thresholds (Challenge 1) , ProtoDCS employs a progressive two-stage verification mechanism. The First-Check stage com-putes an openness score and applies dual-threshold filtering to segregate samples: confident samples ( Sopen (x) < Θa)populate a diversity-aware visual cache for robust prototype construction, while trustworthy samples ( Sopen (x) < Θb) pro-ceed for further assessment. The Final-Verification stage then leverages a Gaussian Mixture Model (GMM) on (re-evaluated) openness scores to provide probabilistic, adaptive separation that naturally handles distribution shifts and ambiguous bound-ary cases. To enable safe and efficient adaptation for VLMs (Challenge 2) , ProtoDCS operates exclusively at the prototype level, keeping the VLM backbone frozen. For trustworthy samples, we perform evidence-driven temporary prototype optimization using residual updates, where an uncertainty-aware loss explicitly models both aleatoric and epistemic un-certainty to prevent overconfidence, replacing overconfidence-prone entropy minimization. Only samples confirmed by both verification stages contribute to asymmetric prototype evo-lution: textual prototypes are updated gradually via cumu-lative moving average to maintain semantic stability, while visual prototypes undergo more selective updates through the diversity-aware cache mechanism. This closed-loop system ensures that prototype evolution is driven exclusively by high-fidelity csID samples, enabling effective domain adaptation while preserving discriminability against csOOD instances. We show the performance comparison of ProtoDCS with other methods in Fig. 1. In summary, motivated by identifying three fundamental limitations in current OSTTA research when applied to VLMs – the hard threshold trap, the overconfidence problem, and the computational inefficiency, our work addresses these issues to make the following concrete contributions:  
+
+> •
+
+We propose ProtoDCS, a probabilistic double-check sepa-ration mechanism with GMM verification, which robustly addresses the brittle thresholding problem in VLMs’ compact embedding space, thereby enabling adaptive and reliable csID/csOOD separation under distribution shifts.  
+
+> •
+
+We develop an evidence-driven adaptation strategy with a novel uncertainty-aware loss, directly countering the over-confidence issue of entropy minimization, which ensures safe model updates through better-calibrated predictions in open-set scenarios.  
+
+> •
+
+We design a lightweight prototype-level update frame-work that keeps the VLM backbone frozen, effectively overcoming the computational bottleneck of gradient backpropagation, and achieving highly efficient adapta-tion without performance loss. II. R ELATED WORK 
+
+A. Close-set Test-Time Adaptation 
+
+Test-Time Adaptation (TTA) aims to enhance model ro-bustness against distribution shifts by using only unlabeled test data. Early methods primarily focused on closed-set sce-narios, developing strategies around entropy minimization [8], batch normalization statistics adaptation, consistency regular-ization [33], and pseudo-labeling [34]. While effective within their intended setting, these methods operate under the critical and often unrealistic assumption that all test samples belong to known classes, making them inherently vulnerable in open-set environments where unknown classes appear during testing. The advent of large Vision-Language Models (VLMs) intro-duced additional complexity to TTA. While some approaches have explored VLM adaptation through prompt tuning [12] or lightweight adapters [35], these methods typically require computationally expensive gradient backpropagation through the entire backbone. Recently, more efficient alternatives have emerged, including stem-layer adaptation [36] and embedding-space adjustments [37], and training-free prototype adjust-ment [38], yet they remain constrained by the closed-set JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 3
+
+assumption. This fundamental limitation renders them inef-fective for real-world deployment where unknown categories inevitably appear alongside distribution shifts. We address these dual challenges by performing lightweight adaptation exclusively at the prototype level, eliminating the need for backbone gradient computations while simultaneously main-taining robustness against open-set interference. Our approach preserves the efficiency benefits of representation-level adap-tation while extending its applicability to the more realistic and challenging open-set scenario. 
+
+B. Open-Set Test-Time Adaptation 
+
+Open-Set TTA (OSTTA) presents a more realistic but chal-lenging scenario where test streams contain both covariate-shifted in-distribution (csID) and out-of-distribution (csOOD) samples. The primary risk in this setting is “negative adapta-tion”, where conventional TTA methods misclassify csOOD samples with high confidence, progressively corrupting the model’s representations [22], [39]. Existing OSTTA methods generally adopt two strategies: sample filtering based on confidence metrics [23] or model stability [29], and unified optimization objectives designed for joint csID adaptation and csOOD rejection [16], [22]. However, these approaches face significant limitations when applied to VLMs. Most critically, they rely on brittle hard thresholds for csID/csOOD separation, which proves particularly problematic in the highly compact and well-structured embedding space of VLMs [30]. In such spaces, where class representations are naturally clustered with narrow inter-class margins, fixed thresholds inevitably misclassify ambiguous boundary samples. Furthermore, ex-isting methods fail to fully leverage the rich multimodal information inherent in VLMs, and their gradient-based update mechanisms remain computationally burdensome for large-scale models. We introduce a comprehensive solution through a novel double-check separation mechanism. We replace hard thresholds with a probabilistic Gaussian Mixture Model that adapts to the evolving test distribution, enabling robust separa-tion even in VLMs’ compact embedding spaces. By operating entirely at the prototype level and incorporating both visual and textual modalities, our framework achieves computation-ally efficient adaptation while maintaining the cross-modal alignment crucial for VLM performance. 
+
+C. Uncertainty Calibration in TTA 
+
+Mitigating overconfidence during test-time adaptation is crucial for model reliability. A predominant strategy in early TTA methods is entropy minimization (EM) [8], [9], [11]. While effective in boosting prediction confidence, EM blindly sharpens the output distribution without discerning correct-ness, inevitably leading to overconfident yet inaccurate pre-dictions on noisy or ambiguous samples. To alleviate this issue, subsequent research has branched broadly into three directions. One line of work seeks to restrict the application of EM to a more reliable subset of test samples. For instance, EATA-C [40] leverages prediction consistency between full and pruned networks as a reliability criterion, while DeYo [41] selects samples exhibiting significant prediction discrepancy against input destruction. Alternatively, another direction in-corporates regularization terms to calibrate the EM process. POEM [42] aligns the test-time entropy with a source-domain prior to prevent drastic distribution shifts. In the context of Vision-Language Models (VLMs), methods like C-TPT [14] and O-TPT [43] introduce a dispersion loss to encourage textual prototypes to maintain maximal separation, thereby preserving the model’s inherent discriminative capability. Be-yond EM, a more fundamental approach is to explicitly model predictive uncertainty within the loss function. TEA [44] retains model uncertainty by minimizing an energy score that represents multi-class compatibility, whereas COME [45] and EDL [46] adopt subjective logic to explicitly construct and optimize belief and uncertainty masses. Despite these advance-ments, a critical gap persists in VLM-based OSTTA. Current sample-selection heuristics struggle in VLMs’ compact repre-sentation space, while prevailing uncertainty methods—though addressing epistemic uncertainty—largely ignore the inherent aleatoric uncertainty in test data. Departing from entropy minimization, we introduce evidence-driven optimization that explicitly models both uncertainty types in a unified loss function. Grounded in evidential deep learning, our approach naturally penalizes overconfidence on ambiguous csID or unfamiliar csOOD samples, ensuring safe adaptation that preserves VLMs’ intrinsic well-calibrated nature—crucial for robust open-set performance. III. P RELIMINARY 
+
+Contrastive Language-Image Pre-Training (CLIP). 
+
+CLIP [1] is a vision-language model composed of a visual encoder Ev (·) and a text encoder Et(·), which map images and textual prompts into a shared feature space Rd. For an input image x, its embedding is computed as fv = Ev (x),while each class prompt Tk is encoded as ft,k = Et(Tk).Classification is then performed by computing the cosine similarity between fv and each ft,k followed by a softmax over the similarities: 
+
+P (y = ck | x) = exp ( cos (fv , ft,k )/τ )
+
+PKj=1 exp ( cos (fv , ft,j )/τ ) , (1) where cos (a, b) = a·b 
+
+> ∥a∥∥ b∥
+
+denotes cosine similarity, and τ
+
+is the temperature parameter. After pretraining, CLIP maps images and text into a shared embedding space, enabling zero-shot prediction across diverse tasks, such as zero-shot classification and cross-modal retrieval. 
+
+Open-Set Test-Time Adaptation (OSTTA). Let Xs =
+
+{xi}Ns 
+
+> i=1
+
+denote the input samples from a labeled source domain, and let Ys = {1, . . . , K } denote the corresponding label space consisting of K known classes. A model fθ0 , pre-trained on (Xs, Ys), is deployed in a test-time setting where only unlabeled target inputs Xt = {xj }Nt 
+
+> j=1
+
+are accessible. Unlike traditional closed-set settings, the target domain may contain both in-distribution samples from known classes under domain shift (referred to as csID ) and out-of-distribution samples from unseen classes, also under domain shift (referred to as csOOD ). The goal of OSTTA is to adapt the model to the target stream Xt while maintaining performance on known JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 4Image 
+
+> Encoder
+> Text
+> Encoder
+
+## ⋯
+
+𝑥 𝑡 −1 𝑥 1
+
+CLIP 
+
+Initial Check 
+
+𝑆 𝑜𝑝𝑒𝑛 (𝑥 ) 𝓛 = 𝓛 𝒖𝒏𝒄𝒆𝒓𝒕𝒂𝒊𝒏𝒕𝒚 + 𝝀 𝒂𝒍𝒊𝒈𝒏 𝓛 𝒂𝒍𝒊𝒈𝒏 
+
+> 𝑆 𝑜𝑝𝑒𝑛 (𝑥 )
+> 𝐷𝑒𝑛𝑠𝑖𝑡𝑦
+
+∆𝑃 𝑡  ∆𝑃 𝑣 
+
+𝑃 𝑡  
+
+> ′
+
+𝑃 𝑣 
+
+> ′
+
+𝑦 1
+
+> ⋯
+
+Cache 
+
+Final  Verification 
+
+> residuals
+> csID samples
+> csOOD samples
+
+𝑃 𝑡  
+
+> ′
+
+𝑃 𝑣 
+
+> ′
+
+𝑃 𝑡  𝑃 𝑣 
+
+𝑦 2
+
+𝑦 𝐶                              
+
+> update
+> 𝑆 𝑜𝑝𝑒𝑛 𝑥 <Θ𝑎
+> 𝑆 𝑜𝑝𝑒𝑛 𝑥 <Θ𝑏
+> Fig. 2. Overview of the proposed ProtoDCS. For an incoming unlabeled sample x, ProtoDCS first computes its initial openness score Sopen (x). The
+> First-Check stage uses this score for an initial separation: confident samples (Sopen (x)<Θa) populate the diversity-aware visual cache to build visual prototypes Pv, while trustworthy samples (Sopen (x)<Θb) undergo evidence-driven optimization to generate temporary prototypes P′
+> v,P′
+> tfor a refined openness assessment. The Final-Verification stage then leverages a GMM on the (re-evaluated) openness scores for all samples to make a probabilistic csID/csOOD decision. Only the sample confirmed as csID through this double-check process contribute to the final prototype evolution, forming a robust closed-loop adaptation system free from csOOD corruption.
+
+classes and avoiding degradation caused by updates driven by csOOD samples. IV. P ROTOTYPE -BASED DOUBLE -C HECK SEPARATION 
+
+Problem Statement. Existing VLM-based TTA methods [12], [20] typically assume a closed-set setting and rely on unsuper-vised objectives such as entropy minimization. However, when unknown-class samples appear during adaptation, two critical issues arise: (1) Erroneous updates from misidentified csOOD samples. Unknown-class samples can be easily mistaken as re-liable data, leading to gradient updates that corrupt the model’s representations and degrade performance. (2) Overconfidence from entropy minimization. Entropy-based TTA forces the model to assign excessively confident posteriors, which is especially harmful for noisy or boundary samples, further undermining adaptation robustness [45]. These two issues reflect the core conflict in OSTTA: the need to simultaneously reject csOOD samples and safely adapt to csID data. To resolve this conflict, a dedicated framework must provide (1) a robust mechanism for filtering out csOOD samples before update, and (2) an uncertainty-aware adaptation objective that prevents overconfidence and enables safe prototype evolution. 
+
+Method Overview. In this section, we present ProtoDCS (Prototype-based Double-Check Separation), a framework de-signed to overcome the above issues through a cohesive, prototype-centric design. ProtoDCS addresses three key limi-tations of existing OSTTA methods when applied to VLMs: (1) Brittle separation due to hard thresholds, ill-suited to VLMs’ compact embedding space; (2) Unsafe adaptation caused by overconfidence-prone entropy minimization; and (3) Computational inefficiency from gradient updates through the entire backbone. As illustrated in Fig. 2, ProtoDCS in-troduces two core innovations: (1) A progressive two-stage verification mechanism that replaces rigid thresholds with an adaptive, probabilistic separation using a Gaussian Mix-ture Model (GMM), thereby handling ambiguous boundary samples robustly. (2) An evidence-driven adaptation strategy that employs an uncertainty-aware loss to explicitly model both aleatoric and epistemic uncertainty, preventing overcon-fidence while enabling lightweight prototype-level updates without back-propagation through the frozen backbone. By ensuring that only high-fidelity csID samples contribute to prototype evolution, ProtoDCS forms a closed-loop system that effectively reconciles reliable csOOD filtering with safe and efficient adaptation. The following subsections detail each component; the complete algorithm is summarised in supplementary materials (SMs). 
+
+A. First-Check: Visual Cache Construction and Trustworthy Sample Selection 
+
+A primary challenge in open-set TTA is that indiscriminate adaptation to all test samples can corrupt the model’s represen-tations when csOOD data is present. To address this, the First-Check stage is designed to achieve two critical objectives: (1) to construct robust visual prototypes exclusively from high-fidelity in-distribution (csID) samples, ensuring a pure and discriminative feature space; and (2) to identify a broader set of trustworthy samples that, while potentially ambiguous, warrant further inspection for adaptation, thereby balancing robustness with adaptation recall. To realize these objectives, JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 5
+
+this stage operates in two sequential steps: it first quantifies each sample’s affinity to known classes via an openness score, then employs a dual-threshold filtering strategy to segregate samples for their respective roles. 
+
+1) Openness Score: A Measure of Familiarity : The openness score serves as a metric to estimate the likelihood of a sample x belonging to a known class. The intuition is that a sample with high similarity to any known class prototype is more likely to be in-distribution. Formally, we extract the visual embedding fv = Ev (x) and compare it with the textual prototypes Pt = [ft, 1, · · · , ft,K ] ∈ Rd×K . The openness score is computed as: 
+
+Sopen (x) = 1 − max  
+
+> k∈{ 1,...,K }
+
+zk, (2) with zk the output logit of CLIP: 
+
+zk = fv · ft,k 
+
+∥fv ∥∥ ft,k ∥ , (3) where ∥·∥ is the l2 norm. A score approaching 0 indicates high similarity to a known class, while a score near 1 suggests a higher probability of being csOOD. Additionally, the initial predicted label ck = arg max( P (y|x)) is obtained to guide the subsequent cache update process. 
+
+2) Dual-Threshold Filtering: Balancing Safety and Recall 
+
+: Relying on a single threshold for separation is often brittle, as it fails to account for the ambiguous region where csID and csOOD distributions overlap. We therefore introduce a dual-threshold strategy to manage this trade-off, directing samples to different processing paths based on their confidence level. 
+
+a) Cache Admission ( Θa): A Strict Gate for Prototype Purity : To build a reliable foundation for visual prototypes, we maintain a class-wise visual cache Cv = {Q k}Kk=1 , where each queue Qk (of length l) stores representative features for class 
+
+k. A sample x with predicted class k is admitted as a confident sample xconf into Qk only if Sopen (x) < Θa, where Θa is a class-agnostic dynamic threshold. To ensure the cache remains both diverse and high-quality, we enforce the following update policy (see Algorithm 2 in SMs for detailed operations):  
+
+> •
+
+If x exhibits high cosine similarity ( > τ sim ) to an existing sample in Qk but possesses higher quality (i.e., lower predictive entropy), it replaces the existing sample.  
+
+> •
+
+If x is dissimilar to all samples in Qk, it is added if the queue is not full; otherwise, it replaces the sample with the highest entropy. The visual prototype for class k is subsequently computed as the mean of its queue: fv,k = 1 
+
+> |Q k|
+
+P  
+
+> f∈Q k
+
+f .
+
+b) Trustworthy Sample Selection ( Θb): A Looser Gate for Potential Adaptation : A stringent Θa ensures prototype purity but may discard valuable, slightly noisier csID samples. To alleviate this loss of informative data, we employ a looser threshold Θb (where Θb > Θa). Samples satisfying Sopen <
+
+Θb are classified as trustworthy samples xtrust . While not pristine enough for direct cache admission, these samples are passed to the next stage for a more refined assessment, allowing the model to explore a wider range of potential adaptations without compromising the core prototypes. In practice, Θa and Θb are set dynamically as the 30 th 
+
+(Q(0.3)) and 60 th (Q(0.6)) percentiles, respectively, of the class 1 
+
+> class 2
+> class 3
+> unknown class
+
+(a) Entropy Minimization 0.0  
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Uncertainty
+
+(b) Evidence-Driven(Ours)          
+
+> Fig. 3. Uncertainty Landscapes in Feature Space. We compare the uncertainty surface constructed by (a) Standard Entropy Minimization and (b) our Evidence-Driven Uncertainty-Aware (EDUA) loss. The background color intensity denotes the uncertainty level derived from the loss function, where
+> Yellow/Light indicates lower uncertainty and Purple/Dark indicates higher uncertainty. Crucially, Entropy Minimization creates a deceptive landscape where csOOD samples fall into low-uncertainty regions. In contrast, ProtoDCS correctly maps the csOOD and boundary regions to high uncertainty (dark background), effectively filtering out risky samples during prototype evolution.
+
+openness scores within a sliding window Wc. This adaptive mechanism ensures the filtering strategy remains responsive to the evolving test stream. 
+
+B. Evidence-driven Temporary Prototype Generation 
+
+The trustworthy samples identified in the First-Check stage constitute a valuable yet potentially risky resource for adap-tation. While they likely contain beneficial information for domain alignment, their ambiguous nature means direct pro-totype updating could progressively corrupt the model’s repre-sentations. Therefore, this module aims to simulate adaptation effects on these samples through a safe, evidence-driven opti-mization process that generates temporary prototypes, thereby avoiding irreversible changes to the global model state until a sample’s validity is confirmed 
+
+1) Residual-based Prototype Update: A Safe Simulation :
+
+To achieve non-destructive adaptation, we update prototypes not by direct modification but by optimizing learnable residual matrices. Specifically, for a trustworthy sample xtrust , we introduce residual matrices ∆Pt and ∆Pv , initialized to zero and associated with the frozen textual prototypes Pt and visual prototypes Pv , respectively. The temporary prototypes are then computed as: 
+
+P ′ 
+
+> t
+
+= Norm (Pt + ∆ Pt), P ′ 
+
+> v
+
+= Norm (Pv + ∆ Pv ), (4) where Norm (·) denotes ℓ2 normalization. This residual formu-lation allows the prototypes to adaptively adjust to the sample while keeping the backbone network frozen. These temporary prototypes serve to re-assess the openness score of xtrust and used to output the class prediction if xtrust passes the second-round verification and is determined as a csID sample in the subsequent stage. It is worth noting that ∆Pt is computed for all csID textual prototypes, whereas ∆Pv is only updated for csID classes with non-empty queues in the visual cache 
+
+Cv , ensuring computational efficiency and focus on established classes. 
+
+2) Uncertainty-Aware Optimization: Preventing Overcon-fidence : The residual matrices are optimized by minimizing a composite loss function that jointly enforces prediction confidence and cross-modal consistency: 
+
+min L = Luncertainty + λalign Lalign , (5) JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 6
+
+a) Uncertainty Loss ( Luncertainty ): Standard entropy min-imization often yields overconfident predictions even for ambiguous or OOD samples [43], [45]. To better calibrate uncertainty, we instead adopt evidential learning [46], [47], which models the adapted logits z ∈ RK as evidence for a Dirichlet distribution. Specifically, we compute the evidence vector as α = ReLU( z) + 1 , and define the uncertainty loss to explicitly minimize both:  
+
+> •
+
+Aleatoric Uncertainty (AU): Captures data ambiguity by measuring the expected prediction entropy.  
+
+> •
+
+Epistemic Uncertainty (EU): Reflects the model’s lack of knowledge via the total evidence magnitude. The total uncertainty loss is defined as: 
+
+Luncertainty = λAU AU (x) + EU (x), (6) where λAU is the balance coefficient and: AU (x) = −
+
+> K
+
+X
+
+> k=1
+
+αk
+
+S (ψ(αk + 1) − ψ(S + 1)) , EU (x) = KS ,
+
+(7) with S = PKk=1 αk and ψ is the digamma function. Minimizing this uncertainty-aware loss drives the model to express confidence only when supported by strong class evidence, while preserving uncertainty in ambiguous cases, thereby achieving better-calibrated uncertainty estimates on challenging samples. Crucially, this uncertainty loss is applied exclusively to trustworthy samples , ensuring robust prototype refinement without influence by csOOD-like instances. 
+
+b) Alignment Loss ( Lalign ): To prevent semantic drift be-tween modalities during adaptation, we introduce an alignment loss based on the InfoNCE objective. This term encourages that the updated visual prototypes P ′ 
+
+> v
+
+and textual prototypes 
+
+P ′ 
+
+> t
+
+to remain semantically consistent in the shared embedding space: 
+
+Lalign = InfoNCE (P ′ 
+
+> v
+
+, P ′ 
+
+> t
+
+). (8) This auxiliary objective acts as a regularizer, mitigating the risk of prototype divergence caused by noisy or incomplete supervision. 
+
+3) Integration and Subsequent Flow : After a single gra-dient descent step minimization of the total loss L, the optimized residuals ∆Pt and ∆Pv are used to compute the temporary prototypes via Eq. (4). These temporary prototypes are subsequently employed to re-evaluate the openness score of xtrust , providing a refined input for the GMM-based Final-Verification in Section IV-C. Crucially, the temporary proto-types are discarded unless xtrust is definitively confirmed as a csID sample in the final verification, ensuring that prototype evolution remains robust and free from csOOD contamination. 
+
+C. Final-Verification: Probabilistic Separation with GMM 
+
+While the First-Check stage provides an initial sample filtering, its dependence on threshold-based separation proves inadequate for handling distribution shifts and ambiguous boundary cases. To overcome the brittleness of hard thresh-olds, the Final-Verification stage serves as the definitive de-cision stage, replacing hard thresholds with a probabilistic framework that adapts to the evolving characteristics of the test stream. We employ a two-component Gaussian Mixture Model (GMM) to characterize the openness score distribution, enabling robust, context-aware separation between csID and csOOD samples by naturally accommodating uncertainty in the decision process. The GMM framework models the openness scores as arising from two underlying distributions corresponding to csID and csOOD samples. Formally, represented as: 
+
+G(Sopen ) = 
+
+> 2
+
+X
+
+> j=1
+
+ϕj N (Sopen |μj , σ 2 
+
+> j
+
+), (9) where ϕj , μj , and σ2 
+
+> j
+
+represent the mixture weight, mean, and variance of the j-th component, respectively. For component identification, we assign the component with higher mean openness score to represent csOOD samples, reflecting their characteristic of lower similarity to known classes. In implementation, we maintain a sliding window Wg of re-cent openness scores to capture the local distribution dynamics of the target stream. For each incoming sample x, we compute its final openness score using the temporary prototypes (if classified as trustworthy in First-Check) or retain the initial score (otherwise). The GMM parameters are initialized using K-means clustering on the sliding window data, ensuring stable convergence during the expectation-maximization pro-cess. This adaptive initialization strategy allows the model to automatically adjust to the current test distribution without requiring manual parameter tuning. See SMs for more details. The definitive classification is determined by the posterior probability: 
+
+P (ccsOOD |Sopen (x)) > Θp, (10) where Θp = 0 .5 serves as the default confidence threshold. To ensure estimation reliability, we apply GMM-based verifi-cation only when sufficient evidence is available, specifically when at least 100 openness scores have been accumulated in 
+
+Wg . This safeguard prevents unreliable decisions during the initial phase of adaptation when limited data is available. 
+
+D. Model Prediction and Prototype Evolution 
+
+The Final-Verification stage provides definitive csID/csOOD separation, establishing a foundation for reliable model adap-tation. This module completes the ProtoDCS pipeline by leveraging confirmed csID samples for robust prediction and controlled prototype evolution, thereby enabling incremental domain adaptation while preserving model integrity against distribution shifts and semantic drift. 
+
+1) Dual-Source Prediction : Traditional VLM-based pre-diction typically relies solely on textual similarity, which may not fully capture the visual characteristics of the target domain. To enhance classification robustness, we introduce a dual-source prediction strategy that synergistically combines information from both textual and visual modalities, leveraging their complementary strengths for improved decision-making in open-set scenarios. The prediction framework integrates similarity measures from both prototype spaces: 
+
+ck = arg max( P (y|x) + A(fv , P ′ 
+
+> v
+
+)) , (11) JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 7
+
+where P (y|x) represents the standard textual similarity com-puted using the adapted textual prototypes P ′ 
+
+> t
+
+, while the affinity-based correction term A(·) incorporates visual guid-ance: 
+
+A(fv , P ′ 
+
+> v
+
+)k = α · exp( −β(1 − cos (fv , p′
+
+> v,k
+
+))) , (12) Here, α and β are scaling hyperparameters that balance the contribution of the visual affinity term. This formulation en-sures that predictions benefit from both the semantic grounding of language and the distribution-aware characteristics of visual features, particularly valuable when dealing with domain-shifted samples that may exhibit visual patterns not fully captured by textual descriptions alone [20]. 
+
+2) Asymmetric Prototype Update : Effective test-time adaptation requires careful balance between responsiveness to distribution shifts and stability against noisy updates. To achieve this balance, we employ an asymmetric update strategy that respects the distinct characteristics of textual and visual modalities, enabling prompt adaptation to visual domain shifts while maintaining semantic stability. For textual prototypes, we adopt a cumulative moving aver-age (CMA) scheme that facilitates gradual, stable adaptation: 
+
+Pt ← (1 − 1
+
+n )Pt + 1
+
+n P ′ 
+
+> t
+
+, (13) where n represents the total number of csID-confirmed sam-ples observed. To further enhance robustness, this update is gated by a dynamic quality threshold, ensuring that only the most reliable csID samples contribute to the evolution of the global prototypes (see SMs for details). This conservative ap-proach acknowledges the relative stability of textual semantics derived from class names, ensuring that semantic knowledge accumulated during pretraining is preserved while allowing controlled adaptation to domain-specific differences. In contrast, visual prototypes undergo more selective up-dates to accommodate the potentially rapid shifts in visual distributions. A sample x contributes to visual prototype evolution only if it satisfies multiple criteria: (1) passes the double-check separation ( Sopen (x) < Θb in First-Check and 
+
+P (ccsOOD |Sopen (x)) < Θp in Final-Verification), and (2) meets the diversity and quality requirements for cache admis-sion as specified in Section IV-A. This stringent filtering en-sures that visual prototypes evolve based exclusively on high-fidelity samples, preventing corruption from boundary csID and ambiguous csOOD instances while enabling responsive adaptation to genuine distribution shifts in the visual domain. The asymmetric design rationale stems from the funda-mental differences in how textual and visual representations respond to domain shifts. While visual features often exhibit significant distribution changes across domains, textual seman-tics grounded in class names remain comparatively stable. By tailoring update strategies to these modality-specific character-istics, ProtoDCS achieves effective domain adaptation without compromising the cross-modal alignment essential for VLM performance. V. E XPERIMENT 
+
+In this section, we comprehensively evaluate the perfor-mance of ProtoDCS across varying architectures and datasets so as to answer the following key concerns about ProtoDCS:  
+
+> •
+
+Does the two-stage verification mechanism bring robust csID/csOOD separation and safe adaptation?  
+
+> •
+
+Do the components of ProtoDCS achieve the claimed effects?  
+
+> •
+
+Is ProtoDCS robust to hyperparameter selection?  
+
+> •
+
+How does the computation efficiency of ProtoDCS per-form considering its involvement of the two-stage verifi-cation mechanism?  
+
+> •
+
+How does ProtoDCS perform in close-set TTA settings? 
+
+A. Experimental Setup 
+
+Datasets and Scenarios . Following previous studies [22], [23], we evaluate ProtoDCS on three standard OSTTA bench-marks – CIFAR-10-C, CIFAR-100-C, and Tiny-ImageNet-C [48]. Each of them contains 15 types of corruption with 5 severity levels. For CIFAR-10-C and CIFAR-100-C, we use their 10,000 test images as csID data and 26,032 images from SVHN-C as csOOD data. For Tiny-ImageNet-C, we use the 10,000 validation images as csID data and 2,000 images from ImageNet-O-C as csOOD data. SVHN-C and ImageNet-O-C respectively contain the same 15 types of corrupted images from the original SVHN [49] and ImageNet-O [50] datasets. In our experiments, all corruptions are applied at the highest severity level (level 5), creating a challenging test stream with imbalanced csID/csOOD ratios to highlight our method’s robustness in unstable environments. 
+
+Evaluation Protocol . We adopt a rigorous online adaptation protocol where the model adapts to a continuous data stream, sample by sample, without any parameter reset. This setup highlights our method’s suitability for low-latency, real-world applications. Performance is assessed using four key open-set metrics: Acc for known-class accuracy, AUROC for the model’s ability to distinguish csID from csOOD samples, 
+
+FPR@TPR95 for a stricter assessment of OOD detection, and OSCR [51], a holistic metric evaluating overall open-set classification performance. 
+
+Baselines . We compare ProtoDCS against three groups of methods. 1) Standard TTA Methods: TENT [8], SAR [11], and EATA [9]. 2) VLM-based TTA Methods: TPT [12], 
+
+C-TPT [14], DiffTPT [52], CLIPArTT [53], TDA [13], and 
+
+DPE [20]. 3) Open-Set TTA Methods: UniEnt [22] and 
+
+STAMP [24]. We provide detailed descriptions of these meth-ods in the Supplementary Materials. 
+
+Implementation Details . We use the pre-trained CLIP model with ViT-B/16 as the main backbone, and ResNet-50 for supplementary evaluation. The backbone remains frozen. For adaptation, we use the AdamW optimizer to update textual and visual residuals for a single step. On CIFAR-100-C, the learning rates are set to 2.5 × 10 −4 for text and 7.5 × 10 −3 for visual residuals. The visual cache size is set to 5 per class. For separation, the thresholds Θa and Θb are dynamically set to the 30th and 60th percentiles of a 100-sample sliding window. The GMM verification uses a window of 100 samples with a JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 8                                                                                                                  
+
+> TABLE I RESULTS OF DIFFERENT METHODS ON CIFAR BENCHMARKS USING THE CLIP V IT-B/16 BACKBONE .↑INDICATES THAT LARGER VALUES ARE BETTER ,
+> AND VICE VERSA . A LL VALUES ARE PERCENTAGES (%). BOLD INDICATES THE BEST .Method CIFAR-10-C CIFAR-100-C Acc ↑AUROC ↑FPR@TPR95 ↓OSCR ↑Acc ↑AUROC ↑FPR@TPR95 ↓OSCR ↑
+> CLIP (ViT) 66.39 81.63 63.82 13.89 37.14 55.42 91.40 18.87 TENT 61.96 80.66 67.07 53.70 33.03 67.45 86.26 25.08 SAR 58.97 76.59 73.91 49.81 25.15 54.69 89.12 14.11 EATA 59.76 79.92 67.76 52.41 32.16 66.55 86.04 24.21 TPT 64.50 79.06 72.55 55.62 34.39 42.18 87.90 23.89 CLIPArTT 62.29 80.53 67.48 54.04 34.23 66.84 85.63 25.65 TDA 53.05 85.99 58.17 58.48 27.14 73.39 77.56 30.27 DPE 64.00 86.38 57.42 58.80 37.35 74.01 77.01 30.66 STAMP 60.19 79.13 70.28 51.85 32.06 65.95 86.63 23.87 UniEnt+EATA 62.45 90.32 38.62 59.34 34.57 71.20 78.33 27.14 UniEnt+TPT 65.00 82.18 70.76 56.59 35.11 36.20 93.50 24.08
+> ProtoDCS 67.98 95.59 24.03 66.71 37.62 76.70 74.97 33.48
+
+probability threshold of 0.5. For prediction, the scaling factors are α = 0 .5 and β = 9 .5. λalign and λAU are respectively set to 0.2 and 1 for prototype residual updates. We report the average results over 15 corruption types. 
+
+B. Main Results 
+
+In this section, we validate the effectiveness of ProtoDCS on robust csID/csOOD separation and safe adaptation from three perspectives: state-of-the-art (SOTA) performance, archi-tectural generality, and task extensibility. 
+
+State-of-the-art Performance . ProtoDCS establishes a new SOTA on standard benchmarks, effectively alleviating the fundamental conflict between rejecting csOOD samples and adapting to csID data in OSTTA. As detailed in Table I, ProtoDCS outperforms all baselines across every metric on CIFAR-10-C and CIFAR-100-C. From comparison, we find the VLM-based TTA methods in the second group achieve sys-tematically better performance than the standard TTA methods in the first group. This may be attributed to the involvement of the text modality in CLIP, which provides additional semantic information. However, directly extending existing OSTTA method to the CLIP framework (STAMP) or Combining OSTTA method with existing TTA methods (UniEnt+EATA and UniEnt+TPT) in the third group fails to improve the TTA performance in the open-set scenario. For example, the Acc of STAMP (60.19%) is generally lower than that of the VLM-based close-set methods, e.g., CLIPArTT (62.29%) and DPE (64.00%), on CIFAR-10-C. UniEnt+EATA and UniEnt+TPT solely attain marginal improvement compared with EATA and TPT on all metrics, respectively. This phenomenon indicates that existing OSTTA methods developed for small networks are not applicable to the highly compact and well-structured feature embedding space of VLMs. These limitations highlight the necessity of a dedicated and robust separation mechanism for VLM-based TTA methods. Our ProtoDCS addresses this need via a two-stage verifica-tion mechanism and achieves significant performance gains across all metrics. For example, ProtoDCS achieves respec-tively 95.59% and 24.03% on AUROC and FPR@TPR95 on                                                      
+
+> TABLE II PERFORMANCE COMPARISON USING THE CLIP R ES NET -50 BACKBONE ,
+> COMPLEMENTING THE CLIP V IT-BASED RESULTS IN TABLE I. Method CIFAR-10-C Acc ↑AUROC ↑FPR@TPR95 ↓OSCR ↑
+> CLIP(RN) 41.17 58.91 89.44 18.34 TENT 21.40 61.94 88.44 14.44 SAR 19.46 67.54 82.71 14.73 EATA 18.64 57.60 91.17 12.11 TPT 19.80 44.23 96.38 12.13 CLIPArTT 21.38 62.35 87.79 14.44 TDA 25.17 70.84 83.91 30.77 DPE 39.83 71.71 83.04 31.44 UniEnt+EATA 18.61 57.94 91.14 12.06 UniEnt+TPT 13.20 43.86 99.93 7.94
+> ProtoDCS 43.45 77.63 82.34 37.12
+
+CIFAR-10-C, a relative improvement over DPE by 10.69% and 58.15%, which signifies that the two-stage verification mechanism designed in ProtoDCS can effectively disentangle csID and csOOD representations within the highly com-pact and well-structured feature space of CLIP. In known-class prediction accuracy, ProtoDCS improves Acc to 67.98% on CIFAR-10-C, an improvement over the best VLM-based closed-set TTA method DPE by relative 6.22%, which reveals that the evidence-driven uncertainty-aware (EDUA) loss based residual optimization effectively prevents prototypes evolving from samples with high uncertainty, safeguarding adaptation on reliable csID samples to avoid the overconfidence pitfalls of entropy minimization. As a result, these modules synergis-tically enhance adaptation to csID data while preserving dis-criminability against unknown classes, promoting respectively a 66.71% and a 33.48% OSCR on CIFAR-10-C and CIFAR-100-C, which comprehensively manifests the dual capability of ProtoDCS in “separation” and “adaptation” for OSTTA. 
+
+Architectural generality . ProtoDCS is ready to generalize to different backbone architectures and maintains its SOTA performance on all metrics. Table II shows the performance JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 9                                                              
+
+> TABLE III RESULTS (%) OF DIFFERENT METHODS ON TINY -I MAGE NET -C USING THE
+> CLIP V IT-B/16 BACKBONE .↑INDICATES THAT LARGER VALUES ARE BETTER ,AND VICE VERSA .BOLD INDICATES THE BEST .Method Tiny-ImageNet-C Acc ↑AUROC ↑FPR@TPR95 ↓OSCR ↑
+> CLIP(ViT) 29.66 51.50 94.35 17.98 TENT 28.92 62.50 88.42 20.51 SAR 29.89 60.35 90.02 21.14 EATA 28.52 61.30 89.08 20.06 TPT 28.72 37.56 98.05 20.80 CLIPArTT 29.25 62.27 88.57 20.65 TDA 29.67 58.20 91.80 21.08 DPE 29.78 58.49 91.73 21.26 STAMP 27.26 62.09 87.71 19.45 UniEnt+EATA 29.54 61.36 88.86 20.91 UniEnt+TPT 28.89 40.60 97.41 19.77 ProtoDCS 31.21 58.32 92.02 23.74
+
+of ProtoDCS on CIFAR-10-C by using the CLIP ResNet-50 backbone. The results illustrate the same trend as those analyzed in Table I, although they have a systematic perfor-mance degradation due to the limited capability of ResNet-50 compared with ViT. For example, UniEnt+EATA and UinEnt+TPT only attain comparable or even worse results compared with EATA and TPT on Acc (18.61% vs. 18.64% and 13.20% vs. 19.80%) and AUROC (57.94% vs. 57.60% and 43.86% vs. 44.23%), signifying that existing OSTTA methods developed for small networks are not ready to extend to VLM architectures. It further verifies the correctness of our claim that the feature embedding space of VLMs needs dedicated and flexible separation mechanism for robust separation. In contrast, ProtoDCS shows consistent improvements on all metrics with large gaps and achieves the SOTA performance, due to the intrinsic EDUA-based residual optimization for prototype update and the two-stage verification mechanism. The results of ProtoDCS again validate the fact that the “separation” and “adaptation” capability of ProtoDCS for OSTTA can be inherently generalized across architectures. 
+
+Task extensibility . ProtoDCS demonstrates superior scalabil-ity on the more challenging Tiny-ImageNet-C dataset, where the visual distribution is significantly more complex with higher image resolutions, more classes, and pronounced simi-larity among classes. As shown in Table III, while the VLM-based TTA methods are limited to exploiting the advantage of architectures compared with the standard TTA methods, ProtoDCS consistently brings 4.80% and 11.67% relative improvement over DPE on Acc and OSCR, respectively, with comparable separation ability on AUROC (58.32% vs. 58.49%). This cross-task resilience is attributed to the intrinsic EDUA-based residual optimization for prototype update in the two-stage verification mechanism. In complex scenarios with 200 classes, the overlap between csID and csOOD distribu-tions intensifies. Heuristic filtering (used in STAMP or UniEnt) becomes too brittle, misclassifying noise as informative sam-ples. ProtoDCS, however, dynamically models this uncertainty, improving the filtration effects on ambiguous OOD samples       
+
+> TABLE IV ABLATION OF EVIDENCE -DRIVEN UNCERTAINTY -AWARE LOSS
+> COMPONENTS . T HE BASELINE (R OW 1) USES ENTROPY MINIMIZATION .
+
+AU EU Lalign Acc ↑ AUROC ↑ FPR ↓ OSCR ↑
+
+✓ 36.42 75.31 75.21 32.47 
+
+✓ ✓ 37.23 75.73 75.38 31.50 
+
+✓ ✓ 36.42 76.29 75.21 32.49 
+
+✓ ✓ 37.09 76.29 76.11 32.94 
+
+✓ ✓ ✓ 37.62 76.56 75.19 33.48 
+
+Method Luncertainty CIFAR-100-C 
+
+ProtoDCS     
+
+> TABLE V ABLATION OF SEPARATION MECHANISM AND PREDICTION STRATEGY .WE EVALUATE THE IMPACT OF REMOVING SPECIFIC MODULES .
+
+Check Verify Pv Pt Acc ↑ AUROC ↑ FPR ↓ OSCR ↑
+
+✓ ✓ ✓ 36.59 71.88 85.53 32.85 
+
+✓ ✓ ✓ 37.15 76.33 75.20 33.00 
+
+✓ ✓ ✓ 37.15 76.29 76.11 32.96 
+
+✓ ✓ ✓ 37.09 76.29 77.11 32.94 
+
+✓ ✓ ✓ ✓ 37.62 76.56 75.19 33.48 
+
+Method Core Components CIFAR-100-C 
+
+ProtoDCS 
+
+that would otherwise corrupt the prototypes. This confirms that our approach generalizes well to large-scale, noise-prone environments where existing OSTTA methods falter. 
+
+C. Ablation Studies 
+
+We conduct comprehensive ablation studies on CIFAR-100-C using the CLIP ViT-B/16 backbone to validate the effectiveness of each component in ProtoDCS. 
+
+C.1 Component Analysis. We dissect the contribution of our key modules through detailed ablation studies, separating the analysis into optimization objectives (Table IV), and architec-tural components (Table V). 
+
+Entropy vs. Evidence: As shown in Table IV, standard entropy minimization (EM) is inherently flawed in open-set settings as it blindly amplifies prediction confidence re-gardless of correctness. In contrast, our proposed evidence-driven uncertainty-aware (EDUA) loss provides a principled solution by explicitly modeling both aleatoric and epistemic uncertainty, thereby preventing overconfidence and enabling better-calibrated prototype updates. Replacing the EDUA loss with EM (Row 1) or using partial uncertainty components (Rows 2-3) consistently harms performance across all metrics, particularly OSCR ↓. Furthermore, the alignment loss Lalign 
+
+proves essential for maintaining cross-modal semantic con-sistency; its removal (Row 4) leads to prototype drift and performance degradation, underscoring its role in preserving the joint embedding structure. 
+
+Effectiveness of Double-Check: The first two rows of Table V validate the critical, complementary roles of our two-stage verification design. Disabling the First-Check (Row 1) causes a sharp decline in AUROC (71.88% vs. 76.56%), confirming its necessity for constructing a pure visual cache and preventing feature corruption from ambiguous samples. As visualized in Fig. 4, this early filtering enables the formation of JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 10 
+
+(a) (b)   
+
+> Fig. 4. t-SNE Visualization of the Visual Cache on CIFAR-100-C. This figure illustrates how the cached features evolve over time, comparing the state after 3,000 samples (left) with the state after 30,000 samples (right). As more data is processed, our diversity-aware update mechanism creates increasingly compact and representative class clusters.
+
+compact, discriminative class clusters in the cache. Conversely, relying solely on the First-Check without the GMM-based 
+
+Final-Verification (Row 2) fails to robustly handle distribu-tion shifts, as static thresholds cannot adapt to the evolving test stream. The GMM, by dynamically modeling the deci-sion boundary, provides the adaptive, probabilistic separation needed for ambiguous samples. 
+
+Dual-Source Prediction: The last three rows of Table V highlight the synergy of our dual-source prediction strategy. Relying exclusively on visual prototypes (Row 4) or textual prototypes (Row 3) yields inferior accuracy. The full approach (Row 5) effectively combines the semantic stability of textual prototypes with the distribution-aware adaptation of visual prototypes, confirming that multimodal fusion is vital for robust and accurate decision-making in open-set scenarios. 
+
+C.2 Hyperparameter Sensitivity. We analyze the stability of key hyperparameters on CIFAR-100-C in Tables VI and VII. 
+
+Gating and Cache Parameters ( Θa, Θb, τ sim ). As shown in Table VI, the performance is relatively robust to small variations in percentile thresholds, with Θa = Q(0 .3) and 
+
+Θb = Q(0 .6) offering the optimal trade-off between cache purity and adaptation recall. This indicates that our dynamic percentiles effectively capture the relative confidence ranking within the sliding window Wc, making it resilient to the absolute scale of openness scores. For the cache similarity threshold τsim , a higher value ( τsim = 0 .9) yields slightly better accuracy (37.62%) than lower values (e.g., τsim = 0 .6,Acc 37.58%). This confirms the benefit of maintaining high feature diversity within the cache, as it prevents redundancy and allows the visual prototypes to better represent the class manifold in the VLM’s compact embedding space. 
+
+Verification, Window, and Loss Parameters. The results in Table VII verify the robustness and design rationale of our framework across key hyperparameters and reveal three principal insights. 1) The model’s accuracy remains stable at 37.62% for the GMM decision threshold Θp within [0.3, 0.5]. This plateau indicates that the GMM successfully learns a well-separated, bimodal distribution of openness scores for csID and csOOD samples, underscoring the robustness of the probabilistic separation mechanism. 2) Both the openness score window Wc and the GMM fitting window Wg achieve                                                                                                              
+
+> TABLE VI SENSITIVITY ANALYSIS OF GATING AND CACHE HYPERPARAMETERS
+> (Θa,Θb, τ sim )ON CIFAR-100-C.
+> Θa
+> Value 0.1 0.2 0.3 0.4 0.5 Acc (%) 37.58 37.61 37.62 37.60 37.57
+> Θb
+> Value 0.2 0.4 0.6 0.8 1.0 Acc (%) 37.61 37.62 37.62 37.62 37.60
+> τsim
+> Value 0.6 0.7 0.8 0.9 1.0 Acc (%) 37.58 37.58 37.60 37.62 37.60 TABLE VII SENSITIVITY ANALYSIS OF VERIFICATION (Θp), W INDOW SIZES
+> (Wc,Wg), AND LOSS WEIGHTS (λalign , λ AU )ON CIFAR-100-C.
+> Θp
+> Value 0.3 0.4 0.5 0.6 0.7 0.9 Acc (%) 37.62 37.62 37.62 37.61 37.60 37.56
+> Wg
+> Value 10 30 50 100 250 500 Acc (%) 35.35 36.25 37.55 37.62 37.62 37.62
+> Wc
+> Value 10 30 50 100 250 500 Acc (%) 36.19 36.54 36.60 37.62 37.62 37.62
+> λalign
+> Value 0.1 0.2 0.3 0.5 0.8 1Acc (%) 37.57 37.62 37.61 37.60 37.55 37.52
+> λAU
+> Value 0.0 0.5 11.5 23Acc (%) 37.10 37.60 37.62 37.42 37.11 37.09
+
+optimal performance with a size of 100 samples. This balanced setting provides sufficient data for reliable estimation while remaining promptly responsive to distribution shifts in the online stream. 3) Performance is robust to the alignment weight λalign within a range of [0.2, 0.5], underscoring the stability of cross-modal consistency. Crucially, increasing the aleatoric uncertainty weight λAU from 0.0 to 1.0 brings a significant accuracy improvement from 37.10% to 37.62%. This quantitatively demonstrates that explicitly modeling and leveraging data-inherent (aleatoric) uncertainty is as crucial as addressing model (epistemic) uncertainty for achieving robust and safe adaptation in noisy, open-set data streams. 
+
+C.3 Cold-Start Adaptation Dynamics. To evaluate the online adaptation capability of ProtoDCS from scratch, we analyze the accuracy trajectory on the CIFAR-100-C test stream (Fig. 6). The adaptation process exhibits three distinct phases: 
+
+Phase 1: Initial Instability (0-100 samples). Before the GMM activates ( nproc < 100 ), the model relies solely on heuristic percentile thresholds for sample filtering. The perfor-mance fluctuates significantly (50%-60%), revealing the inher-ent limitation of simple thresholding in handling ambiguous boundary samples. However, the overall upward trend indi-cates that our visual cache mechanism begins to accumulate useful features even in this early stage. 
+
+Phase 2: Rapid Adaptation (100-400 samples). A decisive turning point occurs at the 100th sample (red dashed line) when the GMM-based verification is activated. The accuracy curve immediately shifts to a steep and steady ascent, climbing rapidly from ∼80% to over 90%. This transformation validates JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 11 0.0 0.2 0.4 0.6 0.8 1.0   
+
+> Confidence
+> 10 2
+> 10 1
+> Proportion of Samples
+> CLIP (Zero-Shot)
+> TPT
+> C-TPT
+> ProtoDCS (entropy)
+> ProtoDCS (Ours)
+
+(a) Confidence Distribution 0.0 0.2 0.4 0.6 0.8 1.0  
+
+> Confidence
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> CLIP (Zero-Shot)
+> TPT
+> C-TPT
+> ProtoDCS (entropy)
+> ProtoDCS (Ours)
+
+(b) Reliability Diagram 0.5 0.6 0.7 0.8 0.9 1.0  
+
+> Uncertainty
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> Accuracy
+> CLIP (Zero-Shot) (AUC=0.291)
+> TPT (AUC=0.260)
+> C-TPT (AUC=0.260)
+> ProtoDCS (entropy) (AUC=0.298)
+> ProtoDCS (Ours) (AUC=0.318)
+
+(c) Accuracy-Uncertainty Curve 
+
+Fig. 5. Calibration and Uncertainty Analysis on Tiny-ImageNet-C. This figure provides a tripartite analysis demonstrating the safe adaptation capability of ProtoDCS in open-set TTA. (a) Confidence Distribution: TPT exhibits a skewed, low-confidence distribution, indicating predictive confusion induced by Entropy Minimization (EM). ProtoDCS recovers a balanced, well-calibrated distribution through its evidence-driven uncertainty-aware (EDUA) loss. (b) Reliability Diagram: While C-TPT shows perfect calibration (diagonal alignment), ProtoDCS adopts a deliberately conservative strategy (curve above diagonal), systematically assigning underconfidence on uncertain samples to enhance safety against OOD data. (c) Accuracy-Uncertainty Curve: ProtoDCS achieves the highest AUC (0.320), proving its superior ability to rank samples by risk (high uncertainty for OOD/hard ID), which is crucial for reliable sample filtering during adaptation. Replacing the EDUA loss with standard entropy (ProtoDCS(entropy)) yields a lower AUC (0.298). 0 200 400 600 800 1000 
+
+> Number of Test Samples
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Sliding Window Accuracy (%)
+> Cold-Start Performance on CIFAR-100-C
+> Sliding Window Accuracy (Size=50)
+> GMM Activation Point
+
+Fig. 6. Cold-Start Adaptation Dynamics on CIFAR-100-C. The red dashed line marks the GMM activation point (100th sample). The curve illustrates the transition from initial fluctuation to rapid performance climbing, and finally to a robust steady state, confirming the effectiveness of our progressive double-check mechanism. 
+
+the superiority of our probabilistic separation mechanism: by filtering high-quality csID samples, it guides the lightweight prototype updates onto a correct and efficient trajectory. 
+
+Phase 3: Steady State (400+ samples). After processing approximately 400 samples, the model converges to a high-performance plateau, stabilizing between 88% and 94%. The curve fluctuates narrowly within a high-level corridor rather than degrading, demonstrating the robustness of our closed-loop system against continuous noise and distribution shifts in the open-set stream. 
+
+D. Safe Adaptation 
+
+Fig. 5 forms a coherent evidential chain that diagnoses the fundamental flaw of Entropy Minimization (EM) in open-set TTA and demonstrates how our Evidence-Driven Uncertainty-Aware (EDUA) loss enables safe adaptation in ProtoDCS. Fig. 5a (Confidence Distribution) reveals the “predictive confusion” induced by EM in open-set streams. Contrary to its tendency to cause overconfidence in closed-set settings, EM leads to a heavily left-skewed, low-confidence distribution for TPT. This is not a strategic shift towards caution but a manifestation of failed optimization: EM cannot coher-ently sharpen predictions for OOD and ambiguous bound-ary samples within VLMs’ compact feature space, resulting in inconsistent, low-confidence outputs. ProtoDCS(entropy) alleviates this skew primarily through its two-stage filtering mechanism. ProtoDCS, however, addresses the root cause via the EDUA loss, which enables stratified, evidence-based confi-dence assignment. It successfully discriminates between OOD (low confidence), ambiguous ID (moderate confidence), and clear ID samples (appropriately high confidence), producing a balanced distribution that aligns with well-calibrated baselines like CLIP and C-TPT. Fig. 5b (Reliability Diagram) evaluates the “safety” of this calibration from a risk perspective. TPT’s curve be-low the diagonal confirms its overconfidence. While C-TPT achieves excellent calibration (diagonal alignment), such per-fect confidence-accuracy agreement can be misleading in OSTTA, as it may not reflect high confidence on OOD samples. ProtoDCS adopts a deliberately conservative strategy, with its curve lying predominantly above the diagonal. This indicates a systematic tendency to assign lower confidence than the empirical accuracy – a safety-oriented bias that inherently mitigates the risk of making high-confidence errors on unfamiliar or ambiguous data. Fig 5c (Accuracy-Uncertainty Curve) quantifies the prac-tical “decision-making utility” of each method’s uncertainty estimate. The Area Under this Curve (AUC) measures how well the model’s uncertainty ranks samples by their true risk (e.g., being OOD or hard ID). The low and identical AUC for TPT and C-TPT (0.260) proves that entropy alone is a poor proxy for risk in open-set scenarios. ProtoDCS(entropy) shows improvement (AUC 0.298), attributable to its filtering mechanism. ProtoDCS achieves the highest AUC (0.320), providing direct evidence for the superiority of the EDUA loss. By explicitly modeling and distinguishing epistemic (for JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 12                                                                                                  
+
+> TABLE VIII PERFORMANCE COMPARISONS ON IMAGE NET AND ITS VARIANTS UNDER A CLOSED -S ET SETTING (N ATURAL DISTRIBUTION SHIFTS ). BOLD AND UNDERLINE INDICATE THE BEST AND SECOND -BEST RESULTS ,RESPECTIVELY .Method ImageNet ImageNet-A ImageNet-V2 ImageNet-R ImageNet-S Average CLIP-ViT-B/16 66.73 47.87 60.86 73.98 46.09 59.11 TPT [12] 68.98 54.77 63.45 77.06 47.94 62.44 C-TPT [14] 69.30 52.90 63.40 78.00 48.50 62.42 DiffTPT [52] 70.30 55.68 65.10 75.00 46.80 62.28 TDA [13] 69.51 60.11 64.67 80.24 50.54 65.01 TPS [11] 70.19 60.08 64.73 80.27 49.95 65.04 DPE [20] 71.91 59.63 65.44 80.40 52.26 65.93 ProtoDCS (Ours) 71.07 60.24 65.01 80.69 51.43 65.69 TABLE IX EFFICIENCY EVALUATION ON TINY -I MAGE NET -C WITH VIT-B/16
+> BACKBONE . W E REPORT THROUGHPUT (SAMPLES /SEC ↑), L ATENCY
+> (MS /SAMPLE ↓), AND PEAK GPU M EMORY (MB ↓). BOLD AND UNDERLINED INDICATE THE BEST AND SECOND -BEST RESULTS among adaptation methods ,RESPECTIVELY .Method Efficiency Metrics Throughput ↑Latency ↓Memory ↓
+> CLIP (ViT) 172.48 5.80 356 TENT 45.66 21.90 12471 TPT 2.49 401.78 3795 DPE 80.93 12.40 356 ProtoDCS 55.86 17.90 372
+
+OOD) and aleatoric (for boundary ID) uncertainty, EDUA provides a more accurate risk-ranking signal. This allows ProtoDCS to effectively identify and reject high-risk samples, ensuring that adaptation is driven primarily by low-uncertainty, high-fidelity csID data. In summary, the three subfigures in Fig. 5 demonstrates that EDUA moves beyond merely avoiding overconfidence. It establishes a principled, evidence-based framework for uncertainty quantification that is crucial for safe, reliable, and effective adaptation in open-world environments. 
+
+E. Efficiency Evaluation 
+
+To assess the feasibility for online deployment, we evalu-ate the computational efficiency on Tiny-ImageNet-C using a workstation equipped with an AMD EPYC 7T83 CPU and a single NVIDIA RTX 4090 GPU (24GB VRAM). As summarized in Table IX, ProtoDCS achieves an optimal Pareto frontier, balancing minimal resource consumption with robust open-set performance. Existing methods face severe bottlenecks: TENT incurs a massive memory footprint (12,471 MB) due to full-model gradient tracking, while TPT suffers from prohibitive latency (2.49 samples/sec). In sharp contrast, ProtoDCS maintains a high throughput of 55.86 samples/sec and requires only 372 MB of peak memory—a marginal 16 MB increase over the inference-only Zero-shot CLIP baseline. This efficiency stems from our architectural design: by oper-ating exclusively at the prototype level, ProtoDCS bypasses the costly backpropagation through the heavy ViT backbone. DPE, a dual-stream prototype evolution method designed for closed-set TTA, achieves the best raw efficiency metrics. This highlights the inherent advantage of prototype-level adapta-tion. However, DPE lacks any mechanism for csID/csOOD separation, which fundamentally limits its performance in open-set scenarios (see Table. I). ProtoDCS is explicitly archi-tected for OSTTA. Its robust two-stage verification mechanism introduces only a minimal computational overhead, while its core optimization component – the EDUA-based residual op-timization – is both mathematically concise and computation-ally lightweight. Consequently, ProtoDCS offers a practical solution for edge devices where memory is scarce, delivering sophisticated uncertainty estimation and safety without the latency overhead typical of test-time optimization methods. See SMs for the complexity analysis in theory. 
+
+F. Performance on Closed-set TTA 
+
+A natural concern for open-set TTA methods is whether the sample separation mechanism inadvertently discards hard 
+
+in-distribution samples, thereby degrading performance in closed-set scenarios where no true OOD samples exist. To address this, we evaluate ProtoDCS on the standard ImageNet benchmark and its four naturally shifted variants: ImageNet-A, ImageNet-V2, ImageNet-R, and ImageNet-S. As presented in Table VIII, ProtoDCS demonstrates remarkable robustness even when operating under its full separation framework designed for open-set streams. It achieves an average accuracy of 65.69%, which is highly comparable to the state-of-the-art closed-set specialist DPE (65.93%). Crucially, on datasets con-taining samples with severe visual deviations (e.g., ImageNet-A and ImageNet-R), ProtoDCS matches or even outperforms DPE (e.g., 60.24% vs. 59.63% on ImageNet-A and 80.69% vs. 80.40% on ImageNet-R). These results confirm that our two-stage verification mechanism is sufficiently discriminative to preserve challenging in-distribution samples for adaptation while effectively filtering out only irrelevant or ambiguous signals, thereby validating its safety and broad applicability across diverse data regimes – from pure closed-set adaptation to complex open-set environments. VI. C ONCLUSION 
+
+In this paper, we introduce ProtoDCS, a robust framework for open-set test-time adaptation (OSTTA) in vision-language models. ProtoDCS replaces brittle hard thresholds with a probabilistic double-check separation mechanism, reliably fil-tering out-of-distribution samples before adaptation. For safe JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 13 
+
+adaptation, we abandon overconfidence-prone entropy mini-mization in favor of an evidence-driven uncertainty-aware loss, which explicitly models aleatoric and epistemic uncertainty to preserve model calibration. For efficient adaptation, ProtoDCS operates exclusively at the prototype level with a frozen backbone, eliminating costly gradient propagation through the VLM. Experiments demonstrate that ProtoDCS achieves state-of-the-art performance in both known-class accuracy and OOD detection, while maintaining high throughput and low memory footprint. This work enables the safe, efficient, and robust deployment of VLMs in dynamic open-world environments. REFERENCES [1] A. Radford, J. W. Kim, C. Hallacy et al. , “Learning transferable visual models from natural language supervision,” in ICML , 2021, pp. 8748– 8763. [2] C. Jia, Y. Yang, Y. Xia et al. , “Scaling up visual and vision-language representation learning with noisy text supervision,” in ICML , 2021, pp. 4904–4916. [3] J. Li, D. Li, C. Xiong et al. , “Blip: Bootstrapping language-image pre-training for unified vision-language understanding and generation,” in 
+
+ICML , 2022, pp. 12 888–12 900. [4] J. Li, D. Li, S. Savarese et al. , “Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models,” in 
+
+ICML , 2023, pp. 19 730–19 742. [5] J. Yu, Z. Wang, V. Vasudevan et al. , “CoCa: Contrastive captioners are image-text foundation models,” Transactions on Machine Learning Research , 2022. [6] D. Hendrycks, S. Basart, N. Mu et al. , “The many faces of robustness: A critical analysis of out-of-distribution generalization,” in ICCV , 2021, pp. 8340–8349. [7] B. Recht, R. Roelofs, L. Schmidt et al. , “Do ImageNet classifiers generalize to ImageNet?” in ICML , 2019, pp. 5389–5400. [8] D. Wang, E. Shelhamer, S. Liu et al. , “Tent: Fully test-time adaptation by entropy minimization,” in ICLR , 2021. [9] S. Niu, J. Wu, Y. Zhang et al. , “Efficient test-time model adaptation without forgetting,” in ICML , 2022, pp. 16 888–16 905. [10] M. Zanella, C. Fuchs, C. De Vleeschouwer et al. , “Realistic test-time adaptation of vision-language models,” in CVPR , 2025, pp. 25 103– 25 112. [11] S. Niu, J. Wu, Y. Zhang et al. , “Towards stable test-time adaptation in dynamic wild world,” in ICLR , 2023. [12] M. Shu, W. Nie, D.-A. Huang et al. , “Test-time prompt tuning for zero-shot generalization in vision-language models,” in NeurIPS , 2022, pp. 14 274–14 289. [13] A. Karmanov, D. Guan, S. Lu et al. , “Efficient test-time adaptation of vision-language models,” in CVPR , 2024, pp. 14 162–14 171. [14] H. S. Yoon, E. Yoon, J. T. J. Tee et al. , “C-tpt: Calibrated test-time prompt tuning for vision-language models via text feature dispersion,” in ICLR , 2024. [15] X. Wang, K. Chen, J. Zhang et al. , “TAPT: Test-time adversarial prompt tuning for robust inference in vision-language models,” in CVPR , 2025, pp. 19 910–19 920. [16] Q. Dai and S. Yang, “Free on the fly: Enhancing flexibility in test-time adaptation with online EM,” in CVPR , 2025, pp. 9538–9548. [17] R. Zeng, Q. Deng, R. Zhang et al. , “Exploring audio cues for enhanced test-time video model adaptation,” IEEE Trans. Circuit Syst. Video Technol. , pp. 12 292–12 305, 2025. [18] J. Liu, J. Xie, F. Zhou et al. , “Question type-aware debiasing for test-time visual question answering model adaptation,” IEEE Trans. Circuit Syst. Video Technol. , vol. 34, no. 11, pp. 10 805–10 816, 2024. [19] Y. Wu, G. Chen, L. Ye et al. , “Ttagaze: Self-supervised test-time adaptation for personalized gaze estimation,” IEEE Trans. Circuit Syst. Video Technol. , vol. 34, no. 11, pp. 10 959–10 971, 2024. [20] C. Zhang, S. Stepputtis, K. Sycara et al. , “Dual prototype evolving for test-time generalization of vision-language models,” in NeurIPS , 2024, pp. 32 111–32 136. [21] T. Zhang, J. Wang, H. Guo et al. , “Boostadapter: Improving vision-language test-time adaptation via regional bootstrapping,” in NeurIPS ,2024, pp. 67 795–67 825. [22] Z. Gao, X.-Y. Zhang, and C.-L. Liu, “UniEnt: Unified entropy opti-mization for open-set test-time adaptation,” in CVPR , 2024, pp. 23 975– 23 984. [23] J. Lee, D. Das, J. Choo et al. , “Towards open-set test-time adaptation utilizing the wisdom of crowds in entropy minimization,” in ICCV , 2023, p. 16334. [24] Y. Yu, L. Sheng, R. He, and J. Liang, “Stamp: Outlier-aware test-time adaptation with stable memory replay,” in ECCV , 2024, pp. 375–392. [25] G. Wang and C. Ding, “Effortless active labeling for long-term test-time adaptation,” in CVPR , 2025, pp. 25 633–25 642. [26] D. Hendrycks and K. Gimpel, “A baseline for detecting misclassified and out-of-distribution examples in neural networks,” in ICLR , 2017. [27] S. Liang, Y. Li, and R. Srikant, “Enhancing the reliability of out-of-distribution image detection in neural networks,” in ICLR , 2018. [28] W. Liu, X. Wang, J. D. Owens et al. , “Energy-based out-of-distribution detection,” in NeurIPS , 2020, pp. 21 464–21 475. [29] X. Zhou, Z. Tian, B. Zhang et al. , “Test-time adaptation on noisy data via model-pruning-based filtering and flatness-aware entropy minimization,” in AAAI , 2025, pp. 10 852–10 860. [30] T. Wang and P. Isola, “Understanding contrastive representation learning through alignment and uniformity on the hypersphere,” in ICML , 2020, pp. 9929–9939. [31] W. Tu, W. Deng, D. Campbell et al. , “An empirical study into what matters for calibrating vision-language models,” in ICML , 2024, pp. 48 791–48 808. [32] B. Murugesan, J. Silva-Rodr´ ıguez, I. B. Ayed et al. , “Robust calibration of large vision-language adapters,” in ECCV , 2024, pp. 147–165. [33] M. Zhang, S. Levine, and C. Finn, “Memo: Test time robustness via adaptation and augmentation,” in NeurIPS , 2022, pp. 38 629–38 642. [34] Y. Zhang, X. Wang, K. Jin et al. , “Adanpc: Exploring non-parametric classifier for test-time adaptation,” in ICML , 2023, pp. 41 647–41 676. [35] P. Gao, S. Geng, R. Zhang et al. , “CLIP-Adapter: Better vision-language models with feature adapters,” Int. J. Comput. Vis. , vol. 132, no. 2, pp. 581–595, 2024. [36] J. Shin and H. Kim, “L-TTA: Lightweight test-time adaptation using a versatile stem layer,” in NeurIPS , 2024, pp. 39 325–39 349. [37] M. Zanella and I. Ben Ayed, “On the test-time zero-shot generalization of vision-language models: Do we really need prompt learning?” in 
+
+CVPR , 2024, pp. 23 783–23 793. [38] Y. Iwasawa and Y. Matsuo, “Test-time classifier adjustment module for model-agnostic domain generalization,” in NeurIPS , 2021, pp. 2427– 2440. [39] D. Chen, Z. Wang, L. Zhang et al. , “Contrastive test-time adaptation,” in CVPR , 2022, pp. 295–305. [40] M. Tan, G. Chen, J. Wu et al. , “Uncertainty-calibrated test-time model adaptation without forgetting,” TPAMI , vol. 47, no. 8, pp. 6274 – 6289, 2025. [41] J. Lee, D. Jung, S. Lee et al. , “Entropy is not enough for test-time adaptation: From the perspective of disentangled factors,” in ICLR , 2024. [42] Y. Bar, S. Shaer, and Y. Romano, “Protected test-time adaptation via online entropy matching: A betting approach,” in NeurIPS , 2024, pp. 85 467–85 499. [43] A. Sharifdeen, M. A. Munir, S. Baliah et al. , “O-TPT: Orthogonality constraints for calibrating test-time prompt tuning in vision-language models,” in CVPR , 2025, pp. 19 942–19 951. [44] Y. Yuan, B. Xu, L. Hou et al. , “Tea: Test-time energy adaptation,” in 
+
+CVPR , 2024, pp. 23 901–23 911. [45] Q. Zhang, Y. Bian, X. Kong et al. , “COME: Test-time adaptation by conservatively minimizing entropy,” in ICLR , 2025. [46] M. Sensoy, L. Kaplan, and M. Kandemir, “Evidential deep learning to quantify classification uncertainty,” in NeurIPS , 2018, pp. 3183–3193. [47] A. Kendall and Y. Gal, “What uncertainties do we need in Bayesian deep learning for computer vision?” in NeurIPS , 2017, paper 5574–5584. [48] D. Hendrycks and T. Dietterich, “Benchmarking neural network robust-ness to common corruptions and perturbations,” in ICLR , 2019. [49] Y. Netzer, T. Wang, A. Coates et al. , “Reading digits in natural images with unsupervised feature learning,” in NeurIPS workshop on deep learning and unsupervised feature learning , 2011. [50] D. Hendrycks, K. Zhao, S. Basart et al. , “Natural adversarial examples,” in CVPR , 2021, pp. 15 262–15 271. [51] A. R. Dhamija, M. G¨ unther, and T. E. Boult, “Reducing network agnostophobia,” in NeurIPS , 2018, paper 9175–9186. [52] C.-M. Feng, K. Yu, Y. Liu et al. , “Diverse data augmentation with diffusions for effective test-time prompt tuning,” in ICCV , 2023, pp. 2704–2714. [53] G. A. V. Hakim, D. Osowiechi, M. Noori et al. , “Clipartt: Adaptation of CLIP to new domains at test time,” in WACV , 2025, pp. 7092–7101. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 14 
+
+SUPPLEMENTARY MATERIALS 
+
+We organize our supplementary materials as follows:  
+
+> •
+
+Appendix A details the overall algorithm of ProtoDCS.  
+
+> •
+
+Appendix B provides more experimental setups.  
+
+> •
+
+Appendix C provides a detailed breakdown of the diversity-aware visual cache, including its update policy and a computational complexity analysis. APPENDIX AOVERALL ALGORITHM This section details the foundational components of the ProtoDCS approach. We begin by presenting the complete online adaptation process in the form of pseudocode (Algo-rithm 1). This algorithm provides a step-by-step overview of the pipeline. 
+
+A. OVERALL ALGORITHM OF PROTODCS 
+
+Algorithm 1 outlines the complete online adaptation process of ProtoDCS for a single incoming test sample. It details the sequential execution of the three core stages outlined in the main paper: openness-aware initialization, evidence-driven optimization, and final verification, which together form our double-check separation and prototype evolution pipeline. 
+
+Firstly , in the initial check stage (lines 3-10), we compute an initial openness score Sopen and use it to conditionally update the diversity-aware visual cache Cv . Secondly , based on a stricter trust threshold, we perform a conditional, evidence-driven adaptation (lines 11-19). This stage generates temporary prototypes P ′ 
+
+> t
+
+and P ′ 
+
+> v
+
+by optimizing small, learnable residuals, while keeping the main VLM backbone frozen. Finally , in the verification and finalization stage (lines 20-29), the sample is re-evaluated using these temporary prototypes. A Gaussian Mixture Model (GMM) makes the definitive csID/csOOD decision. If the sample is confirmed as csID, it is used for the final prediction and to evolve the global prototypes. APPENDIX BMORE EXPERIMENTAL SETUPS 
+
+This section provides the compared methods and implemen-tation details for the final-verification stage (Section IV-C) and the prototype evolution (Section IV-D). 
+
+A. Compared methods 
+
+We compare ProtoDCS against three groups of methods. 1) Standard TTA Methods: These methods focus on closed-set adaptation. TENT [8] minimizes prediction entropy by updating batch normalization parameters. SAR [11] employs sharpness-aware minimization to filter out noisy samples with high gradients. EATA [9] combines reliable sample selection based on prediction consistency with Fisher information-based weight regularization. 2) VLM-based TTA Methods: These methods are closed-set methods but leverage the CLIP ar-chitecture. TPT [12] adapts the model by tuning learnable textual prompts via entropy minimization. C-TPT [14] adds a dispersion loss to TPT to calibrate predictions. DiffTPT [52] incorporates a diffusion model to generate diverse views for robust prompt tuning. CLIPArTT [53] updates the visual nor-malization layers via a transductive loss derived from instance-specific multi-class prompts. TDA [13] proposes a training-free dynamic adapter that maintains positive and negative key-value caches to refine predictions. DPE [20] introduces a dual-stream evolution strategy updating both textual and visual prototypes. 3) Open-Set TTA Methods: These are explicitly designed for csOOD scenarios. UniEnt [22] proposes a unified optimization objective that filters csOOD samples via similar-ity with fixed text prototypes. STAMP [24] utilizes an outlier-aware memory replay mechanism to filter csOOD samples. To eliminate the effects of backbone differences, we extend the open-set TTA (OSTTA) techniques originally designed for ResNet to CLIP for a fair comparison. Specifically, we extend UniEnt to TPT and STAMP to CLIP. Compared with OSTTA methods on the same backbone, our gains could demonstrate that they stem from closed-loop systematic design rather than simple aggregation. In addition, Zero-shot CLIP serves as the fundamental lower bound. While our extensive evaluations focus on the CLIP-ViT backbone, we also validate ProtoDCS on CLIP-ResNet-50 backbone to verify its generalizability across different architectures. 
+
+B. GMM-BASED SEPARATION LOGIC 
+
+The GMM-based separation forms the core of our final verification step.  
+
+> •
+
+Dynamic Fitting: We do not fit a GMM for every sample. Instead, we maintain a sliding window of the most recent final openness scores, S′
+
+> open
+
+, and re-fit the two-component GMM on this window periodically (e.g., every 100 samples). This is both efficient and adaptive to non-stationary data streams.  
+
+> •
+
+Decision and Fallback: After a successful GMM fit, we associate the component with the higher mean with the OOD component. A sample’s posterior probability of belonging to this component determines its final classifi-cation. If a GMM fit fails to converge, our system robustly falls back to using the hard threshold Θc, which was derived from the last successful GMM fit. This ensures a reliable decision is always made, even during periods of unstable data distribution. Fig. 7 illustrates the resulting distribution of the final openness scores, showing a clear separation between ID and OOD samples that the GMM is designed to model. 
+
+C. CONDITIONAL AND ASYMMETRIC PROTOTYPE EVO-LUTION 
+
+After the final csID/csOOD decision, the evolution of the global prototypes (Pt and Pv ) is highly conditional and asymmetric, ensuring robustness. For confirmed csID samples, the update is gated by a 
+
+dynamic quality threshold . Only csID samples whose final prediction yields a high confidence are used for evolution. In our implementation, this confidence is measured by the sample’s final predictive uncertainty (aleatoric uncertainty), where a lower uncertainty value indicates higher confidence. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 15 
+
+Algorithm 1 ProtoDCS: Online Adaptation Process  
+
+> 1:
+
+Initialize: VLM visual encoder Ev , Global text prototypes Pt, visual cache Cv ← ∅ , score windows Wc, W g ← ∅ ,learning rates ηt, η v , alignment weight λalign , GMM threshold Θp, fallback threshold Θc ← 0.7, sample counter 
+
+n ← 0, processed counter nproc ← 0, quality threshold Θq ← 0.1, momentum γ ← 0.01  
+
+> 2:
+
+for each incoming sample x do  
+
+> 3:
+
+nproc ← nproc + 1 // Increment processed sample counter  
+
+> 4: 5:
+
+# — Stage 1: First-Check and Cache Update —  
+
+> 6:
+
+fv ← Ev (x) 
+
+> 7:
+
+Sopen ← 1 − max k cos( fv , ft,k ) // Compute initial openness score Sopen using Eq. (2)  
+
+> 8:
+
+Wc ← UpdateWindow (Wc, S open ) // Performs a FIFO (First-In, First-Out) update on the 100-element score window  
+
+> 9:
+
+Set Θa to the 30th and Θb to the 60th percentile of scores in Wc // Set cache and trust thresholds  
+
+> 10:
+
+if Sopen < Θa then  
+
+> 11:
+
+Update visual cache Cv with (x, fv ) // See diversity-aware logic in Sec. (IV-A) and Algorithm 2  
+
+> 12:
+
+end if  
+
+> 13: 14:
+
+# — Stage 2: Conditional Evidence-driven Adaptation —  
+
+> 15:
+
+Pv ← AverageFeatures (Cv ) // Compute visual prototypes  
+
+> 16:
+
+if Sopen < Θb then // Trustworthy sample for adaptation  
+
+> 17:
+
+∆Pt, ∆Pv ← 0 // Initialize residuals  
+
+> 18:
+
+L ← L uncertainty + λalign Lalign // From Eq. (5)  
+
+> 19:
+
+Update ∆Pt, ∆Pv with one step of gradient descent: ∇L  
+
+> 20:
+
+P ′ 
+
+> t
+
+, P ′ 
+
+> v
+
+← Norm (Pt + ∆ Pt), Norm (Pv + ∆ Pv ) // using Eq. (4)  
+
+> 21:
+
+else  
+
+> 22:
+
+P ′ 
+
+> t
+
+, P ′ 
+
+> v
+
+← Pt, Pv // No adaptation  
+
+> 23:
+
+end if  
+
+> 24: 25:
+
+# — Stage 3: Final Verification with GMM —  
+
+> 26:
+
+S′ 
+
+> open
+
+← 1 − max k cos( fv , p′
+
+> t,k
+
+) // Re-evaluate with temporary prototypes  
+
+> 27:
+
+Wg ← UpdateWindow (Wg , S ′
+
+> open
+
+) 
+
+> 28:
+
+if nproc ≥ 100 then // Activate GMM only after collecting enough samples  
+
+> 29:
+
+G ← FitGMM (Wg ) // Fit GMM G on window Wg using Eq. (9)  
+
+> 30:
+
+P (CcsOOD |S′
+
+> open
+
+) ← GetPosterior (G, S ′
+
+> open
+
+) // Update decision with GMM posterior  
+
+> 31:
+
+else  
+
+> 32:
+
+P (CcsOOD |S′
+
+> open
+
+) ← 1[S′ 
+
+> open
+
+≥ Θc] // Determine using a fixed score threshold  
+
+> 33:
+
+end if  
+
+> 34: 35:
+
+# — Stage 4: Conditional Prediction and Asymmetric Global Evolution —  
+
+> 36:
+
+if P (ccsOOD |S′
+
+> open
+
+) < Θp then // Verify using Eq. (10)  
+
+> 37:
+
+Predict with P ′ 
+
+> t
+
+, P ′ 
+
+> v
+
+using Eq. (11)(12)  
+
+> 38:
+
+Calculate AU (x) using Eq. (7)  
+
+> 39:
+
+if AU (x) < Θq then // See Appendix. (C) for details  
+
+> 40:
+
+n ← n + 1 // Increment confirmed csID sample counter  
+
+> 41:
+
+Pt ← (1 − 1/n )Pt + (1 /n )P ′ 
+
+> t
+
+// Evolve global Text prototypes Pt using Eq. (13)  
+
+> 42:
+
+Θq ← (1 − γ)Θ q + γ · AU (x) // Update quality threshold via EMA  
+
+> 43:
+
+end if  
+
+> 44:
+
+// Note: Global Visual Prototypes Pv evolve implicitly via cache updates in Stage 1  
+
+> 45:
+
+else  
+
+> 46:
+
+Classify x as OOD  
+
+> 47:
+
+end if  
+
+> 48:
+
+end for 
+
+To achieve a threshold that tightens as adaptation proceeds ,we initialize it with a static base value 0.1 and then update it using an Exponential Moving Average (EMA). This threshold tightens as adaptation proceeds, ensuring that only increasingly reliable samples contribute.  
+
+> •
+
+Textual Prototype Update: For a high-quality csID sam-ple, the global text prototypes Pt are updated slowly via a Cumulative Moving Average (CMA) with the temporary prototypes P ′ 
+
+> t
+
+. This smooths out noise from individual samples and captures persistent semantic shifts. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 16 0.64 0.66 0.68 0.70 0.72 0.74 0.76 0.78 0.80         
+
+> Sopen
+> 0
+> 0.1
+> 0.1
+> 0.1
+> 0.2
+> 0.2
+> 0.3
+> 0.3
+> 0.4
+> Density  N(csID ,2
+> csID )
+> N(csOOD ,2
+> csOOD )
+> csID csOOD
+> Fig. 7. Distribution of Final Openness Scores ( S′
+> open ) on CIFAR-10-C. This plot shows the score distribution for ID and OOD samples under the “brightness” corruption. The clear separation demonstrates the effectiveness of our temporary prototype refinement in enhancing the score’s discriminability.
+> •
+
+Visual Prototype Update: The visual feature of a high-quality csID sample is first placed in a temporary buffer. This buffer is periodically flushed, and its most represen-tative samples are then added to the visual cache Cv using the diversity-aware logic from Algorithm 2. This delayed, batched update for the visual cache further enhances stability. This conditional and asymmetric evolution mechanism allows ProtoDCS to adapt to csID data while actively reinforcing its ability to reject csOOD data. APPENDIX CDIVERSITY-AWARE VISUAL CACHE: MECHANISM AND ANALYSIS This section elaborates on the Visual Cache module ( Cv ), which is critical for maintaining robust class representations without incurring high memory costs. We detail its specific update policy and analyze its computational efficiency. 
+
+A. UPDATE POLICY AND ALGORITHM 
+
+The maintenance of the visual cache Cv is governed by a 
+
+diversity-quality trade-off mechanism (Algorithm 2), ensuring that the stored prototypes span the class manifold without absorbing noise. Unlike traditional FIFO queues, we employ Aleatoric Uncertainty (AU) as a dynamic criterion for sample retention. Since AU captures inherent data noise (e.g., blur, occlusion), using it to arbitrate replacements (lines 6-10, 15-16) ensures that the cache progressively purifies the class representation, rejecting outliers even if they are semantically similar. When a new candidate sample xnew is admitted, the update logic proceeds as follows: 1) Redundancy Check (High Similarity): First, we com-pute the maximum cosine similarity smax between xnew 
+
+and all existing samples in the class queue Qk. If xnew 
+
+is highly similar to an existing sample ( smax > τ sim , de-fault 0.9), it indicates redundancy. In this case, we only perform a replacement if xnew has lower uncertainty (better quality) than the existing sample. This ensures that the prototype fv,k (mean of the queue) progressively becomes a cleaner representation of the class center. 2) Diversity Expansion (Low Similarity): If xnew is dis-tinct from existing samples ( smax ≤ τsim ), it contributes new semantic information.  
+
+> •
+
+If the queue is not full, xnew is directly appended.  
+
+> •
+
+If the queue is full, we identify the ”worst” sample in the current queue—defined as the one with the highest Aleatoric Uncertainty (lowest quality)—and replace it with xnew .This mechanism ensures that the cache Cv evolves to span the diverse visual variations of the class while actively filtering out noisy outliers. 
+
+Algorithm 2 Diversity-Aware Cache Update Logic  
+
+> 1:
+
+Input: New sample feature fnew , its initial logits lnew ,target class queue Qk. 
+
+> 2:
+
+Hyperparameters: Queue capacity Ncache , similarity threshold τsim = 0 .9. 
+
+> 3:
+
+Output: The updated class queue Qk. 
+
+> 4:
+
+qnew ← AU (lnew ). // Calculate new sample’s quality  
+
+> 5:
+
+smax ← max (fi,·)∈Q k cos( fnew , fi) // Find max simi-larity smax with items in Qk 
+
+> 6:
+
+if smax > τ sim then  
+
+> 7:
+
+(fsim , lsim ) ← arg max (fi,li)∈Q k cos( fnew , fi) // Let 
+
+(fsim , lsim ) be the most similar item  
+
+> 8:
+
+if qnew < AU (lsim ) then  
+
+> 9:
+
+Replace (fsim , lsim ) with (fnew , lnew ). 
+
+> 10:
+
+end if  
+
+> 11:
+
+else  
+
+> 12:
+
+if |Q k| < N cache then  
+
+> 13:
+
+Add (fnew , lnew ) to Qk. 
+
+> 14:
+
+else  
+
+> 15:
+
+Find (fworst , lworst ) ← arg max (fi,li)∈Q k AU (li) 
+
+> 16:
+
+Replace (fworst , lworst ) with (fnew , lnew ) in Qk. 
+
+> 17:
+
+end if  
+
+> 18:
+
+end if 
+
+B. COMPUTATIONAL COMPLEXITY ANALYSIS 
+
+A key advantage of ProtoDCS is its efficiency. Here, we theoretically analyze the overhead introduced by the visual cache mechanism to substantiate the empirical results in Table IX of the main paper. Let Ncache be the maximum size of the queue per class (set to 5) and K be the number of classes. The cache update involves calculating cosine similarities between the incoming sample feature fnew and the stored features in the target class queue Qk. Since the queue size is fixed at a small constant Ncache = 5 , the complexity of the similarity search and quality comparison for each incoming sample is 
+
+O(Ncache ), which is effectively O(1) . Crucially, this operation involves only lightweight vector dot products in the embedding dimension d (e.g., 512 for ViT-B/16), avoiding any gradient backpropagation or heavy matrix multiplications associated with the backbone. Consequently, the memory overhead is limited to storing K × Ncache feature vectors, and the compu-tational latency is negligible compared to the VLM inference pass. This theoretical bound aligns with our observation that JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 17 
+
+ProtoDCS maintains high throughput comparable to inference-only baselines.

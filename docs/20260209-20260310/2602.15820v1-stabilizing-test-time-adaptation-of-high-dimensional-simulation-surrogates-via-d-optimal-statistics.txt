@@ -1,0 +1,745 @@
+Title: Stabilizing Test-Time Adaptation of High-Dimensional Simulation Surrogates via D-Optimal Statistics
+
+URL Source: https://arxiv.org/pdf/2602.15820v1
+
+Published Time: Wed, 18 Feb 2026 02:11:56 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Stabilizing Test-Time Adaptation of High-Dimensional Simulation Surrogates via D-Optimal Statistics 
+
+Anna Zimmel 1 Paul Setinek 1 Gianluca Galletti 1 Johannes Brandstetter 1 2 Werner Zellinger 1
+
+## Abstract 
+
+Machine learning surrogates are increasingly used in engineering to accelerate costly simulations, yet distribution shifts between training and de-ployment often cause severe performance degra-dation (e.g., unseen geometries or configurations). Test-Time Adaptation (TTA) can mitigate such shifts, but existing methods are largely developed for lower-dimensional classification with struc-tured outputs and visually aligned input-output relationships, making them unstable for the high-dimensional, unstructured and regression prob-lems common in simulation. We address this chal-lenge by proposing a TTA framework based on storing maximally informative (D-optimal) statis-tics, which jointly enables stable adaptation and principled parameter selection at test time. When applied to pretrained simulation surrogates, our method yields up to 7% out-of-distribution im-provements at negligible computational cost. To the best of our knowledge, this is the first sys-tematic demonstration of effective TTA for high-dimensional simulation regression and generative design optimization, validated on the SIMSHIFT and EngiBench benchmarks. 
+
+## 1. Introduction 
+
+Neural surrogates have become powerful tools for accelerat-ing Partial Differential Equation ( PDE ) simulations across engineering and science. They perform well when test con-ditions match the training data, but performance often drops on unseen configurations (geometry, material types, struc-tural dimensions, desired and physical parameters), i.e., when the data distribution shifts. This challenge gets more pronounced in industrial simulation and design optimiza-tion, where configurations can vary widely across iterations and frequently extend beyond the ranges known a priori, 
+
+> 1
+
+ELLIS Unit, LIT AI Lab, Institute for Machine Learning, JKU Linz, Austria 2Emmi AI GmbH, Linz, Austria. Correspondence to: Anna Zimmel <zimmel@ml.jku.at >.
+
+Preprint. February 18, 2026. 
+
+at data generation and training time. In many cases, only large pre-trained surrogate models are available, making full retraining costly or impractical. Moreover, access to original training data may be limited due to portability or proprietary constraints, highlighting the need for model- and task-agnostic approaches that enable zero-shot adaptation and automated model selection during design optimization. The problem of tackling distribution shifts (Quinonero-Candela et al., 2008) is central to various long standing research directions, such as domain adaptation (Ben-David et al., 2006), domain generalization (Blanchard et al., 2021), meta-learning (Hochreiter et al., 2001; Hospedales et al., 2021), and active learning (Settles, 2009). To counteract these shifts, a common goal is to adapt a model trained on a source distribution to a shifted target domain. For engi-neering tasks, where rapid adaptation is essential and target domain distributions are unavailable a priori, Test-Time Adaptation ( TTA ) is a particularly suitable approach, as it adapts models during inference without access to source data and with minimal computational overhead (Liang et al., 2020; Sun et al., 2020b; Wang et al., 2021). TTA has proven effective in many domains, including medical imaging, ob-ject detection, and segmentation. However, while many works treat classification tasks (Wang et al., 2021; Liang et al., 2020), comparably little re-search can be found for high-dimensional regression settings (Liang et al., 2024). One interesting recent method tackling this gap is Significant-Subspace Align-ment ( SSA ) (Adachi et al., 2025), capable of handling both classification and one-dimensional regression tasks. Fur-ther methods that are similar to the high-dimensional sim-ulation tackle TTA in vision settings, for example depth-estimation (Liu et al., 2023), super-resolution (Park et al., 2020; Deng et al., 2023) and image dehazing (Liu et al., 2022). Unfortunately, first, all methods mentioned above are tailored to the image domain, relying on inductive biases of regular grids and visual similarities between inputs and outputs. This does not translate to the unstructured non-euclidean domains of engineering simulations, where the compact inputs like scalar simulation parameters and geome-tries can generate complex solution manifolds. Second, the methods mentioned above typically operate on problems of 1
+
+> arXiv:2602.15820v1 [cs.LG] 17 Feb 2026 Stable Adaptation at Test-Time for Simulation (SATTS)
+
+O(10 5) degrees of freedom (e.g. images up to 512 × 512 ), whereas the numerical simulation grids we consider can reach up to O(10 6) and further increase orders of magni-tudes in industry (Ferziger et al., 2019). As a consequence, classical TTA methods often cannot overcome the severe instabilities in our considered problem setting. To address this, we introduce a (to the best of our knowledge first) TTA framework explicitly targeting neural surrogates for high-dimensional engineering tasks under distribution shifts, covering simulation (regression) and design optimiza-tion (generation) problems. At the core of our approach lies the use of maximally informative source statistics to stabilize the adaptation process, which we approach by D-optimal (Atkinson & Donev, 1992) sample selection. This approach allows us to compress the source manifold into a small set of source statistics for realizing three core proper-ties for robust TTA : (i) feature alignment, (ii) preservation of source domain knowledge, and (iii) unsupervised tuning of adaptation hyperparameters. To achieve (i), we extend one-dimensional regression ap-proaches for covariance adaptation (Adachi et al., 2025) to our multidimensional setting. This places our work within the broader category of domain-invariant representation learning algorithms (Ben-David et al., 2006; Ganin et al., 2015; Zellinger et al., 2019; Johansson et al., 2019). To ensure (ii), we regularize adaptation using source error in-duced by our D-optimal statistics, effectively constraining updates to remain close to the source solution. Finally, tackling (iii) is crucial as the optimal choice of adaptation hyperparameters has been acknowledged as a big bottleneck in the area of Unsupervised Domain Adaptation ( UDA ) and related communities (Musgrave et al., 2021; Miller et al., 2021; Baek et al., 2023; Setinek et al., 2025). We therefore integrate Importance Weighted Validation (IWV) using es-timated density ratios as an unsupervised model selection strategy, enabling automated, in-the-loop model selection in order to optimize performance while ensuring stability at the same time. We summarize our contributions as follows: • Problem: We are (to the best of our knowledge) the first one applying TTA to high-dimensional simulation regression. • Method: We propose a novel adaptation framework that relies on D-optimal source statistics and stabilizes three main components: feature alignment, source knowl-edge preservation, and parameter tuning. • Performance: We demonstrate in Table 1 and 3 that our approach reliably outperforms standard TTA meth-ods on diverse engineering adaptation benchmarks, SIMSHIFT for high-dimensional regression and En-giBench for design generation. 
+
+## 2. Related Work 
+
+Neural surrogates have emerged as a widely used approach to accelerate traditional numerical simulation methods by providing fast approximations of the solutions. In general, surrogate models are trained on the solutions from numerical solvers, paired with the corresponding initial conditions and configurations under which they were generated, e.g., (Setinek et al., 2025; Bonnet et al., 2022; Toshev et al., 2023; 2024). A particularly prominent line of work within neural surrogate modeling for PDE s is operator learning (Kovachki et al., 2021; Li et al., 2020; Lu et al., 2021; Alkin et al., 2024; Wu et al., 2024b). Such models aim to directly approximate the solution operator that maps initial functions (conditions and input terms) to output functions. 
+
+Test-Time Adaptation ( TTA ) refers to the emerging ma-chine learning technique of adapting a pre-trained model to unlabeled target data, directly at inference time and prior to generating predictions. For this reason, TTA has recently attracted increasing attention as it can offer (nearly) free performance gains (Liang et al., 2024). While the major-ity of existing TTA methods have been developed for low-dimensional classification tasks (Liang et al., 2021; Yang et al., 2021), employing methodologies such as entropy min-imization (Wang et al., 2021; Zhou & Levine, 2021; Niu et al., 2022; Zhang et al., 2022; Zhao et al., 2023) and fea-ture alignment (Ishii & Sugiyama, 2021; Kojima et al., 2022; Eastwood et al., 2021; Adachi et al., 2023; Jung et al., 2023), recent works have begun to extend these ideas to image seg-mentation (Valanarasu et al., 2023; He et al., 2021; Karani et al., 2021). Research in TTA tackling regression problems is much sparser. Significant-Subspace Alignment ( SSA )(Adachi et al., 2025) moves into this direction, showing positive performance in the one-dimensional cases. Addi-tionally, there are specialized methods designed for image regression tasks such as depth-estimation (Liu et al., 2023), super-resolution (Park et al., 2020; Deng et al., 2023), or im-age dehazing (Liu et al., 2022). Finally, TTA should not be confused with Test-Time Training (TTT), often used in time series literature (Sun et al., 2020a; Wang et al., 2021; Sun et al., 2025; 2020c). While both solve the same problem, TTT typically refers to methods that employ time-series spe-cific techniques, for example, updating hidden states during sequential inference. 
+
+Covariance alignment of latent feature distributions is com-mon practice in UDA and TTA (Sun & Saenko, 2016; Sun et al., 2015; Li et al., 2016; Wang et al., 2021). Even though this can be extended to higher-order moments (Zellinger et al., 2019; Chen et al., 2019), second-order alignment often already achieves stable performance across datasets. 
+
+Domain generalization, meta-learning, and active learn-ing represent alternative strategies that can be used to im-prove model robustness and generalization under distribu-2Stable Adaptation at Test-Time for Simulation (SATTS) (i) Feature Alignment (ii) Regularization (iii) Parameter Selection 
+
+D-Optimal Set 
+
+IWV 
+
+(b) Test-Time Adaptation (a) Pre-Training 
+
+Figure 1. Our method applied to hot rolling task from (Setinek et al., 2025). (a) Pre-training on the source domain with fixed input parameters, thickness ( τ ), post-rolling reduction ( r), and temperature coefficients ( λa, λb). The representation learner ϕ and the predictor 
+
+g are optimized and maximally informative (D-optimal) statistics are computed. (b) Test-time adaptation of ϕ without source data using D-optimal statistics for realizing three TTA pillars: adaptation (KL-based feature alignment), source knowledge preservation (statistics-based regularization) and parameter tuning (importance weighted validation). 
+
+tion shifts. Domain generalization (Muandet et al., 2013; Li et al., 2017; Holzleitner et al., 2024) and UDA (Sun & Saenko, 2016; Gretton et al., 2006; Zellinger et al., 2019; Ganin et al., 2015) can be effective in some scenarios, how-ever their reliance on specific training, model selection and diverse training distributions limits their applicability. Meta-learning methods (Hochreiter et al., 2001; Finn et al., 2017) and active learning (Lewis & Gale, 1994; Musekamp et al., 2025) are similarly motivated, but generally assume access to ground-truth information in the shifted domain. In our setting, all these approaches face a significant practical limi-tation: none of them can quickly adapt a pre-trained model leveraging unlabeled data at test-time, as they all rely on a priori knowledge and training. This motivates our explo-ration of TTA as a more suitable solution. 
+
+## 3. Problem 
+
+Following (Xiao & Snoek, 2024; Liang et al., 2024), we assume access to a regressor fθ : X → Rd pre-trained on 
+
+source samples (xi, yi)N src  
+
+> i=1
+
+∈ X × Rd drawn from a source distribution P src , e.g., fθ = g ◦ ϕ in Figure 1. We also assume access to some ground truth matrix-valued source statistics. The goal is, for any new unlabeled sample (xtgt  
+
+> i
+
+)N tgt  
+
+> i=1
+
+drawn from the input marginal of a target distribution P tgt ̸ = P src ,to find θ which minimizes the empirical target risk 
+
+bRtgt (fθ ) = 1
+
+N tgt  
+
+> Ntgt
+
+X
+
+> i=1
+
+fθ (xtgt  
+
+> i
+
+) − ytgt  
+
+> i
+> 22
+
+. (1) Note that we have no access to any target labels (ytgt  
+
+> i
+
+)N tgt 
+
+> i=1
+
+and the target risk in Eq. (1) cannot be directly evaluated. 
+
+TTA in simulation. We emphasize that our TTA setting differs from the usual, computer vision-oriented problems. In particular, simulation surrogates are more challenging, as the output dimension d of fθ : X → Rd can reach O(10 6) in our regime. This is typical for neural surrogates in simula-tion, but less common in the vision domain. Moreover, adap-tation relies on small unlabeled target batches {xtgt  
+
+> i
+
+}Ntgt 
+
+> i=1
+
+with Ntgt ≪ d. Finally, vision tasks often present structured, visually aligned inputs and outputs. Conversely, simula-tion data usually lacks geometric correspondence between 
+
+xi and yi, as xi is often just coordinates (Lu et al., 2021; Kovachki et al., 2021). This, together with the high dimen-sionality render standard TTA methods ill-conditioned for neural surrogates, and necessitates explicit methodological mechanisms to stabilize the adaptation process. 
+
+## 4. Method 
+
+4.1. Maximally informative statistics 
+
+In high-dimensional settings, naive statistics (e.g., global means) are insufficient to support reliable TTA , as their estimation becomes ill-conditioned in the presence of low-information or spurious feature directions. As a result, usual adaptation objectives become sensitive to noise and irrele-vant components. We approach this by selecting a subset of latent representations that preserves the most informative structure of the source model (Zhang et al., 2023). 3Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+Data generating assumption. We follow the common assumption (Fernando et al., 2013; Sun & Saenko, 2016; Adachi et al., 2025) that z = ϕ(x) is normally distributed for each domain, such that the feature distribution is fully characterized by its first- and second-order moments (mean, covariance). 
+
+D-optimal latent statistics. Under this assumption, we focus on second-order latent statistics and select source sam-ples that maximize the information retained in the latent space via D-optimality (Atkinson & Donev, 1992). Orig-inating in experimental design, D-optimality identifies a subset of m samples whose (latent) representations span the most informative subspace of the original (feature) space. In our setting, letting ZS ∈ Rm×d denote the matrix of latent features z = ϕ(x) for a subset S ⊂ { 1, . . . , N }, we select 
+
+S⋆ = arg max  
+
+> |S|=m
+
+det  Z⊤ 
+
+> S
+
+ZS
+
+ ,
+
+which equivalently maximizes the volume of the linear sub-space spanned by the selected vectors. Note that when the latent features are centered, Z⊤ 
+
+> S
+
+ZS is proportional to the empirical covariance matrix of the selected samples. This means that maximizing the determinant of Z⊤ 
+
+> S
+
+ZS cor-responds to maximizing the generalized variance of the retained latent representation. For tractability, we follow the approach of approximating the D-optimal criterion using QR pivoting on whitened prin-cipal components (Golub & Van Loan, 2013). See Algo-rithm 1 for the pseudocode of our Quasi D-optimal selection criteria. 
+
+Algorithm 1 Quasi D-optimal spanning set selection via PCA and QR pivoting. 
+
+Require: Inputs xsrc , eigendecomposition (λ, V) of 
+
+ϕ(xsrc ), variance threshold τ , number of quasi D-optimal designs m
+
+Ensure: Selected source dataset indices S ⊆ { 1, . . . , N } 
+
+> 1:
+
+Z ← ϕ(xsrc ) 
+
+> 2:
+
+Z ← Z − mean (Z) 
+
+> 3:
+
+r ← select components (λ, τ ) {keep τ % variance } 
+
+> 4:
+
+Y ← ZV :,1: r Λ−1/2 
+
+> r
+> 5:
+
+Q, R, piv ← QR (YT ) 
+
+> 6:
+
+S ← piv 1: m 
+
+> 7:
+
+return S
+
+4.2. SATTS 
+
+We term our approach Stable Adaptation at Test-Time for Simulation (SATTS). SATTS uses D-optimal statistics in a unified framework for stabilizing TTA of high-dimensional simulation regressors. More precisely, D-optimal statistics are used at three key TTA components: feature alignment, source knowledge preservation, and parameter tuning. 
+
+Feature alignment is a common approach in TTA to reduce the dissimilarity between source and target distributions (Section 2). We design our regressor as f = g ◦ ϕ, where a representation learner ϕ maps inputs to latent features 
+
+z ∈ RC , and a predictor g maps these features to outputs, see Figure 1. During test-time adaptation, only the represen-tation learner ϕ is updated, while the predictor g remains fixed. In our high-dimensional regression setting, predictions are given by 
+
+g(z) = Wz + b,
+
+where W ∈ RK×C maps latent features to K output dimen-sions. Following a recent TTA method for regression, Significant Subspace Alignment (SSA) (Adachi et al., 2025), latent directions that strongly influence the prediction are the right candidates for alignment. In SSA, feature importance is defined for one-dimensional regression by selecting a subset of principal directions based on |w⊤vk|, resulting in a hard truncation to a manually chosen significant subspace. We generalize this idea to high-dimensional regression by assigning a positive importance weight to every principal direction, 
+
+αk = 1 + ∥Wv src  
+
+> k
+
+∥2 , (2) where vsrc  
+
+> k
+
+∈ RC denotes the k-th source principal compo-nent. Notably, when K = 1 and only a subset of directions is retained, this formulation reduces to SSA. At deployment, target features ztgt = ϕ(xtgt ) are centered using the source mean μsrc , projected onto the source prin-cipal components Vsrc = [ vsrc 1 , . . . , vsrc  
+
+> K
+
+], and reweighted by α:
+
+˜ztgt =  ztgt − μsrc Vsrc ⊙ α. (3) Finally, we align source and target feature distributions un-der the data generating assumption by minimizing a channel-wise symmetric empirical KL-divergence between the pro-jected target statistics (˜ μtgt  
+
+> k
+
+, ˜σtgt2  
+
+> k
+
+) and the (D-optimally stabilized) source statistics (0 , λ src  
+
+> k
+
+):
+
+LKL = 12
+
+> K
+
+X
+
+> k=1
+
+(˜ μtgt  
+
+> k
+
+)2 + λsrc 
+
+> k
+
+˜σtgt2 
+
+> k
+
++ (˜ μtgt  
+
+> k
+
+)2 + ˜ σtgt2 
+
+> k
+
+λsrc 
+
+> k
+
+− 2
+
+!
+
+.
+
+(4) In contrast to SSA, which relies on hard selection of a man-ually chosen significant subspace, our formulation assigns strictly positive weights to all principal directions, resulting in a soft and dense reweighting of the latent space. Cru-cially, all source statistics required for the weighting and subsequent alignment are computed exclusively from the D-optimal subset, ensuring that the induced covariance struc-ture remains maximally informative and well-conditioned. 4Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+This is essential for stabilizing feature alignment in very high-dimensional regression (see Section 5). 
+
+Source knowledge preservation is realized by regulariza-tion on the subsampled source statistics: 
+
+LTTA = LKL + λ bRsrc (fθ ) (5) with ˆRsrc denoting the empirical source risk estimated on the D-optimal samples and λ > 0 being a regularization parameter. This ensures that the feature alignment updates driven by LKL do not deviate significantly from the known solution. 
+
+Parameter tuning We integrate Importance Weighted Vali-dation (IWV) (Shimodaira, 2000) using D-optimal samples to tune the test-time adaptation learning rate. Since the target risk in Eq. (1) cannot be computed directly without access to target labels, we estimate it via an importance-weighted source risk under the covariate shift assumption 
+
+psrc (y | x) = ptgt (y | x):
+
+ˆRtgt (fθ ) ≈ 1
+
+m
+
+> m
+
+X
+
+> i=1
+
+ˆβ(zi) ∥fθ (xSi ) − ySi ∥22, (6) where {(xSi , ySi )}mi=1 denotes the set of D-optimal source samples and ˆβ(z) = ptgt (z)/p src (z) is the density ratio estimated in latent space z = ϕ(x) under the Gaussian data generating assumption. Using the estimate in Eq. (6) ,we perform model selection via line search over the TTA learning rate, evaluating performance after each adaptation step and stopping once further updates no longer improve the objective. 
+
+## 5. Experiments 
+
+This section presents an empirical analysis of Stable Adap-tation at Test-Time for Simulation. We introduce the bench-marks used for evaluation and demonstrate the performance of our method in complex industrial use cases, where neural surrogates are employed to approximate costly numerical simulations or to directly generate candidate designs. In all experiments, the parameters of the quasi D-optimal algo-rithm (see Algorithm 1) are fixed with m = 8 indices and a threshold of τ = 0 .95% .
+
+5.1. Datasets 
+
+Our evaluation is conducted on two simulation benchmarks, SIMSHIFT (Setinek et al., 2025) and EngiBench (Felten et al., 2025). SIMSHIFT is designed to evaluate how sur-rogate models adapt to distribution shifts on real-world in-dustrial simulation tasks, while EngiBench is a collection of design optimization datasets, optimizers, and simula-tors to evaluate designs. In both benchmarks, the inputs 
+
+x represent parameters like geometry, material properties, desired or operating conditions. The “labels” y correspond to high-dimensional fields such as stresses or deformation for SIMSHIFT, and material density of the generated design for EngiBench. The target distributions in both cases are generated from unseen parameter configurations, and the goal is to predict the corresponding fields outside the training regime. While SIMSHIFT formulates the problem as a regression task with neural operators (Kovachki et al., 2021), EngiBench treats it as an inverse problem solved by generative models. The diversity in task formulation and training paradigm across the two benchmarks highlights the model-agnostic nature of our method. 
+
+5.2. Neural Surrogates for Simulation: SIMSHIFT 
+
+We first analyze adaptation behavior on the SIMSHIFT benchmark (Setinek et al., 2025). SIMSHIFT spans four dis-tinct industrial simulation settings: hot rolling , sheet metal forming , electric motor , and heatsink design . All datasets have explicit source and target domain splits, dependent on the parameters such as initial conditions, material or geom-etry specifications that were used to generate the samples. Shifts happen in parametric space, as opposed to unstruc-tured variations occurring in images. We perform all our experiments using the medium difficulty domain shift setup for all datasets. For a detailed description of the datasets, their creation, and the defined distribution shifts, we re-fer the reader to the SIMSHIFT publication (Setinek et al., 2025). Table 1 summarizes the results across all datasets, com-paring our method with SSA and Tent as established TTA baselines, as well as the unadapted source model ( Source )and the target-optimal selection ( Oracle ). Implementation details are provided in Section C. Across all settings, SATTS consistently outperforms SSA and yields the strongest performance among all adaptation methods, establishing a new baseline for test-time adapta-Ground Truth (GT) Source SATTS  
+
+> |GT - Source| |GT - SATTS|
+> 0.00e+00
+> 4.00e-02
+> 8.00e-02
+> 1.20e-01
+> 1.60e-01
+> PEEQ
+> 0.00e+00
+> 1.50e-02
+> 3.00e-02
+> 4.50e-02
+> 6.00e-02
+> Absolute Error
+
+Figure 2. Comparison of Equivalent Plastic Strain (PEEQ) predic-tions on a hot rolling sample. Displaying the Ground Truth (GT), the unadapted Source model, and the SATTS results in the top row, with the absolute residuals, |GT − Source | and |GT − SATTS | in the bottom row. 
+
+5Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+Table 1. Comparison of current baselines with TTA methods for all simulation datasets. Results are averaged across 20 TTA runs, over a pretrained model with standard deviation reported. Reported RMSE is normalized over all fields. 
+
+(a) Rolling Model RMSE ( ↓) MAE ( ↓) R2 (↑)Source 0.561 ±0.001 0.484 ±0.001 0.781 ±0.001 
+
+Tent 1.825 ±0.002 1.553 ±0.002 −0.371 ±0.004 
+
+SSA 0.566 ±0.020 0.481 ±0.018 0.811 ±0.014 
+
+SATTS 0.545 ±0.019 0.466 ±0.018 0.831 ±0.012 
+
+Oracle 0.529 ±0.013 0.453 ±0.012 0.832 ±0.011 
+
+(b) Motor Model RMSE ( ↓) MAE ( ↓) R2 (↑)Source 0.109 ±0.001 0.058 ±0.001 0.989 ±0.001 
+
+Tent 1.132 ±0.032 0.753 ±0.026 −0.152 ±0.065 
+
+SSA 0.336 ±0.001 0.172 ±0.006 0.881 ±0.008 
+
+SATTS 0.109 ±0.003 0.058 ±0.001 0.989 ±0.000 
+
+Oracle 0.108 ±0.001 0.058 ±0.001 0.989 ±0.001 
+
+(c) Forming Model RMSE ( ↓) MAE ( ↓) R2 (↑)Source 0.161 ±0.001 0.066 ±0.001 0.979 ±0.001 
+
+Tent 1.251 ±0.001 0.639 ±0.001 −0.081 ±0.001 
+
+SSA 0.215 ±0.005 0.098 ±0.003 0.965 ±0.002 
+
+SATTS 0.157 ±0.001 0.066 ±0.001 0.980 ±0.001 
+
+Oracle 0.156 ±0.004 0.067 ±0.002 0.980 ±0.001 
+
+(d) Heatsink Model RMSE ( ↓) MAE ( ↓) R2 (↑)Source 0.747 ±0.001 0.565 ±0.001 0.237 ±0.001 
+
+Tent 0.876 ±0.001 0.694 ±0.0 −0.203 ±0.007 
+
+SSA 0.746 ±0.001 0.552 ±0.001 0.227 ±0.001 
+
+SATTS 0.738 ±0.004 0.545 ±0.003 0.244 ±0.007 
+
+Oracle 0.732 ±0.035 0.541 ±0.03 0.265 ±0.065 
+
+tion in neural surrogate regression. While the absolute gains over the source model are modest in some regimes, they are achieved without sacrificing stability. In contrast, both SSA and, more prominently, Tent frequently degrade per-formance relative to the pre-trained model, indicating a lack of robustness to these high-dimensional distribution shifts. Additionally, visual analysis of the Equivalent Plastic Strain (PEEQ) for the hot rolling dataset in Figure 2 reveals that SATTS, successfully corrects systematic under-predictions in the deformation zones. This indicates that the adapted model ensures better physical consistency with the ground truth. Finally, the comparison to the Oracle highlights that SATTS substantially reduces the performance gap to the target-optimal solution, though it does not fully close it, Rolling Motor Forming Heatsink 
+
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> RMSE Improvement (%)  SATTS
+> Model selection potential
+> Oracle (Target Best)
+
+Figure 3. Relative performance improvements of SATTS and the Oracle (lower bound for model selection) compared to the Source model, measured by RMSE. 
+
+suggesting that further gains may be possible with stronger unsupervised model selection strategies. To improve the interpretability of our results, Figure 3 dis-plays the relative performance improvements of our method compared to the “unregularized” pre-trained ( Source )model for all dataset and highlights the potential of perfect model selection. Additionally, we quantify the discrepancy between the source and target domains directly in the out-put space. Namely, the potential transfer error is upper bounded by the H-divergence which itself is upper bounded by the Proxy A-distance (PAD) (for details see Bouvier et al. (2020), Johansson et al. (2019) and Zellinger et al. (2021)). We estimate PAD by training a domain classifier directly on the simulation outputs and converting its test error into a dis-tance estimate. The resulting PAD values for all simulation datasets are provided in Table 2. Comparing these distances with the performance gains shown in Figure 3, we observe datasets with larger PAD values all exhibit performance im-provements from adaptation. In contrast, the motor dataset shows the smallest PAD, indicating a comparatively weak output-space shift, which is consistent with no performance improvements observed in this case. 
+
+Table 2. PAD values for the simulation datasets. 
+
+Dataset Rolling Forming Motor Heatsink PAD 1.765 0.929 0.314 1.767 
+
+5.3. Generative Design Optimization: EngiBench 
+
+We evaluate on two EngiBench design optimization tasks: 
+
+structural beam bending and 2D heat conduction . By de-6Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+Table 3. Comparison of current baselines with TTA methods for design optimization datasets. Results are averaged across 20 TTA runs, over one model with standard deviation reported. 
+
+(a) Beams2D Model COMP ( ↓) MAE ( ↓) MMD ( ↓)Source 123 .7±17 .854 0.026 ±0.004 0.052 ±0.002 
+
+SSA 119 .4±4.586 0.040 ±0.005 0.062 ±0.003 
+
+SATTS 118 .8±12 .409 0.027 ±0.004 0.053 ±0.002 
+
+Oracle 113 .8±1.267 0.026 ±0.003 0.038 ±0.001 
+
+(b) HeatConduction2D Model COMP ( 10 −3) MAE ( ↓) MMD ( ↓)Source 0.577 ±0.561 0.336 ±0.057 0.095 ±0.000 
+
+SSA 0.712 ±0.615 0.349 ±0.057 0.095 ±0.000 
+
+SATTS 0.537 ±0.491 0.334 ±0.015 0.095 ±0.000 
+
+Oracle 0.509 ±0.416 0.329 ±0.052 0.095 ±0.000 
+
+fault, these datasets do not include predefined source and target domains. We therefore define them following the approach in (Setinek et al., 2025): we train models on the full datasets and subsequently analyze the t-SNE visualiza-tions of the latent feature spaces as the input conditions are varied. Datasets are then partitioned into source and target domains based on the parameters that dominate the latent space variation. A detailed analysis of this procedure and corresponding visualizations can be found in Section D. We report Mean Absolute Error ( MAE ), the Maximum Mean Discrepancy ( MMD ), and Compliance (COMP), a dataset specific objective value calculated with a Finite El-ement Method ( FEM ) solver. For Beams2D, compliance is the inverse of stiffness whereas for HeatConduction2D it is the thermal compliance coefficient. All performance metrics reflect only feasible design solutions, as we exclude structural failure cases for analysis. In Table 3, we compare our method against the “unregu-larized” pre-trained model ( Source ), SSA and the target-optimal selection ( Oracle ). Across both tasks, our approach typically matches or reduces errors relative to the unregular-ized model. Compared to our method, SSA shows unstable behavior on certain metrics, sometimes even deteriorating performance substantially. Such behavior is highly undesir-able in TTA deployments and underlines the strong suit of our approach: its stability. Figure 4 undermines the numerical results, as SATTS pro-duces superior 2D beam design outputs when compared to the pre-trained ( Source ) model. Ground Truth 
+
+> COMP: 144.15
+> Source Prediction
+> COMP: 164.56
+> SATTS Prediction
+> COMP: 144.51
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+Figure 4. Comparison of 2D beam topology results based on ground truth, source prediction, and SATTS. The heatmaps illus-trate material density ρ ∈ [0 , 1] . SATTS shows stronger alignment with the original design, resulting in more robust design outcomes. 
+
+5.4. Ablations Component Analysis To assess the contribution of D-optimal source selection and importance weighting, we perform an incremental ablation study. Starting from the existing alignment strategy SSA, we isolate the effect of D-optimal source importance weighting from source selection. For both the SSA baseline and the source importance weight-ing, we use the original parameter values ( lr = 0 .01 ) from Adachi et al. (2025). Results on the SIMSHIFT benchmark in Table 4 show that each incremental addition improves performance over the previous configuration. 
+
+Table 4. RMSE scores of SATTS with and without importance weighting and model selection. The baseline and IWV results were evaluated with lr = 0 .01 . Best scores are bolded.                  
+
+> ˆRsrc (fθ)IWV Rolling Motor Forming
+> 0.566 ±0.020 0.336 ±0.000 0.215 ±0.005
+> ✓0.550 ±0.020 0.204 ±0.010 0.195 ±0.005
+> ✓✓0.545 ±0.019 0.109 ±0.000 0.157 ±0.001
+> Source 0.561 ±0.001 0.109 ±0.001 0.161 ±0.001
+
+Parameter Selection Beyond IWV, UDA provides several alternative strategies for model selection. A commonly used baseline is source-best selection, in which the model with the lowest loss on source samples is chosen. Comparing these two methods in Table 5, it becomes visible that IWV substantially stabilizes naive source-based selection. Es-pecially when the gap between the distributions is not too large, source-best exhibits high variance and thereby selects optimal results. This is not the case for IWV, where only results that are on par with or better than the source model are selected. 
+
+Compute Compared to SSA, our method adds a moderate 
+
+Table 5. RMSE comparison of two model selection algorithms: IWV and source-best on the SIMSHIFT dataset. Best scores are bolded. Selection Method Rolling Motor Forming Source Best 0.550 0.203 0.157 
+
+IWV 0.545 0.109 0.157 
+
+7Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+computational overhead. At test-time, D-optimal source samples are forwarded through the network to estimate the density ratios used in the regularization term. This intro-duces only small memory overhead, since the source sam-ples can be fed jointly with the target batch. The main source of additional runtime comes from the source regular-ization term, which increases the size of the computational graph. Overall, we observe an approximately 1.88 × in-crease in runtime compared to SSA. Our proposed learning rate sweeps can be executed in parallel, therefore they do not add significant runtime overhead. Table 6 provides an empirical runtime comparison.      
+
+> Table 6. Runtime comparison between SSA and SATTS on the Rolling dataset, highlighting the additional overhead of the pro-posed method. Mean ±std across 10 runs.
+
+TTA Method Runtime Increase SSA 0.472 ±0.053 
+
+SATTS 0.889 ±0.085 (↑ 1.88 ×)
+
+## 6. Conclusion and Future Work 
+
+In this work, we take an initial step toward reliable test-time adaptation for neural surrogates and, more broadly, for high-dimensional multivariate regression. Our main method-ological contribution is the use of D-optimal statistics within a unified framework to stabilize test-time adaptation at three critical stages: feature alignment, regularization, and pa-rameter tuning. The proposed adjustments enable TTA to achieve consistent zero-shot performance improvements at negligible computational cost. In addition to the near-zero cost gains, this line of research is particularly timely due to evolving compliance require-ments. Article 15 of the EU Artificial Intelligence Act states that high-risk AI systems need to ensure appropriate levels of accuracy and robustness (EUA, 2024). Should neural surrogates be deployed in safety-critical domains, such as accelerating structural design in the automotive industry, accurate and reliable predictions become indispensable. However, analyzing the “Oracle” and Figure 3 reveals clear opportunities for improvement. This points to the poten-tial for a new class of TTA algorithms, specifically devel-oped for physics simulation data. We foresee two paths to achieve “physics-driven” TTA that are to be explored: (i) use physics-informed constraints and priors (Raissi et al., 2019; Cai et al., 2021), ad-hoc and calibrated on the test case, to augment the expressiveness of the limited test labels, and (ii) incorporate uncertainty quantification to localize failure regions in the fields where adaptation is necessary. 
+
+## Acknowledgments 
+
+We wish to thank Stephanie Holly and Florian Ses-tak for helpful discussions and feedback. The EL-LIS Unit Linz, the LIT AI Lab, the Institute for Ma-chine Learning, are supported by the Federal State Up-per Austria. We thank the projects FWF AIRI FG 9-N (10.55776/FG9), AI4GreenHeatingGrids (FFG- 899943), Stars4Waters (HORIZON-CL6-2021-CLIMATE-01-01), FWF Bilateral Artificial Intelligence (10.55776/COE12). We thank NXAI GmbH, Silicon Austria Labs (SAL), Merck Healthcare KGaA, GLS (Univ. Waterloo), T ¨UV Holding GmbH, Software Competence Center Hagenberg GmbH, dSPACE GmbH, TRUMPF SE + Co. KG. 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning applied to neural surrogates of simu-lations and design optimization. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+## References 
+
+Artificial intelligence act (eu regulation 2024/1689), article 15: Accuracy, robustness and cybersecurity, 2024. Adachi, K., Yamaguchi, S., and Kumagai, A. Covariance-aware feature alignment with pre-computed source statis-tics for test-time adaptation to multiple image corruptions. In 2023 IEEE International Conference on Image Pro-cessing (ICIP) , pp. 800–804. IEEE, 2023. Adachi, K., Yamaguchi, S., Kumagai, A., and Hamagami, T. Test-time adaptation for regression by subspace align-ment. In Proceedings of the International Conference on Learning Representations (ICLR) , 2025. Alkin, B., F ¨urst, A., Schmid, S., Gruber, L., Holzleitner, M., and Brandstetter, J. Universal physics transformers: A framework for efficiently scaling neural operators. In Globerson, A., Mackey, L., Belgrave, D., Fan, A., Paquet, U., Tomczak, J., and Zhang, C. (eds.), Advances in Neural Information Processing Systems , volume 37, pp. 25152– 25194. Curran Associates, Inc., 2024. Atkinson, A. C. and Donev, A. N. Optimum Experimental Designs . Oxford University Press, Oxford, 1992. Ba, J. L., Kiros, J. R., and Hinton, G. E. Layer normaliza-tion, 2016. URL https://arxiv.org/abs/1607. 06450 .Baek, C., Jiang, Y., Raghunathan, A., and Kolter, Z. Agreement-on-the-line: Predicting the performance of 8Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+neural networks under distribution shift, 2023. URL 
+
+https://arxiv.org/abs/2206.13089 .Ben-David, S., Blitzer, J., Crammer, K., and Pereira, F. Anal-ysis of representations for domain adaptation. Advances in neural information processing systems , 19, 2006. Blanchard, G., Deshmukh, A. A., Dogan, U., Lee, G., and Scott, C. Domain generalization by marginal transfer learning. Journal of machine learning research , 22(2): 1–55, 2021. Bonnet, F., Mazari, J. A., Cinnella, P., and Gallinari, P. AirfRANS: High fidelity computational fluid dy-namics dataset for approximating reynolds-averaged navier–stokes solutions. In Thirty-sixth Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2022. URL https://arxiv. org/abs/2212.07564 .Bouvier, V., Very, P., Chastagnol, C., Tami, M., and Hudelot, C. Robust domain adaptation: Representations, weights and inductive bias. In Hutter, F., Kersting, K., Lijffijt, J., and Valera, I. (eds.), Machine Learning and Knowledge Discovery in Databases - European Conference, ECML PKDD 2020, Ghent, Belgium, September 14-18, 2020, Proceedings, Part I , volume 12457 of Lecture Notes in Computer Science , pp. 353–377. Springer, 2020. doi: 10. 1007/978-3-030-67658-2 \ 21. URL https://doi. org/10.1007/978-3-030-67658-2_21 .Cai, S., Mao, Z., Wang, Z., Yin, M., and Karniadakis, G. E. Physics-informed neural networks (pinns) for fluid mechanics: A review, 2021. URL https://arxiv. org/abs/2105.09506 .Chen, C., Fu, Z., Chen, Z., Jin, S., Cheng, Z., Jin, X., and Hua, X.-S. Homm: Higher-order moment matching for unsupervised domain adaptation, 2019. URL https: //arxiv.org/abs/1912.11976 .Deng, Z., Chen, Z., Niu, S., Li, T. H., Zhuang, B., and Tan, M. Efficient test-time adaptation for super-resolution with second-order degradation and reconstruction. In Oh, A., Naumann, T., Globerson, A., Saenko, K., Hardt, M., and Levine, S. (eds.), Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 , 2023. Eastwood, C., Mason, I., Williams, C. K., and Sch ¨olkopf, B. Source-free adaptation to measurement shift via bottom-up feature restoration. arXiv preprint arXiv:2107.05446 ,2021. Felten, F., Apaza, G., Br ¨aunlich, G., Diniz, C., Dong, X., Drake, A., Habibi, M., Hoffman, N. J., Keeler, M., Massoudi, S., VanGessel, F. G., and Fuge, M. En-gibench: A framework for data-driven engineering design research, 2025. URL https://arxiv.org/abs/ 2508.00831 .Fernando, B., Habrard, A., Sebban, M., and Tuytelaars, T. Unsupervised visual domain adaptation using subspace alignment. In 2013 IEEE International Conference on Computer Vision , pp. 2960–2967, 2013. doi: 10.1109/ ICCV.2013.368. Ferziger, J. H., Peri ´c, M., and Street, R. L. Computational methods for fluid dynamics . springer, 2019. Finn, C., Abbeel, P., and Levine, S. Model-agnostic meta-learning for fast adaptation of deep networks. arXiv preprint , 2017. arXiv:1703.03400. Ganin, Y., Ustinova, E., Ajakan, H., Germain, P., Larochelle, H., Laviolette, F., Marchand, M., and Lempitsky, V. Domain-adversarial training of neural networks, 2015. Golub, G. H. and Van Loan, C. F. Matrix Computations .Johns Hopkins University Press, Baltimore, 4th edition, 2013. Gretton, A., Borgwardt, K., Rasch, M., Sch ¨olkopf, B., and Smola, A. A kernel method for the two-sample-problem. In Sch ¨olkopf, B., Platt, J., and Hoffman, T. (eds.), Advances in Neural Informa-tion Processing Systems , volume 19. MIT Press, 2006. URL https://proceedings.neurips. cc/paper_files/paper/2006/file/ e9fb2eda3d9c55a0d89c98d6c54b5b3e-Paper. pdf .He, Y., Carass, A., Zuo, L., Dewey, B. E., and Prince, J. L. Autoencoder based self-supervised test-time adaptation for medical image analysis. Medical Image Analysis , 72:102136, 2021. ISSN 1361-8415. doi: https://doi.org/10.1016/j.media.2021.102136. URL https://www.sciencedirect.com/ science/article/pii/S1361841521001821 .Hochreiter, S., Younger, A. S., and Conwell, P. R. Learning to learn using gradient descent. In International confer-ence on artificial neural networks , pp. 87–94. Springer, 2001. Holzleitner, M., Pereverzyev, S. V., and Zellinger, W. Do-main generalization by functional regression. Numerical Functional Analysis and Optimization , 45(3):259–281, 2024. Hospedales, T., Antoniou, A., Micaelli, P., and Storkey, A. Meta-learning in neural networks: A survey. IEEE transactions on pattern analysis and machine intelligence ,44(9):5149–5169, 2021. 9Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+Ishii, M. and Sugiyama, M. Source-free domain adaptation via distributional alignment by matching batch normal-ization statistics. arXiv preprint arXiv:2101.10842 , 2021. Johansson, F. D., Sontag, D., and Ranganath, R. Support and invertibility in domain-invariant representations. In The 22nd International Conference on Artificial Intelligence and Statistics , pp. 527–536. PMLR, 2019. Jung, S., Lee, J., Kim, N., Shaban, A., Boots, B., and Choo, J. Cafa: Class-aware feature alignment for test-time adaptation. In International Conference on Computer Vision (ICCV) , pp. 19060–19071, 2023. Karani, N., Erdil, E., Chaitanya, K., and Konukoglu, E. Test-time adaptable neural networks for robust medi-cal image segmentation. Medical Image Analysis , 68: 101907, February 2021. ISSN 1361-8415. doi: 10.1016/ j.media.2020.101907. URL http://dx.doi.org/ 10.1016/j.media.2020.101907 .Kojima, T., Matsuo, Y., and Iwasawa, Y. Robustifying vision transformer without retraining from scratch by test-time class-conditional feature alignment. arXiv preprint arXiv:2206.13951 , 2022. Kovachki, N. B., Li, Z., Liu, B., Azizzadenesheli, K., Bhat-tacharya, K., Stuart, A. M., and Anandkumar, A. Neural operator: Learning maps between function spaces. CoRR ,abs/2108.08481, 2021. URL https://arxiv.org/ abs/2108.08481 .Lewis, D. D. and Gale, W. A. A sequential algorithm for training text classifiers. arXiv preprint , 1994. arXiv:cmp-lg/9407020. Li, D., Yang, Y., Song, Y.-Z., and Hospedales, T. M. Learn-ing to generalize: Meta-learning for domain generaliza-tion, 2017. URL https://arxiv.org/abs/1710. 03463 .Li, Y., Wang, N., Shi, J., Liu, J., and Hou, X. Revisit-ing batch normalization for practical domain adaptation. 
+
+ArXiv , abs/1603.04779, 2016. URL https://api. semanticscholar.org/CorpusID:5069968 .Li, Z., Kovachki, N. B., Azizzadenesheli, K., Liu, B., Bhat-tacharya, K., Stuart, A. M., and Anandkumar, A. Neural operator: Graph kernel network for partial differential equations. CoRR , abs/2003.03485, 2020. Liang, J., Hu, D., and Feng, J. Do we really need to access the source data? source hypothesis transfer for unsuper-vised domain adaptation. In International conference on machine learning (ICML) , pp. 6028–6039. PMLR, 2020. Liang, J., Hu, D., and Feng, J. Do we really need to access the source data? source hypothesis transfer for unsupervised domain adaptation, 2021. URL https: //arxiv.org/abs/2002.08546 .Liang, J., He, R., and Tan, T. A comprehensive sur-vey on test-time adaptation under distribution shifts. 
+
+International Journal of Computer Vision , 133(1): 31–64, July 2024. ISSN 1573-1405. doi: 10.1007/ s11263-024-02181-w. URL http://dx.doi.org/ 10.1007/s11263-024-02181-w .Liu, H., Wu, Z., Li, L., Salehkalaibar, S., Chen, J., and Wang, K. Towards multi-domain single image dehazing via test-time training. In IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition, CVPR 2022, New Orleans, LA, USA, June 18-24, 2022 , pp. 5821–5830. IEEE, 2022. doi: 10.1109/CVPR52688.2022.00574. URL https:// doi.org/10.1109/CVPR52688.2022.00574 .Liu, H., Chi, Z., Yu, Y., Wang, Y., Chen, J., and Tang, J. Meta-auxiliary learning for future depth prediction in videos. In IEEE/CVF Winter Conference on Applications of Computer Vision, WACV 2023, Waikoloa, HI, USA, January 2-7, 2023 , pp. 5745–5754. IEEE, 2023. doi: 10. 1109/WACV56688.2023.00571. URL https://doi. org/10.1109/WACV56688.2023.00571 .Lu, L., Jin, P., Pang, G., Zhang, Z., and Karniadakis, G. E. Learning nonlinear operators via deeponet based on the universal approximation theorem of op-erators. Nature Machine Intelligence , 3(3):218–229, March 2021. ISSN 2522-5839. doi: 10.1038/ s42256-021-00302-5. URL http://dx.doi.org/ 10.1038/s42256-021-00302-5 .Miller, J., Taori, R., Raghunathan, A., Sagawa, S., Koh, P. W., Shankar, V., Liang, P., Carmon, Y., and Schmidt, L. Accuracy on the line: on the strong correlation between out-of-distribution and in-distribution generalization. In Meila, M. and Zhang, T. (eds.), Proceedings of the 38th International Conference on Machine Learning, ICML 2021, 18-24 July 2021, Virtual Event , volume 139 of 
+
+Proceedings of Machine Learning Research , pp. 7721– 7735. PMLR, 2021. URL http://proceedings. mlr.press/v139/miller21b.html .Muandet, K., Balduzzi, D., and Sch ¨olkopf, B. Domain generalization via invariant feature representation. In Dasgupta, S. and McAllester, D. (eds.), Proceedings of the 30th International Conference on Machine Learn-ing , volume 28 of Proceedings of Machine Learning Re-search , pp. 10–18, Atlanta, Georgia, USA, 17–19 Jun 2013. PMLR. URL https://proceedings.mlr. press/v28/muandet13.html .Musekamp, D., Kalimuthu, M., Holzm ¨uller, D., Takamoto, M., and Niepert, M. Active learning for neural PDE solvers. In The Thirteenth International Conference 
+
+10 Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+on Learning Representations , 2025. URL https:// openreview.net/forum?id=x4ZmQaumRg .Musgrave, K., Belongie, S. J., and Lim, S. Unsuper-vised domain adaptation: A reality check. CoRR ,abs/2111.15672, 2021. URL https://arxiv.org/ abs/2111.15672 .Niu, S., Wu, J., Zhang, Y., Chen, Y., Zheng, S., Zhao, P., and Tan, M. Efficient test-time model adaptation with-out forgetting. In International conference on machine learning , pp. 16888–16905. PMLR, 2022. Park, S., Yoo, J., Cho, D., Kim, J., and Kim, T. H. Fast adap-tation to super-resolution networks via meta-learning. In Vedaldi, A., Bischof, H., Brox, T., and Frahm, J. (eds.), 
+
+Computer Vision - ECCV 2020 - 16th European Confer-ence, Glasgow, UK, August 23-28, 2020, Proceedings, Part XXVII , volume 12372 of Lecture Notes in Computer Science , pp. 754–769. Springer, 2020. doi: 10.1007/ 978-3-030-58583-9 \ 45. URL https://doi.org/ 10.1007/978-3-030-58583-9_45 .Peebles, W. and Xie, S. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision (ICCV) , pp. 4196–4206, 2023. URL https://arxiv.org/abs/ 2212.09748 .Quinonero-Candela, J., Sugiyama, M., Schwaighofer, A., and Lawrence, N. D. Dataset Shift in Machine Learning .MIT Press, 2008. Raissi, M., Perdikaris, P., and Karniadakis, G. E. Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations. Journal of Computational Physics , 378:686–707, 2019. doi: 10.1016/j.jcp.2018.10. 045. Ronneberger, O., Fischer, P., and Brox, T. U-net: Con-volutional networks for biomedical image segmentation. In Navab, N., Hornegger, J., III, W. M. W., and Frangi, A. F. (eds.), Medical Image Computing and Computer-Assisted Intervention - MICCAI 2015 - 18th Interna-tional Conference Munich, Germany, October 5 - 9, 2015, Proceedings, Part III , volume 9351 of Lecture Notes in Computer Science , pp. 234–241. Springer, 2015. doi: 10.1007/978-3-319-24574-4 \ 28. URL https:// doi.org/10.1007/978-3-319-24574-4_28 .Setinek, P., Galletti, G., Gross, T., Schn ¨urer, D., Brand-stetter, J., and Zellinger, W. Simshift: A benchmark for adapting neural surrogates to distribution shifts, 2025. URL https://arxiv.org/abs/2506.12007 .Settles, B. Active learning literature survey. 2009. Shimodaira, H. Improving predictive inference un-der covariate shift by weighting the log-likelihood function. Journal of Statistical Planning and In-ference , 90(2):227–244, 2000. ISSN 0378-3758. doi: https://doi.org/10.1016/S0378-3758(00)00115-4. URL https://www.sciencedirect.com/ science/article/pii/S0378375800001154 .Sun, B. and Saenko, K. Deep coral: Correlation alignment for deep domain adaptation, 2016. URL https:// arxiv.org/abs/1607.01719 .Sun, B., Feng, J., and Saenko, K. Return of frustratingly easy domain adaptation, 2015. URL https://arxiv. org/abs/1511.05547 .Sun, Y., Wang, X., Liu, Z., Miller, J., Efros, A., and Hardt, M. Test-time training with self-supervision for generaliza-tion under distribution shifts. In Daum ´e III, H. and Singh, A. (eds.), Proceedings of the 37th International Confer-ence on Machine Learning , volume 119 of Proceedings of Machine Learning Research , pp. 9229–9248. PMLR, 13– 18 Jul 2020a. URL https://proceedings.mlr. press/v119/sun20b.html .Sun, Y., Wang, X., Liu, Z., Miller, J., Efros, A., and Hardt, M. Test-time training with self-supervision for generaliza-tion under distribution shifts. In International conference on machine learning (ICML) , pp. 9229–9248. PMLR, 2020b. Sun, Y., Wang, X., Liu, Z., Miller, J., Efros, A. A., and Hardt, M. Test-time training with self-supervision for generalization under distribution shifts, 2020c. URL 
+
+https://arxiv.org/abs/1909.13231 .Sun, Y., Li, X., Dalal, K., Xu, J., Vikram, A., Zhang, G., Dubois, Y., Chen, X., Wang, X., Koyejo, S., Hashimoto, T., and Guestrin, C. Learning to (learn at test time): Rnns with expressive hidden states, 2025. URL https: //arxiv.org/abs/2407.04620 .Toshev, A., Ramachandran, H., Erbesdobler, J. A., Galletti, G., Brandstetter, J., and Adams, N. A. JAX-SPH: A dif-ferentiable smoothed particle hydrodynamics framework. In ICLR 2024 Workshop on AI4DifferentialEquations In Science , 2024. URL https://openreview.net/ forum?id=8X5PXVmsHW .Toshev, A. P., Galletti, G., Fritz, F., Adami, S., and Adams, N. A. Lagrangebench: a lagrangian fluid mechanics benchmarking suite. In Proceedings of the 37th Inter-national Conference on Neural Information Processing Systems , NIPS ’23, 2023. Valanarasu, J. M. J., Guo, P., VS, V., and Patel, V. M. On-the-fly test-time adaptation for medical image segmenta-tion. In MIDL (Medical Imaging with Deep Learning) ,11 Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+2023. Episodic, zero-shot adaptation with adaptive batch-normalization. Wang, D., Shelhamer, E., Liu, S., Olshausen, B., and Darrell, T. Tent: Fully test-time adaptation by entropy minimiza-tion. In International Conference on Learning Represen-tations (ICLR) , 2021. Wu, H., Luo, H., Wang, H., Wang, J., and Long, M. Tran-solver: A fast transformer solver for PDEs on general geometries. In Salakhutdinov, R., Kolter, Z., Heller, K., Weller, A., Oliver, N., Scarlett, J., and Berkenkamp, F. (eds.), Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Ma-chine Learning Research , pp. 53681–53705. PMLR, 21– 27 Jul 2024a. URL https://proceedings.mlr. press/v235/wu24r.html .Wu, H., Luo, H., Wang, H., Wang, J., and Long, M. Tran-solver: A fast transformer solver for pdes on general geometries. In International Conference on Machine Learning , 2024b. Xiao, Z. and Snoek, C. G. Beyond model adaptation at test time: A survey. arXiv preprint arXiv:2411.03687 , 2024. Yang, S., Wang, Y., van de Weijer, J., Herranz, L., and Jui, S. Exploiting the intrinsic neighborhood structure for source-free domain adaptation, 2021. URL https: //arxiv.org/abs/2110.04202 .Zellinger, W., Grubinger, T., Lughofer, E., Natschl ¨ager, T., and Saminger-Platz, S. Central moment discrepancy (cmd) for domain-invariant representation learning, 2019. URL https://arxiv.org/abs/1702.08811 .Zellinger, W., Shepeleva, N., Dinu, M., Eghbal-zadeh, H., Nguyen, H. D., Nessler, B., Pereverzyev, S. V., and Moser, B. A. The balancing principle for parameter choice in distance-regularized domain adaptation. In Ranzato, M., Beygelzimer, A., Dauphin, Y. N., Liang, P., and Vaughan, J. W. (eds.), Advances in Neural Information Processing Systems 34: Annual Conference on Neural Information Processing Systems 2021, NeurIPS 2021, December 6-14, 2021, virtual , pp. 20798– 20811, 2021. URL https://proceedings. neurips.cc/paper/2021/hash/ ae0909a324fb2530e205e52d40266418-Abstract. html .Zhang, M., Levine, S., and Finn, C. Memo: Test time robustness via adaptation and augmentation. Advances in neural information processing systems , 35:38629–38642, 2022. Zhang, S., Yang, L., Mi, M. B., Zheng, X., and Yao, A. Improving deep regression with ordinal entropy. Interna-tional Conference on Learning Representations , 2023. Zhao, B., Chen, C., and Xia, S.-T. Delta: degradation-free fully test-time adaptation. arXiv preprint arXiv:2301.13018 , 2023. Zhou, A. and Levine, S. Bayesian adaptation for covariate shift. Advances in neural information processing systems ,34:914–927, 2021. 12 Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+## A. Supplementary Approach Information 
+
+Significant-Subspace Alignment is a TTA method for one-dimensional regression (Adachi et al., 2025). It consists of two steps: feature alignment and significant-subspace alignment . In the first step, source statistics such as mean μsrc and covariance Σsrc are computed after source training. In the second step, a significant subspace is detected by manually selecting the top eigenvalues λk of the source covariance Σsrc . Each subspace direction vsrc  
+
+> k
+
+is then weighted by its influence on the regression output: 
+
+αk = 1 + |w⊤vsrc  
+
+> k
+
+|,
+
+where αk ≥ 1 ensures that dimensions that strongly affect the regression output are emphasized. At test time, the precomputed source statistics are used to project the target features into the significant subspace. From the projected target features, their mean and variance (˜ μtgt  
+
+> k
+
+, ˜σtgt  
+
+> k2
+
+) are calculated and aligned with the corresponding source statistics (0 , λ src  
+
+> k
+
+). The adaptation objective is a weighted symmetric Kullback-Leibler divergence between assumed normal distributions: 
+
+LTTA = 12
+
+> K
+
+X
+
+> k=1
+
+αk
+
+(˜ μtgt  
+
+> k
+
+)2 + λsrc 
+
+> k
+
+˜σtgt   
+
+> k2
+
++ (˜ μtgt  
+
+> k
+
+)2 + ˜ σtgt  
+
+> k2
+
+λsrc 
+
+> k
+
+− 2
+
+!
+
+. (7) 
+
+## B. TTA Training 
+
+Model Architecture and Representation In our specific setup, task-dependent parameters, such as thickness or temperature, are encoded through a conditioner network. The resulting conditioning output is passed to the base model, which, in our case, is a Transolver or Diffusion model. We extract features from the main body’s output and define the split between the representation learner and the predictor. The exact location of this split depends on the dataset. For SIMSHIFT, the network is split before the decoder, such that the conditioner and the Transolver body together constitute the representation learner ϕ, while the decoder acts as the predictor 
+
+g. For EngiBench, the split is applied after the conditioner, meaning that the conditioner serves as the representation learner 
+
+ϕ and the remaining Diffusion network functions as the predictor g.
+
+Test-Time Adaptation and Training Procedure For all TTA experiments, validations source data are used to compute the statistical information μsrc and σsrc . In addition, a representative subset of source samples is selected from the validation set using Algorithm 1, and the corresponding set is stored for training and evaluation. At test time, the precomputed source statistics enable the projection of the target features into the subspace. Based on the projected target features, mean and variance (˜ μtgt  
+
+> k
+
+, ˜σtgt  
+
+> k2
+
+) are calculated and aligned with the corresponding source statistics 
+
+(0 , λ src  
+
+> k
+
+). We perform model updates as described in Eq. (5) . For adaptation, we only utilize the target test data, and for the regularizer, the d-optimal selected samples. We balance these losses based on the number of source samples compared to the target batch size. We chose this weighting since there is a high imbalance in information between the two losses. The amount of adaptation updates is limited by the number of available batches in each target dataset. Adaptation is restricted to layer normalization (Ba et al., 2016) parameters: for EngiBench, only the layer normalization layers of the conditioner are updated, whereas for SIMSHIFT, layer normalization parameters of both the Transolver and the conditioner are adapted. All remaining parameters are kept fixed. For parameter tuning, we compute the latent density ratio after a single forward pass through the test-time-adapted model. To estimate this ratio, the latent source and target mean and covariance are computed and stored prior to model adaptation. These statistics are the basis for estimating the density ratio between the source and target latent distributions. Since very-high dimensional settings are prone to a lot of noise in the covariance estimation (Zhang et al., 2023), we decided to perform a dimension reduction to improve robustness. This enables reliable covariance estimation using the D-optimally selected source samples. For each D-optimal source sample, the density ratio is computed, and the resulting values are aggregated into a loss that is used for model selection. As described in Section 4.2, model selection is performed after TTA based on IMV criterion. TThe search over learning rates ( lr ) is terminated based on performance measured on the D-optimally selected source samples. We use the Root Mean Squared Error (RMSE) for the SIMSHIFT dataset and the COMP metric for EngiBench. We set the hyperparameter search for the learning rates to [0 .05 , 0.01 , 0.005 , 0.001 , 0.0005 , 0.0001] .We follow standard TTA practice and use batch size of 64 for all experiments. To ensure robustness, we repeat each 13 Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+experiment with 20 random seeds per model for the SIMSHIFT benchmark, 10 for the structural beam bending dataset, and 2 for the 2D heat conduction dataset. The varying seeds are determined by the number of data samples in each dataset. Since the 2D heat conduction dataset is small and effectively contained within a single test-time batch, increasing the number of seeds did not affect the performance of the TTA algorithm. This is particularly important since layer normalization is updated online, after every batch. 
+
+Baselines For model comparison, we evaluate existing TTA methods commonly used in both regression and classification tasks. For SSA as well as for Tent, we follow the procedures described in their respective method sections (Wang et al., 2021; Adachi et al., 2025). In the implementation of SSA, the top-K eigenvalues need to be identified to compute statistics only based on a sparse set of information. We do this for each dataset. For Tent, an additional modification is required for the SIMSHIFT dataset: since entropy minimization is applied by minimizing predictive uncertainty, we train a model that explicitly predicts both mean and variance. Additionally, we report the best-performing TTA model on SIMSHIFT that is not selected using the IWV criterion. This result serves as a lower bound, highlighting the impact of stability-aware model selection in our approach. 
+
+## C. Experimental Setup 
+
+In the following paragraphs, we detail the experimental setup, including the selected models and our training and testing strategy. 
+
+C.1. Model Architectures & Pretraining 
+
+We employ different model architectures to evaluate our TTA method. The models are based on the architectures provided in the benchmark datasets (Setinek et al., 2025) and (Felten et al., 2025), implemented in PyTorch, and designed for conditional regression or optimization tasks. Node coordinates are provided as inputs and embedded using sinusoidal positional encodings. Conditioning is applied through a dedicated network that processes the simulation input parameters. 
+
+Conditioning Network. The conditioner maps simulation parameters into a latent representation of dimension 8. It consists of a sinusoidal encoding, followed by a small MLP, which includes two LayerNorms to stabilize training. 
+
+Transolver. The Transolver architecture (Wu et al., 2024a) starts by encoding node coordinates using sinusoidal position embeddings, followed by an MLP that produces initial feature vectors. A learned mapping then assigns each node to a slice, enabling attention operations both within slices and between them. The processed features are passed through an MLP readout to generate the final field outputs. Two conditioning mechanisms are available: concatenating the conditioning vector with input features or applying it via DiT-based modulation across the network. Conditioning is done with the dit-based modulation (Peebles & Xie, 2023). Where a latent dimension of 128, a slice base of 32, and four attention layers are used. This results in a model with 0.57M parameters. We additionally employ a larger model with 56, 128, and 8 layers for the more complex dataset, leading to 4.07M parameters. 
+
+Diffusion Model. As a diffusion model, we employ a conditional U-Net (Ronneberger et al., 2015) from Hugging Face’s 
+
+diffusers library 1.The model works as a denoiser, taking a noisy field and a conditioning vector from the conditioning network described above and producing a noise prediction. We summarize all hyperparameters of our diffusion model in Table 7. To train the model, we use the standard Denoising Diffusion Probabilistic Models ( DDPM ) objective of noise prediction (“ ϵ-prediction”) with 100 diffusion steps and a squaredcos cap v2 beta scheduler. 
+
+Pretraining setup. All unregularized baseline ( “Source” ) models are pretrained using the following setup: We use an initial learning rate of 10 3 with a cosine decay scheduler and weight decay of 10 −5. Training runs for up to 500, 1500, and 3000 epochs on Beams2D , HeatConduction2D , and SIMSHIFT , respectively, with early stopping if the validation loss does not improve for 500 epochs. We enable gradient clipping and maintain an Exponential Moving Average (EMA) of the model parameters with decay 0.95. Automatic Mixed Precision (AMP) ius enabled only for the large scale heatsink dataset; for all others we train in float32 . Batch size is 64 for EngiBench baselines and 16 for SIMSHIFT baselines. 
+
+> 1UNet2DConditionModel
+
+14 Stable Adaptation at Test-Time for Simulation (SATTS) 
+
+Table 7. Hyperparameters for our conditional diffusion U-Net. This setup leads to a model size of 17.5M parameters. 
+
+Hyperparameter Value HF Class Argument Name 
+
+Block channels (low →high) [32 , 64 , 128 , 256] block out channels 
+
+Layers per block 2 layers per block 
+
+Transformer layers / block 1 transformer layers per block 
+
+Cross-attention dim 64 cross attention dim 
+
+Only cross-attention True only cross attention=True 
+
+Normalization groups 16 norm num groups 
+
+Activation SiLU act fn 
+
+## D. Distribution Shifts for EngiBench 
+
+Figures 5 to 6 show t-SNE visualizations of the conditioning-networks’ latent spaces for models trained across the full range condition variables. For structural beam bending (Figure 5), volfrac and rmin cause the clearest structure in latent space. We therefore chose to split the source and target domain depending on the value range of rmin . For 2D heat conduction (Figure 6), volume and length exhibit comparable influence on the latent space distribution. Following the same protocol, split along volume . The resulting source and target ranges and sizes for both datasets can be found in Table 8. 50 0 50       
+
+> t-SNE Dim 1
+> 75
+> 50
+> 25
+> 0
+> 25
+> 50
+> 75
+> t-SNE Dim 2
+> 50 050
+> t-SNE Dim 1
+> 75
+> 50
+> 25
+> 0
+> 25
+> 50
+> 75
+> t-SNE Dim 2
+> 50 050
+> t-SNE Dim 1
+> 75
+> 50
+> 25
+> 0
+> 25
+> 50
+> 75
+> t-SNE Dim 2
+> 50 050
+> t-SNE Dim 1
+> 75
+> 50
+> 25
+> 0
+> 25
+> 50
+> 75
+> t-SNE Dim 2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> volfrac
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> rmin
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> forcedist
+> 0.100
+> 0.075
+> 0.050
+> 0.025
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> 0.100
+> overhang_constraint
+
+Figure 5. t-SNE visualization of the conditioner’s latent space on the structural beam bending dataset. While overhang constraint 
+
+and forcedist are either constant or exhibit almost a uniform distribution, volfrac and rmin exhibit a clear structure. 
+
+Table 8. Defined distribution shifts (source and target domains) for each dataset. 
+
+Dataset Parameter Description Source range (no. samples) Target range (no. samples) Beams2D rmin Minimum feature length of beam members. [1.5, 3.25) (3087) [3.25, 4] (353) HeatConduction2D volume Volume limits on the material distributions. [0.3, 0.465) (231) [0.465, 0.6] (39) 
+
+15 Stable Adaptation at Test-Time for Simulation (SATTS) 40 20 0 20 40     
+
+> t-SNE Dim 1
+> 30
+> 20
+> 10
+> 0
+> 10
+> 20
+> 30
+> t-SNE Dim 2
+> 40 20 020 40
+> t-SNE Dim 1
+> 30
+> 20
+> 10
+> 0
+> 10
+> 20
+> 30
+> t-SNE Dim 2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> volume
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> length
+
+Figure 6. t-SNE visualization of the conditioner’s latent space on the structural beam bending dataset. Both conditions ( volume and 
+
+lentgh ) exhibit a clear structure in the latent space. 
+
+16
