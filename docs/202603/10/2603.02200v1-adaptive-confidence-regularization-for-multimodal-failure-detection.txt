@@ -1,0 +1,543 @@
+Title: Adaptive Confidence Regularization for Multimodal Failure Detection
+
+URL Source: https://arxiv.org/pdf/2603.02200v1
+
+Published Time: Tue, 03 Mar 2026 04:04:35 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Adaptive Confidence Regularization for Multimodal Failure Detection 
+
+# Moru Liu 1, Hao Dong 2, Olga Fink 3, Mario Trapp 1,41Technical University of Munich 2ETH Zürich 3EPFL 4Fraunhofer IKS 
+
+# Abstract 
+
+The deployment of multimodal models in high-stakes do-mains, such as self-driving vehicles and medical diagnostics, demands not only strong predictive performance but also re-liable mechanisms for detecting failures. In this work, we ad-dress the largely unexplored problem of failure detection in multimodal contexts. We propose Adaptive Confidence Regu-larization (ACR), a novel framework specifically designed to detect multimodal failures. Our approach is driven by a key observation: in most failure cases, the confidence of the mul-timodal prediction is significantly lower than that of at least one unimodal branch, a phenomenon we term confidence degradation. To mitigate this, we introduce an Adaptive Con-fidence Loss that penalizes such degradations during train-ing. In addition, we propose Multimodal Feature Swapping, a novel outlier synthesis technique that generates challeng-ing, failure-aware training examples. By training with these synthetic failures, ACR learns to more effectively recognize and reject uncertain predictions, thereby improving overall reliability. Extensive experiments across four datasets, three modalities, and multiple evaluation settings demonstrate that ACR achieves consistent and robust gains. The source code will be available at https://github.com/mona4399/ACR. 
+
+# 1. Introduction 
+
+Multimodal models are increasingly adopted in safety-critical domains such as autonomous driving and medical diagnostics [ 16 , 20 , 57 ]. By integrating complementary cues from diverse modalities (e.g., video, audio), they of-ten achieve superior robustness and generalization over uni-modal approaches [ 18 , 62 ]. However, even state-of-the-art models can be dangerously overconfident in their erroneous predictions [ 67 ], posing serious risks in high-stakes applica-tions. In such settings, detecting untrustworthy predictions is as crucial as achieving high overall accuracy. While prior work in uncertainty estimation [ 35 ], calibration [ 22 ], and out-of-distribution (OOD) detection [ 41 ] has aimed to miti-gate overconfidence, these methods often fail to reliably flag individual predictions that should be rejected. Failure detec-tion (FD) – also referred to as misclassification detection or selective classification – directly addresses this challenge by identifying unreliable predictions for potential rejection or human intervention, thereby reducing the risk of catastrophic failures [19]. While FD is well-established in unimodal settings, with methods spanning confidence-based scoring [ 21 , 30 ], outlier exposure [ 7, 73 ], and confidence learning [ 10 , 45 ], its ex-tension to multimodal systems remains largely unexplored. This gap is non-trivial, as unimodal approaches often fail to effectively leverage the complementary information across modalities or to handle failure modes unique to multimodal data, such as signal conflict and misalignment [ 50 ]. Fur-thermore, some works [ 14 , 37 ] explore OOD detection with multiple modalities, but their settings fundamentally differ from those of FD. To illustrate the potential benefits of utiliz-ing multiple modalities for FD, we present empirical results on the HMDB51 dataset [ 34 ]. All models in this analysis were trained solely with a standard cross-entropy loss. As shown in Figure 1 (left), a simple fusion of video and op-tical flow inputs substantially improves FD performance – measured by AURC, AUROC, and FPR95 – over unimodal baselines. This finding highlights the considerable poten-tial of multimodal signals for improving FD . Concurrently, Figure 1 (right) reveals that sophisticated OOD detection methods like Energy [ 41 ], Entropy [ 59 ], and MaxLogit [ 27 ]are outperformed by a simple Maximum Softmax Probability (MSP) baseline [ 25 ]. Taken together, these findings demon-strate that merely adapting OOD techniques is insufficient 
+
+and motivate the development of dedicated methods tailored for multimodal FD. In this work, we identify and systematically character-ize the phenomenon of confidence degradation , a scenario where the confidence of fused multimodal predictions unde-sirably falls below that of individual unimodal predictions, particularly in misclassified instances. To address this, we propose Adaptive Confidence Regularization (ACR), the first dedicated framework for detecting failures (i.e., misclassi-fications) in multimodal systems. ACR comprises two key innovations: (1) an Adaptive Confidence Loss that explicitly penalizes confidence degradation during training, and (2) 
+
+Multimodal Feature Swapping , a novel augmentation tech-nique that synthesizes challenging, failure-aware training 1    
+
+> arXiv:2603.02200v1 [cs.CV] 2 Mar 2026 AURC AUROC FPR95
+> 0
+> 20
+> 40
+> 60
+> 80 Score (%)
+> Video Optical Flow Video + Optical Flow
+> AURC AUROC FPR95
+> 0
+> 20
+> 40
+> 60
+> 80 Score (%)
+> MSP Energy Entropy MaxLogit Figure 1. (Left) Multimodal models substantially enhance FD performance compared to unimodal models, without the need for complex designs. (Right) Advanced OOD detection methods underperform on FD tasks, while the simple MSP baseline surprisingly remains the most effective.
+
+samples by swapping cross-modal embeddings. Training with the confidence penalty and failure-aware outliers im-proves the model’s ability to detect and reject uncertain sam-ples, yielding gains in both accuracy and FD performance. Comprehensive experiments across five datasets and five modalities demonstrate that ACR sets a new state of the art, outperforming prior best methods by up to 9.58% in AURC, 
+
+1.63% in AUROC, and 15 .45% in FPR95. Further ablation studies under distribution shifts and multimodal OOD detec-tion settings confirm the robustness and strong generalization of our approach. The primary contributions of this work are: • We highlight the importance of leveraging multimodal inputs for effective FD, and provide empirical evidence on the limitations of existing OOD detection approaches in this context. • We reveal and empirically validate the phenomenon of 
+
+confidence degradation in multimodal models, showing its strong correlation with prediction failures. • We propose ACR, the first dedicated framework tailored to the complex task of multimodal FD. ACR integrates a novel Adaptive Confidence Loss, addressing the issue of 
+
+confidence degradation , and introduces Multimodal Fea-ture Swapping to further enhance confidence reliability. • We perform extensive evaluations across diverse datasets and modalities, demonstrating the robustness and effec-tiveness of ACR in a wide range of scenarios. 
+
+# 2. Methodology 
+
+2.1. Problem Setup 
+
+Multimodal Failure Detection aims to detect misclassified samples using multiple modalities . We consider a train-ing set D = {(xi, y i)}ni=1 drawn i.i.d. from the joint data distribution PX Y , where X is the input space and Y =
+
+{1, 2, ..., C } is the label space. Each sample xi is composed of M modalities, denoted as xi = {xki | k = 1 , · · · , M }.Let f : X 7 → RC be a neural network trained on samples in PX Y that predicts the label of each input sample. The f
+
+in multimodal failure detection comprises M feature extrac-tors gk(·) and a classifier h(·). Each feature extractor gk(·)
+
+extracts an embedding Ek for its corresponding modality k,and the classifier h(·) takes the combined embeddings from all modalities as input and outputs a prediction probability ˆp:
+
+ˆp = δ(f (x)) = δ(h([ g1(x1), ..., g M (xM )])) = δ(h([ E1, ..., EM ])) , (1) where δ(·) is the softmax function. We further include a classifier hk(·) for each modality k to get predictions from each modality separately, with the prediction probability from the k-th modality as ˆpk = δ(hk(gk(xk))) .To safely deploy classifier f in real-world applications, it should not only be able to make accurate predictions but also distinguish and reject incorrect ones . Formally, let κ(·)
+
+be a confidence-scoring function that quantifies the model’s confidence in its prediction. With a predefined threshold 
+
+τ ∈ R+, the misclassified samples can be detected based on a decision function G such that for a given input x:
+
+G(x) = 
+
+(correct if κ(x) ≥ τ, 
+
+misclassified otherwise . (2) For example, we can easily use MSP [ 25 ] as the confidence-scoring function for a given input x as κ(x) = max y∈Y ˆp. Similarly, other confidence-scoring functions can be adapted from the OOD detection literature, such as MaxLogit [27], Energy [41], and Entropy [5]. 2HMDB51 EPIC-Kitchens HAC Kinetics-600 020 40 60 80 Confidence Degradation Ratio (%) 27.0 25.9 28.7 30.1 59.4 49.0 81.1 52.1 
+
+> Correct Predictions Incorrect Predictions Figure 2. Misclassified samples exhibit a significantly higher pro-portion of confidence degradation compared to correctly classified ones.
+
+2.2. Confidence Degradation: A Failure Indicator in Multimodal Systems 
+
+We begin by investigating the relationship between mul-timodal and unimodal prediction confidences to identify systematic patterns that distinguish correct classifications from errors. Our analysis, which uses MSP for con-fidence scoring, spans four diverse action recognition datasets: HMDB51 [ 34 ], EPIC-Kitchens [ 11 ], HAC [ 13 ], and Kinetics-600 [ 31 ]. We consistently observe a specific failure pattern where the confidence of multimodal predic-tion ˆp falls below that of an individual modality ˆpk. We formalize this phenomenon as follows: 
+
+Definition 1 (Confidence Degradation) . A sample is consid-ered to exhibit confidence degradation if the confidence of the fused multimodal prediction is strictly lower than that of at least one of its unimodal counterparts: 
+
+∃ k ∈ { 1, . . . , M } s.t. max  
+
+> y∈Y
+
+ˆp < max  
+
+> y∈Y
+
+ˆpk.
+
+Figure 2 illustrates the central finding: confidence degra-dation is strongly associated with prediction failures . Across all datasets, misclassified samples consistently exhibit a markedly higher rate of degradation than correct predic-tions, with increases of 32 .4% on HMDB51, 23 .1% on EPIC-Kitchens, 52 .4% on HAC, and 22 .0% on Kinetics-600. This suggests that failures in multimodal systems frequently coincide with such confidence degradation . One explana-tion is that misclassified samples often contain conflicting or ambiguous signals across modalities, which increases uncertainty. When their unimodal outputs are fused, this un-certainty frequently causes the combined confidence to drop below that of at least one unimodal branch. In contrast, cor-rectly classified samples typically exhibit agreement across modalities, leading to boosted or at least non-degraded fu-sion confidence. This directly motivates our adaptive training objective, which explicitly penalizes confidence degradation. 
+
+2.3. Proposed ACR Framework 
+
+We introduce Adaptive Confidence Regularization (ACR), a novel framework for multimodal failure detection that in-tegrates two complementary components (Figure 3). First, motivated by the strong correlation between misclassification and confidence degradation, we propose an Adaptive Con-fidence Loss that directly penalizes this degradation during training. Second, we introduce Multimodal Feature Swap-ping, an outlier synthesis technique that generates challeng-ing, failure-aware training samples by exchanging cross-modal embeddings. By training on these synthesized fail-ures, ACR learns a more robust uncertainty representation, improving its ability to reject unreliable predictions. The ACR architecture processes inputs from multiple modalities. Each input is passed through a modality-specific encoder to yield an embedding, e.g., E1 and E2 for modal-ities 1 and 2. These embeddings are then concatenated, 
+
+E = [E1, E2], and fed into a fusion classifier to pro-duce the final multimodal prediction ˆp with confidence 
+
+conf = max y∈Y ˆp. In parallel, each unimodal embedding 
+
+Ek is also passed through a dedicated classifier to obtain the unimodal prediction ˆpk and its confidence conf k.
+
+2.4. Adaptive Confidence Loss 
+
+Ideally, effective multimodal fusion should achieve syn-ergy , where the confidence of a fused prediction surpasses that of any single modality, assuming all modalities provide predictive information for the target [ 63 ]. This reflects the successful integration of complementary information to re-duce uncertainty and reinforce the decision. However, as we observe in Section 2.2, misclassifications are strongly corre-lated with confidence degradation, a phenomenon where the fused confidence falls below that of a unimodal counterpart. Such degradation often arises from conflicting or unreliable signals and serves as a strong indicator of prediction failure. Motivated by this observation, we introduce the Adaptive Confidence Loss (ACL), which encourages the fused confi-dence to be at least as high as that of any individual modality. For a two-modality case, ACL is defined as: 
+
+Lacl = 12 (max(0 , conf 1 − conf ) + max(0 , conf 2 − conf )) .
+
+(3) The ACL imposes no penalty when the fused confidence surpasses both unimodal confidences; however, it increas-ingly penalizes instances where the fused confidence is lower than that of either individual modality. Consequently, ACL encourages the fusion mechanism to learn improved informa-tion integration , such that combined evidence from different modalities leads to a more confident prediction. By effec-tively integrating complementary information from different modalities, ACL enhances prediction reliability . Further-more, ACL mitigates unimodal overconfidence by penal-izing the model when a high-confidence prediction from 3C
+
+Modality 1 Modality 2
+
+## Adaptive Confidence Loss 
+
+＞
+
+＞
+
+＜
+
+＜
+
+## Multimodal Feature Swapping 
+
+> Feature
+> Swapping
+
+Outlier Synthesis 
+
+Outlier Label Generation 
+
++ 
+
+> 1
+> 2
+> 3
+> ...
+> C
+> 1
+> 2
+> 3
+> ...
+> 1
+> 2
+> 3
+> ...
+> C
+> C+1 C+1 Figure 3. Our ACR framework integrates two principal components. The Adaptive Confidence Loss is designed to penalize the phenomenon of confidence degradation. The Multimodal Feature Swapping serves to generate challenging, failure-aware training instances. This process enables the model to learn to more effectively identify and reject uncertain samples.
+
+one modality conflicts with another. To minimize this cross-modal penalty during training, the model learns to reduce the confidence of the unreliable unimodal stream itself. This process effectively regularizes the unimodal networks, forc-ing them to become better calibrated and less prone to being "confidently wrong". As a result, the model can integrate information more effectively and produce more reliable mul-timodal predictions. Additional discussion on ACL is pro-vided in the Appendix. 
+
+2.5. Multimodal Feature Swapping 
+
+While Outlier Exposure (OE) is an effective technique for improving OOD detection [ 26 , 69 ], it has been shown to be ineffective for FD [ 73 ]. This is because OE regularizes the decision boundary by compressing the confidence distri-bution of in-distribution (ID) samples, which inadvertently makes it harder to distinguish correct ID predictions from in-correct ones. A related challenge, particularly in multimodal settings, is the lack of training data that realistically emu-lates system failures, such as conflicting modality cues or sensor corruption. Although approaches like OpenMix [ 73 ]attempt to address these issues by interpolating between ID and outlier data, they have two critical shortcomings for mul-timodal tasks. First, they depend on large, auxiliary outlier datasets that are often impractical or unavailable. Second, as a fundamentally unimodal method, OpenMix cannot synthe-size the complex failure modes that arise from cross-modal interactions. To generate challenging, failure-aware outliers without external data, we propose Multimodal Feature Swapping 
+
+(MFS). MFS operates by dynamically swapping multimodal feature embeddings and assigning them corresponding soft labels (as illustrated in Figure 3). By generating outliers directly in feature space, MFS ensures computational ef-ficiency and compatibility with various modalities. MFS is designed to ensure that the synthesized features remain distinct from ID features while preserving semantic consis-tency. Given ID features E = [ E1, E2], where E1 represents features from modality 1 and E2 from modality 2, MFS randomly selects a subset of nswap ∼ U (nmin , n max ) continu-ous feature dimensions from each modality. These selected dimensions are then swapped to obtain new feature repre-sentations eE1 and eE2, which are subsequently concatenated to form the multimodal outlier features Eo = [ eE1, eE2]. A prediction ˆpo is then obtained from Eo as ˆpo = δ(h([ Eo)) .To supervise these synthesized outliers, we generate soft labels by interpolating between the original ground-truth one-hot label ytrue and an additional class designated for outliers (e.g., youtlier = C + 1 ). The weight λ for this label interpolation reflects the proportion of features swapped: 
+
+yswapped = (1 − λ)ytrue + λyoutlier , where λ = nswap 
+
+nmax 
+
+.
+
+(4) MFS generates failure-aware outliers by partially swap-ping cross-modal features. Such swapping preserves intra-modality semantics while disrupting cross-modal consis-tency, capturing a critical and common failure mode in mul-timodal systems. Figure 4 illustrates a t-SNE visualization of the embedding space under different nswap values. For small nswap , the generated outliers (red) lie close to the ID 4(a) 96 (c) 256 (d) 512 (b) 128 Figure 4. Visualization on outliers generated by Multimodal Feature Swapping with different nswap (96, 128, 256, 512). Small swaps produce hard negatives that lie near the in-distribution manifold, while larger swaps create more distinct outliers further away. 
+
+clusters (blue), acting as hard negatives. As nswap increases, the outliers gradually move farther from the ID manifold, confirming that MFS provides a controllable mechanism for generating diverse and realistic failure cases. This property is particularly valuable for training models that must remain sensitive to subtle misclassification signals, especially in multimodal scenarios where errors often stem from partial or conflicting evidence. By introducing corrupted or ambigu-ous multimodal outliers, MFS encodes the prior knowledge of what is uncertain and should be assigned low confidence ,thereby teaching the model to recognize broader patterns of uncertainty and enhancing its robustness in detecting real-world misclassifications. Additional discussion on MFS is provided in the Appendix. Overall, MFS offers a simple, generalizable, and compu-tationally efficient approach to simulating realistic failure cases for multimodal failure detection without requiring ex-ternal data. The loss for the synthetic outliers is defined as: 
+
+Loutlier = CE(ˆ po, yswapped ), (5) where CE denotes the cross-entropy loss. The final training objective integrates all components: 
+
+Ltotal = Lcls + Loutlier + λacl Lacl , (6) where Lcls is the cross-entropy loss for the original train-ing samples, and λacl is a hyperparameter that balances the influence of Lacl .
+
+2.6. Inference 
+
+Our method focuses on detecting misclassified samples within known classes. Therefore, during the test phase, eval-uation is performed exclusively on the original C classes. Specifically, for a given input x, the predicted label is 
+
+ˆy = argmax y∈Y ˆp, and the corresponding confidence is determined using the common MSP score, i.e. , κ(x) = max y∈Y ˆp.
+
+# 3. Experiments 
+
+3.1. Experimental Setup 
+
+Datasets. We evaluate our proposed framework on four ac-tion recognition datasets sourced from the MultiOOD bench-mark [ 14 ]: HMDB51 [ 34 ], Kinetics-600 [ 31 ], HAC [ 13 ], and EPIC-Kitchens [ 11 ]. Each of these datasets incorporates video and optical flow modalities. For the HAC dataset, we also include evaluations utilizing the audio modality. Further details on each dataset are in the Appendix. 
+
+Implementation. We conduct experiments across three modalities: video, audio, and optical flow. The MMAc-tion2 [ 9] toolkit is adopted for all experiments. To encode visual information, we utilize the SlowFast network [ 17 ], initialized with weights pre-trained on the Kinetics-400 dataset [ 31 ]. For the audio encoder, we employ a ResNet-18 architecture [ 24 ], with weights initialized from the VG-GSound pre-trained checkpoint [ 6]. Similarly, the optical flow encoder uses the SlowFast network, configured with a slow-only pathway and also leveraging pre-trained weights from Kinetics-400 [ 31 ]. The Adam optimizer [ 33 ] is used for model training, with a learning rate of 0.0001 and a batch size of 16 . The hyperparameters for our proposed method are set as follows: λacl = 2 .0, nmin = 32 , nmax = 256 . We train the models for 50 epochs on an NVIDIA RTX 3090 GPU and select the model with the best performance on the validation dataset. 
+
+Baselines. We compare our approach against several stan-dard confidence-scoring functions, including MSP [ 25 ], MaxLogit [ 27 ], Energy [ 41 ], and Entropy [ 5 ]. Addition-ally, we adapt unimodal FD methods for our framework, including DOCTOR [ 21 ] and OpenMix [ 73 ], along with the outlier synthesis techniques Mixup [ 68 ], RegMixup [ 48 ]. We also include established training strategies, namely CRL [ 45 ]and A2D [ 14 ], where A2D is designed for multimodal OOD detection. These baselines collectively represent a diverse array of techniques for FD. 
+
+Evaluation Metrics. Following [ 73 ], we assess FD perfor-mance using the following metrics: (1) AURC (Area Under 5HMDB51 EPIC-Kitchens HAC Kinetics-600 AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑ AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑ AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑ AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑                                                                                                                                                                                
+
+> MaxLogit 34.76 85.65 57.02 86.20 114.22 76.92 80.00 74.25 53.61 85.12 58.97 82.11 63.90 81.25 69.85 81.24 Energy 35.78 85.03 58.68 86.20 114.91 76.67 78.95 74.25 54.33 84.80 58.97 82.11 66.48 80.12 76.58 81.24 Entropy 30.24 87.87 57.85 86.20 114.09 76.83 78.42 74.25 42.63 89.46 61.54 82.11 47.30 86.85 65.22 81.24 MSP 29.56 88.28 52.07 86.20 115.03 76.52 76.84 74.25 42.90 89.27 66.67 82.11 46.29 87.33 61.29 81.24 DOCTOR 29.65 88.42 52.46 86.20 114.92 76.57 79.47 74.25 42.60 89.46 64.10 82.11 46.37 87.28 62.27 81.24 Mixup 36.52 87.98 50.00 84.72 110.54 77.72 75.41 75.20 34.06 87.88 55.88 84.40 50.56 86.87 60.57 80.58 RegMixup 29.86 88.25 55.37 86.20 105.25 79.26 78.19 74.53 50.28 82.83 72.22 83.49 51.44 86.06 62.71 81.16 OpenMix 24.15 90.13 51.33 87.12 112.14 78.46 73.68 74.25 35.42 87.51 54.84 83.03 46.73 87.69 60.27 80.79 A2D 25.01 89.79 47.01 86.66 109.90 77.85 76.72 74.39 45.89 89.77 57.14 83.94 49.26 87.97 59.79 79.97 CRL 26.44 90.39 46.40 85.75 107.42 78.33 79.17 73.98 36.46 86.53 59.38 83.49 49.16 87.29 61.73 80.47 ACR (ours) 19.97 92.02 41.96 87.23 103.25 79.27 71.58 75.20 27.41 91.48 39.39 84.86 41.85 88.99 55.89 81.45
+
+Table 1. FD performance on action recognition datasets with video and optical flow modalities. 
+
+the Risk-Coverage Curve), which measures the model’s risk (error rate) as a function of coverage (fraction of samples retained). The AURC value is multiplied by 10 3 follow-ing [ 73 ]. (2) AUROC (Area Under the Receiver Operating Characteristic Curve), quantifying the trade-off between the true positive rate (TPR) and the false positive rate (FPR); (3) FPR95 (False Positive Rate at 95% TPR), indicating the proportion of incorrectly classified samples that are misiden-tified as correct when the TPR is fixed at 95% ; (4) ACC 
+
+(Accuracy), representing the standard test accuracy on the ID data. 
+
+3.2. Main Results 
+
+Performance on Multimodal FD. Table 1 presents a com-parative analysis of our method against various baseline approaches across four datasets—HMDB51, EPIC-Kitchens, HAC, and Kinetics-600—utilizing video and optical flow as input modalities. Our proposed method consistently outper-forms all baselines across key FD metrics. For instance, on the HMDB51 dataset, our method reduces the FPR95 from 
+
+52 .07% to 41 .96% and improves the AUROC from 88 .28% 
+
+to 92 .02% when compared to the MSP baseline. On the HAC dataset, it achieves a reduction in AURC from 42 .90% to 
+
+27 .41% and an increase in AUROC from 89 .27% to 91 .48% .Furthermore, on the Kinetics-600 dataset, our method re-duces the FPR95 from 61 .29% to 55 .89% . In addition to these FD improvements, our method even improves classifi-cation accuracy on all evaluated datasets. These consistent gains observed across diverse video domains underscore the strong generalization capabilities and robustness of the proposed method. 
+
+Performance under Different Modality Combinations. 
+
+Table 3 presents results comparing our method against base-line approaches on the HAC dataset under various modal-ity combinations: video+audio, optical flow+audio, and video+optical flow+audio. While Table 1 exclusively re-ports results using video and optical flow, this evaluation investigates the generalization of our method across differ-ent modality configurations. Our method surpasses base-lines in most scenarios, achieving average improvements of 
+
+8.39% in AURC, 1.51% in AUROC, and 10 .65% in FPR95 40 60 80 100 120 140 AURC  
+
+> Brightness Defocus Blur Frost Compression Pixelation MSP A2D Mixup CRL Ours
+
+Figure 5. FD under distribution shift on HAC dataset. The perfor-mance of five types of corruption on videos under the severity level of 5 is reported. 
+
+AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑
+
+MSP 29.56 88.28 52.07 86.20 ACL 24.48 90.32 43.97 86.77 MFS 25.11 90.55 46.22 86.43 ACL + MFS 19.97 92.02 41.96 87.23 
+
+Table 2. Effect of each component. 
+
+relative to the strongest baseline. Concurrently, it enhances classification accuracy from 81 .19% to 82 .42% . These im-provements demonstrate the robustness of our approach to diverse modality configurations and its efficacy in enhancing both accuracy and FD performance. 
+
+Performances under Distribution Shifts. In practical appli-cations, environmental conditions can change rapidly (e.g., weather transitioning from sunny to cloudy, then to rainy), ne-cessitating reliable model decisions under such distribution or domain shifts. To simulate these scenarios, we evaluate model performance under various data corruptions with a severity level of 5, including Defocus Blur, Frost, Brightness, Pixelate, and JPEG Compression. Models were trained on the clean HAC dataset using video and optical flow modali-ties, with corruptions introduced to the video modality exclu-sively during the testing phase. As illustrated in Figure 5, our framework demonstrates significantly improved FD perfor-mance on AURC under various corruptions in the majority of tested cases. 6video+audio optical flow+audio video+optical flow+audio Average AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑ AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑ AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑ AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑                                                                                                                                                                                
+
+> MaxLogit 28.35 84.41 68.00 88.07 117.73 83.08 72.46 68.35 26.34 87.82 75.00 87.16 57.47 85.10 71.82 81.19 Energy 29.32 83.90 68.00 88.07 120.43 82.37 75.36 68.35 27.63 86.99 75.00 87.16 59.13 84.42 72.79 81.19 Entropy 25.10 86.03 64.00 88.07 116.95 82.75 66.67 68.35 21.40 91.00 57.14 87.16 54.48 86.59 62.60 81.19 MSP 26.79 86.30 57.69 88.07 118.04 82.46 71.01 68.35 20.99 91.35 42.86 87.16 55.27 86.70 57.19 81.19 DOCTOR 27.10 86.02 53.85 88.07 118.03 82.51 72.46 68.35 21.03 91.33 46.43 87.16 55.39 86.62 57.58 81.19 Mixup 26.03 88.72 54.84 85.78 147.96 76.69 78.57 67.89 21.76 86.96 69.57 89.45 65.25 84.12 67.66 81.04 RegMixup 25.58 89.56 73.33 86.24 134.26 78.00 86.96 68.35 29.77 86.43 68.97 86.71 63.20 84.66 76.42 80.43 OpenMix 26.09 88.33 64.29 87.16 117.48 81.99 71.88 70.64 20.10 91.04 48.15 87.61 54.56 87.12 61.44 81.80 A2D 59.65 81.36 60.53 82.57 108.07 81.27 79.37 71.10 20.16 90.81 48.28 86.70 62.63 84.48 62.73 80.12 CRL 26.88 89.29 43.33 86.24 118.65 83.47 71.83 67.43 31.16 87.42 64.52 85.78 58.90 86.73 59.89 79.82 ACR (ours) 24.70 89.67 41.38 86.70 98.49 83.96 63.47 71.10 15.09 92.26 34.78 89.45 46.09 88.63 46.54 82.42
+
+Table 3. FD performance on HAC dataset with different modality combinations. 
+
+AURC ↓ AUROC ↑ FPR95 ↓ Accuracy ↑
+
+MSP 31.77 88.17 58.59 85.40 DOCTOR 31.76 88.18 59.38 85.40 Mixup 41.12 87.29 56.76 83.12 RegMixup 41.67 89.41 54.27 81.30 OpenMix 33.16 88.30 55.12 84.26 A2D 34.47 88.38 55.80 84.72 CRL 37.13 89.09 60.78 82.55 ACR (ours) 27.73 90.00 51.56 85.40 
+
+Table 4. Ablation on different architectures. 
+
+3.3. Ablation Studies 
+
+Effect of Each Component. Table 2 summarizes perfor-mance gains contributed by each component of our frame-work, evaluated on the HMDB dataset. Commencing from the MSP baseline, the individual incorporation of either the Adaptive Confidence Loss or the Multimodal Feature Swap-ping module leads to performance improvements across all metrics. Crucially, the combination of both components yields the most substantial overall enhancements. These findings underscore the complementary strengths of the two proposed modules. 
+
+Robustness to Different Architectures. To demonstrate the scalability of our approach, we evaluate its performance using alternative backbone encoders, specifically, I3D [ 4]and TSN [ 61 ], for extracting video and optical flow features. The results on the HMDB51 dataset are presented in Table 4. Despite the utilization of lighter and structurally distinct ar-chitectures, our method maintains competitive performance across all four evaluation metrics. It consistently achieves lower FPR95 and AURC, and higher AUROC values com-pared to all baseline methods. 
+
+ACR Improves Multimodal OOD Detection. A reliable multimodal system should be capable of distinguishing both OOD samples and misclassified ID samples from correct predictions. Therefore, in addition to FD, we investigate the OOD detection capabilities of our method using the Multi-OOD benchmark [ 14 ], focusing on video and optical flow modalities. The ID dataset employed is HMDB51. For OOD datasets, we utilize Kinetics-600, UCF101 [ 55 ], EPIC-Kitchens, and HAC. Performance is evaluated using AU-AUROC ↑ FPR95 ↓ ACC ↑
+
+MSP 94.14 39.35 86.20 Mixup 95.35 24.92 84.72 A2D 94.33 29.90 86.66 CRL 94.14 32.29 85.75 ACR (ours) 96.82 20.47 87.23 
+
+Table 5. Performance under both OOD and misclassified samples. 
+
+ROC, FPR95, and ID Accuracy. We train models using both the A2D+NP-Mix (AN) [ 14 ] strategies in MultiOOD and our ACR framework, and subsequently evaluate them with various OOD confidence-scoring functions, including MSP, Energy, MaxLogit, and GEN [ 42 ]. The results, presented in Table 6, indicate that ACR not only exhibits strong FD capa-bilities but also achieves robust OOD detection performance in comparison to AN. 
+
+FD in Presence of OOD Samples. In this challenging setting, OOD samples are introduced into the test data, and the model is required to distinguish both OOD samples and misclassified ID samples from correct predictions. We use HMDB51 as the ID dataset and incorporate OOD samples from the HAC dataset. As shown in Table 5, our ACR demon-strates strong robustness in this scenario, accurately identify-ing both OOD and misclassified samples. It achieves average improvements of 1.47% in AUROC, 4.45% in FPR95, and 
+
+0.57% in ACC compared to the strongest baseline. 
+
+Compare with Other Feature-space Augmentation Meth-ods. To assess the effectiveness of alternative augmentation strategies, we replace MFS with Random Noise (randomly replacing embedding values with noise), Random Drop (ran-domly replacing embedding values with zeros), and Feature Mixing [ 40 ]. As shown in Table 7, all baseline methods improve FD performance, highlighting the importance of outlier synthesis for regularization. However, MFS proves most effective, as it generates outliers of varying difficulty that better capture cross-modal inconsistency. 
+
+Evaluation on More Modalities. To further evaluate the robustness of our framework, we conduct experiments on the SemanticKITTI dataset [ 3], using image and LiDAR point cloud modalities for the 3D semantic segmentation task. We adopt the fusion framework of [ 74 ] and adapt the evaluation 7Methods                                                                                                                                                   
+
+> OOD Datasets
+> ID ACC ↑Kinetics-600 UCF101 EPIC-Kitchens HAC Average FPR95 ↓AUROC ↑FPR95 ↓AUROC ↑FPR95 ↓AUROC ↑FPR95 ↓AUROC ↑FPR95 ↓AUROC ↑
+> MSP 39.11 88.78 46.64 86.40 17.33 95.99 39.91 89.10 35.75 90.07 87.23 +AN 29.42 90.73 40.02 88.08 13.34 96.43 28.16 91.63 27.74 91.72 86.89 +Ours 27.71 92.81 34.89 89.10 12.20 97.76 21.78 94.25 24.15 93.48 87.23 Energy 32.95 92.48 44.93 87.95 8.10 97.70 32.95 92.28 29.73 92.60 87.23 +AN 24.52 93.96 36.49 89.67 6.96 97.53 22.92 94.41 22.72 93.89 86.89 +Ours 18.59 95.39 31.58 91.05 8.32 96.57 13.45 96.07 17.99 94.77 87.23 MaxLogit 33.07 92.31 44.93 88.02 9.12 97.77 33.06 92.17 30.05 92.57 87.23 +AN 24.86 93.69 36.60 89.71 6.96 97.67 22.92 94.22 22.84 93.82 86.89 +Ours 19.16 95.27 31.93 91.00 8.21 97.75 14.82 96.15 18.53 95.04 87.23 GEN 41.51 90.34 46.18 87.91 8.21 98.26 38.31 91.28 33.55 91.95 87.23 +AN 25.66 93.50 37.40 91.19 5.25 98.98 24.63 94.28 23.24 94.49 86.89 +Ours 22.46 95.17 31.58 92.19 2.62 99.38 15.17 96.62 17.96 95.84 87.23
+
+Table 6. Multimodal OOD detection using video and optical flow, with HMDB51 as ID. 
+
+AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑
+
+MSP 29.56 88.28 52.07 86.20 Random Noise 24.86 90.82 42.86 86.43 Random Drop 22.80 91.24 46.09 86.89 Feature Mixing 21.79 91.33 42.11 87.00 MFS 19.97 92.02 41.96 87.23 
+
+Table 7. Compare with other feature space augmentation methods. 
+
+AURC ↓ AUROC ↑ FPR95 ↓ mIoU ↑
+
+MSP 33.90 79.97 55.49 59.25 ACR (ours) 21.90 84.51 52.51 63.56 
+
+Table 8. Results on SemanticKITTI for 3D semantic segmentation. 
+
+to the FD setting. As shown in Table 8, our framework also achieves strong failure detection performance for the semantic segmentation task. 
+
+Visualization. To qualitatively assess confidence score dis-tributions, we visualized them for correct and incorrect pre-dictions on the HMDB51 dataset, as depicted in Figure 6. The baseline MSP method exhibits a less distinct separa-tion in confidence scores between correctly classified and misclassified samples. In contrast, our proposed solution assigns higher confidence scores to correct predictions and discernibly lower scores to incorrect ones. This leads to more clearly separated distributions, thereby enhancing the efficacy of failure detection. 
+
+# 4. Conclusion 
+
+In this work, we addressed the critical yet underexplored challenge of failure detection in multimodal systems, a vital component for ensuring reliability in safety-sensitive do-mains. We introduced ACR, the first dedicated framework designed to tackle this problem. By characterizing the confi-dence degradation phenomenon—where fused multimodal predictions exhibit lower confidence than their unimodal counterparts in most error cases—we introduced an Adaptive Confidence Loss that directly penalizes this behavior during training. Complementing this loss, our Multimodal Feature (b) Ours 
+
+> (a) MSP
+
+Figure 6. Score distribution for correct and wrong predictions. Our method leads to more clearly separated distributions, thereby enhancing the efficacy of failure detection. 
+
+Swapping technique synthesizes challenging outliers, further enhancing the model’s ability to flag unreliable predictions. Extensive evaluations across four diverse datasets and three modalities demonstrated ACR’s superior performance and generalization capabilities, significantly outperforming ex-isting baselines. By enabling more reliable identification of untrustworthy predictions, ACR represents a significant step towards enhancing the safety and trustworthiness of multimodal systems in real-world applications. 8Acknowledgments 
+
+The authors acknowledge that this work was supported by the Bavarian Ministry for Economic Affairs, Regional De-velopment and Energy as part of a project to support the thematic development of the Institute for Cognitive Systems. 
+
+# References 
+
+[1] Julius Adebayo, Justin Gilmer, Michael Muelly, Ian Goodfel-low, Moritz Hardt, and Been Kim. Sanity checks for saliency maps. Advances in neural information processing systems ,31, 2018. 13 [2] Normand J Beaudry and Renato Renner. An intuitive proof of the data processing inequality. arXiv preprint arXiv:1107.0740 , 2011. 12 [3] Jens Behley, Martin Garbade, Andres Milioto, Jan Quenzel, Sven Behnke, Cyrill Stachniss, and Jurgen Gall. Semantickitti: A dataset for semantic scene understanding of lidar sequences. In ICCV , 2019. 7 [4] Joao Carreira and Andrew Zisserman. Quo vadis, action recognition? a new model and the kinetics dataset. In CVPR ,2017. 7 [5] Robin Chan, Matthias Rottmann, and Hanno Gottschalk. Entropy maximization and meta classification for out-of-distribution detection in semantic segmentation. In ICCV ,2021. 2, 5 [6] Honglie Chen, Weidi Xie, Andrea Vedaldi, and Andrew Zis-serman. Vggsound: A large-scale audio-visual dataset. In 
+
+ICASSP , 2020. 5 [7] Zhen Cheng, Fei Zhu, Xu-Yao Zhang, and Cheng-Lin Liu. Breaking the limits of reliable prediction via generated data. 
+
+IJCV , 2024. 1, 13 [8] C. Chow. On optimum recognition error and reject tradeoff. 
+
+IEEE Transactions on Information Theory , 16(1):41–46, 1970. 13 [9] MMAction2 Contributors. Openmmlab’s next generation video understanding toolbox and benchmark. https:// github.com/open-mmlab/mmaction2 , 2020. 5 [10] Charles Corbière, Nicolas Thome, Avner Bar-Hen, Matthieu Cord, and Patrick Pérez. Addressing failure prediction by learning model confidence. In NeurIPS , 2019. 1, 13 [11] Dima Damen, Hazel Doughty, Giovanni Maria Farinella, Sanja Fidler, Antonino Furnari, Evangelos Kazakos, Davide Moltisanti, Jonathan Munro, Toby Perrett, Will Price, and Michael Wray. Scaling egocentric vision: The epic-kitchens dataset. In ECCV , 2018. 3, 5, 13 [12] Giancarlo Di Biase, Hermann Blum, Roland Siegwart, and Cesar Cadena. Pixel-wise anomaly detection in complex driving scenes. In CVPR , 2021. 13 [13] Hao Dong, Ismail Nejjar, Han Sun, Eleni Chatzi, and Olga Fink. SimMMDG: A simple and effective framework for multi-modal domain generalization. In NeurIPS , 2023. 3, 5, 13 [14] Hao Dong, Yue Zhao, Eleni Chatzi, and Olga Fink. Multiood: Scaling out-of-distribution detection for multiple modalities. In NeurIPS , 2024. 1, 5, 7, 13 [15] Hao Dong, Moru Liu, Jian Liang, Eleni Chatzi, and Olga Fink. To trust or not to trust your vision-language model’s prediction. arXiv preprint arXiv:2505.23745 , 2025. 13 [16] Hao Dong, Moru Liu, Kaiyang Zhou, Eleni Chatzi, Juho Kannala, Cyrill Stachniss, and Olga Fink. Advances in multimodal adaptation and generalization: From tradi-tional approaches to foundation models. arXiv preprint arXiv:2501.18592 , 2025. 1 [17] Christoph Feichtenhofer, Haoqi Fan, Jitendra Malik, and Kaiming He. Slowfast networks for video recognition. In 
+
+ICCV , 2019. 5 [18] Di Feng, Christian Haase-Schütz, Lars Rosenbaum, Heinz Hertlein, Claudius Glaeser, Fabian Timm, Werner Wiesbeck, and Klaus Dietmayer. Deep multi-modal object detection and semantic segmentation for autonomous driving: Datasets, methods, and challenges. IEEE Transactions on Intelligent Transportation Systems , 22(3):1341–1360, 2020. 1 [19] Leo Feng, Mohamed Osama Ahmed, Hossein Hajimirsadeghi, and Amir Abdi. Towards better selective classification. arXiv preprint arXiv:2206.09034 , 2022. 1 [20] Olga Fink, Vinay Sharma, Ismail Nejjar, Leandro Von Kran-nichfeldt, Sergei Garmaev, Zepeng Zhang, Amaury Wei, Gae-tan Frusque, Florent Forest, Mengjie Zhao, et al. From physics to machine learning and back: Part i-learning with inductive biases in prognostics and health management. Re-liability Engineering & System Safety , page 112213, 2026. 1[21] Federica Granese, Marco Romanelli, Daniele Gorla, Catuscia Palamidessi, and Pablo Piantanida. Doctor: A simple method for detecting misclassification errors. In NeurIPS , 2021. 1, 5, 13 [22] Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q. Weinberger. On calibration of modern neural networks. In ICML , 2017. 1 [23] Shuangpeng Han and Mengmi Zhang. Unveiling ai’s blind spots: An oracle for in-domain, out-of-domain, and adversar-ial errors. arXiv preprint arXiv:2410.02384 , 2024. 13 [24] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In CVPR , pages 770–778, 2016. 5 [25] Dan Hendrycks and Kevin Gimpel. A baseline for detect-ing misclassified and out-of-distribution examples in neural networks. arXiv preprint arXiv:1610.02136 , 2016. 1, 2, 5, 13 [26] Dan Hendrycks, Mantas Mazeika, and Thomas Dietterich. Deep anomaly detection with outlier exposure. arXiv preprint arXiv:1812.04606 , 2018. 4, 13 [27] Dan Hendrycks, Steven Basart, Mantas Mazeika, Andy Zou, Joe Kwon, Mohammadreza Mostajabi, Jacob Steinhardt, and Dawn Song. Scaling out-of-distribution detection for real-world settings. arXiv preprint arXiv:1911.11132 , 2019. 1, 2, 5[28] Paul F Jaeger, Carsten T Lüth, Lukas Klein, and Till J Bungert. A call to reflect on evaluation practices for failure detection in image classification. arXiv preprint arXiv:2211.15259 , 2022. 13 [29] Saachi Jain, Hannah Lawrence, Ankur Moitra, and Alek-sander Madry. Distilling model failures as directions in latent space. arXiv preprint arXiv:2206.14754 , 2022. 13 
+
+9[30] Heinrich Jiang, Been Kim, Melody Guan, and Maya Gupta. To trust or not to trust a classifier. In NeurIPS , 2018. 1, 13 [31] Will Kay, Joao Carreira, Karen Simonyan, Brian Zhang, Chloe Hillier, Sudheendra Vijayanarasimhan, Fabio Viola, Tim Green, Trevor Back, Paul Natsev, et al. The kinetics hu-man action video dataset. arXiv preprint arXiv:1705.06950 ,2017. 3, 5, 13 [32] Been Kim, Martin Wattenberg, Justin Gilmer, Carrie Cai, James Wexler, Fernanda Viegas, and Rory sayres. Inter-pretability beyond feature attribution: Quantitative testing with concept activation vectors (TCAV). In Proceedings of the 35th International Conference on Machine Learning ,pages 2668–2677. PMLR, 2018. 13 [33] Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. In ICLR , 2015. 5 [34] Hildegard Kuehne, Hueihan Jhuang, Estíbaliz Garrote, Tomaso Poggio, and Thomas Serre. Hmdb: a large video database for human motion recognition. In ICCV , 2011. 1, 3, 5, 13 [35] Balaji Lakshminarayanan, Alexander Pritzel, and Charles Blundell. Simple and scalable predictive uncertainty estima-tion using deep ensembles. In NeurIPS , 2017. 1 [36] Kimin Lee, Kibok Lee, Honglak Lee, and Jinwoo Shin. A simple unified framework for detecting out-of-distribution samples and adversarial attacks. In NeurIPS , 2018. 13 [37] Shawn Li, Huixian Gong, Hao Dong, Tiankai Yang, Zhengzhong Tu, and Yue Zhao. Dpu: Dynamic prototype updating for multimodal out-of-distribution detection. arXiv preprint arXiv:2411.08227 , 2024. 1, 13 [38] Yuting Li, Yingyi Chen, Xuanlong Yu, Dexiong Chen, and Xi Shen. Sure: Survey recipes for building reliable and robust deep networks. In CVPR , 2024. 13 [39] Shiyu Liang, Yixuan Li, and Rayadurgam Srikant. Enhancing the reliability of out-of-distribution image detection in neural networks. arXiv preprint arXiv:1706.02690 , 2017. 13 [40] Moru Liu, Hao Dong, Jessica Kelly, Olga Fink, and Mario Trapp. Extremely simple multimodal outlier synthesis for out-of-distribution detection and segmentation. arXiv preprint arXiv:2505.16985 , 2025. 7, 16 [41] Weitang Liu, Xiaoyun Wang, John Owens, and Yixuan Li. Energy-based out-of-distribution detection. In NeurIPS , 2020. 1, 2, 5, 13 [42] Xixi Liu, Yaroslava Lochman, and Christopher Zach. Gen: Pushing the limits of softmax-based out-of-distribution detec-tion. In CVPR , 2023. 7 [43] Yijun Liu, Jiequan Cui, Zhuotao Tian, Senqiao Yang, Qing-dong He, Xiaoling Wang, and Jingyong Su. Typicalness-aware learning for failure detection. arXiv preprint arXiv:2411.01981 , 2024. 13 [44] Yan Luo, Yongkang Wong, Mohan S Kankanhalli, and Qi Zhao. Learning to predict trustworthiness with steep slope loss. In NeurIPS , 2021. 13 [45] Jooyoung Moon, Jihyo Kim, Younghak Shin, and Sangheum Hwang. Confidence-aware learning for deep neural networks. In ICML , 2020. 1, 5, 13 [46] Vivek Narayanaswamy, Yamen Mubarka, Rushil Anirudh, Deepta Rajan, Andreas Spanias, and Jayaraman J Thiagarajan. Know your space: Inlier and outlier construction for calibrat-ing medical ood detectors. arXiv preprint arXiv:2207.05286 ,2022. 13 [47] Kien X Nguyen, Tang Li, and Xi Peng. Interpretable fail-ure detection with human-level concepts. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 26326– 26334, 2025. 13 [48] Francesco Pinto, Harry Yang, Ser Nam Lim, Philip Torr, and Puneet Dokania. Using mixup as a regularizer can surpris-ingly improve accuracy & out-of-distribution robustness. In 
+
+NeurIPS , 2022. 5, 13 [49] Xin Qiu and Risto Miikkulainen. Detecting misclassification errors in neural networks with a gaussian process model. In 
+
+AAAI , 2022. 13 [50] Marlou Rasenberg, Asli Özyürek, and Mark Dingemanse. Alignment in multimodal interaction: An integrative frame-work. Cognitive science , 44(11), 2020. 1 [51] Tilman Räuker, Anson Ho, Stephen Casper, and Dylan Hadfield-Menell. Toward transparent ai: A survey on inter-preting the inner structures of deep neural networks. In 2023 ieee conference on secure and trustworthy machine learning (satml) , pages 464–483. IEEE, 2023. 13 [52] Jonathan Scarlett and Volkan Cevher. An introductory guide to fano’s inequality with applications in statistical estimation. 
+
+arXiv preprint arXiv:1901.00555 , 2019. 12 [53] Ramprasaath R Selvaraju, Michael Cogswell, Abhishek Das, Ramakrishna Vedantam, Devi Parikh, and Dhruv Batra. Grad-cam: Visual explanations from deep networks via gradient-based localization. In Proceedings of the IEEE international conference on computer vision , pages 618–626, 2017. 13 [54] Karen Simonyan and Andrew Zisserman. Two-stream convo-lutional networks for action recognition in videos. In NeurIPS ,2014. 13 [55] Khurram Soomro, Amir Roshan Zamir, and Mubarak Shah. Ucf101: A dataset of 101 human actions classes from videos in the wild. arXiv preprint arXiv:1212.0402 , 2012. 7 [56] Rakshith Subramanyam, Kowshik Thopalli, Vivek Narayanaswamy, and Jayaraman J Thiagarajan. Decider: Leveraging foundation model priors for improved model failure detection and explanation. In ECCV , 2024. 13 [57] Han Sun, Yunkang Cao, Hao Dong, and Olga Fink. Unseen visual anomaly generation. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 25508– 25517, 2025. 1 [58] Yiyou Sun, Yifei Ming, Xiaojin Zhu, and Yixuan Li. Out-of-distribution detection with deep nearest neighbors. In ICML ,2022. 13 [59] Yu Tian, Yuyuan Liu, Guansong Pang, Fengbei Liu, Yuan-hong Chen, and Gustavo Carneiro. Pixel-wise energy-biased abstention learning for anomaly segmentation on complex urban driving scenes. In ECCV , 2022. 1 [60] Hemanth Venkateswara, Jose Eusebio, Shayok Chakraborty, and Sethuraman Panchanathan. Deep hashing network for unsupervised domain adaptation. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition ,pages 5018–5027, 2017. 14 
+
+10 [61] Limin Wang, Yuanjun Xiong, Zhe Wang, Yu Qiao, Dahua Lin, Xiaoou Tang, and Luc Van Gool. Temporal segment networks: Towards good practices for deep action recognition. In ECCV ,2016. 7 [62] Xiaosong Wang, Yifan Peng, Le Lu, Zhiyong Lu, and Ronald M Summers. Tienet: Text-image embedding net-work for common thorax disease classification and reporting in chest x-rays. In CVPR , 2018. 1 [63] Nan Wu, Stanislaw Jastrzebski, Kyunghyun Cho, and Krzysztof J Geras. Characterizing and overcoming the greedy nature of learning in multi-modal deep neural networks. In 
+
+ICML , 2022. 3 [64] Jingkang Yang, Haoqi Wang, Litong Feng, Xiaopeng Yan, Huabin Zheng, Wayne Zhang, and Ziwei Liu. Semantically coherent out-of-distribution detection. In ICCV , 2021. 13 [65] Jingkang Yang, Kaiyang Zhou, Yixuan Li, and Ziwei Liu. Generalized out-of-distribution detection: A survey. arXiv preprint arXiv:2110.11334 , 2021. 13 [66] Qing Yu and Kiyoharu Aizawa. Unsupervised out-of-distribution detection by maximum classifier discrepancy. In 
+
+ICCV , 2019. 13 [67] Fanhu Zeng, Zhen Cheng, Fei Zhu, and Xu-Yao Zhang. To-wards efficient and general-purpose few-shot misclassifica-tion detection for vision-language models. arXiv preprint arXiv:2503.20492 , 2025. 1 [68] Hongyi Zhang, Moustapha Cisse, Yann N Dauphin, and David Lopez-Paz. mixup: Beyond empirical risk minimization. 
+
+arXiv preprint arXiv:1710.09412 , 2017. 5 [69] Jingyang Zhang, Nathan Inkawhich, Randolph Linderman, Yiran Chen, and Hai Li. Mixture outlier exposure: Towards out-of-distribution detection in fine-grained environments. In 
+
+Proceedings of the IEEE/CVF Winter Conference on Applica-tions of Computer Vision , pages 5531–5540, 2023. 4 [70] Jingyang Zhang, Jingkang Yang, Pengyun Wang, Haoqi Wang, Yueqian Lin, Haoran Zhang, Yiyou Sun, Xuefeng Du, Yixuan Li, Ziwei Liu, Yiran Chen, and Hai Li. Openood v1.5: Enhanced benchmark for out-of-distribution detection. 
+
+arXiv preprint arXiv:2306.09301 , 2023. 13 [71] Yibo Zhou. Rethinking reconstruction autoencoder-based out-of-distribution detection. In CVPR , 2022. 13 [72] Fei Zhu, Zhen Cheng, Xu-Yao Zhang, and Cheng-Lin Liu. Rethinking confidence calibration for failure prediction. In 
+
+ECCV , 2022. 13 [73] Fei Zhu, Zhen Cheng, Xu-Yao Zhang, and Cheng-Lin Liu. Openmix: Exploring outlier samples for misclassification detection. In CVPR , 2023. 1, 4, 5, 6, 13 [74] Zhuangwei Zhuang, Rong Li, Kui Jia, Qicheng Wang, Yuan-qing Li, and Mingkui Tan. Perception-aware multi-sensor fusion for 3d lidar semantic segmentation. In ICCV , 2021. 7 
+
+11 A . Theoretical Analysis on Confidence Degra-dation 
+
+• Let Y be the discrete label variable taking values in 
+
+{1, . . . , K }.• Let XS denote the collection of modality inputs whose indices lie in S ⊆ { 1, . . . , M }. In particular XM is the full multimodal input and XT with T ⊂ S denotes a subset (less information). • The conditional entropy of Y on X is H(Y | X).
+
+Theorem 1. Adding more modalities cannot increase the conditional entropy: 
+
+H(Y | XS ) ≤ H(Y | XT ), for T ⊂ S. 
+
+Proof. If T ⊂ S, then by the data processing inequality [ 2], we have I(Y ; XT ) ≤ I(Y ; XS ), meaning that adding modalities cannot decrease the mutual information between the input and the label. Since I(Y ; X) = H(Y )−H(Y | X)
+
+and H(Y ) is fixed, it follows directly that H(Y | XS ) ≤
+
+H(Y | XT ). ■
+
+From Theorem 1, we know that when all modalities are predictive of the target, adding additional input information (i.e., more modalities) cannot increase the conditional en-tropy. Consequently, the model’s uncertainty should not increase as more modalities are provided. Confidence degra-dation, where predictions become less confident after adding modalities, therefore reflects an undesirable and theoretically inconsistent behavior in multimodal learning. 
+
+Theorem 2. Confidence degradation is linked to a higher theoretical bound on prediction error. 
+
+Proof. Let Pe = P r (Y̸ = ˆY ) denote the probability of prediction error. By Fano’s inequality [ 52 ], the error rate is bounded by the true conditional entropy: 
+
+Pe ≥ H(Y |X) − 1log 2(|Y |) .
+
+Confidence degradation refers to the phenomenon where the fused multimodal prediction has lower confidence than at least one of its unimodal predictions. Lower predictive confidence implies greater uncertainty about the output dis-tribution, which corresponds to an increase in H(Y |X). Ac-cording to Fano’s inequality, a higher conditional entropy raises the minimum theoretical bound on error. Thus, while not a direct cause, confidence degradation reflects a state where the model’s perceived uncertainty is higher, which is strongly associated with a higher potential for misclassifica-tion. ■
+
+Theorem 2 formalizes the key phenomenon we observe in practice: failures in multimodal systems frequently occur together with confidence degradation. 
+
+# B. Broader Impact, Limitations, and Future Work 
+
+Broader Impact. The ACR framework presented in this work has the potential to generate a significant positive soci-etal impact. As AI systems, especially multimodal ones, are increasingly integrated into safety-critical applications such as autonomous driving, medical diagnosis, and industrial robotics, the ability to reliably detect potential failures (i.e., misclassifications) is paramount. ACR directly contributes to enhancing the safety and trustworthiness of these systems by providing a dedicated mechanism to identify and flag uncertain predictions before they can lead to adverse out-comes. This can foster greater public trust and accelerate the responsible adoption of AI technologies in areas where reliability is non-negotiable. Furthermore, by improving the understanding of failure modes in multimodal models, such as the identified confidence degradation phenomenon, our work can guide the development of more robust and depend-able AI systems across various domains, ultimately leading to safer and more effective human-AI collaboration. 
+
+Limitations. While ACR demonstrates strong gains across multiple datasets and modalities, it has several limitations. First, while we demonstrate robustness under certain distribu-tion shifts and OOD scenarios, the behavior of ACR against sophisticated adversarial attacks specifically designed to fool the misclassification detector itself remains an open area. Second, our current study primarily focuses on specific types of modalities (e.g., video, optical flow, and audio). The generalization of ACR to a very broad range of disparate modalities (e.g., text with medical imaging, or sensor data with acoustic signals) without specific adaptations warrants further investigation. 
+
+Future Work. Building upon the contributions of this pa-per, several avenues for future research present themselves. First, we plan to explore the integration of ACR with on-line learning and continual learning paradigms. This would allow the misclassification detector to adapt dynamically to evolving data distributions and novel failure modes en-countered during real-world deployment, which is crucial for long-term operational reliability. Second, extending and evaluating ACR across a wider spectrum of modalities (e.g., language, audio, tabular data) and a more diverse set of complex, safety-critical tasks (e.g., real-time robotic interac-tion) is a key direction. Finally, investigating the robustness of ACR against targeted adversarial attacks and develop-ing defense mechanisms will be crucial for deployment in adversarial settings. 
+
+# C. Related Work 
+
+C.1. Failure Detection 
+
+Foundational work on failure prediction originates from se-lective classification, which formalizes the trade-off between 12 prediction accuracy and abstention under uncertainty [ 8 ]. In the deep learning era, this concept has re-emerged as failure detection (FD), where the goal is to identify test samples on which a model is likely to be incorrect [ 15 , 49 ]. Threshold-ing the maximum softmax probability (MSP) [ 25 ] remains a strong baseline, yet its vulnerability to overconfidence limits its reliability [ 48 , 49 ]. Beyond MSP, a large body of work aims to more effectively estimate prediction risk. One stream of research focuses on training auxiliary mod-ules, such as heads or separate networks, to explicitly predict correctness based on intermediate features or model log-its [ 10 , 21 , 30 ]. For instance, ConfidNet [ 10 ] introduces a dedicated confidence estimation head that operates on penultimate-layer features. A distinct line of research adopts an integrated approach, jointly optimizing FD functional-ities with the primary model’s training objective. Repre-sentative techniques in this category include improving the separability of correct and incorrect representations [ 44 ], enhancing confidence ranking [ 45 ], regularizing based on sample typicality [ 43 ], and enforcing flatter loss landscapes around misclassified examples [ 72 ]. Concurrently, data aug-mentation strategies have proven effective, primarily by ex-posing the model to synthesized failure cases during train-ing [ 7 , 23 , 38 , 73 ]. However, all previous approaches were designed for unimodal scenarios, without accounting for the interaction and complementary nature of diverse modalities. 
+
+C.2. Out-of-Distribution Detection 
+
+OOD detection shares a similar objective with FD but ad-dresses fundamentally different challenges [ 46 ]. Specif-ically, OOD detection aims to identify test samples that exhibit semantic shifts from the training distribution, typ-ically without compromising in-distribution (ID) classifi-cation accuracy. OOD detection has been extensively in-vestigated in recent years [ 65 , 70 ], encompassing diverse approaches such as post-hoc scoring [ 25 , 39 , 41 ], feature-based techniques [ 36 , 58 ], outlier exposure [ 26 , 64 , 66 ], and reconstruction-based methods [ 12 , 71 ]. Multimodal OOD de-tection [ 14 , 37 ] is also an emerging research area. Although OOD detection methods are often employed as baselines for FD, recent studies [ 28 , 72 , 73 ] demonstrate that techniques optimized for OOD detection generally exhibit suboptimal performance on FD tasks. This finding underscores the ne-cessity for developing specialized FD approaches. 
+
+C.3. Interpretability-Based Failure Prediction 
+
+A complementary line of work investigates predicting fail-ures by analyzing a model’s internal reasoning rather than relying solely on output confidence [ 29 , 56 ]. Recent meth-ods [ 47 , 51 ] leverage post-hoc interpretability techniques (e.g., Grad-CAM [ 53 ], saliency [ 1 ], concept activation [ 32 ]) and train auxiliary meta-predictors to detect unreliable ex-planations. These approaches identify patterns such as HAC 
+
+> HMDB51
+> EPIC-Kitchens
+> Kinetics-600
+> Figure 7. An illustration of the four main datasets we used for multimodal failure detection.
+
+noisy attention, background-biased focus, and lack of class-discriminative localization, which often correlate with mis-classifications. While informative, interpretability-driven failure prediction requires generating explanations for every test sample, incurring significant computational overhead, and remains decoupled from the model’s training dynam-ics. In contrast, ACR embeds failure awareness directly into training and enables failure prediction in a single forward pass, eliminating the cost and complexity associated with post-hoc explanations. 
+
+# D. Further Details on Datasets 
+
+Our framework is primarily evaluated on four action recognition datasets from the MultiOOD benchmark [ 14 ]: HMDB51 [ 34 ], EPIC-Kitchens [11 ], HAC [ 13 ], and Kinetics-600 [ 31 ]. For evaluating multimodal Out-of-Distribution (OOD) detection in ablation studies, we addi-tionally employ the UCF101 dataset [ 54 ], also from the Mul-tiOOD benchmark. Fig. 7 illustrates the four main datasets used for multimodal failure detection. 
+
+HMDB51 is an action recognition dataset comprising 
+
+6,766 video clips distributed across 51 action categories. The videos are sourced from digitized movies and YouTube. This dataset includes both video and optical flow modalities. 
+
+EPIC-Kitchens is an egocentric video dataset capturing daily kitchen activities recorded by 32 participants. For our experiments, we utilize a subset of 4,871 video clips from participant P22, encompassing eight common actions ( put ,
+
+take , open , close , wash , cut , mix , and pour ). The dataset provides video and optical flow modalities. Kinetics-600 is a large-scale action recognition dataset containing approxi-mately 480 ,000 10 -second clips distributed across 600 action classes. Following [ 14 ], we utilize a subset of 100 classes, resulting in 24 ,981 video clips for our study. This dataset offers video, audio, and optical flow modalities. HAC con-13 Algorithm 1 Multimodal Feature Swapping 
+
+Input: ID feature E = [ E1, E2], where E1 and E2 are from modality 1 and 2; minimum and maximum number 
+
+nmin and nmax for swapping; ground-truth one-hot label 
+
+ytrue for E and youtlier = C + 1 .
+
+Pseudo Code: 
+
+Sample nswap ∼ U (nmin , n max ), λ = nswap  
+
+> nmax
+
+;Randomly select start indices s1, s2 for modality 1 and 
+
+2;Clone features eE1 ← E1, eE2 ← E2;Swap nswap dimensions across modalities: 
+
+eE1[s1:s1+nswap ] ← E2[s2:s2+nswap ]
+
+eE2[s2:s2+nswap ] ← E1[s1:s1+nswap ]
+
+Generate label for outlier feature yswapped = (1 −
+
+λ)ytrue + λyoutlier .
+
+Output: Multimodal outlier feature Eo = [ eE1, eE2] and label ymixed .tains 3,381 video clips featuring seven action categories (e.g., 
+
+sleeping , watching TV , eating , running ) performed by hu-mans, animals, and cartoon characters. The dataset includes video, optical flow, and audio modalities. UCF101 is a di-verse video action recognition dataset consisting of 13 ,320 
+
+clips across 101 action classes. The videos, sourced from YouTube, exhibit significant variation in camera motion, ob-ject appearance, scale, pose, viewpoint, and background. This dataset provides video and optical flow modalities. 
+
+# E. More Implementation Details 
+
+Pseudo Code for Multimodal Feature Swapping. We pro-vide the pseudo code for multimodal outlier synthesis in Algorithm 1, where we dynamically swap multimodal fea-ture embeddings and assign them corresponding soft labels. MFS naturally generalizes beyond the two-modality setting. In Algorithm 2, we illustrate how to extend MFS to three modalities. We extend MFS to this setting by randomly se-lecting a start index for each modality and swapping them cyclically: E1 → E2, E2 → E3, and E3 → E1, thus creat-ing outlier features for all three modalities. This generalized formulation enables flexible synthesis of multimodal failure cases, capturing higher-order inconsistencies (e.g., tri-modal conflicts) and scaling effectively to heterogeneous sensor configurations commonly found in real-world systems. 
+
+Extension of ACL to More Modalities. Our framework is not limited to two modalities and can be easily extended to 
+
+M modalities. Given a training sample x with M modal-ities, we obtain prediction confidence score conf from the combined embeddings of all modalities, and conf 1, conf 2, ..., 
+
+conf M from each modality. The Adaptive Confidence Loss 
+
+Algorithm 2 Multimodal Feature Swapping with Three Modalities 
+
+Input: ID feature E = [ E1, E2, E3], where E1, E2, and 
+
+E3 are from modality 1, 2, and 3; minimum and maximum number nmin and nmax for swapping; ground-truth one-hot label ytrue for E and youtlier = C + 1 .
+
+Pseudo Code: 
+
+Sample nswap ∼ U (nmin , n max ), λ = nswap  
+
+> nmax
+
+;Randomly select start indices s1, s2, s3 for modality 1,
+
+2, and 3;Clone features eE1 ← E1, eE2 ← E2, eE3 ← E3;Swap nswap dimensions across modalities: 
+
+eE1[s1:s1+nswap ] ← E3[s3:s3+nswap ]
+
+eE2[s2:s2+nswap ] ← E1[s1:s1+nswap ]
+
+eE3[s3:s3+nswap ] ← E2[s2:s2+nswap ]
+
+Generate label for outlier feature yswapped = (1 −
+
+λ)ytrue + λyoutlier .
+
+Output: Multimodal outlier feature Eo = [ eE1, eE2, eE3]
+
+and label ymixed .can then be defined as: 
+
+Lacl = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+max(0 , conf i − conf ). (7) 
+
+# F. More Ablation Studies 
+
+Parameter Sensitivity. We evaluate the sensitivity of our framework to two key hyperparameters using the HMDB51 dataset. First, the maximum swapping dimension nmax for Multimodal Feature Swapping (MFS) was varied among 128 ,
+
+256 , and 512 , with results presented in Table 9. An nmax 
+
+value of 256 yielded the optimal balance, achieving robust performance across all evaluation metrics. Subsequently, with nmax fixed at 256 , the weight λacl for Adaptive Confi-dence Loss (ACL) was evaluated over the set 0.2, 0.5, 1.0,and 2.0 (detailed in Table 10). A value of λacl = 2 .0 consis-tently delivered the strongest FD performance. Importantly, the framework’s performance remained stable across both parameter sweeps, underscoring its robustness to variations in these hyperparameters. 
+
+Generalize to Image Classification. We evaluated on Office-Home Dataset [ 60 ] by treating images from distinct domains (i.e., Art and RealWorld) as different modalities and fusing them. We show that ACR can be generalized to the image classification task in Tab. 11. 14 AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑
+
+128 29.08 88.27 49.57 86.66 256 25.11 90.55 46.22 86.43 512 25.34 90.98 43.90 85.97   
+
+> Table 9. Effect of nmax in MFS.
+
+AURC ↓ AUROC ↑ FPR95 ↓ ACC ↑
+
+0.2 24.42 90.19 46.15 86.66 0.5 24.18 90.28 46.22 87.00 1.0 23.11 90.93 42.11 86.55 2.0 19.97 92.02 41.96 87.23                                            
+
+> Table 10. Effect of weight λacl for ACL.
+> AURC ↓AUROC ↑FPR95 ↓ACC ↑
+> MSP 30.24 86.63 62.75 86.03 ACR 15.38 87.79 58.06 91.51
+> Table 11. Results on Office-Home dataset by fusing images from distinct domains.
+> Method Correct Predictions (↑)Incorrect Predictions (↓)HMDB51 EPIC HAC Kinetics HMDB51 EPIC HAC Kinetics w/o ACL 0.95 0.91 0.94 0.92 0.80 0.73 0.74 0.64 w/ ACL 0.96 0.93 0.96 0.93 0.63 0.69 0.62 0.57
+> Table 12. Average fused confidence on correct and incorrect
+> predictions.
+
+# G. Further Discussions on Proposed Modules 
+
+G.1. Mechanism of ACL 
+
+In Sec. 2.2, we show failures in multimodal systems fre-quently coincide with confidence degradation. We provided theoretical analysis in Appendix Sec. 1 and show that when distinct modalities are predictive of a target, adding modal-ities cannot increase conditional entropy. Hence, we intro-duce ACL to enforce better information integration, ensur-ing that fused evidence yields more separable confidence between correct and incorrect samples. The mechanism re-lies on the interplay between ACL and the cross-entropy loss ( Lcls ). When predictions are correct , Lcls and ACL work together to drive the fused confidence higher. On in-correct samples, Lcls pushes fused confidence down. If a unimodal branch remains overconfident, ACL remains high. To minimize total loss, gradients propagate to sup-press the overconfident unimodal encoder, as the fused head cannot rise without violating Lcls . This ensures that ACL boosts confidence only for correct predictions while avoid-ing overconfidence in incorrect predictions (Tab. 12) , hence (together with MFS) widening the confidence separation that directly benefits failure detection. 
+
+How Adaptive Confidence Loss Addresses Unimodal Overconfidence. Imagine a situation where one modality (e.g., audio) is ambiguous or corrupted, causing its corre-sponding unimodal network to make a confidently wrong prediction (high conf 1). The other modality (e.g., video) provides clear evidence for the correct class, leading to a cor-rect, high-confidence prediction ( conf 2). A standard fusion model might struggle to integrate these conflicting signals. If the fusion process results in a moderate fused confidence 
+
+conf that is lower than the erroneously high conf 1, it will incur a large ACL penalty from the max(0 , conf 1 − conf )
+
+term. To minimize this loss, the model can’t easily force the fused confidence up without a good reason, as that would be penalized by the cross-entropy loss term Lcls if the pre-diction is wrong. Instead, a more effective way to reduce the ACL loss is to lower the confidence of the overconfident unimodal prediction ( conf 1). Through repeated exposure to such conflicting examples during training, the unimodal feature extractor learns a valuable lesson. It learns that producing a high-confidence prediction that is likely to be contradicted by another modality is "expensive" in terms of the overall loss. Therefore, it adjusts its weights to become more cautious and better calibrated. The unimodal network learns to associate maximum confidence not just with strong internal features, but with features that are also robust and likely to lead to cross-modal agreement. As shown in Fig. 8 and Fig. 9, training with ACL effectively alleviates unimodal overconfidence on incorrect predictions across all datasets. 
+
+G.2. Mechanism of MFS 
+
+Multimodal Feature Swapping. Our MFS module isn’t designed to replicate the entire, complex distribution of all possible real-world failures, as this would be intractable. In-stead, MFS serves as a principled and targeted regularizer that exposes the model to a critical and common failure mode in multimodal systems: cross-modal inconsistency. Our core hypothesis is that many real-world errors arise from conflict-ing or ambiguous signals between modalities. MFS directly simulates this failure mode by swapping feature segments. Unlike generic outlier exposure (OE) or manifold mixup, MFS creates challenging, near-ID hard negatives by pre-serving intra-modal semantics while breaking cross-modal consistency. Ultimately, the model learns which structurally ambiguous cases should stay low-confidence .The feature swapping operation preserves local modality structure within unswapped segments, maintaining realistic intra-modal patterns while disrupting cross-modal alignment through swapped segments, simulating realistic sensor con-flicts or temporal misalignments. It can also generate outliers of varying difficulty by adjusting the nswap parameter, rang-ing from subtle inconsistencies when nswap is small to severe cross-modal conflicts when nswap is large. Training on these synthesized samples forces the model to develop a more robust fusion mechanism that must critically assess the semantic agreement between modalities. This closer examination of cross-modal consistency improves its ability to detect real-world misclassifications, which often 15 HMDB51 EPIC-Kitchens HAC Kinetics-600 0.0 0.2 0.4 0.6 0.8 Avg. Conf. on Incorrect Predictions 0.46 0.66 0.50 0.53 0.77 0.70 0.73 0.62     
+
+> w/ ACL w/o ACL Figure 8. The average confidence on incorrect predictions for video modality w/ and w/o ACL. HMDB51 EPIC-Kitchens HAC Kinetics-600 0.0 0.2 0.4 0.6 Avg. Conf. on Incorrect Predictions 0.41 0.63 0.48 0.31 0.48 0.67 0.65 0.34
+> w/ ACL w/o ACL
+> Figure 9. The average confidence on incorrect predictions for opti-cal flow modality w/ and w/o ACL.
+
+exhibit similar signal conflicts. The effectiveness of this approach is validated by our extensive empirical results, which demonstrate that learning to reject these synthetic inconsistencies directly translates to better identification of real-world errors. Fig. 10 gives a detailed illustration of how MFS enables the detection and rejection of uncertain predictions, thereby improving model reliability. The soft labeling parameter λ provides calibrated training signals proportional to the degree of synthetic corruption, allowing the model to learn fine-grained uncertainty estimation. 
+
+Why Contiguous Swapping and Effective? Real multi-modal failures are typically localized/structured rather than i.i.d. white noise (e.g., a few seconds of missing audio, a re-gion of blurred video, or temporal misalignment). Swapping contiguous blocks provides a simple inductive bias that in-troduces localized disruption instead of globally destroying the representation. Importantly, this choice is empirically validated : contiguous swapping outperforms random per-turbations (noise/drop/random mixing) in our ablations in Tab. 7. 
+
+Semantic Preservation. MFS swaps only a subset of feature dimensions, leaving most dimensions unchanged and thereby 
+
+preserving intra-modal semantics . As evidence, predictions Normal features Failure-aware outlier           
+
+> Figure 10. An illustration of how MFS enables the detection and rejection of uncertain predictions, thereby improving model relia-bility. The failure-aware outliers generated by MFS are treated as uncertain because they introduce cross-modal inconsistency. Ac-cordingly, their soft label yswapped reduces the ground-truth class probability from 1to 1−λ, compared to ytrue . Training with cross-entropy loss on yswapped ensures that the prediction confidence on failure-aware outliers remains lower than on normal features, which is exactly the desired outcome.
+
+from original and MFS features agree in 99.2% of cases 
+
+(indicating preserved semantics) , with the MFS features yielding 0.1 lower confidence on average. 
+
+Why MFS Succeeds where OE Fails? OE mainly trains re-jection under semantic shift (OOD). In contrast, multimodal failures often occur within ID semantics but with conflict-ing/ambiguous evidence across modalities. MFS explicitly synthesizes such cross-modal inconsistency, producing sam-ples that remain semantically ID yet structurally unreliable. 
+
+Difference between MFS and Feature Mixing. While both MFS and Feature Mixing [ 40 ] generate outliers by swapping feature dimensions between modalities, their primary goal and supervision strategies are fundamentally different. MFS is designed for misclassification detection. Its goal is to teach the model to identify when it’s making a mistake on in-distribution data. The model learns to classify the outlier using a specific soft label that mixes the true class with a new "outlier" class. This helps it recognize failure-aware samples that have conflicting internal signals. Feature Mixing is designed for out-of-distribution detection. Its goal is to teach the model to identify data that comes from unknown classes not seen during training. The model learns to be confused by the outlier. The entropy loss forces the model to be uncertain, outputting a flat, uniform probability distribution over all known classes. This teaches it to assign low confidence to anything that doesn’t look like in-distribution data. As for the implementation, MFS selects a single contigu-ous block of feature dimensions per modality (sample start indices s1, s2, and swap nswap consecutive dims). The size 
+
+nswap is sampled from U(nmin , n max ), so it can control how 16 close and far the synthesized outliers lie from ID. Feature Mixing randomly samples an arbitrary subset of N feature dimensions from each modality (non-contiguous, indepen-dent indices) and swaps those positions between modalities (simple index-based swap). Our ablation results show that MFS achieves superior performance compared to Feature Mixing in the context of multimodal failure detection. 17
