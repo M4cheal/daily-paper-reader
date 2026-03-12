@@ -1,0 +1,348 @@
+Title: CLoE: Expert Consistency Learning for Missing Modality Segmentation
+
+URL Source: https://arxiv.org/pdf/2603.09316v1
+
+Published Time: Wed, 11 Mar 2026 00:43:27 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# CLoE: Expert Consistency Learning for Missing Modality Segmentation 
+
+Xinyu Tong 1*, Meihua Zhou 1*†, Bowu Fan 2, and Haitao Li 3†
+
+> 1
+
+University of Chinese Academy Sciences  
+
+> 2
+
+School of Medicine, Southeast University  
+
+> 3
+
+Zhejiang University 
+
+{tongxinyu25,zhoumeihua25}@mails.ucas.ac.cn, lihaitao@zju.edu.cn 
+
+Abstract. Multimodal medical image segmentation often faces missing modalities at inference, which induces disagreement among modality ex-perts and makes fusion unstable, particularly on small foreground struc-tures. We propose Consistency Learning of Experts (CLoE), a consistency-driven framework for missing-modality segmentation that preserves strong performance when all modalities are available. CLoE formulates robust-ness as decision-level expert consistency control and introduces a dual-branch Expert Consistency Learning objective. Modality Expert Con-sistency enforces global agreement among expert predictions to reduce case-wise drift under partial inputs, while Region Expert Consistency emphasizes agreement on clinically critical foreground regions to avoid background-dominated regularization. We further map consistency scores to modality reliability weights using a lightweight gating network, en-abling reliability-aware feature recalibration before fusion. Extensive ex-periments on BraTS 2020 and MSD Prostate demonstrate that CLoE outperforms state-of-the-art methods in incomplete multimodal segmen-tation, while exhibiting strong cross-dataset generalization and improv-ing robustness on clinically critical structures. 
+
+Keywords: Multimodal Medical Image Segmentation · Missing Modal-ity · Modality Expert Consistency · Region Expert Consistency. 
+
+1 Introduction 
+
+Multimodal MRI segmentation is often developed assuming complete modality availability [1, 2]. In clinical settings, missing sequences, protocol variation, and quality issues are common, so deployed systems must operate on arbitrary modal-ity subsets while maintaining strong full-modality performance [3, 4]. The chal-lenge is not only reduced information but also unstable decisions [5, 6]. Modality-specific predictors can disagree, and fixed-weight fusion or unconstrained atten-tion may amplify these discrepancies, especially in small yet critical regions. Encoder-decoder backbones such as U-Net [8] and V-Net [9] remain the workhorse for volumetric segmentation, yet performance drops sharply when modalities are missing. This has motivated remedies that include generative  
+
+> arXiv:2603.09316v1 [cs.CV] 10 Mar 2026 2X. Tong, M. Zhou et al.
+
+synthesis with GAN models or Pix2Pix style translation [10, 11], arithmetic fu-sion such as HeMIS [12], and latent representation learning such as DC-Seg [14]. Adaptive fusion further reweights features through attention, including SE [16], CBAM [18], and more dynamic designs [15, 19], while RFNet exploits region aware priors on modality sensitivity [13]. Despite these advances, magnitude based attention can become uninformative when missing modalities are repre-sented as zero tensors, and spatial priors are passive because they specify where to look rather than how reliable the available experts are. Consistency learn-ing, effective in semi supervised settings such as Mean Teacher and extended via multimodal distillation and curriculum strategies [20, 21, 17], is also chal-lenged by background dominance in volumetric MRI, where global agreement can be achieved without aligning small tumor subregions. Consequently, many approaches still rely on modality dropout or input synthesis [7], improving av-erage robustness but lacking an explicit mechanism to decide which modality expert should be trusted for a given case and region, so unequal evidence can induce expert drift that fusion propagates into segmentation errors. We treat missing modality robustness as a decision level consistency problem and propose Consistency Learning of Experts (CLoE), which reduces expert disagreement during training and downweights unreliable experts during fusion by converting inter expert agreement into a reliability signal. CLoE introduces Expert Consistency Learning (ECL) with Modality Expert Consistency (MEC) to enforce global agreement and suppress case wise drift under missing inputs, and Region Expert Consistency (REC) to emphasize agreement on foreground structures where errors matter most, while a lightweight gating network maps MEC and REC scores to modality weights for feature recalibration before fusion without complicating inference. We evaluate CLoE on BraTS 2020, a standard four modality missing modality benchmark with strong lesion contrast, and on a prostate MRI dataset (Task05) requiring fine grained delineation under weak appearance differences with only two critical modalities (T2 and ADC) and limited training data (48 MR cases), which stresses reliability under few modality dependence and boundary ambiguity. Our contributions are threefold. (i) We formulate missing-modality robust-ness as decision-level expert inconsistency control. (ii) We propose ECL with two complementary measurements: MEC for global agreement and REC for foreground-critical agreement. (iii) We introduce a consistency-driven gating net-work that converts MEC/REC into modality reliability weights for weighted fu-sion, improving incomplete-modality performance while preserving full-modality accuracy. 
+
+2 Method 
+
+We study multi-modal MRI (e.g., brain tumor) segmentation when a subset of modalities may be missing at inference time. Let D = {(xn, y n)}Nn=1 be the training set. Each sample contains M modalities x = {x(m)}Mm=1 and a pixel-wise segmentation label y ∈ { 0, 1}H×W ×C for C classes. Modality availability is CLoE: Expert Consistency Learning for Missing Modality Segmentation 3
+
+Fig. 1. Overview of our proposed CLoE. This framework first extracts modality-specific features M x from input volumes, undergoes regularization M pred , and utilizes the ECL module to compute its Modality and Region Expert Consistency scores. Finally, it derives modality reliability weights via a lightweight gating network and performs consistency-driven weighted fusion to achieve robust missing modal segmentation. 
+
+represented by a binary vector s ∈ { 0, 1}M , defining the available set A = {m |
+
+sm = 1 } and the effective inputs ˜x = {˜x(m)}Mm=1 where ˜x(m) = smx(m). Our goal is to learn a mapping that produces a robust distribution p ∈ [0 , 1] H×W ×C
+
+under arbitrary availability patterns s.
+
+2.1 Overview of Method 
+
+As shown in Fig. 1, CLoE consists of parallel modality encoders, a consistency-driven gating module, and a shared fusion decoder. Each encoder Φm maps its input ˜x(m) to multi-scale features {f (m) 
+
+> ℓ
+
+}Lℓ=1 . A weight-shared expert decoder 
+
+Dsep processes these features to yield individual expert predictions: 
+
+p(m) = Dsep (f (m) 
+
+> L
+
+), p(m) ∈ [0 , 1] H×W ×C . (1) A dynamic gating mechanism then aggregates the multi-scale features into a unified representation F fuse = {fℓ}Lℓ=1 , which is processed by the fusion decoder 
+
+Dfuse to produce the final mask p = Dfuse (fL). The core challenge under partial observation is the decision instability: individual experts often yield conflicting predictions, and naive fusion amplifies this disagreement. CLoE explicitly tackles this by enforcing mutual agreement in the prediction space and utilizing this consistent signal to gate the feature fusion. 4 X. Tong, M. Zhou et al. 
+
+2.2 Expert Consistency Measurement 
+
+To quantify agreement, we impose consistency constraints on the expert prob-ability maps. Let p(m) ∈ RN be the vectorized form of p(m) with N = HW C .We measure similarity using the cosine function: 
+
+S(u, v) = u⊤v
+
+∥u∥2∥v∥2 + ϵ . (2) We define the set of available expert pairs as P = {(a, b ) | a, b ∈ A , a < b }.
+
+Modality Expert Consistency (MEC). MEC enforces global distribution alignment among the available experts: 
+
+LMEC = 1
+
+|P| 
+
+X
+
+> (a,b )∈P
+
+
+
+1 − S (p(a), p(b))
+
+
+
+. (3) 
+
+Region Expert Consistency (REC). Since global agreement is often dominated by background pixels, we introduce a probabilistic region map r ∈
+
+[0 , 1] H×W to emphasize task-relevant structures. We compute r from the ag-gregated shallow features of available experts via a lightweight projection head 
+
+π(·):
+
+r = σ π 1
+
+|A| 
+
+X
+
+> m∈A
+
+f (m)1
+
+!! 
+
+, (4) where σ(·) is the sigmoid function. By broadcasting r across classes, we define the region-weighted prediction vector p(m) 
+
+> r
+
+= vec( r ⊙ p(m)). The REC constraint is formulated as: 
+
+LREC = 1
+
+|P| 
+
+X
+
+> (a,b )∈P
+
+
+
+1 − S (p(a) 
+
+> r
+
+, p(b) 
+
+> r
+
+)
+
+
+
+. (5) 
+
+2.3 Consistency-Driven Dynamic Gating 
+
+We utilize the calculated consistency not only as a constraint but also as a reliability cue for feature fusion. For each available expert m ∈ A , we compute its global and regional consistency scores: 
+
+um = 1
+
+|A| − 1
+
+X
+
+> k∈A\{ m}
+
+S(p(m), p(k)), vm = 1
+
+|A| − 1
+
+X
+
+> k∈A\{ m}
+
+S(p(m) 
+
+> r
+
+, p(k) 
+
+> r
+
+).
+
+(6) A lightweight gating network G maps the tuple (um, v m) to a reliability logit gm.These logits are normalized via softmax over the available experts to obtain the fusion weights w ∈ [0 , 1] M :
+
+wm =
+
+
+
+exp( gm)
+
+P 
+
+> k∈A
+
+exp( gk) , m ∈ A ,
+
+0, m / ∈ A ,gm = G(um, v m). (7) CLoE: Expert Consistency Learning for Missing Modality Segmentation 5
+
+The multi-scale features are then adaptively fused via fℓ = PMm=1 wm ⊙ f (m) 
+
+> ℓ
+
+.This inherently suppresses experts that deviate from the consistency, stabilizing the representation under missing modalities. 
+
+2.4 Learning Process 
+
+Unlike existing methods (e.g., DC-Seg [14]) that rely on latent disentanglement purely for representation accuracy, our framework explicitly tackles the vulner-ability of missing modalities through a unified robustness paradigm . The overall learning objective comprises three distinct components. 
+
+Robust Expert Consistency Learning ( LECL ). To achieve true robust-ness, modality experts must possess foundational discriminative capabilities while simultaneously reaching mutual consistency. We integrate the independent ex-pert supervision with our proposed consistency constraints into a unified ECL objective: 
+
+LECL = X
+
+> m∈A
+
+
+
+LWCE (p(m), y ) + LDL (p(m), y )
+
+| {z }
+
+> Individual Expert Supervision
+
++η
+
+
+
+LMEC + λrec LREC 
+
+| {z }
+
+> Mutual Consistecy
+
+, (8) where the first term anchors the basic segmentation ability of each expert, serv-ing as a prerequisite for the meaningful global ( LMEC ) and regional ( LREC )consistency derived in Sec. 2.2. η balances the two components. 
+
+Fusion Segmentation Loss ( Lseg ). The fused feature representation, dy-namically aggregated via our gating module, is supervised by the main task loss to align the consistency-driven prediction with the ground truth: 
+
+Lseg = LWCE (p, y ) + LDL (p, y ). (9) 
+
+Contrastive Representation Loss ( Lcontrast ). To explicitly enhance rep-resentation accuracy by disentangling the latent space, we introduce a composite contrastive objective [14] that aligns anatomical content, clusters modality styles, and enforces generative validity: 
+
+Lcontrast = X
+
+> i,j
+
+log 
+
+
+
+1 + exp   − δij τ SSIM (ai, a j )
+
++ X
+
+> i,j
+
+log 
+
+
+
+1 + exp   − δij τ cos( mi, m j )
+
++ γ
+
+
+
+∥x − ˆx∥1 + DKL (z∥N (0 , I )) 
+
+
+
+.
+
+(10) 
+
+Total Objective. The overall objective of our CLoE framework seamlessly balances task accuracy, consistency-driven robustness, and representational dis-entanglement: 
+
+Ltotal = Lseg + αLECL + βLcontrast , (11) where α and β are hyperparameters. 6 X. Tong, M. Zhou et al. 
+
+Algorithm 1 CLoE Core: Expert Consistency and Consistency-Driven Gating 
+
+Require: Expert features {f (m)}, Latent codes {a, m }, Ground truth y
+
+Ensure: Total loss Ltotal and Gating weights w
+
+1: A ← { m | sm = 1 }; P ← { (a, b ) | a, b ∈ A , a < b }
+
+Step 1: Robust Expert Consistency Learning ( LECL )
+
+2: Predict individual masks: p(m) ← Dsep (f (m) 
+
+> L
+
+) for all m ∈ A 
+
+3: Compute Individual Supervision via P(LWCE + LDL ) on {p(m)}
+
+4: Vectorize maps: p(m) ← vec( p(m)); Compute Region Map r
+
+5: Compute Mutual Consistency terms: LMEC and LREC 
+
+6: LECL ← Individual Supervision + η(LMEC + λrec LREC )
+
+Step 2: Contrastive Representation Loss ( Lcontrast )
+
+7: Compute alignment terms: SSIM (Content) and Cosine (Style) 8: Compute generative terms: L1 Reconstruction and KL Divergence 9: Lcontrast ← Sum of terms defined in Eq. (10) 
+
+Step 3: Fusion & Total Objective ( Lseg & Ltotal )
+
+10: Calculate gating weights w based on consistency scores from Step 1 11: Fuse features: f fuse ← P 
+
+> m∈A
+
+wmf (m)
+
+12: Predict p ← Dfuse (f fuse ) and compute Lseg via (LWCE + LDL )
+
+13: Update via Ltotal = Lseg + αLECL + βLcontrast 
+
+3 Experiments and Results 
+
+Datasets and Implementation Details. All experiments are conducted on two publicly available medical image segmentation benchmarks: BraTS 2020 and the Prostate dataset (Task 05) from the Medical Segmentation Decathlon (MSD) challenge [22]. BraTS 2020 includes 369 multi-contrast MRI scans covering T1, T1c, T2, and FLAIR modalities, with annotations for three tumor subregions: whole tumor, tumor core, and enhancing tumor. The dataset collectors prepro-cessed all MRI images via skull stripping, co-registration, and resampling to 1 mm ³ isotropic resolution. For model training, 112 × 112 × 112 3D patches were randomly cropped from preprocessed volumes as network inputs. The MSD Prostate dataset contains 48 multimodal MR volumes with T2-weighted and ap-parent diffusion coefficient(ADC) modalities, aiming to segment the prostate central gland (CG) and peripheral zone (PZ). Data preprocessing procedures align with those of BRATS 2020. Data augmentation includes random flipping, random cropping, and intensity variation. Experiments employed the Adam op-timizer for training with an initial learning rate of 0.0002, weight decay of 0.0001, and 500 epochs of training with batch size of 1. 
+
+Compare Experimental Models. We compare our proposed CLoE frame-work with several state-of-the-art(SOTA) methods, including HeMIS [12], Ro-bustSeg [25], RFNet [13], M ³AE [24], and DC-Seg [14]. We follow the same data split as these prior works and directly report their published results to ensure a fair comparison. As shown in Table 1, among the 15 missing-modality combinations, our CLoE method outperforms all competing approaches in the whole tumor (WT) seg-CLoE: Expert Consistency Learning for Missing Modality Segmentation 7
+
+mentation task, achieving an average Dice coefficient of 88.09%. This result surpasses both M ³AE (86.90%) and DC-Seg (87.54%). In addition, for tumor core (TC) segmentation, CLoE yields an average Dice of 80.23%, which ex-ceeds DC-Seg (79.63%) and M ³AE (79.10%), further demonstrating its strong robustness against missing-modality inputs. Furthermore, in the enhancing tu-mor (ET) segmentation task, CLoE achieves an average Dice score of 65.06%, which is comparable to DC-Seg (65.00%) and considerably higher than M ³AE (61.70%). Notably, our unified single-model framework delivers superior seg-mentation accuracy while maintaining strong robustness, outperforming large pre-trained models such as M ³AE and specialized methods including DC-Seg, without the need for training separate models for each modality combination. Fig. 2 demonstrates that our method can effectively segment brain tumors in scenarios with missing data across different modalities. Additionally, we evaluate the general medical foundation model MedSAM[23] on the full-modality setting. Even with bounding box prompts, MedSAM cannot generate clear and accurate tumor boundaries, which demonstrates the value of our dedicated multimodal segmentation framework, especially for incomplete-modality cases. Table 2 presents quantitative results on the peripheral zone (PZ) of the MSD prostate dataset. Compared with RFNet and DC-Seg, our CLoE method achieves the highest Dice score under T2, ADC, and T2&ADC settings, showing strong robustness to modality changes. Specifically, CLoE improves the average Dice by 0.53% over DC-Seg and 2.77% over RFNet. 
+
+Table 1. Performance comparison (Dice%) with SOTA methods on BraTS 2020.                                                                                 
+
+> #Methods T2 T1c T1 FT2 T1c T1c T1 T1 FT2 T1 T2 FT1c F
+> ∼
+> T2
+> ∼
+> T1c
+> ∼
+> T1
+> ∼
+> FFull Avg WT HeMIS 79.85 64.58 63.01 52.29 84.45 72.50 65.29 82.31 81.56 69.37 73.31 83.03 84.64 85.19 85.19 75.10 RobustSeg 82.20 71.39 71.41 82.87 85.97 76.84 88.10 85.53 88.09 87.33 88.87 89.24 88.68 86.63 89.47 84.17 RFNet 86.05 76.77 77.16 87.32 87.74 81.12 89.73 87.73 89.87 89.89 90.69 90.60 90.68 88.25 91.11 86.98 M³AE 86.10 78.90 79.00 88.00 87.10 80.10 89.60 87.30 90.10 89.50 89.60 90.20 90.50 87.40 90.40 86.90 DC-Seg 86.72 79.54 78.47 87.80 88.17 82.22 90.01 88.09 90.32 89.99 90.65 90.77 90.62 88.73 90.95 87.54 CLoE 87.19 80.08 79.96 88.90 88.63 83.57 90.32 88.42 90.47 90.49 90.92 90.87 91.18 89.06 91.30 88.09 TC HeMIS 54.22 69.41 42.42 24.97 77.60 75.59 41.58 56.38 55.89 70.86 75.07 57.40 77.69 79.05 78.58 65.45 RobustSeg 61.88 76.68 54.30 60.72 82.44 80.28 68.18 66.46 68.20 81.85 82.76 70.46 81.89 82.85 82.87 73.45 RFNet 71.02 81.51 66.02 69.19 83.45 83.40 73.07 73.13 74.14 84.65 85.07 75.19 84.97 83.47 85.21 78.23 M³AE 71.80 83.60 69.40 68.70 85.60 83.80 72.80 72.90 74.30 85.50 85.60 74.40 85.80 85.80 86.20 79.10 DC-Seg 70.88 84.62 66.63 71.27 86.34 85.18 74.50 73.09 75.11 85.90 86.29 75.53 86.21 86.49 86.46 79.63 CLoE 71.36 85.41 69.40 71.34 86.68 87.00 75.49 73.61 74.48 85.91 86.60 75.36 86.74 87.14 87.06 80.23 ET HeMIS 31.43 63.24 16.53 9.00 70.30 70.71 13.99 28.58 28.91 68.31 70.80 29.53 71.36 71.67 71.49 47.73 RobustSeg 36.46 67.91 28.99 34.68 71.42 70.11 39.67 39.92 42.19 70.78 71.77 43.90 71.17 71.89 71.52 55.49 RFNet 46.29 74.85 37.30 38.15 75.93 78.01 40.98 45.65 49.32 76.67 76.81 49.92 77.12 76.99 78.00 61.47 M³AE 47.10 73.60 40.40 40.20 76.00 75.30 43.70 48.70 47.10 75.90 76.30 48.20 77.40 78.00 77.50 61.70 DC-Seg 47.76 78.90 42.19 41.66 80.43 79.25 46.90 50.19 51.32 80.28 81.41 52.05 79.42 81.66 81.52 65.00 CLoE 46.61 78.70 39.29 44.35 79.97 81.12 47.45 48.69 51.35 79.86 81.55 52.44 81.48 81.61 81.46 65.06
+
+Ablation Study. As shown in Table 3, we validate the effectiveness of four core components in CLoE. Removing REC leads to a significant performance drop (average Dice -1.98%), especially for the ET region (-3.41%), confirming its critical role in enforcing consistency within tumor regions. Removing Weight Fusion also causes a substantial degradation (average Dice -2.47%), with ET being most affected (-3.96%), as it dynamically integrates multi-modal features. In contrast, removing MEC or the Gating Network results in negligible perfor-8 X. Tong, M. Zhou et al.  
+
+> Fig. 2. (a) Visualization of the input modalities. (b) General MedSAM model predic-tion with bounding box prompt. (c) CLoE predicted segmentation maps.
+
+mance loss (average Dice drops of -0.70% and -0.47%, respectively), indicating their role in fine-grained consistency optimization. The full CLoE model achieves the best performance, validating the effectiveness of our proposed framework.                                          
+
+> Table 2. Performance Compar-ison with SOTA Methods on Prostate. Due to space limitations, we report results on the PZ, the most clinically significant region for prostate cancer diagnosis. Methods T2 ADC T2 ADC Avg RFNet 75.18 72.07 78.00 77.35 DC-Seg 79.21 75.89 81.67 79.59 CLoE 80.33 77.12 82.91 80.12
+> Table 3. Ablation of CLoE core modules: Modality Expert Consistency, Region Expert Consistency, Gating Network and Weight Fu-sion. MEC REC Gating Weight Fusion WT Dice TC ET
+> ×✓✓✓87.75 80.01 63.50
+> ✓×✓✓86.40 79.39 61.65
+> ✓✓×✓87.99 80.08 63.90
+> ✓✓✓×86.52 78.33 61.10
+> ✓✓✓✓88.09 80.23 65.06
+
+4 Conclusion 
+
+We presented CLoE for multimodal MRI segmentation with missing modalities. CLoE frames robustness as decision-level consistency and stabilizes modality experts via dual-branch Expert Consistency Learning, where Modality Expert Consistency enforces global agreement to reduce case-wise drift and Region Ex-pert Consistency emphasizes foreground agreement to mitigate background dom-inance. A lightweight gating network converts agreement into reliability weights to recalibrate modality features before fusion without increasing inference com-plexity. Experiments on BraTS 2020 and MSD Prostate show consistent gains across missing-modality patterns while preserving full-modality performance, and ablations confirm the complementary effects of regional consistency and consistency-guided fusion on clinically critical subregions. CLoE: Expert Consistency Learning for Missing Modality Segmentation 9
+
+References 
+
+1. O. Charron, A. Lallement, D. Jarnet, et al. , “Automatic detection and segmentation of brain metastases on multimodal MR images with a deep convolutional neural network,” Comput. Biol. Med. , vol. 95, pp. 43–54, 2018. 2. J. Qin, D. Xu, H. Zhang, et al. , “BTSegDiff: Brain tumor segmentation based on multimodal MRI dynamically guided diffusion probability model,” Comput. Biol. Med. , vol. 186, p. 109694, 2025. 3. H. Liu, D. Wei, D. Lu, et al. , “M3AE: Multimodal representation learning for brain tumor segmentation with missing modalities,” in Proc. AAAI Conf. Artif. Intell. ,vol. 37, no. 2, pp. 1657–1665, 2023. 4. H. Liu, D. Wei, Q. Dai, et al. , “Federated modality-specific encoders and partially personalized fusion decoder for multimodal brain tumor segmentation,” Med. Image Anal. , p. 103759, 2025. 5. H. Chen and D. Tang, “Multimodal data fusion and decision algorithms in deep learning-based intelligent systems: A comprehensive study,” in Proc. 2025 Int. Conf. Artif. Intell. Smart Manuf. , 2025, pp. 802–811. 6. J. Qin, “Bridging modalities in deep learning: Novel strategies for alignment, bal-ance, efficient fusion, and uncertainty handling,” Ph.D. dissertation, Univ. Liver-pool, Liverpool, U.K., 2025. 7. H. Wang, Y. Chen, C. Ma, et al. , “Multi-modal learning with missing modality via shared-specific feature modelling,” in Proc. IEEE/CVF Conf. Comput. Vision Pattern Recognit. (CVPR) , 2023, pp. 15878–15887. 8. Ronneberger, O., Fischer, P., Brox, T.: U-Net: Convolutional Networks for Biomed-ical Image Segmentation. In: Navab, N., Hornegger, J., Wells, W.M., Frangi, A.F. (eds.) MICCAI 2015. LNCS, vol. 9351, pp. 234–241. Springer, Cham (2015) 9. Milletari, F., Navab, N., Ahmadi, S.-A.: V-Net: Fully Convolutional Neural Net-works for Volumetric Medical Image Segmentation. In: 2016 Fourth International Conference on 3D Vision (3DV), pp. 565–571. IEEE (2016) 10. Lee, D., Kim, J., Moon, W.-J., Ye, J.C.: CollaGAN: Collaborative GAN for Miss-ing Image Data Imputation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), pp. 2487–2496 (2019) 11. Isola, P., Zhu, J.-Y., Zhou, T., Efros, A.A.: Image-to-Image Translation with Condi-tional Adversarial Networks. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), pp. 1125–1134 (2017) 12. Havaei, M., Guizard, N., Chapados, N., Bengio, Y.: HeMIS: Hetero-Modal Image Segmentation. In: Ourselin, S., Joskowicz, L., Sabuncu, M.R., Unal, G., Wells, W. (eds.) MICCAI 2016. LNCS, vol. 9901, pp. 469–477. Springer, Cham (2016) 13. Ding, Y., Yu, X., Yang, Y.: RFNet: Region-aware Fusion Network for Incomplete Multi-modal Brain Tumor Segmentation. In: Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision (ICCV), pp. 3975–3984 (2021) 14. Li, H., Li, Z., Mao, Y., Ding, Z., Huang, Z.: DC-Seg: Disentangled Contrastive Learning for Brain Tumor Segmentation with Missing Modalities. In: Medical Image Computing and Computer Assisted Intervention – MICCAI 2025. LNCS. Springer, Cham (2025) 15. Zhou, M., Feng, J., Zheng, T., et al.: Contrast-Aware hybrid attention network for medical image segmentation. Inf. Sci. 123000 (2025) 16. Hu, J., Shen, L., Sun, G.: Squeeze-and-Excitation Networks. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), pp. 7132–7141 (2018) 10 X. Tong, M. Zhou et al. 17. Zhou, M., Tong, X., Zhao, J., et al.: DCL-SE: Dynamic Curriculum Learning for Spatiotemporal Encoding of Brain Imaging. arXiv preprint arXiv:2511.15151 (2025) 18. Woo, S., Park, J., Lee, J.-Y., Kweon, I.S.: CBAM: Convolutional Block Attention Module. In: Ferrari, V., Hebert, M., Sminchisescu, C., Weiss, Y. (eds.) ECCV 2018. LNCS, vol. 11211, pp. 3–19. Springer, Cham (2018) 19. Zhou, M., Zheng, T., Wu, Z., et al.: DAMNet: Dynamic mobile architectures for Alzheimer’s disease. Comput. Biol. Med. 185 , 109517 (2025) 20. M. Zhou, T. Zheng, B. Wang, et al. , “Curriculum-guided divergence scheduling improves single-cell clustering robustness,” Neural Netw. , vol. 198, p. 108592, 2026. 21. Tarvainen, A., Valpola, H.: Mean teachers are better role models: Weight-averaged consistency targets improve semi-supervised deep learning results. In: Guyon, I., et al. (eds.) Advances in Neural Information Processing Systems, vol. 30. Curran Associates, Inc. (2017) 22. Antonelli, M., Reinke, A., Bakas, S., et al.: The Medical Segmentation Decathlon: Prostate Dataset (Task 05). In: Antonelli, M., Bakas, S., Avants, B.B. (eds.) Med-ical Segmentation Decathlon Challenge. Nat. Commun., vol. 13, p. 4128, Springer, Cham (2022) 23. Ma, J., He, Y., Li, F., Han, L., You, C., Wang, B.: Segment anything in medical images. Nat. Commun. 15 (1), 654 (2024) 24. Liu, H., Wei, D., Lu, D., Sun, J., Wang, L., Zheng, Y.: M3AE: Multimodal repre-sentation learning for brain tumor segmentation with missing modalities. In: Pro-ceedings of the AAAI Conference on Artificial Intelligence, vol. 37, pp. 1657–1665 (2023) 25. Chen, C., Dou, Q., Jin, Y., Chen, H., Qin, J., Heng, P.A.: Robust multimodal brain tumor segmentation via feature disentanglement and gated fusion. In: Medical Im-age Computing and Computer Assisted Intervention–MICCAI 2019: 22nd Interna-tional Conference, Shenzhen, China, October 13–17, 2019, Proceedings, Part III, vol. 22, pp. 447–456. Springer (2019)
