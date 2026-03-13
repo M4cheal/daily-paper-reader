@@ -1,0 +1,386 @@
+Title: ELLIPSE: Evidential Learning for Robust Waypoints and Uncertainties
+
+URL Source: https://arxiv.org/pdf/2603.04585v1
+
+Published Time: Fri, 06 Mar 2026 01:12:37 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# ELLIPSE: Evidential Learning for Robust Waypoints and Uncertainties 
+
+Zihao Dong 12 , Chanyoung Chung 1∗, Dong-Ki Kim 1∗, Mukhtar Maulimov 1∗,Xiangyun Meng 1, Harmish Khambhaita 1, Ali-akbar Agha-mohammadi 1, Amirreza Shaban 1
+
+Abstract — Robust waypoint prediction is crucial for mobile robots operating in open-world, safety-critical settings. While Imitation Learning (IL) methods have demonstrated great success in practice, they are susceptible to distribution shifts: the policy can become dangerously overconfident in unfamiliar states. In this paper, we present ELLIPSE , a method building on multivariate deep evidential regression to output waypoints and multivariate Student-t predictive distributions in a single for-ward pass. To reduce covariate-shift-induced overconfidence un-der viewpoint and pose perturbations near expert trajectories, we introduce a lightweight domain augmentation procedure that synthesizes plausible viewpoint/pose variations without collecting additional demonstrations. To improve uncertainty reliability under environment/domain shift (e.g., unseen stair-cases), we apply a post-hoc isotonic recalibration on probability integral transform (PIT) values so that prediction sets remain plausible during deployment. We ground the discussion and experiments in staircase waypoint prediction, where obtaining robust waypoint and uncertainty is pivotal. Extensive real world evaluations show that ELLIPSE improves both task success rate and uncertainty coverage compared to baselines. 
+
+I. I NTRODUCTION 
+
+Trajectory or waypoint planning in open-world environ-ments is a crucial capability for mobile robots, particularly in safety-critical domains such as construction, defense, and autonomous driving Recent imitation learning (IL) ap-proaches [1]–[4] have demonstrated strong performance in predicting waypoint sequences from expert demonstrations. However, learned waypoint predictors come with limited safety guarantees [5], [6], and can lead to catastrophic failures when deployed under distribution shift. Uncertainty quantification (UQ) offers a principled mech-anism to mitigate this risk by enabling a policy to recognize unreliable predictions and trigger conservative fallbacks (e.g., stopping and requesting expert assistance) [7], [8]. In an ideal setting, higher uncertainty correlates with larger errors. In robotics, however, limited demonstration data makes uncer-tainty estimates vulnerable to covariate shift: the distribution of observations encountered during deployment can differ substantially from the training distribution, causing the model to remain overconfident when the prediction is wrong [9]. Stair navigation is a crucial capability for robots to safely explore multi-floor structures (e.g. construction sites), and it is a canonical scenario where accurate uncertainty estimation matters (Fig. 1). First, staircase geometry—narrow passages, turns at landings, and elevation changes—restricts visibility     
+
+> 1FieldAI. Work done while ZD intern at FieldAI.
+> 2Northeastern University, Boston, MA, USA.
+> ∗Equal Contribution, Alphabetical order by last name. Website: https://EllipseStairTraversal.github.io EES
+> (a) EES RWS (b) RWS RES (c) RES CLF (d) CLF
+
+Fig. 1: Deployment environments (Section IV-A). Such environ-ments are especially challenging due to limited sensor FOV, narrow passageways (landings), and invisible stair boundaries (hollow handrails and glass). The ability to navigate stairs is pivotal for robots to efficiently explore multi-floor structures. 
+
+and induces partial observability. This motivates us to design a LiDAR-based method for its wider field of view. Second, the margin for error is small: slight waypoint deviations can lead to severe consequences. Last but not least, cascading er-ror can easily drive the robot into viewpoints or poses off the (sparse) demonstration manifold, where the policy is wrong yet confident. Beyond this learner-induced shift, deployment in novel staircases (e.g., different step geometry, materials, and sensing conditions) further induces environment/domain shift that degrades both waypoint and uncertainty reliability. A popular approach to address covariate shift is to cal-ibrate uncertainty online so that prediction sets maintain desirable coverage of the ground truth waypoints [10]–[12]. Such approaches rely on access to a conformity signal during deployment—for instance, the distance between the predicted and the ground truth waypoints—to update thresholds [13]. However, obtaining ground truth waypoints online typically requires human annotation, which is costly and error-prone, limiting the application of such methods in real deployments. This motivates methods that produce reliable uncertainty without requiring online labels, while remaining lightweight enough for real-time deployment. In this paper, we build on deep evidential regression (DER) [14], [15] to predict both waypoints and predictive distributions in a single forward pass. We believe it is more preferable in the problem set-ting than methods such as deep ensembles, which require multiple forward passes and thus can induce high inference latency [7]. To improve uncertainty reliability under view-point/pose shifts near the expert manifold, we introduce an effective domain augmentation procedure that synthesizes additional observations and corrective actions around expert trajectories, inspired by domain augmentation for lidar se-mantic segmentation [16] and demonstration synthesis for imitation learning [17]–[19]. To address environment/domain shift (e.g., unseen staircases), we further recalibrate the predictive distribution using isotonic regression on proba- 
+
+> arXiv:2603.04585v1 [cs.RO] 4 Mar 2026 Fig. 2: Overall pipeline of ELLIPSE . The network is trained offline with domain augmentation to improve robustness of the waypoints and uncertainties (Section III-B). During inference, the predicted waypoint distributions (Section III-A) are recalibrated using scales obtained from Isotonic Regression (Section III-C). A Mahalanobis-distance-based uncertainty-aware MPPI planner runs on a separate thread and tracks a pool of waypoints (at high frequency) while relaxing constraints on uncertain waypoints (Section III-D).
+
+bility integral transform (PIT) values [20]. The calibrated distributions are integrated with an uncertainty-aware MPPI planner to generate plans that stay close to confident way-points. To summarize, we present Evidentia L L earning for 
+
+Informative Probablistic Waypoint SE quences ( ELLIPSE ), with the following contributions:  
+
+> •
+
+An uncertainty-aware waypoint predictor based on mul-tivariate deep evidential regression [15] that outputs waypoints and uncertainty in a single forward pass.  
+
+> •
+
+A lightweight domain augmentation strategy that en-larges the support of the training distribution, improving robustness of waypoints and their uncertainties.  
+
+> •
+
+A PIT-based isotonic recalibration procedure [20], [21] that improves coverage under environment/domain shift.  
+
+> •
+
+Integration of the probabilistic waypoints with aMahalanobis-distance-based MPPI planner.  
+
+> •
+
+Extensive evaluations of ELLIPSE on staircase naviga-tion, where it outperforms the baselines on both success rate and uncertainty coverage, and qualitative examples showcasing ELLIPSE ’s practical benefits. II. R ELATED WORKS 
+
+A. Uncertainty Quantification 
+
+Uncertainty quantification (UQ) is critical for deploying modern deep learning methods in real-world, safety-critical settings [7]. Common approaches include Monte Carlo (MC) Dropout [22], deep ensembles [23], and evidential meth-ods [15]. While MC Dropout and ensembles are often effective, they require multiple forward passes, inducing latency prohibitive for real-time robotics. In contrast, evi-dential deep learning produces the prediction, and associated aleatoric uncertainty (irreducible data noise) and epistemic uncertainty (reducible model uncertainty), in a single forward pass, making it appealing for on-robot deployment [15], [24], [25]. Another widely used family of UQ methods is conformal prediction (CP) [11]. Online conformal variants are particularly attractive in robotics because they can adapt prediction set sizes under covariate shift while statistically guaranteeing marginal coverage [12], [26]. However, these online methods rely on access to a conformity signal during deployment, which for waypoint planning would require ground truth future waypoints—typically obtainable only through human annotation—making the approach costly and error-prone, limiting its practicality in our setting. 
+
+B. Imitation Learning and Covariate Shift 
+
+Imitation learning (IL), which trains policies from expert demonstrations, has achieved strong performance across a range of robotics tasks [1]–[4]. Despite this success, imitation policies are well known to be susceptible to covariate shift ,and the compounding error can lead to catastrophic conse-quences like collision and rollover [13], [27]. To mitigate this issue, we mainly identify two classes of methods. 
+
+a) Synthesizing Demonstrations: Given a limited amount of expert demonstration, an appealing approach to train robust imitation learning policies is to synthesize new demonstrations to improve dataset support. MimicGen shows that through re-purposing human demonstrations in new contexts, success rate for various table-top manipulation tasks can be significantly boosted [17]. SPARTN trains neural radiance fields from real world demonstrations to render observations from novel poses and generate corrective ac-tions from those poses [18]. SART autonomously augments a single human demonstration using annotated safety region around trajectory keypoints [19]. While these methods are mostly designed for camera and depth observations, we anticipate that the idea would transfer to LiDAR point clouds. 
+
+b) Interactive Imitation Learning: Interactive IL (IIL) seeks to improve performance under the learner-induced state distribution by iteratively requesting for expert help during deployment and training on aggregated datasets [13], [27], [28]. In fact, uncertainty quantification (UQ) is widely adapted for robot-gated IIL, where the agent determines if it needs expert intervention and subsequently calls for help. EnsembleDAgger [28] leverages the ensemble disagree-ment (epistemic uncertainty), and ConformalDAgger [13] utilizes intermittent quantile tracking to calibrate prediction sets online. However, in the context of waypoint planning such methods are either too computationally expensive or impractical due to the lack of online ground truth. 
+
+C. Placement of This Work 
+
+Our method is complementary to the post-hoc methods like online CP and uncertainty-gated IIL [12], [13], [28]: rather than adapting online, we improve the starting point of both the policy and its uncertainty estimates in an offline manner. Our approach is also related in spirit to demonstra-tion synthesis approaches (e.g., MimicGen, SPARTN) [17], [18]. Our focus, however, is LiDAR-based waypoint predic-tion with a specific emphasis on uncertainty reliability under covariate shift. Although we evaluate ELLIPSE on staircase climbing with LiDAR, we hypothesize the overall recipe is applicable to other IL tasks and sensing modalities. III. M ETHOD 
+
+In this section, we present ELLIPSE, a point-cloud-based model for predicting uncertainty-aware waypoint sequences from expert demonstrations. The overall pipeline of EL-LIPSE is shown in Fig. 2. Our backbone is multivariate deep evidential regression [15], which produces both way-points and multivariate Student-t predictive distributions in a single forward pass (Section III-A). To mitigate covariate-shift-induced overconfidence when the robot deviates from the demonstration manifold, we augment the training data by synthesizing plausible viewpoint and pose perturbations around each expert trajectory (Section III-B). Furthermore, we apply a lightweight post-hoc recalibration: we fit an isotonic regression mapping on probability integral transform (PIT) values so that the resulting prediction set sizes more faithfully adapt to the residual/error magnitudes during de-ployment (Section III-C). Finally, we integrate the predicted uncertainty into an MPPI planner, which leverages previously confident predictions to mitigate the impact of occasional poor predictions (Section III-D). 
+
+A. Learning Waypoints with Deep Evidential Regression 
+
+In this work, we are interested in predicting a sequence of future waypoints and associated uncertainties using a point cloud input, and track the predicted waypoints with a motion planner. Concretely, given a lidar point cloud 1 Q ∈ Rm×3
+
+where m > 0 denotes the number of points, we are interested in predicting a sequence of 2D waypoints in birds-eye-view (BEV), denoted w0: T := {w0, w1, · · · , wT } where 
+
+wi ∈ Rn. We preprocess the waypoints to be equidistant with a stride of d meters (in order to smooth out noise in the demonstration trajecotry), and each waypoint is assumed to be a sample drawn i.i.d. from a multivariate (bivariate in our case, i.e. n = 2 ) Gaussian distribution with unknown mean 
+
+μi ∈ Rn and unknown variance Σi ∈ Rn×n. The conjugate prior to this multivariate Gaussian likelihood is a Normal Inverse-Wishart (NIW) distribution: 
+
+p(μi, Σi) = N IW i(mi). (1)   
+
+> 1We omit timestamp subscript tfor cleanliness when possible.
+
+where mi = { ˆμi, κ i, Ψi, ν i}, ˆμi ∈ Rn, κ i > 0, ν i >n + 1 , and Ψi ∈ Rn×n is symmetric positive definite. The probability of observing the ground truth waypoint wi admits a multivariate student-t distribution: 
+
+p(wi|mi) = tνi−n+1 ( ˆ μi, 1
+
+νi − n + 1 1 + κi
+
+κi
+
+Ψi). (2) Concretely, a neural network Γθ , where θ denotes trainable parameters, outputs the NIW parameters for every waypoint 
+
+{ ˆμi, κ i, Li, ν i} where Li ∈ Rn×n is a lower triangular matrix with positive diagonal elements and Ψi = LiL⊺ 
+
+> i
+
+, and is trained by minimizing the negative logarithm likelihood: 
+
+LNLL (θ) = − 1
+
+T
+
+> T
+
+X
+
+> i=0
+
+log p(wi|mi). (3) The predicted waypoints are thus the mean of the NIW 
+
+E[μi] = ˆ μi, and the aleatoric and epistemic uncertainty can be computed following [15]. Although multivariate deep evidential regression provides a simple and principled way to predict waypoints and uncer-tainty, prior work has shown that evidential uncertainty may behave more like a proxy for residual error than a faithful uncertainty estimate [29]. In particular, while the mean prediction ˆμi can fail catastrophically with unfamiliar inputs, the learned uncertainty may not increase accordingly because it is optimized on in-distribution residuals. Consequently, the model can remain overconfident exactly in the regimes where its errors are largest, as we empirically demonstrate in Section IV-C. This motivates our domain augmentation technique, whose goal is to expose the model to a broader set of states likely to be encountered during deployment. 
+
+B. Domain Augmentation via Synthesizing Novel Viewpoints 
+
+To synthesize new training instances that lie off the origi-nal human demonstration trajectory, we first generate LiDAR point clouds from novel viewpoints. Specifically, for each demonstration frame t, we build a dense point cloud map by aggregating geometrically adjacent, deskewed LiDAR scans using the robot pose estimates from SLAM [30], [31], and denote the resulting map by Qworld t . To reduce contamination from dynamic objects, we apply a lightweight consistency-based heuristic filter to Qworld t .We then sample a perturbed pose ˆTt within a prescribed safety margin ϵ around the current pose Tt, and transform the aggregated map accordingly to obtain ˆQworld t = ˆT−1 
+
+> t
+
+◦
+
+TtQworld t . To avoid computationally expensive point-cloud ray casting, we follow [16] and project ˆQworld t to a V × H
+
+range image, where V and H denote the target vertical and horizontal resolutions, respectively, and then back-project to obtain the synthesized LiDAR point cloud ˆQt. Consistent with our hardware setup, we additionally include a set of predefined planes (e.g., LiDAR roll cage and robot chassis) to simulate self-occlusion / self-hits during synthesis. The corresponding ground-truth waypoint sequence 
+
+ˆwt, 0: T := { ˆwt, 0, ˆwt, 1, · · · , ˆwt,T } is obtained by sampling equidistant poses along the future demonstration trajectory (a) Train calib. plot (waypoint 2) (b) Test calib. plot (waypoint 2) 
+
+> Fig. 3: Uncertainty is calibrated on train yet overconfident on test.
+
+and projecting them to the robot-centric BEV frame. Se-mantically, these augmented instances encourage the model to learn self-corrective behavior when it deviates from the nominal trajectory during deployment [18]. Examples of the dense map and generated point cloud are shown in Fig. 2. Although our domain augmentation improves the robust-ness of waypoint predictions and uncertainties when the robot deviates into off-manifold states, it does not by itself guarantee reliable uncertainty at deployment. Due to the limited and sparse nature of robotics demonstration data, imitation learning policies are prone to overfitting to the demonstration distribution [32]. As a result, residuals (or prediction errors) are often larger during testing and de-ployment than during training. However, the uncertainty estimates produced by deep evidential regression are learned primarily from in-distribution residual patterns observed dur-ing training, and may therefore be miscalibrated for the larger residual magnitudes encountered at deployment under covariate shift [20]. This motivates a post-hoc recalibration step that scales the evidential predictive distribution (via PIT-based isotonic regression) so that prediction-set coverage better matches empirical residual magnitudes under shift. 
+
+C. Calibrating Uncertainty with Isotonic Regression 
+
+In a regression setting, calibration means that a prediction set containing p% of the predicted probability mass should contain the ground truth approximately p% of the time [21]. Equivalently, the calibration curve should lie close to the identity (diagonal) line. In multivariate deep evidential regression, the posterior predictive for waypoint wi is a multivariate Student-t dis-tribution with mean ˆμi, scale Si = 1 
+
+> νi−n+1 1+ κi
+> κi
+
+Ψi, and degree of freedom νi − n + 1 (Eq. (2)). We calibrate this predictive distribution directly, rather than using a Gaus-sian approximation built from aleatoric/epistemic uncertainty terms as in [20]. This choice keeps the calibration procedure consistent with the probabilistic model actually used by multivariate deep evidential regression at inference time. To do so, we employ a radial probability integral transform (PIT), which maps each prediction–target pair to a scalar confidence value in [0 , 1] .Specifically, for a ground-truth waypoint wi, we first compute the squared Mahalanobis radius under the predicted Student-t scale: 
+
+r2 
+
+> i
+
+= dmah (wi; ˆ μi, Si) = ( wi − ˆμi)⊤S−1 
+
+> i
+
+(wi − ˆμi). (4) For a multivariate Student-t predictive, n−1r2 
+
+> i
+
+admits an F-distribution, which allows us to compute a scalar PIT value 
+
+ui = Fi(n−1r2 
+
+> i
+
+) ∈ [0 , 1] , (5) where Fi is the predictive CDF for the i-th waypoint [33]. If the predictive distribution is calibrated, then ui should be approximately uniformly distributed on [0 , 1] . However, as shown in the calibration plot (Fig. 3), while the training cal-ibration curve (Fig. 3a) stays close to the diagonal, the testing curve (Fig. 3b) is mostly below the diagonal, signifying that the uncertainty during testing is overconfident. Following [20], [21], we fit a monotonic recalibration mapping gi(·) : [0 , 1] → [0 , 1] using isotonic regression on a held-out calibration set {(ui,k , ˆpi,k )}Nk=1 , where ˆpi,k 
+
+denotes the percentage of data whose PIT is covered by ui,k .Intuitively, gi corrects systematic overconfidence (or under-confidence) in the raw evidential predictive distribution by applying a threshold-conditioned scaling, while preserving the ranking induced by the original predictive distributions 2.At inference time, to construct a prediction set with nom-inal coverage level p, we invert the isotonic map to obtain the corresponding raw PIT threshold that empirically covers 
+
+p% of the samples, i.e. ˜p = g−1 
+
+> i
+
+(p), and form the Student-t ellipsoidal prediction set that covers ˜p% of the probability mass, yielding calibrated predictions sets whose empirical coverage more closely matches the desired coverage level 3.
+
+D. Integrating Learned Uncertainty with Motion Planner 
+
+In order to execute the predicted waypoints, we approxi-mate the robot’s dynamics model with a unicycle model: 
+
+xt+1 = unicycle (xt, at) (6) where xt = [ xt, y t, θ t] ∈ X ⊆ R3 is the state vector contain-ing the robot’s BEV position (denoted pt) and orientation (yaw), and at = [ vt, ω t] ∈ A ⊆ R2 is the target linear and angular velocities. An MPPI planner can be used to track a dense waypoint sequence wt, 0: H (interpolated from the sparse waypoints wt, 0: T ), where H is the horizon [34]. However, this naive planner would:  
+
+> •
+
+Converge easily to local minima as the waypoints may not be feasible under the control limits,  
+
+> •
+
+Fail to distinguish uncertain waypoints, and  
+
+> •
+
+Discard past confident predictions that could help nav-igate occasional bad predictions. As a result, we design a simple yet effective approach to include the predictive uncertainties into the MPPI frame-work to improve the robustness of the motion planner. Our intuition is to leverage mahalanobis distance as opposed to traditional Euclidean distance cost in MPPI planners, which helps relax constraints near uncertain waypoints. Intuitively, we absorb the isotonic scaling into the scale matrix St,i of the predictive multivariate student-t distribu-tion, such that the p% prediction set under the resulting 
+
+> 2The resulting calibration curves should be close to the diagonal [21]
+> 3We make the assumption that the residual magnitude in calibration set is more closely aligned with that in the deployment set.
+
+distribution is equivalent to the ˜p% prediction set of the pre-isotonic distribution. Let ˜St,i denote the post-isotonic scale matrix, then it is computed as follow: 
+
+αi = F −1 
+
+> i
+
+(˜ p)
+
+F −1 
+
+> i
+
+(p) , ˜St,i = αi St,i . (7) Given the post-isotonic waypoint distributions ( ˆ μt,i , ˜St,i )
+
+and a rollout trajectory xt, 0: H , we first define a waypoint-tracking MPPI objective using the minimum Mahalanobis distance from the rollout to each predicted waypoint: 
+
+C(xt, 0: H ) = 
+
+> T
+
+X
+
+> i=0
+
+min  
+
+> 0≤h≤H
+
+dmah 
+
+
+
+pt,h ; ˆ μt,i , ˜St,i 
+
+
+
+. (8) In practice, we observe that many post-isotonic scale matrices ˜St,i have eigenvalues smaller than 1, which makes the corresponding Mahalanobis penalty more restrictive than Euclidean distance. As a result, even uncertain waypoints may remain overly punitive and fail to induce the desired relaxation in planning. To better control this behavior, we introduce an expert-specified safety threshold δ > 0, shared across waypoints, defined in units of the semi-major axis length of the unit ellipse induced by ˜St,i . Let 
+
+λt,i = EigenVal max (˜St,i ), ℓt,i = pλt,i . (9) Here, ℓt,i is the semi-major axis length of the unit ellipse. We then construct the scale matrix used in the MPPI cost, denoted Scost  
+
+> t,i
+
+, by applying no scaling when ℓt,i ≤ δ, and an exponential relaxation when ℓt,i > δ 4:
+
+Scost  
+
+> t,i
+
+=
+
+
+
+˜St,i , ℓt,i ≤ δ, λ−1
+
+> t,i
+
+ ℓt,i 
+
+δ
+
+β
+
+˜St,i , ℓt,i > δ, 
+
+(10) where β ∈ R+ controls the aggressiveness of the relaxation. Under the relaxed branch ( ℓt,i > δ ), Eq. (10) rescales ˜St,i 
+
+so that the largest eigenvalue of Scost  
+
+> t,i
+
+becomes (ℓt,i /δ )β .Therefore, waypoint distributions with larger semi-major axes (relative to δ) become progressively less punitive along their principal uncertainty direction, while waypoint distri-butions below the threshold remain unchanged. Let τ ≥ 1
+
+denote the number of historical predictions we consider, the MPPI planner then minimizes the following cost 5:
+
+C(xt, 0: H ) = 
+
+> τ
+
+X
+
+> k=0
+> T
+
+X
+
+> i=0
+
+min  
+
+> 0≤h≤H
+
+dmah 
+
+ pt,h ; ˆ μt−k,i , Scost 
+
+> t−k,i
+
+ .
+
+(11) IV. E XPERIMENTS 
+
+In this section, we evaluate ELLIPSE on stair traversal using a Boston Dynamics Spot with an Ouster OS0-128 LiDAR. All inference and planning are performed on a platform with 16 GB of unified memory, demonstrating that ELLIPSE is sufficiently lightweight for deployment on edge platforms. Through extensive quantitative and qualitative 
+
+> 4We do not discard such waypoints as they still carry useful information
+> 5We omit auxiliary costs like smoothness for brevity.
+
+experiments we show the effectiveness of the proposed approach. In particular, this section addresses the following questions:  
+
+> •
+
+Are the nominal waypoints reliable when directly tracked by MPPI, and does domain augmentation im-prove task success rate (Section IV-B)?  
+
+> •
+
+Do domain augmentation and isotonic recalibration im-prove empirical coverage at deployment (Section IV-C)?  
+
+> •
+
+Does the proposed MPPI planner improve the robust-ness of the generated paths (Section IV-D)? 
+
+A. Experiment Setup 
+
+ELLIPSE takes as input a deskewed LiDAR point cloud from a SLAM pipeline [30]. We process each point cloud by gravity-aligning it, clipping it to the axis-aligned box 
+
+[−10 , −10 , −4] × [10 , 10 , 4] , and randomly subsampling 20,000 points. The resulting point cloud is encoded using a PointPillars backbone [35] with a pillar size of 0.16 m, whose output features are fed to a self-attention-based inpainting module followed by a ResNet encoder. Finally, an MLP maps the learned feature representation to the waypoint predictions and their associated uncertainties. For training, we collect demonstrations on 25 diverse staircases, of which 21 are used for training and 4 for testing. We refer to the four test staircases (Fig. 1) as EES (7 floors, right-turning), RWS (10 floors, left-turning), RES (10 floors, left-turning), and CLF (7 floors, right-turning). The ground-truth targets are T = 5 equally spaced waypoints with stride d = 0 .5 m. Each training instance is augmented into 8 additional poses, and the safety mar-gin is set to ϵ = [∆ x, ∆y , ∆z , ∆roll , ∆pitch , ∆yaw ] =[0 , 0.2, 0.05 , 10 , 10 , 30] , with translational components mea-sured in meters and rotational components in degrees. We do not perturb along the robot x-axis, since this corresponds to perturbations along the demonstration trajectory and can introduce inconsistent point clouds that degrade training. The model is trained for 50 epochs using a one-cycle scheduler with cosine annealing. On our edge compute platform, the resulting model runs in real time on 10+ Hz. 
+
+B. Stair Climbing Success Rate on Unseen Stairs                               
+
+> Model EES RWS RES CLF Total BEVFusion 40138ELLIPSE-Uni-no-Aug 243211 ELLIPSE-Uni 20103ELLIPSE-no-Aug 30238ELLIPSE 10001
+
+TABLE I: Number of manual interventions ( ↓) required to complete the 4 test sequences (Fig. 1). Best results are shown in bold .BEVFusion fails frequently due to inference latency. ELLIPSE-Uni performs worse than ELLIPSE overall because it predicts waypoint x and y coordinates independently. Domain augmentation substantially improves both ELLIPSE and ELLIPSE-Uni. 
+
+In this experiment, we evaluate the nominal reliability of the predicted waypoints without using uncertainty during planning. Specifically, we interpolate the 5 predicted sparse waypoints into a dense reference path and track this path using an MPPI controller with 512 rollouts, 50 steps rollout horizon, and timestep ∆t = 0 .1 s. The robot’s linear and (a) w/o Aug. Path Following. (b) w/o Aug. Eq. (11) and τ = 5 .   
+
+> (c) w Aug. Path Following. (d) w Aug. Eq. (11) and τ= 5 .
+> Fig. 4: Timelapse and trajectories of the Spot traversing CLF using different variants of ELLIPSE. (a)(b): Without the domain augmen-tation, both variants crash into handrails due to compounding error. (c)(d): With the domain augmentation, both variants completes the run without help, and stay closer to stair center.
+
+angular velocities are constrained to 0.5 m/s and 1.0 rad/s, respectively. This tracking MPPI runs at 20 Hz. We compare ELLIPSE against several baselines. BEVFu-sion is a widely used architecture for BEV perception [36]. For a fairer latency comparison, we modify its architecture to use the same PointPillars backbone as our method, and train it using LiDAR input and 3 onboard RGB-D cameras (front-down, front-up, and rear). Because synthesizing novel RGB-D observations is beyond the scope of this work, this baseline is trained without domain augmentation. We also train a univariate deep evidential regression model [14], denoted ELLIPSE-Uni, and ablate domain augmentation for both the univariate and multivariate variants (denoted ELLIPSE-Uni-no-Aug and ELLIPSE-no-Aug, respectively). Table I reports the number of manual interventions re-quired for each method to complete the four test sequences. Although BEVFusion [36] additionally uses 3 RGB-D cam-eras, its performance is comparable to ELLIPSE-no-Aug. We hypothesize that its higher inference latency ( ∼4 Hz) and the limited camera field of view reduced its ability to recover from out-of-distribution states. ELLIPSE-Uni and ELLIPSE-Uni-no-Aug perform worse than their multivariate counterparts, likely because modeling the waypoint x and y
+
+coordinates independently fails to capture their correlation, especially during turning maneuvers on stair landings. Most importantly, the proposed domain augmentation strategy (Section III-B) significantly reduces the number of inter-ventions for both the univariate and multivariate models. We attribute this improvement to the fact that augmented viewpoints expose the policy to off-demonstration states and encourage corrective behavior under compounding error. As illustrated qualitatively in Fig. 4, while ELLIPSE success-fully navigates the scenario (Fig. 4c), ELLIPSE-no-Aug runs into the handrail and thus needs intervention (Fig. 4a). 
+
+C. Empirical Coverage of the Predictive Uncertainty 
+
+Next, we evaluate the empirical coverage of the predicted uncertainty sets. We split the four test staircases into a calibration set (EES and RWS) and a deployment set (RES and CLF). Our goal is to construct calibrated 90% prediction sets, i.e., calibrated ellipses that contain the ground-truth waypoint approximately 90% of the time during deployment. We additionally report sharpness, measured as the area of the resulting prediction sets [21]. Ideally a calibrated predictor would achieve close to 90% empirical coverage while keeping the prediction sets as compact as possible. As baselines, we consider ELLIPSE-no-Aug and a strong online conformal prediction baseline, Multi Valid Prediction (ELLIPSE-no-Aug-MVP) [12], which provides group-wise coverage guarantees. We use 5 groups in MVP, i.e., a separate threshold for each waypoint index. Since MVP is an online conformal method, it updates its thresholds during deployment using a conformity score. Therefore we provide MVP with ground-truth waypoints online (i.e., an oracle update protocol), which favors MVP. We evaluate ELLIPSE-no-Aug and ELLIPSE-no-Aug-MVP under two calibration regimes: calibration on clean demon-strations only, and calibration on domain-augmented demon-strations. This comparison helps to highlight the importance of incorporating domain augmentation during calibration. We evaluate the calibrated uncertainties on two deploy-ment datasets. In the first experiment, we teleoperate the robot to traverse the stairs in an adversarial manner (aggres-sive turning and zig-zagging; denoted Adversarial ). In the second experiment, we deploy ELLIPSE and ELLIPSE-no-Aug on the deployment staircases and record the resulting point clouds and poses (denoted Deployment ). The empirical coverage and sharpness of the 90% predic-tion sets are reported in Table II. ELLIPSE, trained and cal-ibrated with domain augmentation, achieves high empirical coverage on both datasets. Although it slightly over-covers the ground truth, the resulting prediction sets remain rea-sonably compact. In contrast, ELLIPSE-no-Aug calibrated on clean demonstrations produces the smallest prediction sets, but severely underestimates the true residuals, resulting in the worst empirical coverage. Calibrating ELLIPSE-no-Aug with domain-augmented data significantly improves empirical coverage, but does so by aggressively enlarging the prediction sets. We attribute this to persistent overconfidence when the robot states are off the demonstration manifold. Finally, although ELLIPSE-no-Aug-MVP achieves coverage closest to the 90% target, its prediction set sizes are com-parable to ELLIPSE-no-Aug, and MVP requires privileged information that is unavailable at deployment. 
+
+D. Qualitative Analysis of Motion Planner 
+
+As discussed in Section IV-B, ELLIPSE already achieves the highest success rate among the considered baselines using a simple path-tracking controller, largely due to the high control frequency of the MPPI planner (20 Hz). However, the tracker may still deviate from the predicted waypoints due to control limits, and it is vulnerable to occasional Dataset Train Aug Calib Aug Calib Method Empirical Coverage % (∼ 90% ) Sharpness m2 (↓)Adversarial Y YIsotonic 0.88 0.95 0.95 0.92 0.90 0.10 0.29 0.48 0.58 0.86 NN 0.61 0.70 0.67 0.64 0.73 0.06 0.16 0.27 0.40 0.72                                                                                   
+
+> Y0.90 0.90 0.89 0.87 0.89 0.22 0.40 0.60 0.91 1.57 NMVP 0.87 0.88 0.89 0.90 0.93 0.21 0.38 0.68 1.20 2.00 Y0.89 0.90 0.89 0.87 0.89 0.21 0.39 0.66 0.94 1.50 Deployment YYIsotonic 0.84 0.92 0.92 0.92 0.90 0.10 0.29 0.49 0.61 0.88 NN0.49 0.58 0.58 0.59 0.73 0.06 0.15 0.25 0.38 0.69
+> Y0.73 0.81 0.82 0.84 0.91 0.22 0.37 0.58 0.87 1.52 NMVP 0.86 0.86 0.86 0.86 0.88 0.30 0.54 0.79 0.94 1.22 Y0.82 0.85 0.84 0.83 0.90 0.27 0.47 0.67 0.83 1.41
+
+TABLE II: Empirical coverage (%) and sharpness ( m2) of calibrated 90% prediction sets on Adversarial and Deployment . ELLIPSE (calibrated with domain augmentation) achieves strong empirical coverage with compact prediction sets on both datasets. For ELLIPSE-no-Aug, calibrating on augmented data substantially improves coverage, but at the cost of much larger prediction sets. Although ELLIPSE-no-Aug-MVP yields coverage closest to the target 90%, it relies on privileged online conformity feedback. ( Best , and Second Best)            
+
+> (a) MPPI Result Comparison -·-Mahalanobis+Hist 2-■--Mahalanobis
+> -Ja-Euclid+Hist 1-•-Euclid 0
+> •
+> -1
+> ,
+> -2 -2 -1 012(b)
+
+Fig. 5: Qualitative comparison of MPPI planning variants, overlaid with unit-level uncertainty ellipses (accepted, relaxed; current-step predictions are highlighted with black edges). Mahalanobis+Hist 
+
+remains close to confident predictions, whereas the other variants can be dominated by highly uncertain waypoints, leading to poten-tially unsafe behavior under disturbances. 
+
+poor predictions because it does not explicitly use waypoint uncertainty or historical confident predictions. We therefore evaluate the uncertainty-aware MPPI planner in Section III-D. Since all variants achieve near-saturated success rates, we focus on qualitative comparisons. Specifically, we compare four planner variants with different cost formulations:  
+
+> •
+
+Mahalanobis+Hist : Eq. (11) with history ( τ = 5 ),  
+
+> •
+
+Mahalanobis : Eq. (11) without history ( τ = 0 ),  
+
+> •
+
+Euclid+Hist : Minimize Euclid. Dist to waypoints with history ( τ = 5 ),  
+
+> •
+
+Euclid : Minimize Euclid. Dist to waypoints without history (the best path-tracking baseline in Section IV-B). For Mahalanobis+Hist and Mahalanobis , we use δ = 0 .2 mand β = 2 .0. Example results are shown in Fig. 5. Because Euclid and Euclid+Hist weight all waypoints equally, they may converge to aggressively turning paths that pass too close to obstacles (e.g., stair handrails; Figs. 5a and 5b). Although Mahalanobis can relax uncertain predic-tions, it only uses the current prediction and may still fail when multiple current waypoints are uncertain (Fig. 5b). In contrast, Mahalanobis+Hist stays close to confident way-points and behaves conservatively when most predictions are uncertain, improving robustness to occasional errors and disturbances. Another qualitative example is visualized in (Fig. 4), where Mahalanobis+Hist keeps the robot closer to staircase center (Fig. 4d) compared to Euclid (Fig. 4c). On the other hand, even with Mahalanobis+Hist , ELLIPSE-no-Aug still runs into obstacles because it assigns high confidence to wrong predictions (Fig. 4b). V. C ONCLUSION 
+
+In this paper, we present ELLIPSE, a system that predicts uncertainty-aware waypoints building on multivariate deep evidential regression [15]. To improve the robustness of the waypoints and uncertainties, we employ a simple point cloud-based domain augmentation that synthesizes new in-stances from viewpoints away from the demonstration trajec-tories. The uncertainties from the model is recalibrated with an isotonic regression module to adjust them to deployment error magnitudes. The waypoints and uncertainties are inte-grated into an uncertainty-aware MPPI planner that relaxes tracking around highly uncertain waypoints. Through exten-sive quantitative and qualitative experiments, we demonstrate the practical benefits of ELLIPSE over several baselines. Limitations and future works include evaluating on more tasks, and integration with online label-free calibration. REFERENCES 
+
+[1] A. Sridhar, D. Shah, C. Glossop, and S. Levine, “No-mad: Goal masked diffusion policies for navigation and exploration,” in 2024 IEEE International Confer-ence on Robotics and Automation (ICRA) , IEEE, 2024, pp. 63–70. [2] X. Yu, S. Zhang, X. Song, X. Qin, and S. Jiang, “Tra-jectory diffusion for objectgoal navigation,” Advances in Neural Information Processing Systems , vol. 37, pp. 110 388–110 411, 2024. [3] B. Hu et al., “Orbitgrasp: SE (3) -equivariant grasp learning,” arXiv preprint arXiv:2407.03531 , 2024. [4] A.-C. Cheng et al., “Navila: Legged robot vision-language-action model for navigation,” arXiv preprint arXiv:2412.04453 , 2024. [5] T. Koller, F. Berkenkamp, M. Turchetta, and A. Krause, “Learning-based model predictive control for safe exploration,” in 2018 IEEE conference on deci-sion and control (CDC) , IEEE, 2018, pp. 6059–6066. [6] Z. Dong, S. Omidshafiei, and M. Everett, “Col-lision avoidance verification of multiagent systems with learned policies,” IEEE Control Systems Letters ,vol. 8, pp. 652–657, 2024. [7] M. Abdar et al., “A review of uncertainty quantifi-cation in deep learning: Techniques, applications and challenges,” Information fusion , vol. 76, pp. 243–297, 2021. [8] W. He, Z. Jiang, T. Xiao, Z. Xu, and Y. Li, “A survey on uncertainty quantification methods for deep learning,” ACM Computing Surveys , 2025. [9] Y. Ovadia et al., “Can you trust your model’s uncer-tainty? evaluating predictive uncertainty under dataset shift,” Advances in neural information processing sys-tems , vol. 32, 2019. [10] R. J. Tibshirani, R. Foygel Barber, E. Candes, and A. Ramdas, “Conformal prediction under covariate shift,” 
+
+Advances in neural information processing systems ,vol. 32, 2019. [11] A. N. Angelopoulos and S. Bates, “A gentle introduction to conformal prediction and distribution-free uncertainty quantification,” arXiv preprint arXiv:2107.07511 , 2021. [12] O. Bastani, V. Gupta, C. Jung, G. Noarov, R. Rama-lingam, and A. Roth, “Practical adversarial multivalid conformal prediction,” Advances in neural information processing systems , vol. 35, pp. 29 362–29 373, 2022. [13] M. Zhao, R. Simmons, H. Admoni, A. Ramdas, and A. Bajcsy, “Conformalized interactive imitation learn-ing: Handling expert shift and intermittent feedback,” 
+
+arXiv preprint arXiv:2410.08852 , 2024. [14] A. Amini, W. Schwarting, A. Soleimany, and D. Rus, “Deep evidential regression,” Advances in neural information processing systems , vol. 33, pp. 14 927– 14 937, 2020. [15] N. Meinert and A. Lavin, “Multivariate deep evidential regression,” arXiv preprint arXiv:2104.06135 , 2021. [16] K. Ryu, S. Hwang, and J. Park, “Instant domain augmentation for lidar semantic segmentation,” in Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 9350–9360. [17] A. Mandlekar et al., “Mimicgen: A data genera-tion system for scalable robot learning using human demonstrations,” arXiv preprint arXiv:2310.17596 ,2023. [18] A. Zhou, M. J. Kim, L. Wang, P. Florence, and C. Finn, “Nerf in the palm of your hand: Correc-tive augmentation for robotics via novel-view syn-thesis,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 17 907–17 917. [19] H. Oh, M. Murooka, T. Motoda, R. Nakajo, and Y. Domae, “Self-augmented robot trajectory: Efficient imitation learning via safe self-augmentation with demonstrator-annotated precision,” arXiv preprint arXiv:2509.09893 , 2025. [20] L. Bramlage, M. Karg, and C. Curio, “Plausible uncer-tainties for human pose regression,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 15 133–15 142. [21] V. Kuleshov, N. Fenner, and S. Ermon, “Accurate uncertainties for deep learning using calibrated re-gression,” in International conference on machine learning , PMLR, 2018, pp. 2796–2804. [22] R. M. Neal, Bayesian learning for neural networks .Springer Science & Business Media, 2012, vol. 118. [23] Z.-H. Zhou, Ensemble methods: foundations and al-gorithms . Chapman and Hall/CRC, 2025. [24] X. Cai et al., “Evora: Deep evidential traversabil-ity learning for risk-aware off-road autonomy,” IEEE Transactions on Robotics , 2024. [25] Z. Dong et al., “Learning smooth state-dependent traversability from dense point clouds,” arXiv preprint arXiv:2506.04362 , 2025. [26] I. Gibbs and E. J. Cand` es, “Conformal inference for online prediction with arbitrary distribution shifts,” 
+
+Journal of Machine Learning Research , vol. 25, no. 162, pp. 1–36, 2024. [27] S. Ross, G. Gordon, and D. Bagnell, “A reduction of imitation learning and structured prediction to no-regret online learning,” in Proceedings of the four-teenth international conference on artificial intelli-gence and statistics , JMLR Workshop and Conference Proceedings, 2011, pp. 627–635. [28] K. Menda, K. Driggs-Campbell, and M. J. Kochender-fer, “Ensembledagger: A bayesian approach to safe imitation learning,” in 2019 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) ,IEEE, 2019, pp. 5041–5048. [29] N. Meinert, J. Gawlikowski, and A. Lavin, “The unreasonable effectiveness of deep evidential regres-sion,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 37, 2023, pp. 9134–9142. [30] K. Chen, R. Nemiroff, and B. T. Lopez, “Di-rect lidar-inertial odometry: Lightweight lio with continuous-time motion correction,” arXiv preprint arXiv:2203.03749 , 2022. [31] Z. Dong et al., “Lidar inertial odometry and mapping using learned registration-relevant features,” in 2025 IEEE International Conference on Robotics and Au-tomation (ICRA) , IEEE, 2025, pp. 359–366. [32] S. Belkhale, Y. Cui, and D. Sadigh, “Data quality in imitation learning,” Advances in neural information processing systems , vol. 36, pp. 80 375–80 395, 2023. [33] M. Roth, On the multivariate t distribution . Link¨ oping University Electronic Press, 2012. [34] G. Williams, P. Drews, B. Goldfain, J. M. Rehg, and E. A. Theodorou, “Aggressive driving with model predictive path integral control,” in 2016 IEEE in-ternational conference on robotics and automation (ICRA) , IEEE, 2016, pp. 1433–1440. [35] A. H. Lang, S. Vora, H. Caesar, L. Zhou, J. Yang, and O. Beijbom, “Pointpillars: Fast encoders for object detection from point clouds,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2019, pp. 12 697–12 705. [36] Z. Liu et al., “Bevfusion: Multi-task multi-sensor fusion with unified bird’s-eye view representation,” 
+
+arXiv preprint arXiv:2205.13542 , 2022.

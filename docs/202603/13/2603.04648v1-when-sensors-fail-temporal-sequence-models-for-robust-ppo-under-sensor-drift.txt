@@ -1,0 +1,603 @@
+Title: When Sensors Fail: Temporal Sequence Models for Robust PPO under Sensor Drift
+
+URL Source: https://arxiv.org/pdf/2603.04648v1
+
+Published Time: Fri, 06 Mar 2026 01:14:27 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+Published as a conference paper at ICLR 2026 
+
+# WHEN SENSORS FAIL : T EMPORAL SEQUENCE MOD -
+
+# ELS FOR ROBUST PPO UNDER SENSOR DRIFT 
+
+Kevin Vogt-Lowell, Theodoros Tsiligkaridis, Rodney Lafuente-Mercado, Surabhi Ghatti 
+
+MIT Lincoln Laboratory 
+
+Shanghua Gao, Marinka Zitnik 
+
+Harvard 
+
+Daniela Rus 
+
+MIT 
+
+# ABSTRACT 
+
+Real-world reinforcement learning systems must operate under distributional drift in their observation streams, yet most policy architectures implicitly assume fully observed and noise-free states. We study robustness of Proximal Policy Opti-mization (PPO) under temporally persistent sensor failures that induce partial ob-servability and representation shift. To respond to this drift, we augment PPO with temporal sequence models, including Transformers and State Space Models (SSMs), to enable policies to infer missing information from history and main-tain performance. Under a stochastic sensor failure process, we prove a high-probability bound on infinite-horizon reward degradation that quantifies how ro-bustness depends on policy smoothness and failure persistence. Empirically, on MuJoCo continuous-control benchmarks with severe sensor dropout, we show Transformer-based sequence policies substantially outperform MLP, RNN, and SSM baselines in robustness, maintaining high returns even when large fractions of sensors are unavailable. These results demonstrate that temporal sequence rea-soning provides a principled and practical mechanism for reliable operation under observation drift caused by sensor unreliability. 
+
+# 1 INTRODUCTION 
+
+Real-world reinforcement learning (RL) systems, from robotic control to autonomous driving, de-pend on sensor feedback that is often unreliable. Failures, communication dropouts, or transient corruption lead to partial observability and degraded performance (Jaakkola et al., 1994; Kaelbling et al., 1998). Standard RL agents, especially those based on multilayer perceptrons (MLPs), assume fully observed states and thus suffer sharp reward losses when inputs become unreliable (Morad et al., 2023; Pleines et al., 2023). In practical systems, sensor outages exhibit both temporal persistence and correlations between related components (Vuran et al., 2004; Das et al., 2016). To capture these effects during analysis and evaluation, we model sensor reliability using a standard stochastic failure process that accounts for individual- and group-level dependencies. This framework allows for a systematic study of robustness without introducing new assumptions about failure dynamics. Building on this setting, our focus is on robust sequence-based PPO agents that can leverage tempo-ral structure to infer missing information and maintain performance under partial observability. Our key contributions are as follows. • Sequence-Model PPO Architectures. We integrate Transformer- and State Space–based encoders into PPO, enabling agents to exploit temporal dependencies to enhance decision-making. • Theoretical Robustness Analysis. We derive a high-probability bound on infinite-horizon reward degradation under stochastic observation failures, quantifying how robustness scales with policy smoothness and failure persistence. 1
+
+> arXiv:2603.04648v1 [cs.LG] 4 Mar 2026
+
+Published as a conference paper at ICLR 2026 • Empirical Evaluation. We show that Transformer PPO agents achieve substantially higher reward retention under severe sensor dropout compared to MLP, RNN, and SSM baselines across MuJoCo tasks. Together, these results establish sequence modeling as a key mechanism for robustness in online RL, demonstrating how temporal reasoning mitigates the brittleness of standard policy architectures in realistic, unreliable environments. 
+
+# 2 RELATED WORK 
+
+Partial Observability in RL In the context of addressing partial observability in reinforcement learning, early efforts focused on adding memory through recurrence to value-based agents. Deep Recurrent Q-Networks (DRQN) (Hausknecht & Stone, 2015) have been proposed which replace DQN’s first fully-connected layer with an LSTM to integrate information over time from single-frame inputs. DRQN not only matches DQN’s performance on fully observable Atari games but also degrades more gracefully when evaluated under partially observed conditions. Zambaldi et al. (2019) introduced a relational module within a model-free RL agent that encodes observations as sets of entity vectors and applies iterative message-passing (self-attention) to reason over object re-lations, yielding substantial gains in sample efficiency, generalization to novel scenarios, and inter-pretability on tasks like StarCraft II and Box-World. RLBenchNet (Smirnov & Gu, 2025) provides an empirical comparison of sequence models under PPO on control and memory-based environ-ments. However, this work is purely empirical and does not offer a theoretical characterization of performance degradation under partial observability. Moreover, the masking mechanisms used in their partially observable settings are simplistic (e.g., permanently removing velocity components or shrinking observation windows) and do not model realistic sensor failures with temporal persis-tence, correlation, or distributional drift. As a result, these benchmarks do not capture the structured, time-correlated observation failures encountered in real-world systems. 
+
+Transformer Models The Transformer architecture, introduced by Vaswani et al. (2017), revolu-tionized sequence modeling by relying entirely on self-attention mechanisms, dispensing with recur-rence and convolution. Its ability to model long-range dependencies with parallelizable computation has made it the foundation of numerous advances in natural language processing and beyond (De-vlin et al., 2019; Brown et al., 2020). Modified Transformers, such as UniTS (Gao et al., 2024) and Transformer-XL (Dai et al., 2019), have pushed Transformers even further by enabling universal time series representations and dependency learning beyond fixed-size context windows, respec-tively. 
+
+State Space Models Recent advances in sequence modeling have positioned structured state space models (SSMs) as an alternative to Transformer attention for capturing long-range dependencies with favorable scaling. S4 introduced the “structured state space sequence” formulation, showing that carefully parameterized continuous-time linear systems can be made computationally efficient while retaining strong, long-context performance (Gu et al., 2022). Building toward simpler and more scalable SSM/RNN hybrids, Linear Recurrent Units (LRUs) “resurrect” efficient recurrent-style sequence modeling by using a structured (diagonal-style) recurrence that supports fast parallel training while maintaining strong long-range capability (Orvieto et al., 2023a). Mamba further advanced this line by introducing selective (input-dependent) state space updates, enabling token-wise, content-adaptive computation while preserving linear-time scaling in recurrent mode (Gu & Dao, 2024). Most recently, LinOSS (Rusch & Rus, 2025) proposed an oscillatory SSM derived from stable discretizations of forced second-order (harmonic oscillator) dynamics, yielding stable long-horizon behavior under a particularly simple condition—a nonnegative diagonal state matrix—and integrating efficiently via associative parallel scans. 
+
+# 3 SENSOR FAILURE MODEL 
+
+We model correlated observation failures using a two-layer Markov process that captures both in-dividual and group-level reliability dynamics. Each sensor follows a binary Markov chain for local hardware reliability, while sensor groups share a higher-level process representing subsystem de-pendencies (e.g., shared communication buses or power lines). This structure captures temporal 2Published as a conference paper at ICLR 2026 persistence and spatial correlation while remaining analytically tractable with closed-form steady-state probabilities (Huang & Dey, 2007; Liu et al., 2006; Mo et al., 2013). For sensor i, let zi(t) ∈ {0, 1} denote its operational status, evolving as a two-state Markov chain with failure probability pfail and recovery probability precover . The steady-state proba-bility of operation is πz = precover /(pfail + precover ). Each group j has a binary variable 
+
+yj (t) ∈ { 0, 1} with analogous dynamics governed by pgroup fail and pgroup recover , yielding steady-state 
+
+πy = pgroup recover /(pgroup fail + pgroup recover ). For sensor i in group j, the effective operational status is 
+
+xi(t) = zi(t) · yj (t), requiring both individual and group processes to be up. Under independence, the effective steady-state probability is πx = πz · πy . The effective failure and recovery probabilities are: 
+
+peff fail = 1 − (1 − pfail )(1 − pgroup fail ), (1) 
+
+peff recover ≈ precover · pgroup recover . (2) A wide array of failure dynamics can be simulated with this model, including fast individual failures, fast group failures, mixed dynamics, and slow recovery with prolonged outages. 
+
+# 4 SEQUENCE -BASED PPO A GENTS 
+
+Motivation. Standard PPO agents often use a feed-forward MLP policy πθ (at | st) that maps the current observation/state to an action. In partially observable settings or under sensor dropouts, conditioning on only st can induce brittle behavior because the policy ignores temporal context. We therefore couple PPO with sequence encoders that summarize recent history (Transformers) or maintain a recurrent hidden state (RNNs/SSMs). 4.1 TRANSFORMER -BASED PPO AGENT 
+
+History buffer. For each parallel environment, we maintain a circular buffer of the most recent L
+
+observations Bt = ( ot−L+1 , . . . , o t), where L is the configured sequence length. At time t, we form a length-L sequence Xt ∈ RL×din by rolling the buffer so that the oldest valid element appears first, and we construct a padding mask Mt ∈ { 0, 1}L indicating which positions are invalid (e.g., before the buffer is filled or after an environment resets). 
+
+Encoder. We first project each observation to the model dimension d and add sinusoidal positional encodings: ˜Xt = PE (XtWin + bin ) , ˜Xt ∈ RL×d. (3) We then apply a Transformer encoder with temporal self-attention using the key-padding mask Mt:
+
+Ht = TransformerEnc ( ˜Xt; Mt), Ht = ( ht, 1, . . . , h t,L ), h t,i ∈ Rd. (4) 
+
+Attention pooling. To obtain a fixed-size feature vector that can be fed into separate actor and critic heads, we apply learned attention pooling over time: 
+
+et,i = w⊤ht,i + b, αt,i = exp( et,i )
+
+P   
+
+> j:Mt,j =0
+
+exp( et,j ) , zattn  
+
+> t
+
+= X 
+
+> i:Mt,i =0
+
+αt,i ht,i . (5) 4.2 RNN/SSM-BASED PPO A GENT 
+
+Overview. We unify recurrent neural networks (RNNs; e.g., GRU/LSTM) and recurrent state-space models (SSMs; e.g., LRU, LinOSS) under a common recurrent latent-state encoder that main-tains memory across time. At each step, the policy conditions on a contextual feature zt computed from the current input and a carried hidden state ht−1. This allows the PPO policy to use temporal context under partial observability while keeping the PPO objective unchanged. 
+
+Generic recurrent encoder. Let ot denote the observation and xt ∈ Rd represent an input em-bedding: 
+
+xt = genc (ot). (6) 3Published as a conference paper at ICLR 2026 We model both RNNs and SSMs as a stateful mapping 
+
+(ht, z t) = Eψ (ht−1, x t; dt), (7) where ht is the recurrent memory state, zt is the emitted feature, and dt ∈ { 0, 1} is the episodic done flag. Similarly to the Transformer-based agent, the feature vector zt is then passed to separate actor and critic heads. 
+
+# 5 THEORY 
+
+We prove a high-probability bound on the infinite-horizon reward degradation for the RL agent under the stochastic sensor failure model. The notation is as follows. M = ( S, A, P, r, γ ) is a discounted Markov decision process (MDP) with discount 0 < γ < 1. The random one-step reward at (s, a ) is r(s, a ) and its expectation is 
+
+R(s, a ) := E[r(s, a )] . A stochastic policy π maps observations to action distributions. Given an observation map h : S → Rd, actions are drawn as at ∼ π(· | h(St)) . The action–value function 
+
+(or Q-function) of π is 
+
+Qπ (s, a ) := Eπ
+
+" ∞X
+
+> t=0
+
+γt r(St, a t) S0 = s, a 0 = a, S t+1 ∼ P (· | St, a t), a t≥1 ∼ π(· | h(St)) 
+
+#
+
+.
+
+(8) Equivalently, Qπ satisfies the Bellman expectation equation 
+
+Qπ (s, a ) = R(s, a ) + γ ES′∼P (·| s,a )
+
+h
+
+Ea′∼π(·| h(S′)) 
+
+ Qπ (S′, a ′) i
+
+. (9) The state value function is 
+
+V π (s) := Eπ
+
+" ∞X
+
+> t=0
+
+γt r(St, a t) S0 = s
+
+#
+
+= Ea∼π(·| h(s)) [ Qπ (s, a ) ] , (10) and the advantage is Aπ (s, a ) := Qπ (s, a ) − V π (s).A mask mt ∈ {0, 1}d zeroes failed sensors: hmt (st) = mt ⊙ h(st). The mask process 
+
+{Mt ≡ mt}t≥0 is generated by the two-layer Markov model (per-sensor chains and group chains). The stationary marginal probability that sensor i is “up” is denoted πx,i (for identical sensors we write πx). For the two-layer model this marginal is the product formula: πx = precover 
+
+pfail + precover 
+
+·
+
+pgrouprecover 
+
+pgroupfail + pgrouprecover 
+
+.
+
+We make the following assumptions. 
+
+Assumption 5.1 (Bounded sensor outputs) . For all s ∈ S and i ∈ { 1, . . . , d }, |hi(s)| ≤ Bi < ∞.
+
+Assumption 5.2 (Policy smoothness — Wasserstein Lipschitzness) . Let (A, ∥ · ∥ ) be the action space with the metric inducing the 1-Wasserstein distance W1 on P(A). There exists Lπ ≥ 0 such that for all observations o, o ′ ∈ Rd,
+
+W1
+
+ π(· | o), π (· | o′) ≤ Lπ ∥o − o′∥1.
+
+Assumption 5.3 (Qπ is Lipschitz in action) . There exists LQ ≥ 0 such that for all s ∈ S and 
+
+a, a ′ ∈ A ,
+
+Qπ (s, a ) − Qπ (s, a ′) ≤ LQ ∥a − a′∥.
+
+Assumption 5.4 (Augmented-chain geometric ergodicity) . Fix the policy π. The augmented process 
+
+Ξt = ( St, M t) is an irreducible, aperiodic Markov chain on S × { 0, 1}d with stationary law πΞ,and is geometrically ergodic. Write its total-variation mixing time at tolerance 1/8 as 
+
+τ := tmix (1 /8) := inf 
+
+n
+
+t ≥ 0 : sup 
+
+> ξ0
+
+L(Ξ t | Ξ0 = ξ0) − πΞ TV ≤ 18
+
+o
+
+.
+
+Assumption 5.5 (Mask exogeneity / independence) . Under the stationary law of Ξt, Mt is indepen-dent of St and has stationary distribution πM with marginals P(Mt,i = 1) = πx,i . Consequently, for all i,
+
+E(1 − Mt,i ) |hi(St)| = (1 − πx,i ) ES∼dπ
+
+|hi(S)| := (1 − πx,i ) hi,
+
+where dπ is the stationary state distribution under π.
+
+4Published as a conference paper at ICLR 2026 
+
+Loss variables. Define the one-step counterfactual gap in future return at time t as 
+
+∆t := Ea∼π(·| h(St)) 
+
+Qπ (St, a ) − Ea∼π(·| hMt (St)) 
+
+Qπ (St, a ),
+
+its nonnegative version Xt := |∆t|, and the discounted cumulative loss 
+
+S := 
+
+> ∞
+
+X
+
+> t=0
+
+γtXt, μS := E[S].
+
+Let Cmax := LQ Lπ
+
+Pdi=1 Bi. ∆t measures, in units of discounted future return, how much is lost at time t by drawing the action from the masked-action distribution π(· | hMt (St)) instead of the full-observation distribution π(· | h(St)) , while evaluating consequences with the same Qπ .
+
+Theorem 5.6 (High-probability reward-degradation bound) . Assume 5.1–5.5. Fix δ ∈ (0 , 1) . Then, with probability at least 1 − δ,
+
+S ≤ μS + Cmax min 
+
+r 2τ
+
+1 − γ2 ln 2
+
+δ + 43 τ ln 2
+
+δ , 11 − γ
+
+
+
+.
+
+Moreover, the mean satisfies 
+
+μS ≤ LQLπ
+
+1 − γ
+
+> d
+
+X
+
+> i=1
+
+(1 − πx,i ) hi, hi := ES∼dπ
+
+|hi(S)|.
+
+Interpretation of the bound. The mean term μS captures the average loss and scales linearly with each sensor’s down-time (1 − πx,i ) and with the policy and critic sensitivities Lπ and LQ. Notably, only the marginal up-rates {πx,i } enter this term, so correlations between sensors do not directly affect the expected degradation. The stochastic deviation around this mean has two components: a square-root term Cmax 
+
+q 2τ 
+
+> 1−γ2
+
+ln 2 
+
+> δ
+
+that grows with slower mixing (larger τ ), longer effective horizon (larger γ), and desired confidence (smaller δ), and a linear correction 43 Cmax τ ln 2 
+
+> δ
+
+from the Bernstein inequality that is typically dominated by the square-root term unless δ is extremely small or τ is large. The leverage constant Cmax = LQLπ
+
+P 
+
+> i
+
+Bi represents the worst-case per-step impact, factoring out policy smoothness, critic smoothness, and observation scale, and thus globally scales both deviation terms. 
+
+Dependence on the mask process. In the two-layer mask model, the stationary per-sensor up-rate factorizes as πx = πz πy where πz = precover  
+
+> pfail +precover
+
+and πy = pgroup recover  
+
+> pgroup fail +pgroup recover
+
+; higher recovery rates or lower failure rates increase πx and reduce the mean term μS . The burstiness of outages, quantified by the mixing time τ , can be bounded conservatively using the spectral gaps of the sensor and group layers: τ ≲ ln 4 min {gsensor , g group } where gsensor := pfail + precover and ggroup := 
+
+pgroup fail + pgroup recover . Slower group or sensor dynamics (smaller spectral gap) increase τ , which widens both the square-root and linear deviation terms in the high-probability bound. 
+
+# 6 EMPIRICAL RESULTS 
+
+Our experimental RL environments are based on MuJoCo (Todorov et al., 2012), an RL physics engine for simulating continuous control tasks involving complex, articulated robots. These envi-ronments focus on locomotion, balance, and agility, providing rich benchmarks for developing and testing RL algorithms in high-dimensional, continuous control tasks. We experiment on four standard MuJoCo continuous-control benchmarks: HalfCheetah-v4, Hopper-v4, Walker2d-v4, and Ant-v4. We train eight PPO-based agents under full observability and partial observability induced by our sensor failure model. The suite of models tested comprised an MLP baseline and the following sequence-based models: • RNNs/SSMs : Linear Recurrent Unit (LRU) (Orvieto et al., 2023b), Gated Recurrent Unit (GRU) (Cho et al., 2014), and LinOSS (Rusch & Rus, 2025) • Transformers : Transformer (Vaswani et al., 2017), UniTS (Gao et al., 2024), and Gated Transformer-XL (GTrXL) (Dai et al., 2019) 5Published as a conference paper at ICLR 2026 
+
+Figure 1: Sample PPO training curves on HalfCheetah-v4 under full (left) and 60% partial (right) observability. Lines represent median episodic return and shaded regions denote inter-quartile ranges across 8 random seeds. Training curves generated under partial observability rise more slowly and plateau at lower returns than those produced using fully observed states. For our sensor model, we partition observations into three sensor groups with failure and recover probabilities pfail = 1%, precover = 90%, pgroup fail = 55%, and pgroup recover = 90%, yielding an effective recovery rate peff recover of 60%. Failed sensors are implemented by masking normalized features to zero and appending a binary mask to differentiate dropped inputs from valid zero-mean inputs. All models share a fixed PPO configuration using CleanRL defaults for continuous-control PPO (Huang et al., 2022), as well as matched architectural capacities (where applicable) and randomly initialized priors. Detailed hyperparameter choices can be found in A.3.2. Agents are trained for one million steps within a single environment instance across 8 random seeds, and minibatches for sequence-based agents comprise trajectory segments of length 16 for truncated backpropagation through time. For models dependent on hidden states, an initial burn-in of 8 timesteps was used to initialize hidden states prior to each gradient computation. For the Transformer- and UniTS-based agents, encoder dropout is enabled during training for stability. Performance during training was measured as the average episodic return across the batch collected per epoch, and the final training curves shown in Figures 1 and 3 were generated by plotting the smoothed medians and inter-quartile ranges of the aggregated results across all seeds. For evaluation, episodic returns were computed over 100 episodes across all eight seeds using a deterministic version of the learned policy, where actions were taken as the policy mean rather than sampled. The evaluation results per model were then aggregated, and the median performance with 95% confidence intervals was estimated via bootstrap resampling. Evaluation results are presented in Figure 2. Because MuJoCo environments are mostly Markovian, agents do not require much memory to achieve high rewards under full observability, as each observation contains sufficient information for optimal control. The MLP frequently achieves the highest returns under full observability, benefiting from its architectural simplicity and straightforward feature transformations. Performance among sequence-based policies in the fully observed regime proves more task dependent. On HalfCheetah, multiple sequence models are competitive: the Transformer achieves the strongest performance, and simpler recurrent models like the GRU and LRU also perform well, suggesting that both explicit and latent memory can be beneficial in certain cases even when the state is fully observed. However, on more challenging environments, sequence models underperform to varying degrees, indicating that additional temporal structure and architectural complexity can also be a liability when the current observation is already sufficient. Overall, Figure 2 indicates that providing temporal context under full observability often does not reliably improve returns and fails to outperform the MLP baseline. Under the partial observability induced by the sensor failure model, all agents exhibit reduced per-formance relative to the fully observed setting, confirming that intermittent feature dropout substan-tially increases task difficulty. Yet, the degree of degradation strongly depends on the architecture and task. Without temporal context, the MLP experiences the most significant drops in performance 6Published as a conference paper at ICLR 2026 
+
+Figure 2: Evaluation episodic returns for PPO agents on MuJoCo environments under full (left) and 60% partial (right) observability, with task complexity roughly increasing from top to bottom. Each violin shows the distribution of pooled episodic returns from 100 episodes across 8 random seeds. Black markers denote the median with 95% bootstrapped CI. While all models suffer performance degradation under partial observability, the Transformer agent demonstrates greater robustness. 7Published as a conference paper at ICLR 2026 on average, particularly in Hopper and Walker2d (Figure 2). Agents that rely on memory primarily through latent recurrence – whether implemented via RNNs, state space dynamics, or the gated re-current attention mechanisms seen in GTrXL – also demonstrate a substantial lack of robustness. In very few settings, these latent-memory models do outperform the MLP by a small margin, indicat-ing that recurrence can occasionally compensate for missing features, but more often they exhibit noticeably heavier low-return tails. The Transformer policy, on the other hand, proves to be the most robust of all models under partial observability, scoring the highest evaluation medians across all environments and maintaining relatively stable performance. Of the tasks evaluated, Ant proves comparatively challenging under partial observability, and most sequence-based agents do not con-sistently translate memory over the high-dimensional state into improved returns. 
+
+# 7 DISCUSSION 
+
+In reinforcement learning settings with missing state information and online PPO, the combination of non-stationarity, partial observability, and the need for flexible memory across variable timescales creates significant architectural challenges. RNNs, SSMs, and even Gated Transformer-XL strug-gle in this regime because their recurrent dynamics impose strict constraints on memory evolution, treating inputs uniformly and assuming regular input streams. When state information is missing, these assumptions about smoothness and regularity can be violated, causing the recurrent dynamics to diverge or lose critical information, with limited ability to selectively retrieve specific past ob-servations. In contrast, stateless Transformers process all variables jointly within a single sequence and leverage self-attention mechanisms that allow each output to directly attend to all available past tokens, effectively learning temporal correlations by having state dimensions participate in the atten-tion computation. This architecture provides inherent robustness to missing data: the self-attention mechanism can dynamically identify and utilize whichever past observations are present while nat-urally skipping over gaps, enabling Transformers to maintain performance even under irregular ob-servability by flexibly referencing earlier relevant inputs without being constrained by assumptions of temporal regularity. Our experiments support these points. A notable exception among the sequence models is UniTS, which underperforms across all settings. We hypothesize that this result is due largely to an inductive bias mismatch. While the Transformer processes all variables jointly, UniTS processes each variable independently during sequence at-tention, and cross-variable attention happens separately. Though this factorization is beneficial for creating unified representations of diverse time series, it may hinder learning of joint temporal pat-terns in continuous control RL, since cross-variable interactions are largely deferred to variable-level attention. 
+
+# 8 CONCLUSION 
+
+In this work, we studied the robustness of Proximal Policy Optimization under temporally persistent sensor failures, framing observation drift as partial observability with structured temporal correla-tions. By augmenting PPO with sequence-based policy architectures, we showed that agents can leverage history to infer missing information and maintain performance when observations are un-reliable. We derived high-probability bounds on infinite-horizon reward degradation under a stochastic sensor failure model, clarifying how robustness depends on policy smoothness, critic sensitivity, sensor availability, and failure persistence. Empirically, experiments on MuJoCo benchmarks confirm these insights: while sequence models offer limited benefit under full observability, they substantially improve robustness under sensor dropout. Stateless Transformer-based PPO agents in particular consistently outperform MLP, RNN, and state-space baselines, achieving higher returns and more stable behavior when large fractions of sensors are unavailable. Overall, our results demonstrate that temporal sequence modeling provides a principled and effective mechanism for robust reinforcement learning in unreliable environments, highlighting attention-based architectures as a promising direction for real-world deployment under observation drift. 8Published as a conference paper at ICLR 2026 
+
+# ACKNOWLEDGMENTS 
+
+The authors acknowledge the MIT Lincoln Laboratory Supercomputing Center for providing the high-performance computing resources that have contributed to the research results reported in this paper. DISTRIBUTION STATEMENT A. Approved for public release. Distribution is unlimited. This material is based upon work supported by the Under Secretary of War for Research and Engineering under Air Force Contract No. FA8702-15-D-0001 or FA8702-25-D-B002. Any opinions, findings, conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the Under Secretary of War for Research and Engineering. © 2026 Massachusetts Institute of Technology. Delivered to the U.S. Government with Unlimited Rights, as defined in DFARS Part 252.227-7013 or 7014 (Feb 2014). Notwithstanding any copyright notice, U.S. Government rights in this work are defined by DFARS 252.227-7013 or DFARS 252.227-7014 as detailed above. Use of this work other than as specifically authorized by the U.S. Government may violate any copyrights that exist in this work. 
+
+# REFERENCES 
+
+T. Brown et al. Language models are few-shot learners. In NeurIPS , 2020. Kyunghyun Cho, Bart van Merrienboer, C ¸ aglar G¨ ulc ¸ehre, Fethi Bougares, Holger Schwenk, and Yoshua Bengio. Learning phrase representations using RNN encoder-decoder for statistical ma-chine translation. CoRR , abs/1406.1078, 2014. URL http://arxiv.org/abs/1406. 1078 .Zihang Dai, Zhilin Yang, Yiming Yang, Jaime Carbonell, Quoc Le, and Ruslan Salakhutdinov. Transformer-XL: Attentive language models beyond a fixed-length context. In Anna Korhonen, David Traum, and Llu´ ıs M` arquez (eds.), Proceedings of the 57th Annual Meeting of the Associ-ation for Computational Linguistics , pp. 2978–2988, Florence, Italy, July 2019. Association for Computational Linguistics. doi: 10.18653/v1/P19-1285. URL https://aclanthology. org/P19-1285/ .Sankar Narayan Das, Sudip Misra, Bernd E. Wolfinger, and Mohammad S. Obaidat. Temporal-correlation-aware dynamic self-management of wireless sensor networks. IEEE Transactions on Industrial Informatics , 12(6):2127–2138, 2016. doi: 10.1109/TII.2016.2594758. J. Devlin, M. Chang, K. Lee, and K. Toutanova. Bert: Pre-training of deep bidirectional transformers for language understanding. In NAACL-HLT , 2019. S. Gao, T. Koker, O. Qween, T. Hartvigsen, T. Tsiligkaridis, and M. Zitnik. Units: A unified multi-task time series model. In NeurIPS , 2024. A. Gu and T. Dao. Linear-time sequence modeling with selective state spaces. In COLM , 2024. A. Gu, K. Goel, U. Shalit, and K. Simonyan. Efficiently modeling long sequences with structured state spaces. In ICLR , 2022. M. Hausknecht and P. Stone. Deep recurrent q-learning for partially observable mdps. In AAAI ,2015. M. Huang and S. Dey. Stability of kalman filtering with markovian packet losses. In Automatica ,2007. Shengyi Huang, Rousslan Fernand Julien Dossa, Chang Ye, Jeff Braga, Dipam Chakraborty, Kinal Mehta, and Jo˜ ao G. M. Ara´ ujo. CleanRL: High-quality Single-file Implementations of Deep Re-inforcement Learning Algorithms. Journal of Machine Learning Research , 23(274):1–18, 2022. URL http://jmlr.org/papers/v23/21-1342.html .9Published as a conference paper at ICLR 2026 Tommi Jaakkola, Satinder Singh, and Michael Jordan. Reinforcement Learning Algorithm for Partially Observable Markov Decision Problems. In G. Tesauro, D. Touretzky, and T. Leen (eds.), Advances in Neural Information Processing Systems , volume 7. MIT Press, 1994. URL https://proceedings.neurips.cc/paper_files/paper/1994/ file/1c1d4df596d01da60385f0bb17a4a9e0-Paper.pdf .Leslie Pack Kaelbling, Michael L. Littman, and Anthony R. Cassandra. Planning and acting in partially observable stochastic domains. Artificial Intelligence , 101(1):99–134, 1998. ISSN 0004-3702. doi: https://doi.org/10.1016/S0004-3702(98)00023-X. URL https://www. sciencedirect.com/science/article/pii/S000437029800023X .Q. Liu, K. He, and L. Jiang. Optimal lqg control and stability of networked robot system with data dropout. 2006. Y. Mo, E. Garone, and B. Sinopoli. Lqg control with markovian packet loss. In European Control Conference (ECC) , 2013. Steven Morad, Ryan Kortvelesy, Matteo Bettini, Stephan Liwicki, and Amanda Prorok. Popgym: Benchmarking partially observable reinforcement learning, 2023. URL https://arxiv. org/abs/2303.01859 .A. Orvieto, L. Smith, A. Gu, A. Fernando, C. Gulcehre, R. Pascanu, and S. De. Resurrecting recurrent neural networks for long sequences. In ICML , 2023a. Antonio Orvieto, Samuel L Smith, Albert Gu, Anushan Fernando, Caglar Gulcehre, Razvan Pas-canu, and Soham De. Resurrecting recurrent neural networks for long sequences. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scar-lett (eds.), Proceedings of the 40th International Conference on Machine Learning , volume 202 of Proceedings of Machine Learning Research , pp. 26670–26698. PMLR, 23–29 Jul 2023b. URL 
+
+https://proceedings.mlr.press/v202/orvieto23a.html .D. Paulin. Concentration inequalities for markov chains by marton couplings and spectral methods. 
+
+Electronic Journal of Probability , 20(79):1–32, 2015. Marco Pleines, Matthias Pallasch, Frank Zimmer, and Mike Preuss. Memory gym: Partially observ-able challenges to memory-based agents. In The Eleventh International Conference on Learning Representations , 2023. URL https://openreview.net/forum?id=jHc8dCx6DDr .K. Rusch and D. Rus. Oscillatory state-space models. In ICLR , 2025. Ivan Smirnov and Shangding Gu. Rlbenchnet: The right network for the right reinforcement learning task. arXiv preprint arXiv:2505.15040 , 2025. Emanuel Todorov, Tom Erez, and Yuval Tassa. Mujoco: A physics engine for model-based control. In 2012 IEEE/RSJ International Conference on Intelligent Robots and Systems , pp. 5026–5033. IEEE, 2012. doi: 10.1109/IROS.2012.6386109. A. Vaswani et al. Attention is all you need. In NeurIPS , 2017. Mehmet C. Vuran, ¨Ozg¨ ur B. Akan, and Ian F. Akyildiz. Spatio-temporal correlation: theory and applications for wireless sensor networks. Computer Networks , 45(3):245–259, 2004. ISSN 1389-1286. doi: https://doi.org/10.1016/j.comnet.2004.03.007. URL https://www. sciencedirect.com/science/article/pii/S1389128604000519 .V. Zambaldi, D. Raposo, A. Santoro, et al. Deep reinforcement learning with relational inductive biases. In ICLR , 2019. 10 Published as a conference paper at ICLR 2026 
+
+# A APPENDIX 
+
+A.1 PROOF OF THEOREM 5.6 The proof of Theorem 5.6 is based on two lemmas. 
+
+Lemma A.1 (Pointwise Wasserstein bound on the per-step loss) . Under Assumptions 5.2–5.3, 
+
+|∆t| = Ea∼π(·| h(St)) Qπ (St, a )−Ea∼π(·| hMt (St)) Qπ (St, a ) ≤ LQ W1
+
+ π(· | h(St)) , π (· | hMt (St)) 
+
+≤ LQLπ ∥h(St) − hMt (St)∥1 = LQLπdX
+
+> i=1
+
+(1 − Mt,i ) |hi(St)| ≤ Cmax .
+
+Proof. Kantorovich–Rubinstein duality gives |Eν f − Eν′ f | ≤ Lip( f ) W1(ν, ν ′) for 1-Lipschitz f ;here f (a) = Qπ (St, a ) has Lip( f ) ≤ LQ by Assumption 5.3. Apply Assumption 5.2 and the mask identity ∥h − hM ∥1 = P
+
+> i
+
+(1 − Mi)|hi|, then Assumption 5.1. 
+
+The next lemma states a Markov-chain Bernstein-type concentration inequality. 
+
+Lemma A.2. Paulin (2015)[Bernstein for geometrically ergodic chains] Let Ξt satisfy Assump-tion 5.4. Let {ft}t≥0 be bounded functions with |ft(ξ)| ≤ bt and define Sn = Pn−1 
+
+> t=0
+
+ft(Ξ t) and 
+
+Zn = Sn − ESn. Then, for any u > 0,
+
+P(Zn ≥ u) ≤ exp − u2
+
+2τ Pn−1 
+
+> t=0
+
+b2 
+
+> t
+
++ 43 bmax τ u 
+
+!
+
+, bmax := max  
+
+> 0≤t≤n−1
+
+bt.
+
+Proof of Theorem 5.6. Step 0: deterministic pointwise bound. By Lemma A.1, Xt = |∆t| ≤ Cmax 
+
+and hence 0 ≤ γtXt ≤ γtCmax for all t. This also implies the upper cap bound S ≤ Cmax  
+
+> 1−γ
+
+.Trivially, S ≤ μS + Cmax  
+
+> 1−γ
+
+.
+
+Step 1: apply Bernstein to the weighted sequence. Let ft(Ξ t) := γtXt. Then |ft| ≤ bt with bt := 
+
+γtCmax and bmax = Cmax . Define Sn := Pn−1 
+
+> t=0
+
+γtXt and Zn := Sn − E[Sn]. By Lemma A.2, 
+
+P(Zn ≥ u) ≤ exp − u2
+
+2τ Pn−1 
+
+> t=0
+
+γ2tC2max + 43 Cmax τ u 
+
+!
+
+.
+
+Step 2: infinite-horizon limit. Since P∞ 
+
+> t=0
+
+γ2t = 11−γ2 , letting n → ∞ and using monotone conver-gence yields 
+
+P(S − μS ≥ u) ≤ exp 
+
+
+
+− u2
+
+2τ C 2max /(1 − γ2) + 43 Cmax τ u 
+
+
+
+.
+
+Step 3: solve the quadratic tail. Set the right-hand side to δ/ 2 and solve the Bernstein quadratic inequality for u. A standard inversion gives the convenient choice 
+
+u = Cmax 
+
+r 2τ
+
+1 − γ2 ln 2
+
+δ + 43 Cmax τ ln 2
+
+δ ,
+
+which implies P S − μS ≥ u ≤ δ/ 2 (an analogous lower-tail bound also holds, but we only need the upper tail). 
+
+Step 4: bound the mean via independence. By Lemma A.1, 
+
+μS = E
+
+X
+
+> t≥0
+
+γtXt
+
+ ≤ LQLπ
+
+1 − γ
+
+X
+
+> t≥0
+
+γt E
+
+" dX
+
+> i=1
+
+(1 − Mt,i ) |hi(St)|
+
+#
+
+.
+
+Under stationarity and Assumption 5.5, E[(1 − Mt,i ) |hi(St)|] = (1 − πx,i ) hi, hence μS ≤
+
+> LQLπ
+> 1−γ
+
+Pdi=1 (1 − πx,i ) hi. Combining Steps 1–3 with this mean bound yields the stated inequal-ity. 
+
+Remark A.3 (Signed version) . Defining S∆ := P 
+
+> t≥0
+
+γt∆t and repeating the proof with ∆t (in-stead of |∆t|) gives the same deviation term and a two-sided bound for S∆ about its mean. Since 
+
+|S∆| ≤ S, the result in Thm. 5.6 is a conservative degradation guarantee. 
+
+11 Published as a conference paper at ICLR 2026 A.2 GRU, LRU, AND LIN OSS S PECIFICS 
+
+GRU (RNN). (Cho et al., 2014) A GRU is obtained by letting ht ∈ Rd and defining gate-controlled nonlinear updates: 
+
+rt = σ(Wr xt + Ur ht−1),ut = σ(Wuxt + Uuht−1),
+
+˜ht = tanh( Whxt + Uh(rt ⊙ ht−1)) ,ht = (1 − ut) ⊙ ht−1 + ut ⊙ ˜ht,zt = ht,
+
+optionally wrapped with residual connections and gating blocks in a stacked encoder. 
+
+LRU (diagonal linear SSM). (Orvieto et al., 2023a) An LRU-style SSM can be expressed by choosing ht in a transformed (complex) latent space and using a linear recurrence with diagonal dynamics: 
+
+ht = Λ ht−1 + Bx t,
+
+where Λ controls retention/decay (analogous to a learned, state-dependent “carry” behavior), and zt
+
+is produced by a learned readout followed by stabilizing blocks (e.g., residual/GLU/normalization) in a stacked encoder. 
+
+LinOSS (second-order linear SSM with discretization). (Rusch & Rus, 2025) LinOSS fits the same template with a structured state 
+
+ht =
+
+"
+
+z(s)
+
+> t
+
+x(s)
+
+> t
+
+#
+
+∈ C2P ,
+
+representing two coupled latent components (e.g., position/velocity-style states) per SSM channel. Given an embedded input sequence xt ∈ Rd, LinOSS first forms a complex input projection 
+
+ut = Bx t ∈ CP ,
+
+and then updates the coupled latent state via a linear recurrence whose coefficients depend on a learned diagonal parameter A and a learned step size ∆t, using an implicit/IMEX-style discretiza-tion: "
+
+z(s)
+
+> t
+
+x(s)
+
+> t
+
+#
+
+=
+
+M11 M12 
+
+M21 M22 
+
+| {z } 
+
+> M(A, ∆t)
+
+"
+
+z(s)
+
+> t−1
+
+x(s)
+
+> t−1
+
+#
+
++ b(ut; A, ∆t).
+
+The emitted feature is a real-valued readout of the updated latent state, 
+
+yt = ℜ
+
+
+
+x(s) 
+
+> t
+
+C⊤
+
+∈ Rd,
+
+combined with a skip term and a learned residual scaling, 
+
+zt = ρ (yt + D ⊙ xt) ,
+
+and wrapped in the same stacked-block structure with nonlinearity, dropout, GLU gating, and resid-ual connections. A.3 TRAINING DETAILS 
+
+A.3.1 RNN/SSM I NTEGRATION 
+
+Episode boundary handling. To prevent leakage of information across episodes, we reset mem-ory when an environment terminates: 
+
+ht−1 ← (1 − dt) ht−1,
+
+before applying the update in Eq. 7. This reset is applied during both rollout collection and training-time unrolling. 12 Published as a conference paper at ICLR 2026 
+
+Truncated backpropagation and burn-in. During PPO updates, we unroll Eψ over short sub-sequences. Optionally, we use a burn-in prefix to update hidden state without gradients and then compute PPO losses on the subsequent segment using the warmed state: 
+
+hτ ← E ψ (h0, x 1: τ ; d1: τ ) (no grad ), loss on xτ +1: τ +K .
+
+This is implemented for our recurrent agents to ensure hidden states update alongside model weights each epoch. A.3.2 HYPERPARAMETERS AND TRAINING CURVES 
+
+Table 1: Proximal Policy Optimization (PPO) Hyperparameters 
+
+Hyperparameter Value 
+
+Total timesteps 1 × 10 6
+
+Learning rate 3 × 10 −4
+
+Number of steps 2048 Discount factor ( γ) 0.99 GAE parameter ( λ) 0.95 Number of minibatches 32 Update epochs 10 Clipping coefficient 0.2 Entropy coefficient 0.0 Value function coefficient 0.5 Maximum gradient norm 0.5 Table 2: Architectural Hyperparameters per Model 
+
+Model Hidden Layers Heads Dropout Additional 
+
+Transformer 128 2 2 0.1 –Gated TransformerXL 128 2 2 0 Memory length 8 UniTS 128 2 2 0.1 Patch length 1; Prompt tokens 6 GRU 128 4 – 0 –LRU 128 4 – 0 rmin 0.9; rmax 0.999; Max phase 6.28 LinOSS 128 4 – 0 SSM size 128; ”IM” Discretization MLP 128 – – – –13 Published as a conference paper at ICLR 2026 
+
+Figure 3: PPO training curves for Hopper-v4, Walker2d-v4, and Ant-v4 under full (left) and 60% partial (right) observability. Lines represent median episodic return and shaded regions denote inter-quartile ranges across 8 random seeds. 14
