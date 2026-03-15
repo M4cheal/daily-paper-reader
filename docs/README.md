@@ -6,73 +6,58 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-13
-- 运行时间：2026-03-13 19:29:02 UTC
+- 最新运行日期：2026-03-15
+- 运行时间：2026-03-15 19:23:17 UTC
 - 运行状态：成功
-- 本次总论文数：17
-- 精读区：6
+- 本次总论文数：12
+- 精读区：1
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 17 篇 AI 论文，重点突破医疗影像分割的持续自适应与多模态超分辨率技术。
-满分力作 SPEGC 创新性地结合语义提示与图聚类，显著提升了医疗图像在动态环境下的分割精度。
-建议重点研读医疗 AI 领域的测试时自适应方案，并同步留意多模态大模型感知可靠性的研究趋势。
-- 详情：[/202603/13/README](/202603/13/README)
+今日聚焦 12 篇前沿成果，重点解析机器人如何利用潜在趋势嵌入在非平稳环境中实现秒级适应。
+核心突破在于通过 Latent Trend 提升少样本迁移效率，并同步推出了针对医疗多模态大模型鲁棒性的多维评估基准。
+推荐关注动态环境下的控制恢复与医疗 AI 的抗干扰能力，这是迈向实战化部署的必经之路。
+- 详情：[/202603/15/README](/202603/15/README)
 
 ### 精读区论文标签
-1. [SPEGC: Continual Test-Time Adaptation via Semantic-Prompt-Enhanced Graph Clustering for Medical Image Segmentation](/202603/13/2603.11492v1-spegc-continual-test-time-adaptation-via-semantic-prompt-enhanced-graph-clustering-for-medical-image-segmentation)  
-   标签：评分：10.0/10、query:tta
-   evidence：用于医学图像分割的连续测试时自适应 (CTTA)
-2. [TriFusion-SR: Joint Tri-Modal Medical Image Fusion and SR](/202603/13/2603.09702v1-trifusion-sr-joint-tri-modal-medical-image-fusion-and-sr)  
-   标签：评分：9.0/10、query:tta
-   evidence：三模态医学图像融合，聚合结构和功能信息
-3. [Spatial-TTT: Streaming Visual-based Spatial Intelligence with Test-Time Training](/202603/13/2603.12255v1-spatial-ttt-streaming-visual-based-spatial-intelligence-with-test-time-training)  
-   标签：评分：9.0/10、query:tta
-   evidence：用于流式视觉空间智能的测试时训练
-4. [Can Large Language Models Keep Up? Benchmarking Online Adaptation to Continual Knowledge Streams](/202603/13/2603.07392v1-can-large-language-models-keep-up-benchmarking-online-adaptation-to-continual-knowledge-streams)  
+1. [Few-Shot Adaptation to Non-Stationary Environments via Latent Trend Embedding for Robotics](/202603/15/2603.10373v1-few-shot-adaptation-to-non-stationary-environments-via-latent-trend-embedding-for-robotics)  
    标签：评分：8.0/10、query:tta
-   evidence：对流式知识流的在线自适应
-5. [M2Diff: Multi-Modality Multi-Task Enhanced Diffusion Model for MRI-Guided Low-Dose PET Enhancement](/202603/13/2603.09075v1-m2diff-multi-modality-multi-task-enhanced-diffusion-model-for-mri-guided-low-dose-pet-enhancement)  
-   标签：评分：8.0/10、query:tta
-   evidence：用于MRI引导的PET增强的多模态多任务增强扩散模型
-6. [Beyond Test-Time Training: Learning to Reason via Hardware-Efficient Optimal Control](/202603/13/2603.09221v1-beyond-test-time-training-learning-to-reason-via-hardware-efficient-optimal-control)  
-   标签：评分：8.0/10、query:tta
-   evidence：引入测试时控制层（TTC）在推理时进行规划
+   evidence：通过潜趋势估计实现非平稳环境下的自适应
 
 ### 速读区论文标签
-1. [Routing without Forgetting](/202603/13/2603.09576v1-routing-without-forgetting)  
-   标签：评分：8.0/10、query:tta
-   evidence：非平稳数据流下的在线持续学习
-2. [Linking Perception, Confidence and Accuracy in MLLMs](/202603/13/2603.12149v1-linking-perception-confidence-and-accuracy-in-mllms)  
-   标签：评分：8.0/10、query:tta
-   evidence：改进多模态大语言模型的校准和测试时缩放。
-3. [When Sensors Fail: Temporal Sequence Models for Robust PPO under Sensor Drift](/202603/13/2603.04648v1-when-sensors-fail-temporal-sequence-models-for-robust-ppo-under-sensor-drift)  
+1. [RPG-SAM: Reliability-Weighted Prototypes and Geometric Adaptive Threshold Selection for Training-Free One-Shot Polyp Segmentation](/202603/15/2603.07436v1-rpg-sam-reliability-weighted-prototypes-and-geometric-adaptive-threshold-selection-for-training-free-one-shot-polyp-segmentation)  
    标签：评分：7.0/10、query:tta
-   evidence：传感器漂移和表示偏移下的鲁棒性
-4. [Meta-D: Metadata-Aware Architectures for Brain Tumor Analysis and Missing-Modality Segmentation](/202603/13/2603.04811v1-meta-d-metadata-aware-architectures-for-brain-tumor-analysis-and-missing-modality-segmentation)  
+   evidence：利用基础模型和自适应阈值进行无需训练的单样本息肉分割
+2. [MedQ-Deg: A Multidimensional Benchmark for Evaluating MLLMs Across Medical Image Quality Degradations](/202603/15/2603.07769v1-medq-deg-a-multidimensional-benchmark-for-evaluating-mllms-across-medical-image-quality-degradations)  
    标签：评分：7.0/10、query:tta
-   evidence：利用元数据的多模态脑肿瘤分析和缺失模态分割
-5. [Federated Modality-specific Encoders and Partially Personalized Fusion Decoder for Multimodal Brain Tumor Segmentation](/202603/13/2603.04887v1-federated-modality-specific-encoders-and-partially-personalized-fusion-decoder-for-multimodal-brain-tumor-segmentation)  
+   evidence：评估医学多模态大模型在图像质量退化下的表现及置信度校准
+3. [Residual Control for Fast Recovery from Dynamics Shifts](/202603/15/2603.07775v1-residual-control-for-fast-recovery-from-dynamics-shifts)  
    标签：评分：7.0/10、query:tta
-   evidence：具有模态特定编码器的多模态脑肿瘤分割
-6. [SRasP: Self-Reorientation Adversarial Style Perturbation for Cross-Domain Few-Shot Learning](/202603/13/2603.05135v1-srasp-self-reorientation-adversarial-style-perturbation-for-cross-domain-few-shot-learning)  
+   evidence：在策略参数冻结的情况下，推理阶段从动力学偏移中恢复
+4. [DARC: Disagreement-Aware Alignment via Risk-Constrained Decoding](/202603/15/2603.08145v1-darc-disagreement-aware-alignment-via-risk-constrained-decoding)  
    标签：评分：7.0/10、query:tta
-   evidence：缓解领域偏移以迁移到未见的领域
-7. [VertiAdaptor: Online Kinodynamics Adaptation for Vertically Challenging Terrain](/202603/13/2603.06887v1-vertiadaptor-online-kinodynamics-adaptation-for-vertically-challenging-terrain)  
+   evidence：无需重训的推理阶段分布鲁棒性方法
+5. [Skill-Evolving Grounded Reasoning for Free-Text Promptable 3D Medical Image Segmentation](/202603/15/2603.08215v1-skill-evolving-grounded-reasoning-for-free-text-promptable-3d-medical-image-segmentation)  
    标签：评分：7.0/10、query:tta
-   evidence：自动驾驶中动态地形的在线自适应
-8. [LightMedSeg: Lightweight 3D Medical Image Segmentation with Learned Spatial Anchors](/202603/13/2603.07228v1-lightmedseg-lightweight-3d-medical-image-segmentation-with-learned-spatial-anchors)  
+   evidence：具有语言变异鲁棒性的3D医学图像分割
+6. [SAIL: Test-Time Scaling for In-Context Imitation Learning with VLM](/202603/15/2603.08269v1-sail-test-time-scaling-for-in-context-imitation-learning-with-vlm)  
    标签：评分：7.0/10、query:tta
-   evidence：具有自适应上下文建模的3D医学图像分割，用于临床AI
-9. [Mask-aware inference with State-Space Models](/202603/13/2603.04568v1-mask-aware-inference-with-state-space-models)  
+   evidence：环境变化下迭代优化的测试时缩放
+7. [VisualDeltas: Learning Preferences from Visual Quality Perturbations](/202603/15/2603.07272v1-visualdeltas-learning-preferences-from-visual-quality-perturbations)  
    标签：评分：6.0/10、query:tta
-   evidence：在推理阶段通过掩码感知重归一化处理无效数据
-10. [ELLIPSE: Evidential Learning for Robust Waypoints and Uncertainties](/202603/13/2603.04585v1-ellipse-evidential-learning-for-robust-waypoints-and-uncertainties)  
+   evidence：从视觉质量变化中进行无标签偏好学习
+8. [StructSAM: Structure- and Spectrum-Preserving Token Merging for Segment Anything Models](/202603/15/2603.07307v1-structsam-structure--and-spectrum-preserving-token-merging-for-segment-anything-models)  
    标签：评分：6.0/10、query:tta
-   evidence：通过证据学习处理回归任务中的分布偏移
-11. [Engineering Regression Without Real-Data Training: Domain Adaptation for Tabular Foundation Models Using Multi-Dataset Embeddings](/202603/13/2603.04692v1-engineering-regression-without-real-data-training-domain-adaptation-for-tabular-foundation-models-using-multi-dataset-embeddings)  
+   evidence：在无需重新训练的现成设置下对医学SAM进行令牌合并
+9. [To Predict or Not to Predict? Towards reliable uncertainty estimation in the presence of noise](/202603/15/2603.07330v1-to-predict-or-not-to-predict-towards-reliable-uncertainty-estimation-in-the-presence-of-noise)  
    标签：评分：6.0/10、query:tta
-   evidence：使用数据集嵌入进行表格回归的领域自适应
+   evidence：领域偏移场景下的不确定性估计与校准
+10. [Self-Supervised Evolutionary Learning of Neurodynamic Progression and Identity Manifolds from EEG During Safety-Critical Decision Making](/202603/15/2603.07334v1-self-supervised-evolutionary-learning-of-neurodynamic-progression-and-identity-manifolds-from-eeg-during-safety-critical-decision-making)  
+   标签：评分：6.0/10、query:tta
+   evidence：用于演化认知状态持续建模的自监督学习
+11. [VisualScratchpad: Inference-time Visual Concepts Analysis in Vision Language Models](/202603/15/2603.07335v1-visualscratchpad-inference-time-visual-concepts-analysis-in-vision-language-models)  
+   标签：评分：6.0/10、query:tta
+   evidence：视觉语言模型推理时的视觉概念分析
 
 
 <div class="dpr-home-promo-card">

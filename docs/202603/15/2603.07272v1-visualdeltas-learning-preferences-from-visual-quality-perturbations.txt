@@ -1,0 +1,481 @@
+Title: VisualDeltas: Learning Preferences from Visual Quality Perturbations
+
+URL Source: https://arxiv.org/pdf/2603.07272v1
+
+Published Time: Tue, 10 Mar 2026 00:51:26 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# VisualDeltas: Learning Preferences from Visual Quality Perturbations 
+
+Hailiang Huang 1, Yihao Liu 1, Shengyue Guan 2, Haoze Li 3, Sujian Li 1†
+
+> 1
+
+Peking University, Beijing, China 
+
+> 2
+
+Alibaba Group, Hangzhou, China 
+
+> 3
+
+Zhejiang University, Hangzhou, China 
+
+{hailiang, haoeliu }@stu.pku.edu.cn, lisujian@pku.edu.cn 
+
+# Abstract 
+
+We present VisualDeltas, a lightweight preference-learning framework that extracts supervision from visual quality variations in multimodal data. By leveraging the systematic impact of image quality on visual perception and reasoning, VisualDeltas induces informative preference signals without relying on human annotations or external teach-ers. The framework supports both label-free and label-based regimes, enabling flexible use of available supervision when present. Across diverse multimodal benchmarks and model scales, VisualDeltas consistently outperforms rejection-sampling fine-tuning and improves generalization, and extends naturally to a range of visual degra-dations. 
+
+# 1. Introduction 
+
+Modern vision-language models have made rapid progress on multimodal question answering over images, documents, charts, and tables, yet improving their reasoning ability still often depends on costly supervision pipelines—large-scale labeled datasets, external preference annotation, or RLHF-style optimization with reward models and judges (Rafailov et al., 2023; Bai et al., 2022; Yuan et al., 2024). This creates a practical bottleneck: for many multimodal tasks, we would like a lightweight post-training recipe that improves the model without introducing new annotators, reward models, or stronger teacher systems. A key but underexploited property of multimodal QA sys-tems is their intrinsic sensitivity to visual input quality. Even when the underlying instance and question remain unchanged, controlled degradations such as resolution re-duction can impair perceptual clarity (e.g., text legibility 
+
+. Correspondence to: Sujian Li † <lisujian@pku.edu.cn >.
+
+Preprint. March 10, 2026. 
+
+Figure 1. DPO pair construction via multimodal input quality perturbation. HQ and LQ inputs for the same multimodal QA task induce correct and incorrect reasoning, forming a natural preference pair. 
+
+or structural alignment) and lead to inconsistent reasoning trajectories and unstable predictions (Li et al., 2025; Zhou et al., 2025; Fan et al., 2025; Tang et al., 2025). Crucially, this sensitivity does not only reveal brittleness—it naturally produces paired model behaviors on the same QA instance: the model answers once under an HQ view and once under an LQ view, often yielding a meaningful relative quality gap between the two responses. This paper proposes a simple perspective: rather than treat-ing perturbations primarily as a robustness evaluation tool or as an input-side training trick, we use controlled visual quality changes as a mechanism to generate relative supervi-sion. Concretely, we query the same vision-language model on a HQ input and a LQ counterpart, and treat the resulting responses as a preference pair for direct preference optimiza-tion (Fig. 1). This turns the model’s own quality sensitivity into scalable preference data—without external judges, re-ward models, or stronger models (Geng et al., 2025; Saeidi 1
+
+> arXiv:2603.07272v1 [cs.AI] 7 Mar 2026 Learning from Visual Deltas
+
+et al., 2024). Our approach is inspired by the broader idea that relative deltas can be sufficient for preference learning even when absolute supervision is imperfect: paired comparisons can provide a direction of improvement that supervised fine-tuning on weak targets may not (Yin et al., 2024; Chen et al., 2024). We instantiate this “delta supervision” prin-ciple in the multimodal setting by constructing preference pairs induced purely by input-quality variation. Notably, we observe that degraded visual inputs often trigger com-pensatory but ineffective reasoning behaviors—such as gen-erating longer yet less accurate responses—which provide natural negative samples for preference learning. Because the HQ ≻ LQ heuristic can be noisy for some instances, we also analyze when it is reliable and study simple selec-tion strategies (including a label-assisted variant) that retain the most informative pairs while preserving the lightweight nature of the pipeline. We call the resulting framework VisualDeltas. Across mul-tiple multimodal QA benchmarks and model scales, Visu-alDeltas consistently improves answer accuracy and gen-eralization compared to correctness-only fine-tuning base-lines. While we focus on resolution as the simplest control-lable knob, the same principle extends to other semantics-preserving degradations: Gaussian noise and motion blur also induce effective preference signals and yield compara-ble gains. 
+
+Contributions. We make three main contributions: • We introduce VisualDeltas , a preference learning framework that exploits resolution-induced response deltas to construct preference pairs without requiring external annotation or reward models. • We show that simple, controllable visual degradations (e.g., resolution reduction) consistently elicit informa-tive response deltas that can be exploited as preference supervision. • We validate the approach on multiple benchmarks, demonstrating consistent gains over correctness-only fine-tuning. 
+
+# 2. Related Work 
+
+Visual Perturbations for Multimodal Reasoning. Re-cent studies show that multimodal reasoning models are highly sensitive to visual input quality, where even mild perturbations can substantially change intermediate reason-ing behavior and final predictions (Fan et al., 2025). Fan et al. (Fan et al., 2025) introduced V 2R-Bench to holistically evaluate the robustness of large vision–language models (LVLMs) under fundamental visual variations, highlight-ing that such sensitivity is widespread across mainstream models. Beyond benchmarking, prior work has investi-gated how degradations such as blur, occlusion, and com-pression affect multimodal reasoning: Li et al. (Li et al., 2025) demonstrated that simple perturbations can signifi-cantly modulate multimodal mathematical reasoning per-formance, while Tang et al. (Tang et al., 2025) proposed degradation-aware reasoning mechanisms to mitigate fail-ures under degraded inputs. Zhou et al. (Zhou et al., 2025) further analyzed scientific diagrams and showed that differ-ent perturbation types expose brittle visual understanding, motivating robustness-oriented training strategies. Most existing studies treat perturbations primarily as a means to evaluate robustness or to augment training for bet-ter average performance (Zhou et al., 2025; Li et al., 2025). Our perspective is different: we use controlled perturbations as a mechanism to generate relative supervision . Concretely, we control image/table resolution to keep the underlying instance and QA target fixed while modulating perceptual quality (e.g., legibility and structural clarity). This often induces divergent model responses for the same multimodal QA input, enabling the construction of preference pairs with-out external judges. In this sense, our method differs from perturbation-based training approaches that primarily opti-mize robustness using labeled supervision or augmentation pipelines (e.g., perturbation-driven reliability optimization or distractor-based robustness training) (Gu et al.; Li et al., 2025). 
+
+DPO and Preference Data Construction. DPO provides an efficient alternative to RLHF by optimizing directly on paired preferences without training an explicit reward model (Rafailov et al., 2023). Beyond human-labeled com-parisons, recent work explores self-generated or synthetic preferences, for example by degrading high-quality outputs, sampling multiple candidate responses, or synthesizing pref-erence labels with auxiliary critics or models (Bai et al., 2022; Yuan et al., 2024; Cui et al., 2023). Many such pipelines require additional components (e.g., external teachers/critics, generators, or extensive post-hoc scoring and filtering), which can increase complexity and in-troduce bias (Yuan et al., 2024; Cui et al., 2023). In contrast, our preference pairs are constructed from the same model’s responses under controlled resolution changes for the same QA input, requiring no additional human annotation and no auxiliary teacher/critic model. The preference signal arises from response-level deltas induced by input-quality varia-tion, and we empirically characterize when this heuristic direction is reliable. 
+
+Preference Optimization in Multimodal Alignment. 
+
+Preference optimization has been extended to multimodal alignment and reasoning, with methods addressing issues such as modality overfitting, difficulty imbalance, and rea-soning alignment (Jiang et al., 2024; Gao et al., 2025; Lu 2Learning from Visual Deltas 
+
+et al., 2025; Wang et al., 2024a; Zhang et al., 2025b; Wu et al., 2025; Zhang et al., 2025a; Pesaran Zadeh et al., 2025). Many existing approaches obtain preferences via external su-pervision (human labels or model-based scoring), retrieval-augmented pairing, or explicit editing/constraint of interme-diate reasoning traces, which can incur additional cost and introduce extra design choices (Jiang et al., 2024; Gao et al., 2025; Wang et al., 2024a; Wu et al., 2025). Our approach differs primarily in preference construction :rather than relying on external preference sources or edited reasoning paths, we derive preferences intrinsically from the model’s own sensitivity to multimodal input quality. This makes preference generation lightweight and scalable, and ties the supervision signal directly to failure modes triggered by degraded perception. 
+
+Delta Learning and Relative Supervision. The delta learning paradigm argues that relative differences between model outputs can serve as effective supervision, especially when absolute labels are noisy or weak (Geng et al., 2025; Yin et al., 2024; Chen et al., 2024). While relative super-vision has been widely explored in text generation and di-alogue via contrastive preferences or paired ranking objec-tives (Yin et al., 2024; Chen et al., 2024), its use as a system-atic supervision source for multimodal reasoning remains less explored. Some prior work leverages differential visual signals in robustness-oriented training or in multimodal preference optimization variants, for example by incorporating per-turbations to improve robustness (Li et al., 2025) or by adding multimodal-specific constraints in DPO-style objec-tives (Wang et al., 2024a). In contrast, we present a simple instantiation of delta learning for multimodal QA where controlled resolution changes are used to produce paired responses for the same input, and we integrate these pairs with DPO for stable preference optimization. 
+
+Summary. In contrast to prior work that studies visual perturbations, preference learning, or multimodal alignment in isolation, our work unifies these directions. We show that resolution-induced reasoning deltas provide a lightweight, intrinsic source of preference supervision for multimodal question answering, enabling scalable and effective pref-erence optimization without external annotation or reward models. 
+
+# 3. Methodology 
+
+This section provides a formalization of VisualDeltas to clar-ify its foundations and implementation. Since our approach builds on DPO, we present the mathematical formulation of how visual quality variations induce preference pairs and how these pairs are used for training. This formalization makes precise the conceptual pipeline introduced in 1 and serves as the basis for the empirical study in 4. 
+
+3.1. Preference Pair Construction 
+
+VisualDeltas constructs preference pairs by comparing model outputs under HQ and LQ visual inputs. For a fixed VLM, we exploit the systematic quality difference: outputs from degraded images tend to be less accurate than those from original images. 
+
+Data preparation. Given a dataset D = {(xi, v i)}Ni=1 of text-image pairs, we create two visual views for each sample by applying a controlled degradation operator Tα of severity 
+
+α:
+
+vHQ i = vi, vLQ i = Tα(vi). (1) The HQ view preserves the original image quality, while the LQ view simulates degraded visual input. The operator Tα
+
+is abstract and general, representing any transformation that systematically reduces image quality (e.g., resolution reduc-tion, blur, noise, compression artifacts). For models that support variable-resolution input, vLQ i can be used directly without resizing or additional preprocessing. 
+
+Output generation. Using a pretrained VLM policy πθ0 ,we generate responses for both views under the same text query xi:
+
+oHQ i ∼ πθ0 (· | xi, v HQ i ), (2) 
+
+oLQ i ∼ πθ0 (· | xi, v LQ i ). (3) This yields paired outputs that typically differ in quality due to the visual degradation. 
+
+Preference pair construction. From these outputs, we form preference tuples (cHQ i , o HQ i , o LQ i ) where cHQ i =(xi, v HQ i ) is the HQ context. The preference relation be-tween the two outputs depends on whether ground-truth labels are available: 
+
+Label-free. When no ground-truth labels exist, we use the heuristic rule oHQ i ≻ oLQ i , assuming higher visual quality leads to better responses. All generated pairs are used for training. 
+
+Label-based. When ground-truth answers yi are available, we enforce a stricter criterion: retain only pairs where the HQ output is correct and the LQ output is wrong. Formally, let Corr (o, y ) indicate whether output o matches ground truth y. We define: 
+
+DLB = {(cHQ i , o HQ i , o LQ i ) |Corr (oHQ i , y i)
+
+∧ ¬ Corr (oLQ i , y i)}. (4) This provides cleaner supervision by ensuring the preference captures clear quality-induced reasoning failures. 3Learning from Visual Deltas          
+
+> Figure 2. Overview of VisualDeltas. For each user query, the model generates paired responses under both HQ and LQ image views. We compare with SFT (supervised fine-tuning on HQ-correct responses only) and two VisualDeltas variants: VD-LF (label-free) uses all HQ vs. LQ pairs without correctness filtering, while VD-LB (label-based) selects only HQ-correct vs. LQ-wrong pairs. Both VisualDeltas variants apply DPO exclusively with HQ context during training.
+
+Training-time conditioning. Both label-free and label-based variants use DPO training that conditions only on the HQ context cHQ i . The LQ image acts solely as a mecha-nism to generate a negative sample during pair construction, ensuring consistency between training and inference. 
+
+3.2. HQ-Conditioned Direct Preference Optimization 
+
+DPO training conditions only on the HQ context cHQ i . Let 
+
+πref = πθ0 denote a frozen reference policy. For any output 
+
+o under context c, define: 
+
+∆θ (c, o ) = log πθ (o | c) − log πref (o | c). (5) The VisualDeltas objective is: 
+
+LV D (θ) = −Ei
+
+h
+
+log σ β(∆ θ (cHQ i , o HQ i )
+
+− ∆θ (cHQ i , o LQ i )) i
+
+,
+
+(6) where σ is the logistic sigmoid and β > 0 is the temperature hyperparameter. 
+
+Interpretation. The LQ-induced output oLQ i is treated as a negative sample. The model is trained to avoid produc-ing this weaker output when given the HQ image, main-taining training-inference consistency. Both label-free and label-based variants share the same DPO objective; only the training set construction differs as described in 3. 
+
+# 4. Experiments 
+
+4.1. Experimental Settings 
+
+We evaluate VisualDeltas on five multimodal QA bench-marks: HiTab (Cheng et al., 2022), WikiTQ (Pasupat & Liang, 2015), VQA v2 (Goyal et al., 2017), GQA (Hud-son & Manning, 2019), and MathVision (Wang et al., 2024b). These datasets cover diverse capabilities, from hierarchical table reasoning to open-ended visual under-standing. We use Qwen2.5-VL-7B and Qwen2.5-VL-3B as base models (Wang et al., 2025). For resolution perturba-tion, we downsample images to 10% of original dimensions (α = 0 .1) as the default LQ view. 
+
+Evaluated Methods. Figure 2 illustrates the VisualDeltas framework. We compare four strategies: • Vanilla : Inference only, no training. • SFT : Rejection-sampling Fine-tuning on correct HQ responses only, where the training data consists of HQ image inputs and their corresponding rejection-sampled model-generated reasonings. • VD-LF (Label-free) : VisualDeltas constructs prefer-ence pairs using all HQ vs. LQ responses, regardless of their correctness. This variant requires no ground-truth labels. • VD-LB (Label-based) : VisualDeltas with correctness 4Learning from Visual Deltas 
+
+Model Method Datasets HiTab WikiTQ VQA GQA MathVision 
+
+Qwen2.5-7B-VL 
+
+Inference Only (No Training) 
+
+Baseline 67.93 66.40 60.00 39.95 24.87 
+
+Train Set: HiTab 
+
+SFT (HQ Correct Only) 69.89 (+1.96) 65.90 (-0.50) 60.85 (+0.85) 39.05 (-0.90) 22.76 (-2.11) VD-LF (HQ vs. LQ) 71.91 (+3.98) 67.15 (+0.75) 62.65 (+2.65) 42.05 (+2.10) 25.16 (+0.29) VD-LB (HQ Correct vs. LQ Wrong) 71.40 (+3.47) 69.90 (+3.50) 63.55 (+3.55) 42.90 (+2.95) 25.13 (+0.26) 
+
+Train Set: VQA 
+
+SFT (HQ Correct Only) 65.40 (-2.53) 62.85 (-3.55) 65.20 (+5.20) 42.10 (+2.15) 18.36 (-6.51) VD-LF (HQ vs. LQ) 68.81 (+0.88) 65.40 (-1.00) 64.80 (+4.80) 44.60 (+4.65) 25.66 (+0.79) VD-LB (HQ Correct vs. LQ Wrong) 70.58 (+2.65) 68.15 (+1.75) 68.20 (+8.20) 44.75 (+4.80) 25.36 (+0.49) 
+
+Train Set: GQA 
+
+SFT (HQ Correct Only) 64.27 (-3.66) 66.05 (-0.35) 64.85 (+4.85) 43.05 (+3.10) 18.09 (-6.78) VD-LF (HQ vs. LQ) 70.20 (+2.27) 68.20 (+1.80) 63.90 (+3.90) 43.35 (+3.40) 25.23 (+0.36) VD-LB (HQ Correct vs. LQ Wrong) 69.19 (+1.26) 69.60 (+3.20) 66.00 (+6.00) 47.50 (+7.55) 24.54 (-0.33) 
+
+Qwen2.5-3B-VL 
+
+Inference Only (No Training) 
+
+Baseline 58.96 38.45 56.30 36.30 17.76 
+
+Train Set: HiTab 
+
+SFT (HQ Correct Only) 63.45 (+4.48) 45.75 (+7.30) 59.40 (+3.10) 41.00 (+4.70) 13.45 (-4.31) VD-LF (HQ vs. LQ) 61.62 (+2.65) 52.15 (+13.70) 60.40 (+4.10) 40.65 (+4.35) 18.78 (+1.02) VD-LB (HQ Correct vs. LQ Wrong) 61.11 (+2.15) 51.35 (+12.90) 60.85 (+4.55) 39.75 (+3.45) 18.55 (+0.79) 
+
+Train Set: VQA 
+
+SFT (HQ Correct Only) 56.25 (-2.71) 48.30 (+9.85) 59.30 (+3.00) 37.15 (+0.85) 11.97 (-5.79) VD-LF (HQ vs. LQ) 60.23 (+1.26) 51.45 (+13.00) 60.05 (+3.75) 41.30 (+5.00) 17.40 (-0.36) VD-LB (HQ Correct vs. LQ Wrong) 59.09 (+0.13) 52.45 (+14.00) 61.45 (+5.15) 42.50 (+6.20) 16.68 (-1.08) 
+
+Train Set: GQA 
+
+SFT (HQ Correct Only) 55.62 (-3.35) 48.15 (+9.70) 56.85 (+0.55) 39.55 (+3.25) 10.76 (-7.00) VD-LF (HQ vs. LQ) 60.23 (+1.26) 51.70 (+13.25) 58.70 (+2.40) 41.25 (+4.95) 16.68 (-1.08) VD-LB (HQ Correct vs. LQ Wrong) 61.36 (+2.40) 50.60 (+12.15) 58.70 (+2.40) 42.65 (+6.35) 17.50 (-0.26) 
+
+Table 1. Comparison of Qwen2.5-7B-VL and Qwen2.5-3B-VL under different training strategies, grouped by training dataset. Numbers are absolute accuracy (%), with differences relative to the Vanilla inference-only baseline shown in parentheses. SFT fine-tunes on HQ correct responses (using rejection-sampled model-generated reasonings), VD-LF constructs label-free HQ vs. LQ preferences, and 
+
+VD-LB applies label-based VisualDeltas using HQ-correct vs. LQ-wrong pairs. Row and cell coloring: gray marks dataset groupings, blue marks VisualDelta-based results, dark green highlights best results, light green indicates positive gains, light red indicates negative changes, and dark red marks the largest drop. 
+
+filtering, which constructs preference pairs only from HQ-correct vs. LQ-wrong responses, requiring ground-truth labels for filtering. All DPO training conditions exclusively on HQ inputs. 
+
+4.2. Main Results: Effectiveness of VisualDeltas 
+
+Table 1 summarizes the main results across datasets, model scales, and training strategies. Overall, VisualDeltas-based training leads to consistent improvements over inference-only baselines and SFT, while exhibiting more stable behav-ior under cross-dataset evaluation. 
+
+VisualDeltas vs. SFT. We first compare VisualDeltas with SFT, where both methods leverage HQ inputs during train-ing. Across diverse combinations of training datasets and evaluation benchmarks, the label-based variant VD-LB gen-erally yields stronger overall performance than SFT. While SFT often improves accuracy on the in-domain training dataset, it frequently exhibits noticeable performance degra-dation on out-of-domain benchmarks. For example, on the 7B model trained on VQA, SFT improves GQA by +2 .15% 
+
+but degrades MathVision by −6.51% . In contrast, VD-LB achieves a larger gain on GQA ( +4 .80% ) while maintaining near-neutral performance on MathVision ( +0 .49% ). Simi-lar trends are observed when training on GQA, suggesting that preference-based alignment better preserves transfer-able visual reasoning capabilities than direct supervision on correct outputs. 
+
+Effectiveness of label-free VisualDeltas. Even with-out correctness annotations, the label-free variant VD-LF achieves performance comparable to, and in many cases ex-ceeding, supervised SFT. In particular, on WikiTQ with the 3B model, VD-LF yields substantial improvements when 5Learning from Visual Deltas 
+
+trained on either VQA or GQA, surpassing the correspond-ing gains obtained by SFT. More broadly, VD-LF demon-strates consistent advantages on table-centric and visually grounded reasoning tasks, indicating that relative visual quality signals induced by resolution differences provide an informative and reliable learning signal. These results suggest that effective preference alignment can be achieved without explicit correctness labels, enabling broader ap-plicability in settings where annotation is unavailable or unreliable. 
+
+Impact of label-based filtering. Incorporating correct-ness information through label-based filtering (VD-LB) fur-ther strengthens performance relative to VD-LF, although the margin is typically modest. The benefits of VD-LB are most apparent on tasks where visual degradation directly affects reasoning outcomes, such as table understanding in WikiTQ. For example, on the 7B model trained on VQA, VD-LB improves WikiTQ accuracy while VD-LF exhibits a slight regression. Nevertheless, across most benchmarks, the difference between VD-LB and VD-LF remains small (generally within 0.3% –1.5% ), indicating that label-free preference signals already capture the majority of the per-formance gains, with label-based filtering providing incre-mental refinement. 
+
+Scalability across model sizes. VisualDeltas exhibits con-sistent effectiveness across model scales. Both 3B and 7B models benefit from preference-based training on all eval-uated datasets, with performance gains remaining stable as model capacity increases. Improvements are observed across WikiTQ, VQA, and GQA, without introducing scale-dependent instability. Importantly, neither model scale dis-plays the pronounced cross-dataset degradation commonly observed with SFT, suggesting that the proposed approach generalizes robustly across capacity regimes. 
+
+Summary. Taken together, these results demonstrate that VisualDeltas provides a robust alternative to SFT for multi-modal reasoning models. Preference-based alignment con-sistently improves performance while substantially mitigat-ing cross-dataset degradation. Moreover, label-free con-struction captures most of the benefits, enabling effective training without reliance on correctness annotations, and label-based filtering offers additional gains when such infor-mation is available. 
+
+4.3. Generalization to Low-Quality Inputs 
+
+A natural question arises: does VisualDeltas training on HQ images also improve performance when testing on degraded, LQ inputs? To evaluate this, we directly test all trained models on LQ versions of the test sets. Table 2 evaluates model performance when trained on HQ images but tested on LQ images. While absolute accuracy                                                                 
+
+> Method Test on LQ (0.1 ×Res) HiTab WikiTQ VQA GQA MathVision
+> Qwen2.5-7B-VL
+> No Training 33.46 40.00 50.55 33.40 23.95
+> Train: HiTab
+> SFT 34.34 45.35 51.20 32.30 18.55 VD-LF 36.43 47.95 52.55 36.80 22.37 VD-LB 37.44 50.95 55.05 36.65 24.24
+> Train: VQA
+> SFT 29.42 43.30 55.35 34.35 16.84 VD-LF 34.22 45.70 55.35 38.70 24.24
+> VD-LB 34.09 47.55 59.10 39.35 23.85
+> Train: GQA
+> SFT 31.88 45.40 54.40 36.20 15.89 VD-LF 34.34 48.20 56.25 36.80 23.78 VD-LB 34.72 48.20 55.60 41.15 24.18
+> Table 2. Generalization to low-quality image inputs (Qwen2.5-7B-VL). All models are trained on HQ images and tested on LQ images. SFT fine-tunes on HQ correct responses, VD-LF con-structs label-free HQ vs. LQ preferences, and VD-LB applies label-based filtering using HQ-correct vs. LQ-wrong pairs. Best results per column are highlighted in bold with dark green back-ground. Row and cell coloring: gray marks dataset groupings, blue marks VisualDeltas results, and dark green indicates best perfor-mance.
+
+drops across all tasks, the results reveal clear differences in how training strategies handle degraded visual inputs. 
+
+Amplified gains on structure-sensitive tasks under LQ evaluation. Comparing HQ and LQ results, VisualDeltas shows amplified improvements on layout- and structure-intensive datasets. For example, when trained on HiTab, VD-LB achieves +10.95 absolute gain on WikiTQ under LQ testing (from baseline 40.00 to 50.95), compared to only +3.50 gain under HQ testing. Similar amplification occurs on GQA, where VD-LF trained on HiTab achieves +3.40 gain under LQ versus +2.10 under HQ. In contrast, on less structure-dependent tasks like VQA, improvements remain more moderate (e.g., +8.55 for VD-LB trained on VQA, from baseline 50.55 to 59.10). This suggests VisualDeltas is particularly effective at reinforcing robust visual reasoning strategies that compensate for structural ambiguity. 
+
+Effectiveness of label-free and label-based VisualDeltas. 
+
+Both VD-LF and VD-LB substantially outperform SFT un-der LQ evaluation, demonstrating that preference learning from visual quality variations is far more effective than correctness-only supervision for robustness. Between the two, VD-LB generally achieves stronger performance in most settings, while VD-LF remains competitive and occa-sionally achieves slightly better results on specific transfers (e.g., VQA-trained VD-LF on HiTab: 34.22% vs. 34.09%). This indicates that label-free preferences already capture most of the robustness gains, and label-based filtering pro-vides additional refinement through cleaner supervision sig-6Learning from Visual Deltas 
+
+nals. 
+
+SFT fails to transfer under degradation. SFT exhibits severe instability when transferring from HQ training to LQ testing. In cross-dataset scenarios, SFT often performs worse than the no-training baseline. For instance, when trained on VQA, SFT achieves only 29.42% on HiTab under LQ testing—below the baseline 33.46%. Similar degrada-tion occurs on MathVision, where VQA-trained SFT drops to 16.84% versus the 23.95% baseline. In contrast, Visu-alDeltas consistently outperforms both SFT and the base-line, with VD-LF trained on VQA achieving 34.22% on HiTab and 24.24% on MathVision. This demonstrates that correctness-only supervision overfits to high-fidelity visual features and fails to develop robustness to degraded inputs. 
+
+Summary. LQ evaluation reveals that VisualDeltas devel-ops genuine robustness to degraded visual inputs, whereas SFT’s correctness-only supervision creates brittle models that collapse when visual fidelity drops. Both label-free and label-based variants substantially outperform SFT, with VD-LB providing incremental improvements through cleaner supervision signals. This confirms that preference learn-ing from visual quality variations is far more effective than correctness-only supervision for robustness. 
+
+4.4. Qualitative Analysis: When Visual Information Matters 
+
+To better understand what VisualDeltas is improving, we analyze how model performance changes as input resolution decreases, and compare behaviors across datasets with dif-ferent degrees of visual complexity. This analysis highlights a consistent pattern: VisualDeltas brings the most benefit when success depends on extracting and grounding rich visual cues , whereas tasks with relatively sparse visual information show little to no improvement. 
+
+VisualDeltas helps most on visually rich benchmarks. 
+
+Across visually dense tasks—such as table understanding (HiTab, WikiTQ) and natural-image QA (VQA, GQA)— accuracy is strongly resolution-dependent: reducing reso-lution removes fine-grained structure (e.g., cell boundaries, text, object attributes/relations), and performance drops sharply (Fig. 6). In these settings, VisualDeltas can leverage the systematic gap between high-quality and low-quality in-puts to provide informative preference signals that reinforce behaviors tied to accurate visual grounding. 
+
+MathVision behaves differently: little gain and near resolution invariance at inference. In contrast, Math-Vision is visually simpler (often dominated by clean ex-pressions/diagrams; see Fig. 5 for examples) and relies comparatively more on the model’s internal symbolic/multi-step reasoning than on extracting dense visual details. Em-pirically, the resolution–accuracy curve for MathVision is nearly flat, while other datasets show clear sensitivity to resolution (HiTab/WTQ strongly, VQA/GQA moderately; see Fig. 6). This inference-time invariance indicates that, for MathVision, reducing resolution does not substantially remove the information needed to solve the task, unlike perception-heavy benchmarks. 
+
+Implication: VisualDeltas improves visual information utilization, not general reasoning. Consistent with the resolution analysis, overall gains on MathVision are min-imal: for example, on the same 7B target model, Visu-alDeltas changes MathVision accuracy only marginally rela-tive to baseline (e.g., +0.26 to +0.29 in the reported setting), whereas other datasets show larger improvements. Taken together, these observations suggest that VisualDeltas pri-marily strengthens the model’s ability to use visual evidence effectively —i.e., robust visual grounding and perception-conditioned reasoning—rather than improving reasoning capability in a task-agnostic sense.   
+
+> Figure 3. Sample category distribution on HiTab. Quality-Sensitive samples (HQ correct, LQ wrong) comprise 38.3% of the dataset, providing clean HQ ≻LQ preference pairs for VD-LB training.
+
+4.5. What Makes VisualDeltas Effective? 
+
+We analyze two factors that contribute to VisualDeltas’ ef-fectiveness: sample category distribution under resolution perturbation, and behavioral differences between HQ and LQ responses. 4.5.1. L ABEL -B ASED FILTERING SELECTS 
+
+HIGH -Q UALITY PAIRS 
+
+Why does VD-LB achieve strong performance with rela-tively few training samples? We analyze HiTab samples by correctness under HQ and LQ views. Always-Correct samples are correct at both resolutions. Quality-Sensitive 7Learning from Visual Deltas 
+
+samples are correct at HQ but wrong at LQ. Always-Wrong samples fail at both. Paradoxically-Robust samples are wrong at HQ but correct at LQ. This fourth category is rare and likely reflects estimation errors. Our analysis reveals that 38.3% of HiTab samples (2,841 out of 7,417) are Quality-Sensitive (Fig. 3). These natu-rally form high-quality preference pairs where HQ is strictly better than LQ. By leveraging labels to select exactly this category, VD-LB concentrates training on the most informa-tive samples. This label-driven filtering makes preference learning more efficient than using all pairs indiscriminately. Compared to label-free VD-LF, which must learn from noisy mixed-quality pairs, VD-LB benefits from precise selection. Quality-Sensitive samples directly capture the causal mech-anism: visual degradation causes reasoning failure. Always-Correct samples offer weaker signals since both responses are acceptable. Always-Wrong samples provide no useful information. By filtering to Quality-Sensitive pairs only, VD-LB achieves strong results with approximately 2,800 training samples. Correctness labels enable more efficient preference learning by identifying the most informative comparisons. 4.5.2. LQ R ESPONSES EXHIBIT COMPENSATORY 
+
+INEFFICIENCY 
+
+Resolution degradation also affects reasoning behavior. Fig-ure 4 compares response lengths across categories. A strik-ing pattern emerges: LQ responses are consistently longer than HQ responses, particularly for Quality-Sensitive sam-ples.   
+
+> Figure 4. Response length distribution by category. LQ re-sponses are consistently longer than HQ responses, suggesting that degraded visual inputs trigger compensatory but ineffective reason-ing. After DPO training on VisualDeltas preference pairs, the HQ distribution shifts left and becomes sharper, with reduced mean and median token lengths. This demonstrates that DPO improves reasoning efficiency—models learn to produce more concise re-sponses while maintaining higher accuracy.
+
+This reveals a key insight: when visual information is unclear, the model attempts to compensate by generating longer, more verbose responses. However, this verbosity is ineffective—the model produces more tokens but achieves lower accuracy. For Quality-Sensitive samples, LQ elicits longer incorrect responses while HQ yields concise correct answers. Degraded inputs trigger compensatory inefficiency :the model works harder but achieves worse outcomes. This behavioral difference provides a strong preference learning signal. HQ responses are not only more accu-rate but also more efficient. DPO leverages this signal to shift the token distribution—the distribution becomes sharper and left-skewed, with reduced mean and median to-ken lengths. Crucially, this increased conciseness coincides with higher accuracy, demonstrating improved reasoning efficiency. DPO suppresses verbose, ineffective patterns trig-gered by degraded inputs and reinforces compact, efficient reasoning grounded in clear visual perception. 
+
+4.6. VisualDeltas Generalizes to Diverse Perturbation Types 
+
+While our primary experiments use Resolution Reduction 
+
+as the degradation mechanism, VisualDeltas is a general framework that can leverage various types of visual qual-ity perturbations. We validate this by comparing resolu-tion reduction against two alternative degradation strategies: 
+
+Gaussian Noise (adding random pixel noise) and Motion Blur (simulating motion artifacts). 
+
+All perturbation types yield comparable gains. Across five multimodal QA benchmarks, we observe that all three perturbation strategies achieve similar improvements over the baseline. Resolution reduction (our default VD-LF and VD-LB methods) performs competitively on most datasets, while Gaussian Noise and Motion Blur provide comparable gains. This consistency demonstrates that VisualDeltas is not tied to a specific degradation type—rather, the key prin-ciple is creating a meaningful quality gap between HQ and LQ views that systematically exposes reasoning brittleness. 
+
+Practical advantages of resolution reduction. Among the three strategies, resolution reduction offers several prac-tical benefits: (1) it is computationally cheap, requiring only a single resize operation; (2) it is deterministic and reproducible across runs; (3) it works universally across all image types without parameter tuning; and (4) it naturally occurs in real-world scenarios (e.g., low-resolution images, compression artifacts). These properties make resolution reduction particularly attractive as the default perturbation mechanism for VisualDeltas. 
+
+Implications for framework generality. The consistent performance across diverse perturbation types suggests that VisualDeltas can exploit a wide range of quality-induced variations. This opens the door to extending the framework to other degradation types (e.g., JPEG compression, occlu-sion, color distortion) and to combining multiple perturba-tions for stronger supervision signals. Detailed experimental results and comparisons are provided in Appendix E. 8Learning from Visual Deltas 
+
+# 5. Conclusion 
+
+VisualDeltas leverages resolution-induced reasoning deltas as preference signals. By contrasting responses under high-quality and low-quality views, it generates supervision with-out external annotations. Experiments show consistent im-provements over SFT in accuracy and generalization. 
+
+# Impact Statement 
+
+This work introduces VisualDeltas, a data-efficient prefer-ence learning framework for multimodal question answering that relies on intrinsically constructed supervision induced by visual quality perturbations. 
+
+Societal Impact. By reducing dependence on large-scale human annotations or external preference models, Visu-alDeltas lowers the cost of training robust multimodal sys-tems and may benefit low-resource research settings and real-world applications with imperfect visual inputs, such as document understanding under low resolution. 
+
+Ethical Considerations. The preference signals used in this work are heuristic and derived from model behavior under resolution changes, which may be noisy or unreliable in some cases. As a result, the method may amplify exist-ing biases in the pretrained model if applied without care. VisualDeltas is intended as a lightweight training mecha-nism and should not replace human oversight in high-stakes applications. 
+
+# References 
+
+Bai, Y., Kadavath, S., Kundu, S., Askell, A., Kernion, J., Jones, A., Chen, A., Goldie, A., Mirhoseini, A., McK-innon, C., et al. Constitutional ai: harmlessness from ai feedback. 2022. arXiv preprint arXiv:2212.08073 , 8(3), 2022. Chen, H., Zhao, H., Lam, H., Yao, D., and Tang, W. Mal-lowspo: Fine-tune your llm with preference dispersions. 
+
+arXiv preprint arXiv:2405.14953 , 2024. Cheng, Z., Dong, H., Wang, Z., Jia, R., Guo, J., Gao, Y., Han, S., Lou, J.-G., and Zhang, D. Hitab: A hierarchical table dataset for question answering and natural language generation, 2022. URL https://arxiv.org/abs/ 2108.06712 .Cui, G., Yuan, L., Ding, N., Yao, G., Zhu, W., Ni, Y., Xie, G., Liu, Z., and Sun, M. Ultrafeedback: Boosting language models with high-quality feedback. 2023. Fan, Z., Wang, Y., Polisetty, S., and Fung, Y. R. V 2r-bench: Holistically evaluating LVLM robustness to fundamental visual variations. arXiv e-prints , pp. arXiv:2504.XXXXX, 2025. Gao, R., Johnson, E., Tan, B., and Qian, Y. M3po: Multimodal-model-guided preference optimiza-tion for visual instruction following. arXiv preprint arXiv:2508.12458 , 2025. Geng, S., Ivison, H., Li, C.-L., Sap, M., Li, J., Krishna, R., and Koh, P. W. The delta learning hypothesis: Preference tuning on weak data can yield strong gains. arXiv preprint arXiv:2507.06187 , 2025. Goyal, Y., Khot, T., Summers-Stay, D., Parikh, D., and Batra, D. Making the v in vqa matter: Elevating the role of image understanding in visual question answering. In 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 6904–6913, 2017. URL https://arxiv.org/abs/1612.00837 .Gu, Q., Wang, X., Zhao, J., Tao, S., Feng, T., Wang, Z., and Chen, G. Mutualvpr: A mutual learning framework for resolving supervision inconsistencies via adaptive clustering. In The Thirty-ninth Annual Conference on Neural Information Processing Systems .Hudson, D. A. and Manning, C. D. Gqa: A new dataset for real-world visual reasoning and compositional question answering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pp. 6700–6709, 2019. doi: 10.1109/CVPR.2019.00686. URL https://arxiv.org/abs/1902.09506 .Jiang, S., Zhang, Y., Chen, R., Hu, T., Jin, Y., He, Q., Feng, Y., Wu, J., and Liu, Z. Modality-fair preference opti-mization for trustworthy mllm alignment. arXiv preprint arXiv:2410.15334 , 2024. Li, Y., Wei, L., Zheng, K., Huang, J., Kong, L., Sun, L., and Huang, W. Vision matters: Simple visual perturbations can boost multimodal math reasoning. arXiv preprint arXiv:2506.09736 , 2025. Lu, J., Li, J., Gao, Y., Wu, J., Wu, J., Wang, X., and He, X. Adavip: Aligning multi-modal llms via adaptive vision-enhanced preference optimization. arXiv preprint arXiv:2504.15619 , 2025. Pasupat, P. and Liang, P. Compositional semantic parsing on semi-structured tables. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers) ,pp. 1470–1480, 2015. URL https://arxiv.org/ abs/1508.00305 .Pesaran Zadeh, F., Oh, Y., and Kim, G. Lpoi: Listwise pref-erence optimization for vision language models. arXiv e-prints , pp. arXiv–2505, 2025. Rafailov, R., Sharma, A., Mitchell, E., Manning, C. D., Ermon, S., and Finn, C. Direct preference optimiza-tion: Your language model is secretly a reward model. 9Learning from Visual Deltas 
+
+Advances in neural information processing systems , 36: 53728–53741, 2023. Saeidi, A., Verma, S., RRV, A., and Baral, C. Triple pref-erence optimization: Achieving better alignment with less data in a single step optimization. arXiv e-prints , pp. arXiv–2405, 2024. Tang, J., Chen, J., Wei, W., Xu, X., Liu, R., Wu, X., Xie, Q., Wu, J., Zhang, L., and Chen, Q. Robust-r1: Degradation-aware reasoning for robust visual understanding. arXiv preprint arXiv:2512.17532 , 2025. Wang, F., Zhou, W., Huang, J. Y., Xu, N., Zhang, S., Poon, H., and Chen, M. mdpo: Conditional preference opti-mization for multimodal large language models. arXiv preprint arXiv:2406.11839 , 2024a. Wang, K., Pan, J., Shi, W., Lu, Z., Zhan, M., Li, H., et al. Measuring multimodal mathematical reasoning with math-vision dataset. In Proceedings of the 38th International Conference on Neural Information Process-ing Systems (NeurIPS) , 2024b. URL https://arxiv. org/abs/2402.14804 .Wang, Z., Xu, G., Liu, K., Yin, D., Li, P., Lin, S., Dong, Q., Gao, K., Xu, J., Zhou, X., et al. Qwen2.5-vl: A strong open vision-language model for multimodal understand-ing. arXiv preprint arXiv:2501.06725 , 2025. Wu, J., Shi, Z., Wang, S., Huang, J., Yin, D., Yan, L., Cao, M., and Zhang, M. Mitigating hallucina-tions in large vision-language models via entity-centric multimodal preference optimization. arXiv preprint arXiv:2506.04039 , 2025. Yin, Y., Wang, Z., Gu, Y., Huang, H., Chen, W., and Zhou, M. Relative preference optimization: Enhancing llm alignment through contrasting responses across identical and diverse prompts. arXiv preprint arXiv:2402.10958 ,2024. Yuan, W., Pang, R. Y., Cho, K., Li, X., Sukhbaatar, S., Xu, J., and Weston, J. E. Self-rewarding language mod-els. In Forty-first International Conference on Machine Learning , 2024. Zhang, R., Gui, L., Sun, Z., Feng, Y., Xu, K., Zhang, Y., Fu, D., Li, C., Hauptmann, A. G., Bisk, Y., et al. Direct preference optimization of video large multimodal mod-els from language model reward. In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pp. 694–717, 2025a. Zhang, Y.-F., Yu, T., Tian, H., Fu, C., Li, P., Zeng, J., Xie, W., Shi, Y., Zhang, H., Wu, J., et al. Mm-rlhf: The next step forward in multimodal llm alignment. arXiv preprint arXiv:2502.10391 , 2025b. Zhou, M., Souza, R., Hu, Y., and Che, L. Robust diagram reasoning: A framework for enhancing lvlm performance on visually perturbed scientific diagrams. arXiv preprint arXiv:2508.16972 , 2025. 10 Learning from Visual Deltas 
+
+# A. Datasets and Evaluation Benchmarks 
+
+We consider a diverse collection of multimodal question answering benchmarks spanning structured tables and natural images. Specifically, we include HiTab, WikiTableQuestions (WikiTQ), VQA v2, GQA, and MathVision. These datasets differ in visual modality, question formulation, and reasoning complexity, providing complementary coverage of multimodal reasoning abilities. 
+
+HiTab HiTab is a large-scale benchmark for hierarchical table question answering introduced by Microsoft Research. Each example consists of a table rendered as an image and a natural language question that requires multi-step reasoning over hierarchical table structures, such as aggregation, comparison, sorting, and navigation across grouped rows and columns. Compared to flat table QA datasets, HiTab emphasizes compositional reasoning over complex table layouts. We follow the standard exact-match accuracy metric for evaluation. 
+
+WikiTableQuestions WikiTableQuestions (WikiTQ) is a benchmark for question answering over tables extracted from Wikipedia. Questions typically involve factual lookup, comparison, and lightweight aggregation over tabular entries. Although originally proposed as a text-based dataset, WikiTQ has been widely adopted in multimodal settings by rendering tables as images. We use the standard dataset splits and evaluation protocol provided by the benchmark. 
+
+VQA The Visual Question Answering (VQA v2) dataset consists of natural images paired with open-ended questions that require visual understanding and reasoning. Questions cover a broad range of skills, including object recognition, attribute identification, spatial reasoning, and counting. Evaluation is performed using the official VQA accuracy metric. 
+
+GQA GQA is a compositional visual reasoning benchmark designed to evaluate multi-step reasoning and systematic generalization. Questions are generated from scene graphs and often require explicit reasoning chains involving object attributes, relations, and logical operations. We follow the standard accuracy metric provided by the dataset. 
+
+MathVision MathVision is a multimodal benchmark focusing on mathematical reasoning over visually presented content, including tables, charts, diagrams, and mathematical expressions. Questions typically require symbolic manipulation, numerical reasoning, or multi-step logical inference grounded in visual inputs. We follow the official evaluation protocol of the benchmark. 
+
+Data Preprocessing and Sampling For HiTab and WikiTableQuestions, which are originally provided as structured tabular data (JSON/CSV format), we convert tables to images using custom rendering scripts to enable multimodal processing. For all datasets except HiTab, we subsample 8,000 training examples and 2,000 test examples for experimental evaluation. For HiTab, we use the full dataset consisting of 7,417 training examples and 1,584 test examples.                          
+
+> Dataset Visual Modality Task Type Train Size Test Size HiTab Table images Hierarchical table QA 7,417 1,584 WikiTableQuestions Table images Table QA 8,000 2,000 VQA v2 Natural images Open-ended VQA 8,000 2,000 GQA Natural images Compositional VQA 8,000 2,000 MathVision Mixed visual formats Visual math reasoning 8,000 2,000
+> Table 3. Summary of datasets used in this work. Training is conducted on HiTab, VQA, and GQA, while evaluation is performed on all datasets. For HiTab and WikiTableQuestions, tables are converted from JSON/CSV format to images.
+
+Dataset Usage and Rationale Among the five datasets, we select HiTab, VQA, and GQA for training, and evaluate on all datasets. This choice is motivated by the complementary reasoning capabilities represented by these benchmarks. HiTab focuses on visually grounded table question answering and captures structured, layout-sensitive reasoning. VQA represents general-purpose visual understanding over natural images, while GQA emphasizes compositional and relational reasoning with explicit multi-step dependencies. Together, these datasets span the core multimodal abilities that we aim to model: table-based reasoning, general visual perception, and compositional reasoning. Evaluation on WikiTQ and MathVision further assesses generalization to unseen table structures and visually grounded mathematical reasoning. 
+
+Visual Examples Figure 5 shows representative visual examples from each dataset, illustrating the varying levels of visual complexity that explain the differential resolution sensitivity observed. 11 Learning from Visual Deltas     
+
+> (a) HiTab: Hierarchical table with complex layout (b) WikiTableQuestions: Structured table
+> (c) VQA: Natural image with question (d) GQA: Compositional scene reasoning
+> (e) MathVision: Simple mathematical expressions
+> Figure 5. Visual Examples from Different Datasets. (a)-(b) Table datasets (HiTab, WikiTableQuestions) feature complex, dense structures requiring precise visual grounding. (c)-(d) Natural image datasets (VQA, GQA) contain real-world scenes with varying complexity. (e) MathVision contains simple mathematical expressions and diagrams that rely more on reasoning than visual details. This visual complexity hierarchy explains why HiTab/WTQ show strong resolution dependence while MathVision remains resolution-independent.
+
+Resolution Analysis Across Datasets Figure 6 shows performance trends across different datasets under varying image resolutions. 
+
+# B. Impact of Image Resolution on Model Inference and Reasoning 
+
+This appendix presents a comprehensive analysis of how image resolution reduction affects both the inference behavior and reasoning quality of the Qwen2.5-VL-7B model on the HiTab table understanding benchmark. We systematically evaluate model performance across six resolution levels (0%, 20%, 40%, 60%, 80%, and 90% dimension reduction) to characterize the trade-offs between image quality and model accuracy, while examining the internal reasoning dynamics that underlie these performance changes. 
+
+B.1. Experimental Setup Dataset and Model We conducted experiments on the HiTab dataset (Cheng et al., 2022), which contains 1,584 table-based question-answering samples spanning diverse domains including financial reports, scientific data, and statistical summaries. Each sample was processed at six different resolution levels, resulting in a total of 9,504 inference results. The model was 12 Learning from Visual Deltas   
+
+> Figure 6. Accuracy vs. Resolution Across Datasets. Performance trends across different datasets under varying image resolutions. HiTab and WTQ show strong resolution dependence (accuracy doubling from 10% to 100% resolution), reflecting their visual complexity with dense, structurally intricate tables. MathVision maintains nearly flat performance across all resolutions, indicating reliance on reasoning rather than visual details. VQA and GQA show intermediate resolution sensitivity. This demonstrates that VisualDeltas specifically targets visually grounded reasoning tasks.
+
+configured to generate responses in a chain-of-thought format with explicit <thinking> and <answer> tags. 
+
+Resolution Perturbation Methodology Image resolution reduction was applied using PIL’s resize function with different scaling factors. The compression rates (0%, 20%, 40%, 60%, 80%, 90%) represent the percentage by which the image dimensions were reduced. For example, 90% compression means reducing the image to 10% of its original dimensions (height and width each scaled to 10%). This is achieved through PIL’s bilinear interpolation, which simulates the effect of lossy compression through resolution degradation rather than JPEG artifact injection. 
+
+Evaluation Metrics Exact Match (EM) requires the predicted answer to exactly match the ground truth string after normalization. Tolerance Match (TM) allows ±0.5 tolerance for numerical answers to account for minor rounding differences arising from OCR-like digit recognition errors. 
+
+B.2. Accuracy Analysis and Perceptual Thresholds 
+
+Figure 7 and Table 4 present the accuracy-compression relationship.  
+
+> Table 4. Accuracy metrics across resolution levels for Qwen2.5-VL-7B.
+
+Resolution Accuracy Correct Total Change 
+
+100% (1.0) 67.11% 1063 1584 –80% (0.8) 67.99% 1077 1584 +0.88% 60% (0.6) 67.99% 1077 1584 +0.88% 40% (0.4) 66.60% 1055 1584 -0.51% 20% (0.2) 56.50% 895 1584 -10.61% 10% (0.1) 33.40% 529 1584 -33.71% The accuracy curve reveals a characteristic three-phase degradation pattern: • Stability phase (100%–40% resolution): Accuracy remains stable (66.60%–67.99%), indicating the model’s visual 13 Learning from Visual Deltas   
+
+> Figure 7. Resolution-Accuracy Relationship. The 7B model exhibits a characteristic three-phase pattern: stability at high resolution (100%–40%), rapid degradation in the critical zone (40%–20%), and severe failure at extreme low resolution (20%–10%). The 3B model shows a similar pattern with systematically lower accuracy, confirming the robustness of this phenomenon across model sizes.
+
+encoder possesses inherent robustness to moderate resolution reduction. • Critical transition phase (40%–20% resolution): Accuracy drops from 66.60% to 56.50% (15.2% relative degradation), suggesting a perceptual threshold beyond which resolution loss corrupts fundamental visual features. • Severe degradation phase (20%–10% resolution): Accuracy plummets to 33.40% (40.9% relative decrease), with performance approaching random chance. 
+
+Model Size Comparison To assess scalability, we compare the 7B model against a 3B variant across the same resolution levels. The 3B model exhibits a similar degradation pattern but with systematically lower absolute accuracy: 58.96% at 100% resolution, 60.67% at 80%, 59.72% at 60%, 55.81% at 40%, 44.07% at 20%, and 25.19% at 10% resolution. The 7B model consistently outperforms the 3B model by 8–12 percentage points across all resolution levels, with the gap relatively stable (8.15% at 100%, 8.21% at 10%). This suggests that model scale improves absolute performance but does not significantly alter resolution sensitivity patterns. Both models show the characteristic three-phase degradation, confirming that this phenomenon is robust across model sizes. 
+
+B.3. Sample Stability Classification 
+
+We classify each sample based on its correctness pattern across high-resolution (0% compression) and low-resolution (90% compression) inputs, yielding four distinct quality groups. • Stable Correct (28.8%) : Correct at both high and low resolution levels (456 samples). These samples represent questions the model can answer reliably regardless of image quality. • Quality Sensitive (38.3%) : Correct at high resolution but wrong at low resolution (607 samples). These samples provide natural preference pairs for DPO training, where high-resolution outputs serve as preferred examples. • Random Fluctuation (4.6%) : Wrong at high resolution but correct at low resolution (73 samples). These represent fortunate guesses or noise in the low-resolution setting. • Stable Wrong (28.3%) : Fail at both high and low resolution levels (448 samples). These represent fundamental model limitations or ambiguous questions. 14 Learning from Visual Deltas                 
+
+> Figure 8. Sample Stability Heatmap. Failure transitions are unidirectional—once a question begins failing, it rarely recovers. Train Set VD-S Total (7B) HQ vs. HQ Total (7B) VD-S Total (3B) HQ vs. HQ Total (3B) HiTab +10.23 +10.21 +10.10 +9.42 VQA +10.39 +8.34 +9.85 +8.50 GQA +12.84 +9.12 +10.95 +8.91
+> Table 5. Cumulative Accuracy Gains: VD-LB vs. HQ-only DPO across all evaluation benchmarks. VD-LB achieves higher total gains than correctness-based DPO alone, demonstrating that visual quality deltas provide complementary supervision beyond mere correctness.
+
+# C. Ablation Studies & Robustness 
+
+C.1. Does the gain come from Correctness or Visual Delta? 
+
+We compare VD-LB against a baseline DPO trained on “HQ-Correct ≻ HQ-Wrong” pairs (Table 5). While HQ-only preference learning provides gains, VD-LB consistently outperforms it (e.g., +10.23 cumulative gain vs. +8.34 on 7B). This confirms that the visual delta —the contrast between robust perception and degraded perception—adds unique supervisory value beyond mere correctness. 
+
+C.2. Sensitivity to Perturbation Strength 
+
+We study the resolution downsampling ratio α (detailed in Appendix D). We find an inverted-U trend: gains are most pronounced at moderate to strong degradation ( α = 0 .1 or 0.2). Overly mild perturbations ( α ≥ 0.6) fail to induce sufficient behavioral divergence, confirming that a tangible “quality gap” is necessary for effective preference learning. 
+
+C.3. Generalization to Other Degradations 
+
+VisualDeltas is not limited to resolution. As discussed in Section 4.6, applying Gaussian Noise or Motion Blur as the degradation operator yields comparable gains. This suggests our framework is a general recipe for exploiting perceptual robustness. Notably, VD-LB achieves competitive or better performance than noise-based methods on most benchmarks while avoiding the computational overhead of noise generation during inference. 15 Learning from Visual Deltas 
+
+C.4. DPO with High-Quality Correct vs. High-Quality Wrong 
+
+In this appendix, we present an ablation study isolating the contribution of correctness-based filtering from visual quality-induced deltas. Preference pairs are constructed from high-quality (HQ) visual inputs only, with the preference direction determined solely by answer correctness. This setting, DPO (HQ Correct vs. HQ Wrong) , allows us to disentangle the effects of visual quality differences and correctness signals. Our main method, VD-S (HQ Correct vs. LQ Wrong), leverages two sources of supervision: a correctness signal and a visual quality delta. This naturally raises the question: how much of the observed performance gain can be attributed to correctness alone? The HQ-only setting answers this. 
+
+Experimental setup. Multiple responses are sampled from the model for each HQ visual input. Preference pairs are constructed by selecting a correct response as preferred and an incorrect response as dispreferred. All other hyperparameters remain identical to the main experiments. This ablation is conducted on both Qwen2.5-7B-VL and Qwen2.5-3B-VL to assess scalability. 
+
+Comparison: VD-S vs HQ-only 
+
+Train Method Qwen2.5-7B-VL Qwen2.5-3B-VL HiTab WikiTQ VQA GQA HiTab WikiTQ VQA GQA HiTab VD-S 71.40 (+3.47) 69.90 (+3.50) 63.55 (+3.55) 42.90 (+2.95) 61.11 (+2.15) 51.35 (+12.90) 60.85 (+4.55) 39.75 (+3.45) 
+
+HQ vs. HQ 71.15 (+3.22) 68.95 (+2.55) 63.15 (+3.15) 40.90 (+0.95) 60.67 (+1.71) 50.05 (+11.60) 61.50 (+5.20) 39.80 (+3.50) 
+
+VQA VD-S 70.58 (+2.65) 68.15 (+1.75) 68.20 (+8.20) 44.75 (+4.80) 59.09 (+0.13) 52.45 (+14.00) 61.45 (+5.15) 42.50 (+6.20) 
+
+HQ vs. HQ 70.20 (+2.27) 68.60 (+2.20) 66.55 (+6.55) 43.65 (+3.70) 61.24 (+2.28) 50.60 (+12.15) 61.90 (+5.60) 41.35 (+5.05) 
+
+GQA VD-S 69.19 (+1.26) 69.60 (+3.20) 66.00 (+6.00) 47.50 (+7.55) 61.36 (+2.40) 50.60 (+12.15) 58.70 (+2.40) 42.65 (+6.35) 
+
+HQ vs. HQ 70.45 (+2.52) 70.35 (+3.95) 64.35 (+4.35) 45.25 (+5.30) 59.53 (+0.57) 48.90 (+10.40) 59.65 (+3.35) 43.15 (+6.85) 
+
+Table 6. Comparison between VD-S (HQ Correct vs. LQ Wrong) and DPO (HQ Correct vs. HQ Wrong) across Qwen2.5-7B-VL and 3B-VL. Bold indicates the best score per model for each metric. Numbers in parentheses indicate absolute improvements relative to the respective baseline. 
+
+Analysis. Across both scales, VD-S generally outperforms HQ-only, with particularly clear advantages on in-domain datasets (HiTab, VQA, GQA). The visual quality delta provides complementary supervision, exposing structured errors that correctness alone cannot. 
+
+Aggregate Accuracy Improvements 
+
+Train Set VD-S Total Diff (7B) HQ vs. HQ Total Diff (7B) VD-S Total Diff (3B) HQ vs. HQ Total Diff (3B) HiTab +10.23 +10.21 +10.10 +9.42 VQA +10.39 +8.34 +9.85 +8.50 GQA +12.84 +9.12 +10.95 +8.91 
+
+Table 7. Summed absolute accuracy improvements across all evaluation benchmarks, for both 7B and 3B models, relative to the baseline. 
+
+Analysis. Aggregated trends reinforce the complementary nature of correctness and visual quality signals. Correctness-based DPO alone consistently improves performance across both model scales, while VD-S provides additional gains, particularly on visually complex datasets such as GQA. Cross-scale trends are highly consistent, demonstrating scalability and robustness of the preference learning approach. 
+
+Summary. Across both 7B and 3B models: • Correctness alone is a strong supervision signal, effective even for smaller models. • VD-S generally achieves the largest improvements, highlighting the importance of visual quality deltas. • Trends are consistent across model scales, with in-domain datasets benefiting the most, but cross-dataset gains remain non-trivial. These results confirm that combining correctness and visual quality signals yields the most robust multimodal reasoning performance. 16 Learning from Visual Deltas 
+
+# D. Effect of Resolution Perturbation Strength                                                                                                                                                                    
+
+> Model Size
+> Train Set DPO Ratio 7B 3B
+> HiTab WikiTQ VQA GQA MathVision HiTab WikiTQ VQA GQA MathVision
+> Train Set: HiTab
+> 1.0 vs 0.1 71.91 67.15 62.65 42.05 25.16 61.62 52.15 61.55 40.65 18.78
+> 1.0 vs 0.2 70.71 67.95 62.40 39.90 25.07 59.72 49.70 60.40 38.15 17.20 1.0 vs 0.4 70.52 66.10 60.10 36.10 24.18 59.60 47.20 59.75 39.95 16.61 1.0 vs 0.6 67.42 65.05 61.85 38.95 24.18 58.33 46.25 59.70 39.25 16.64 1.0 vs 0.8 66.79 65.45 59.90 38.50 25.13 58.96 46.60 58.05 38.70 17.40
+> Train Set: VQA
+> 1.0 vs 0.1 68.81 65.40 64.80 44.60 25.66 60.23 52.20 60.70 41.45 17.40
+> 1.0 vs 0.2 68.43 63.80 64.05 44.35 25.60 59.66 52.20 60.05 41.30 15.00 1.0 vs 0.4 65.72 63.50 60.65 41.65 25.39 59.28 51.35 60.70 41.35 15.43 1.0 vs 0.6 66.67 61.90 60.20 40.20 25.33 61.24 51.70 60.35 41.45 14.47 1.0 vs 0.8 66.29 58.00 60.65 36.40 24.14 60.29 52.00 59.45 39.45 16.58
+> Train Set: GQA
+> 1.0 vs 0.1 70.20 68.20 63.90 43.35 25.23 60.23 52.15 59.15 41.25 17.04
+> 1.0 vs 0.2 70.20 67.00 63.10 42.10 24.26 59.66 51.70 58.70 40.05 16.68 1.0 vs 0.4 70.77 65.10 62.90 39.60 24.34 59.34 50.95 58.15 39.40 17.14 1.0 vs 0.6 66.22 66.55 60.50 38.75 25.46 58.84 50.10 56.45 36.20 16.45 1.0 vs 0.8 66.67 67.20 59.25 38.10 25.86 59.72 48.75 58.30 38.15 15.59
+> Table 8. Effect of resolution perturbation strength on label-free DPO (VD-LF) across training sets and model sizes. Each DPO ratio compares the original resolution ( 1.0) with a downsampled counterpart. Results are reported in accuracy (%). For each training set, the best performance per task and model size is highlighted in green.
+
+We study how the strength of resolution-induced visual degradation affects the quality of self-generated preference signals in the label-free VD-LF setting. Although larger resolution gaps can amplify behavioral differences between paired inputs, excessively strong degradation may also corrupt essential visual cues, leading to unstable or noisy supervision. This experiment aims to identify a practical and robust range of perturbation strengths that yield informative, stable, and scalable preference signals. 
+
+Experimental setup. For each training dataset (HiTab, VQA, and GQA), we construct preference pairs solely based on resolution perturbations, without using ground-truth answers or correctness filtering. Each pair consists of a high-resolution image ( 1.0) and a degraded counterpart obtained by downsampling with ratio α ∈ { 0.1, 0.2, 0.4, 0.6, 0.8}, where smaller α
+
+corresponds to more aggressive degradation. All models are trained under identical VD-LF objectives and optimization settings. We report results for both Qwen2.5-7B-VL and Qwen2.5-3B-VL to evaluate robustness across model capacities and to assess whether the effect of resolution strength generalizes beyond a single scale. 
+
+Results. Table 8 reveals a clear and highly consistent relationship between resolution perturbation strength and downstream performance across training sets, evaluation benchmarks, and model sizes. Moderate resolution gaps—most notably 1.0 vs. 
+
+0.1 and 1.0 vs. 0.2—consistently yield the strongest performance, while both weaker and more aggressive degradations lead to inferior or unstable outcomes. When trained on HiTab, the 7B model achieves its best overall performance under 1.0 vs. 0.1, with improvements extending beyond table-centric tasks to general visual reasoning benchmarks such as VQA and GQA. The same trend holds for the 3B model, where moderate perturbations dominate across nearly all evaluation tasks despite the model’s substantially reduced capacity. This indicates that resolution-induced preferences provide a strong and capacity-agnostic learning signal. Similar patterns emerge when training on VQA and GQA. Across both datasets, moderate perturbations again achieve the best or near-best results on most benchmarks, demonstrating that the observed effect is not tied to a specific training distribution or reasoning format. In contrast, larger degradation ratios (e.g., 1.0 vs. 0.4) frequently lead to noticeable drops, particularly on GQA and MathVision, where fine-grained spatial reasoning and visual detail are critical. Notably, overly mild perturbations ( α ≥ 0.6) consistently underperform despite preserving most visual information. This suggests that insufficient resolution gaps fail to induce meaningful behavioral divergence between paired inputs, resulting in 17 Learning from Visual Deltas 
+
+weak or noisy preference signals. Overall, the results exhibit a robust unimodal trend with respect to perturbation strength, peaking at moderate resolution gaps. 
+
+Discussion. These findings highlight resolution perturbation strength as a critical factor in the effectiveness of label-free delta learning. The observed performance peak at moderate resolution gaps reflects a fundamental trade-off between inducing sufficient behavioral contrast and preserving essential visual semantics. When the resolution gap is too small, both high- and low-resolution inputs remain visually similar, leading the model to produce nearly indistinguishable responses. In this regime, the resulting preference signal is weak and provides limited supervisory value beyond noise. Conversely, when degradation is too severe, key visual cues—such as textual content, table cell boundaries, and spatial relationships—are corrupted to the extent that both responses become unreliable. This collapses the implicit preference direction and weakens the learning signal. Moderate perturbations strike a balance between these extremes. They selectively impair fine-grained visual components while preserving global scene structure, causing the model’s responses to diverge in systematic and semantically meaningful ways. This exposes consistent multimodal failure modes—such as degraded text recognition or disrupted alignment—that can be effectively exploited by preference learning. As a result, moderate resolution gaps yield stronger and more stable improvements across tasks. Importantly, the consistency of this trend across training sets and model sizes suggests that resolution-induced preferences capture intrinsic properties of vision-language robustness rather than dataset-specific artifacts. Even the smaller 3B model benefits from the same perturbation regime, indicating that the learned signal does not rely on high-capacity reasoning but instead reflects generalizable visual grounding principles. Taken together, these results position calibrated resolution perturbation as a principled and scalable mechanism for constructing informative label-free preferences in vision-language models. 
+
+# E. Generalization to Other Degradations 
+
+While VisualDeltas is primarily implemented using Resolution Reduction (RD) —downsampling images to a lower resolution (e.g., 0.1 × original dimensions)—our framework is general and can leverage various types of visual degradation to induce preference pairs. We compare RD against two alternative perturbation strategies: (1) Gaussian Noise , which adds random Gaussian noise to pixel values; and (2) Motion Blur , which applies directional blur to simulate motion artifacts. Both VD-LF and VD-LB use RD as their default perturbation method.                                 
+
+> Method HiTab WikiTQ VQA GQA MathVision Baseline 67.93 66.40 60.00 39.95 24.87 Gaussian Noise 72.22 67.55 63.10 43.85 25.23 Motion Blur 72.22 68.60 64.00 42.15 24.54 VD-LF (Ours) 71.91 67.15 62.65 42.05 25.16 VD-LB (Ours) 71.40 69.90 63.55 42.90 25.13
+> Table 9. Comparison of noise-based methods vs. VisualDeltas on HiTab training set (Qwen2.5-7B-VL). All values are accuracy (%). Our methods (VD-LF and VD-LB, both using Resolution Reduction) are highlighted in light blue.
+
+Table 9 shows that all three perturbation strategies yield comparable improvements across benchmarks. RD (our VD-LF and VD-LB methods) achieves competitive performance on most datasets, while Gaussian Noise and Motion Blur provide similar gains. This suggests that VisualDeltas is not tied to a specific degradation type—the key principle is creating a meaningful quality gap between HQ and LQ views that exposes reasoning brittleness. Importantly, RD is particularly attractive in practice: it is computationally cheap (a single resize operation), deterministic, and works universally across all image types without parameter tuning. 
+
+# F. Comparison with Cross-Model Preference Construction 
+
+This appendix provides detailed results comparing VisualDeltas against cross-model preference construction approaches. We conduct experiments where larger models (32B and 7B) generate preferred responses, while smaller models (7B and 3B) generate dispreferred responses. Table 10 shows the detailed comparison. 18 Learning from Visual Deltas              
+
+> Paradigm Method HiTab Out-of-Domain WikiTQ VQA GQA MathVision
+> Baseline
+> Baseline (no training) 67.93 66.40 60.00 39.95 24.87
+> Large-Model-Guided (External Teacher Required)
+> 7B-guided (7B pref vs. 3B dispref) 70.01
+
+(+2.08) 67.25 (+0.85) 60.90 (+0.90) 39.45 (-0.50) 22.66 (-2.21)   
+
+> 32B-guided (32B pref vs. 7B dispref) 67.55
+
+(-0.38) 70.55 (+4.15) 65.10 (+5.10) 43.70 (+3.75) 21.88 (-2.99)   
+
+> Single-Model VisualDeltas (No External Model)
+> VD-LF (HQ vs. LQ) 71.91
+
+(+3.98) 67.15 (+0.75) 62.65 (+2.65) 42.05 (+2.10) 25.16 (+0.29)   
+
+> VD-LB (HQ-correct vs. LQ-wrong) 71.40
+
+(+3.47) 69.90 (+3.50) 63.55 (+3.55) 42.90 (+2.95) 25.13 (+0.26) 
+
+Table 10. Detailed comparison of large-model-guided preference learning vs. single-model VisualDeltas. Experiments are conducted on the same 7B target model. Large-model-guided methods require external larger models (32B or 7B) to construct preferences, while 
+
+VisualDeltas uses only the 7B model itself with resolution-induced deltas. Numbers show absolute accuracy (%) with gains/losses relative to baseline in parentheses. Best results per column are in bold with dark green background. VisualDeltas rows are highlighted in light blue. Light green indicates positive gains, light red indicates negative changes, and dark red marks the largest drop. Notably, VD-LF achieves the best HiTab performance (71.91%), and VisualDeltas methods maintain positive gains across all benchmarks unlike large-model-guided methods which hurt MathVision. 
+
+Key Findings: Better In-Domain Performance: On HiTab, VD-LF (71.91%) outperforms the 32B-guided baseline (67.55%). This suggests that resolution-induced self-correction is more effective for visual robustness than learning from a larger model that may have different visual biases. 
+
+Comparable Generalization: On out-of-domain tasks like WikiTQ, VD-LB achieves gains (+3.50%) comparable to 32B-guided training (+4.15%), but avoids the substantial computational cost and latency of querying a larger model. 
+
+Avoiding Cross-Model Failures: Note that 32B-guided training harms MathVision performance (-2.99%), likely due to distribution shift. VisualDeltas maintains positive gains (+0.26%), demonstrating superior stability. 19

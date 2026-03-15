@@ -1,0 +1,323 @@
+Title: RPG-SAM: Reliability-Weighted Prototypes and Geometric Adaptive Threshold Selection for Training-Free One-Shot Polyp Segmentation
+
+URL Source: https://arxiv.org/pdf/2603.07436v1
+
+Published Time: Tue, 10 Mar 2026 01:04:37 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# RPG-SAM: Reliability-Weighted Prototypes and Geometric Adaptive Threshold Selection for Training-Free One-Shot Polyp Segmentation 
+
+Weikun Lin 1⋆, Yunhao Bai 1⋆, and Yan Wang 1
+
+> 1
+
+Shanghai Key Laboratory of Multidimensional Information Processing, East China Normal University 
+
+10232140464@stu.ecnu.edu.cn 
+
+Abstract. Training-free one-shot segmentation offers a scalable alter-native to expert annotations where knowledge is often transferred from support images and foundation models. But existing methods often treat all pixels in support images and query response intensities models in a ho-mogeneous way. They ignore the regional heterogeity in support images and response heterogeity in query. To resolve this, we propose RPG-SAM, a framework that systematically tackles these heterogeneity gaps. Specifically, to address regional heterogeneity, we introduce Reliability-Weighted Prototype Mining (RWPM) to prioritize high-fidelity support features while utilizing background anchors as contrastive references for noise suppression. To address response heterogeneity, we develop Geo-metric Adaptive Selection (GAS) to dynamically recalibrate binarization thresholds by evaluating the morphological consensus of candidates. Fi-nally, an iterative refinement loop method is designed to polishes anatom-ical boundaries. By accounting for multi-layered information heterogene-ity, RPG-SAM achieves a 5.56% mIoU improvement on the Kvasir dataset. Code will be released. 
+
+Keywords: Polyp Segmentation · Colono Scopy · SAM2 
+
+## 1 Introduction 
+
+Polyp detection is a key task in early colorectal cancer (CRC) screening[20, 17, 7]. Although supervised models have achieved high accuracy[5, 6, 15], their depen-dence on large-scale pixel-level annotations limits clinical scalability. Recently, training-free one-shot segmentation[12, 19, 3, 10, 21] has emerged as a promising alternative, integrated with vision foundation models[13, 14], particularly the Segment Anything Model (SAM) [9, 16]. SAM’s proven zero-shot generalization and promptable interface allow for high-quality mask generation from a single labeled support image to query images without any parameter updates, offering a fast solution for label-scarce medical scenarios.  
+
+> ⋆
+
+Equal contribution. 
+
+> arXiv:2603.07436v1 [cs.CV] 8 Mar 2026
+
+2 W. Lin, Y. Bai et al. （b）（a）  
+
+> Predict
+> ab
+> cd
+> Support Image
+> Query Image
+
+b dca
+
+b dca
+
+> Responses of Different Foreground Sections
+> Responses with Background Suppression
+
+a        
+
+> 43
+> 198
+> 292 248
+> 142
+> 46 31
+> 0
+> 100
+> 200
+> 300
+> 0.2 0.3 0.4 0.5 0.6 0.7 0.8
+> Frequency
+> Best Threhold
+> T=0.2,
+> dice=0.8360
+> T=0.3,
+> dice=0.8801
+> T=0.4,
+> dice=0.5751
+> T=0.5,
+> dice=0.3121
+> Threshold(T) Scan
+
+Fig. 1: Motivation of RPG-SAM. (a) Regional and Contextual Heterogeneity. Top: The varying regional utility of the support foreground means that de-graded areas (e.g., reflection d) trigger false-positive noise in query images. Bot-tom: Treating the contextual background as a distinct information layer provides negative anchors to effectively suppress heatmap activations. (b) Intensity Het-erogeneity. The histogram of optimal binarization thresholds across the Kvasir dataset [8] highlights the stochastic response intensities of different query scenar-ios, exposing the limitations of fixed-threshold (homogeneous) sampling rules. The standard workflow for training-free one-shot segmentation methods fol-lows a matching-based prompt sampling paradigm. This involves two core stages: 
+
+1) a feature matching stage that computes a similarity heatmap between the query image and support foreground features, and 2) a prompt sampling stage that applies various strategies to extract points, boxes, or masks for SAM input. For instance, PerSAM[21] and Matcher[10] sample positive and negative points based on similarity extremes or bidirectional consistency; while OPSAM[11] and ProtoSAM[19] binarize heatmaps using fixed thresholds or regional statistics to extract candidate masks. These manual rules serve as the bridge between raw feature matching and the foundation model’s prompt interface. However, we observe that the effectiveness of this paradigm is fundamentally limited by a uniformity bias, where current pipelines erroneously assume homo-geneity across three critical dimensions of information. First, regarding regional homogeneity within support foreground, existing methods often treat all sup-port foreground pixels as equally representative. In practice, colonoscopic images frequently contain suboptimal regions, such as those obscured by reflections or mucus, that introduce misleading features if not explicitly filtered. As illustrated in the top of Fig. 1(a), matching features from different regions yields heatmaps of varying quality; specifically, degraded regions (e.g., region d) trigger extensive false-positive noise. Second, regarding regional homogeneity across foreground and background, many methods neglect the support background as a distinct information layer, failing to leverage it as an explicit contrastive reference. As shown in the bottom of Fig. 1(a), utilizing background features as negative RPG-SAM 3
+
+anchors is essential for suppressing noise and distinguishing polyps from similar-looking intestinal folds. Finally, regarding intensity heterogeneity, the transition from heatmaps to prompts is currently governed by static rules that ignore the stochastic response intensities across diverse query images. As evidenced by the histograms in Fig. 1(b), the optimal binarization thresholds fluctuate signifi-cantly, making rigid sampling rules inadequate for ensuring both prompt fidelity and diversity in varied clinical conditions. To mitigate this uniformity bias and ensure high-fidelity knowledge transfer, we propose RPG-SAM, a robust framework that explicitly accounts for infor-mation heterogeneity. We first introduce Reliability-Weighted Prototype Mining (RWPM) to resolve regional heterogeneity within the support foreground and across foreground and background; it distills support features according to their intrinsic reliability while leveraging background anchors as explicit contrastive references. To address intensity heterogeneity, we develop Geometric Adaptive Selection (GAS), which replaces static sampling rules with a dynamic threshold-ing mechanism guided by morphological priors. Finally, a Prior-guided Iterative Refinement (PIR) loop is designed to progressively polish anatomical boundaries. By systematically tackling these heterogeneous cues, RPG-SAM maximizes the utility of sparse support information and maintains high robustness across di-verse endoscopic conditions. 
+
+## 2 Methodology 
+
+RPG-SAM is a SAM2-based training-free framework designed to segment polyps in a query image xq using a single labeled support image xs and its corresponding mask ms. As illustrated in Fig. 2, the framework consists of three main com-ponents: Reliability-Weighted Prototype Mining (RWPM), Geometric Adaptive threshold Selection (GAS), and Prior-guided Iterative Refinement (PIR). We introduce the components in the following subsections. 
+
+2.1 Reliability-Weighted Prototype Mining 
+
+Deal with the regional and contextual heterogeneity, We utilize DINOv2[13] as a feature extractor to obtain deep features fs, f q ∈ RH′W ′×D from xs and xq . xs is divided into foreground and background regions according to ms. To handle the complexity of endoscopic scenes, we apply the SLIC[1] algorithm to the support image to generate K superpixel clusters. By averaging features within these clusters according to ms, we obtain the foreground prototypes Pf g = {pkf g }Kk=1 
+
+and background prototypes Pbg = {pkbg }Kk=1 .To distinguish the reliability of Pf g , we introduce a module that evaluates each Pkf g based on two complementary metrics: Intrinsic Reliability (Contrast Factor) and Query-specific Relevance (Reverse Purity Factor). First , we compute the Contrast Factor Ck to evaluate discriminative power of a prototype within the support image. We compute the similarity between pkf g and all support features fs, put the similarity scores Gall into foreground sets Gf g or background 4 W. Lin, Y. Bai et al. SLIC 
+
+𝐀 𝐀 
+
+> DINOv2
+> Encoder
+
+𝐀 𝐀 
+
+𝐀 𝐀 
+
+> 𝐀 𝐀𲠀𝐀𳰀
+
+GT 
+
+> (b) Geometric Adaptive
+> Threshold Selection
+> 𝐀 𝐀𴐀𝐀𴰀𴐀
+> Weighted-Prototype
+> Merging
+> Area
+> mean
+> (a) Reliability-Weighted Prototype Mining
+
+𝐀 𝐀 
+
+𝐀 𝐀 
+
+𝐀 𝐀𱰀 
+
+𝐀 𝐀𱰀 
+
+> 𝐀 𝐀 𝐀 ,𝐀 𝐀 𝐀 𝐀 ℎ𝐀 𝐀 𝐀
+
+𝐀 𝐀 
+
+> Highest Iou
+> (c) Prior-guided Iterative Refinement
+
+SAM2 ❄
+
+𝐀 𝐀𖠀𖠀 
+
+𝐀 𝐀 
+
+𝐀 𝐀 𝐀 𝐀 
+
+𝐀 𝐀𗰀 
+
+C
+
+R           
+
+> 𝐀 𝐀 =𝐀 𝐀 ×𝐀 𝐀
+> 𝐀 𝐀𚰀𝐀
+> ❄
+> 𝐀 𝐀𱰀 ,𝐀𶀀𝐀𱰀𝐀𳰀𶀀𲀀
+> 𝐀𝐀𝐀𖠀 𝐀𖰀 𝐀 𗰀𚰀𝐀 (𝐀 )
+> 𝐀 𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀
+
+…
+
+> Threshold Scan
+> fill the holes
+
+𝐀 q
+
+𝐀 𝐀𗰀 
+
+Fig. 2: The overview of RPG-SAM. (a)RWPM distills high-fidelity prototypes by weighting support features and suppressing background noise. (b)GAS dy-namically selects optimal binarization thresholds based on morphological solidity and scale consensus. (c)PIR utilizes SAM2 to progressively polish segmentation boundaries through automated error correction. sets Gbg according to the mask ms. The contrast is defined as the standardized difference between these sets: 
+
+Ck = ReLU 
+
+ mean (Gf g ) − mean (Gbg )
+
+std (Gall )
+
+
+
+. (1) Prototypes that fail to distinguish themselves from the support background (e.g., those corrupted by specular reflections) receive a lower Ck. Second , we use a Reverse Purity Factor Rk to verify the cross-image matching stability of Pkf g .We identify its top-n matches in the query feature map fq , average them to form a proxy pkrev , and project this proxy back onto fs. The purity p is the proportion of top-n reverse matches falling within ms. To account for varying lesion scales, we normalize this purity against the foreground area ratio p0:
+
+Rk = ReLU 
+
+ p − p0
+
+1 − p0
+
+
+
+. (2) We dynamically weight each prototype’s contribution based on its relevance to the current query, where Wk = Ck · Rk.Finally, we generate an initial heatmap Hinit by aggregating the weighted foreground similarity maps. Unlike methods that focus solely on foreground cues, we explicitly leverage Pbg as negative anchors to suppress false-positive activa-RPG-SAM 5
+
+tions in heatmap: 
+
+Hinit = Softmax 
+
+Kf g Kf g 
+
+X
+
+> k=1
+
+Wk · (fq · pkf g 
+
+> ⊤
+
+) −
+
+> Kbg
+
+X
+
+> k=1
+
+(fq · pkbg 
+
+> ⊤
+
+)
+
+ . (3) To enhance spatial consistency and reduce noise, we apply N iterations of a self-diffusion mechanism[11], updating Hinit by Hinit = Hinit · (fq · fq ⊤)k.
+
+2.2 Geometric-Prior-based threshold Selection 
+
+To mitigate the intrinsic stochasticity of response intensities across different query images, we develop Geometric Adaptive threshold Selection (GAS). In-stead of using a fixed binarization threshold, GAS dynamically evaluates a pool of candidate masks to identify the one that best conforms to the expected geo-metric properties of a polyp. We first generate a set of candidate binary masks {Mτ } by thresholding the initial heatmap Hinit across a range of potential levels τ ∈ [τmin , τ max ].For each Mτ , we perform connected component analysis and retain only those components whose area is at least 20% of the largest component in that mask. To ensure morphological completeness, internal holes within these valid regions are filled, resulting in refined candidate masks. Then, each refined candidate M
+
+is evaluated by a geometric score Sgeo , which balances morphological solidity and scale consensus: 
+
+Sgeo (M) = X
+
+> i
+
+|Ci||M||Ci||Hull (Ci)|
+
+| {z }
+
+> Weighted Solidity
+
+· min 
+
+
+
+1, |M|
+
+Aref 
+
+| {z }
+
+> Scale Consensus
+
+,
+
+where Ci denotes the i-th valid component of M, and | · | represents the area. The weighted solidity computes the area-weighted average compactness of the components, favoring regions with regular, convex-like anatomical shapes. To prevent small, fragmented noise from obtaining artificially high solidity scores, we introduce Scale Consensus. This term downweights candidates that are sig-nificantly smaller than a reference area Aref , which represents the expected median scale of polyps. The candidate mask with the highest Sgeo is selected as the optimal prior mask Mprior to generate sparse prompts for SAM2. 
+
+2.3 Prior-guided Iterative SAM2 Refinement 
+
+To fully automate the segmentation process without manual intervention, we im-plement an iterative refinement strategy that utilizes the geometric prior Mprior 
+
+to guide SAM2. This process progressively optimizes the segmentation mask Mt
+
+by using the structural consistency of the prior as a reference for error correc-tion. In each iteration, the current mask is evaluated against Mprior based on Coverage ( Cov ) and Intersection-over-Union ( IoU ), allowing the framework to utilize SAM2’s edge-refinement capabilities to polish anatomical boundaries. 6 W. Lin, Y. Bai et al. 
+
+Table 1: Compared with SOTA methods. The best results are highlighted in 
+
+bold , and the second-best results are underlined.                                                                                
+
+> Method Kvasir PolypGen CVC-ClinicDB CVC-ColonDB Center 1 Center 2 Center 3
+> IoU Dice IoU Dice IoU Dice IoU Dice IoU Dice IoU Dice SEGIC[12] 22.23 32.81 13.36 20.73 15.47 22.79 15.73 23.77 17.87 26.98 12.00 18.25 PerSAM[21] 26.01 35.38 26.15 31.47 12.97 18.96 10.87 17.74 13.29 20.10 10.31 16.18 OPSAM[11] 63.95 71.43 57.16 62.53 59.29 65.33 74.91 81.67 58.75 65.60 56.44 62.86 Matcher[10] 71.71 78.91 56.25 63.06 60.79 66.30 65.49 71.42 63.39 70.20 52.01 58.42 ProtoSAM[3] 73.09 81.54 51.14 58.63 55.73 63.03 69.79 76.96 68.99 76.83 55.92 63.45
+> RPG-SAM (Ours) 78.65 85.65 59.45 64.78 61.04 67.14 76.75 83.56 70.18 77.76 61.16 68.77
+
+The refinement logic follows a hierarchical approach by first addressing insuf-ficient lesion coverage ( Cov < τ cov ). When such errors are detected, the system identifies the false-negative region RF N = Mprior ∩¬ Mt and samples its geomet-ric center via the Euclidean Distance Transform (EDT) as a positive prompt to expand the mask. Conversely, if coverage is adequate but the IoU remains sub-optimal, the focus shifts to suppressing background noise by identifying the false-positive region RF P = Mt∩¬ Mprior and inserting a negative prompt. This itera-tive correction continues until the stopping criteria (Cov t ≥ τcov )∧(IoU t ≥ τiou )
+
+are satisfied or the maximum iteration count Tmax is reached. To ensure robust-ness, the mask with the highest IoU relative to the prior throughout the iteration history is selected as the final query prediction ˆmq .
+
+## 3 Experiment and Evaluations 
+
+3.1 Experiment Settings Datasets and Metrics. We validate the effectiveness of RPG-SAM on four widely used public polyp segmentation datasets: Kvasir [8], CVC-ClinicDB [4], 
+
+CVC-ColonDB [18] and three-center PolypGen [2]. Following OPSAM[11], we randomly select one image as the support sample and keep it fixed for all methods to ensure fair comparison. We employ the mean Dice coefficient (mDice) and mean Intersection over Union (mIoU) as the primary evaluation metrics. 
+
+Implementation Details Our framework is implemented in PyTorch. We use DINOv2[13] with a ViT-L/14 as the feature encoder with an input resolution of 
+
+560 × 560 , and SAM2[16] as the mask generator with an input size of 1024 ×
+
+1024 . The hyperparameter settings are as follows: (1) For RWPM , the SLIC parameters are set to K = 10 and m = 20 . (2) For GAS , the confidence scanning range is set to [0 .4, 0.7] with a stride of 0.05. (3) For the PIR , the stopping thresholds are set to τcov = 0 .9 and τiou = 0 .8, with a maximum iteration count of Tmax = 5 . All inference processes are conducted on a single NVIDIA RTX 3090 GPU without any model training or fine-tuning. RPG-SAM 7Image PerSAM OPSAM ProtoSAM Ours GT 
+
+Fig. 3: Visualization of heatmaps on challenging query samples, including cases with small ground-truth regions or the presence of visually similar distractors. 
+
+3.2 Comparison with Baseline Models 
+
+We compare RPG-SAM against SOTA one-shot methods, including SEGIC [12], 
+
+PerSAM [21], Matcher [10], OPSAM [11], and ProtoSAM [3]. For fairness, all methods utilize identical support-query pairs and backbone settings. Results are detailed in Table 1. RPG-SAM consistently outperforms existing paradigms. No-tably, on Kvasir, it achieves 78.65% mIoU and 85.65% mDice, surpassing Proto-SAM by 5.56% and 4.11%, respectively. This improvement stems from RWPM, which discriminatively prioritizes reliable support features and suppresses toxic features like specular reflections, unlike methods assuming uniform represen-tation. On the multi-center PolypGen dataset, RPG-SAM demonstrates supe-rior robustness. While domain shifts often trigger false-positive activations in other models, our Background Suppression and GAS stabilize response intensi-ties across centers. This confirms RPG-SAM’s clinical reliability beyond single-center data. Unlike fixed-threshold methods (e.g., OPSAM), the GAS module adaptively recalibrates for each query image. This prevents prompt contamina-tion in low-contrast cases, ensuring the iterative refinement loop operates on high-quality, diverse candidates to polish anatomical boundaries. 
+
+3.3 Ablation Studies 
+
+We evaluate the components and hyperparameter sensitivity of RPG-SAM on the Kvasir dataset. As shown in Table 2, each module contributes significantly to the final performance. The baseline without background suppression performs poorly due to unconstrained feature transfer. Explicitly introducing Background Suppression (BG Supp.) yields a 3.78% gain in mDice, proving its necessity in penalizing false-positive activations. RWPM further improves spatial granularity, 8 W. Lin, Y. Bai et al. 
+
+Table 2: Incremental ablation on Kvasir dataset. We demonstrate RPG-SAM benefits of Background Suppression (BG Supp.), RWPM, GAS, and PIR. 
+
+BG Supp. RWPM GAS PIR mIoU (%) mDice (%) AUC-PR 
+
+- - - - 63.68 74.94 0.8743 
+
+✓ - - - 67.89 78.72 0.8921 
+
+✓ ✓ - - 71.27 81.05 0.9068 
+
+✓ ✓ ✓ - 75.25 83.64 0.9068 
+
+✓ ✓ ✓ ✓ 78.65 85.65 0.9068 
+
+Table 3: Ablation study on hyper-parameters for SLIC, GAS, and PIR modules. Params in bold are used in RPG-SAM. 
+
+SLIC params PIR params GAS params K m mIoU mDice τcov τiou mIoU mDice Range mIoU mDice 
+
+5 5 77.34 84.52 0.8 0.7 77.98 85.20 0.3-0.6 75.05 82.57 10 5 78.28 85.27 0.8 0.8 78.11 85.32 0.4-0.6 77.15 84.48 
+
+10 20 78.65 85.65 0.8 0.9 77.79 85.12 0.4 -0.7 78.65 85.65 10 50 78.34 85.41 0.9 0.8 78.65 85.65 0.5-0.7 77.26 84.57 20 5 76.08 83.21 0.95 0.8 78.66 85.60 0.5-0.8 77.12 84.41 
+
+relieving the uniform representation fallacy. The GAS module outperforms fixed thresholds ( τ = 0 .7, optimal) by 2.59% mDice, effectively mitigating response intensity stochasticity. Finally, PIR further improving the results. We further analyze the robustness of hyperparameters in Table 3. For GAS, the scanning range [0 .4, 0.7] provides the optimal candidate pool; lower ranges introduce excessive noise, while higher ranges limit diversity. For RWPM, SLIC parameters K = 10 and m = 20 strike the best balance between spatial accuracy and regularization. Finally, the framework exhibits high stability regarding PIR thresholds, with τcov = 0 .9 and τiou = 0 .8 achieving the optimal balance between recall and precision. 
+
+## 4 Conclusion 
+
+We proposed RPG-SAM, a training-free framework addressing noise and inten-sity stochasticity in one-shot polyp segmentation. RWPM resolves the uniform representation fallacy through reliability-driven feature distillation and back-ground suppression, while GAS replaces rigid thresholds with adaptive binariza-tion based on geometric priors. Extensive benchmarks, including multi-center cohorts, confirm the effectiveness of RPG-SAM in terms of generalization and enhanced performance. Our approach provides a robust, scalable alternative to data-intensive models in label-scarce clinical settings. Future research will extend this framework to exploit temporal consistency in endoscopic videos. RPG-SAM 9
+
+## References 
+
+1. Achanta, R., Shaji, A., Smith, K., Lucchi, A., Fua, P., Süsstrunk, S.: Slic superpix-els compared to state-of-the-art superpixel methods. IEEE transactions on pattern analysis and machine intelligence 34 (11), 2274–2282 (2012) 2. Ali, S., Jha, D., Ghatwary, N., Realdon, S., Cannizzaro, R., Salem, O.E., Lamarque, D., Daul, C., Riegler, M.A., Anonsen, K.V., et al.: A multi-centre polyp detection and segmentation dataset for generalisability assessment. Scientific Data 10 (1), 75 (2023) 3. Ayzenberg, L., Giryes, R., Greenspan, H.: Protosam: One-shot medical image seg-mentation with foundational models. arXiv preprint arXiv:2407.07042 (2024) 4. Bernal, J., Sánchez, F.J., Fernández-Esparrach, G., Gil, D., Rodríguez, C., Vilar-iño, F.: Wm-dova maps for accurate polyp highlighting in colonoscopy: Validation vs. saliency maps from physicians. Computerized medical imaging and graphics 
+
+43 , 99–111 (2015) 5. Fan, D.P., Ji, G.P., Zhou, T., Chen, G., Fu, H., Shen, J., Shao, L.: Pranet: Parallel reverse attention network for polyp segmentation. In: International Conference on Medical Image Computing and Computer-Assisted Intervention (MICCAI). pp. 263–273 (2020) 6. Huang, C.H., Wu, H.Y., Lin, Y.L.: Hardnet-mseg: A simple encoder-decoder polyp segmentation neural network that achieves over 0.9 mean dice and 86 fps. arXiv preprint arXiv:2101.07172 (2021) 7. Jain, S., Atale, R., Gupta, A., Mishra, U., Seal, A., Ojha, A., Jaworek-Korjakowska, J., Krejcar, O.: Coinnet: A convolution-involution network with a novel statisti-cal attention for automatic polyp segmentation. IEEE Transactions on Medical Imaging 42 (12), 3987–4000 (2023) 8. Jha, D.: Kvasir-seg: A segmented polyp dataset. in multimedia modeling: 26th international conference, mmm 2020, daejeon, south korea, january 5-8 (2020) 9. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 4015– 4026 (2023) 10. Liu, Y., Zhu, M., Li, H., Chen, H., Wang, X., Shen, C.: Matcher: Segment anything with one shot using all-purpose feature matching. arXiv preprint arXiv:2305.13310 (2023) 11. Mao, X., Xing, X., Meng, F., Liu, J., Bai, F., Nie, Q., Meng, M.: One polyp iden-tifies all: One-shot polyp segmentation with sam via cascaded priors and iterative prompt evolution. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 24182–24191 (2025) 12. Meng, L., Lan, S., Li, H., Alvarez, J.M., Wu, Z., Jiang, Y.G.: Segic: Unleashing the emergent correspondence for in-context segmentation. In: European Conference on Computer Vision. pp. 203–220 (2024) 13. Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., et al.: Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 (2023) 14. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al.: Learning transferable visual models from natural language supervision. In: International conference on machine learning. pp. 8748–8763 (2021) 10 W. Lin, Y. Bai et al. 15. Rahman, M.M., Marculescu, R.: Medical image segmentation via cascaded atten-tion decoding. In: Proceedings of the IEEE/CVF winter conference on applications of computer vision. pp. 6222–6231 (2023) 16. Ravi, N., Gabeur, V., Hu, Y.T., Hu, R., Koutra, C., Whitehead, S., Wang, X., Kirillov, A., Krahenbuhl, P., Feichtenhofer, C.: Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 (2024) 17. Sung, H., Ferlay, J., Siegel, R.L., Laversanne, M., Soerjomataram, I., Jemal, A., Bray, F.: Global cancer statistics 2020: Globocan estimates of incidence and mortal-ity worldwide for 36 cancers in 185 countries. CA: A Cancer Journal for Clinicians 
+
+71 (3), 209–249 (2021) 18. Tajbakhsh, N., Gurudu, S.R., Liang, J.: Automated polyp detection in colonoscopy videos using shape and context information. IEEE transactions on medical imaging 
+
+35 (2), 630–644 (2015) 19. Xu, Y., Tang, J., Men, A., Chen, Q.: Eviprompt: A training-free evidential prompt generation method for adapting segment anything model in medical images. IEEE Transactions on Image Processing 33 , 6204–6215 (2024) 20. Zauber, A.G., Winawer, S.J., O’Brien, M.J., Lansdorp-Vogelaar, I., van Ballegooi-jen, M., Hankey, B.F., Zauber, S.D., Burt, R.W., Bond, J.H., Lowery, M., et al.: Colonoscopic polypectomy and long-term prevention of colorectal-cancer deaths. New England Journal of Medicine 366 (8), 687–696 (2012) 21. Zhang, R., Jiang, Z., Guo, Z., Yan, S., Pan, J., Ma, X., Dong, H., Gao, P., Li, H.: Personalize segment anything model with one shot. arXiv preprint arXiv:2305.03048 (2023)
