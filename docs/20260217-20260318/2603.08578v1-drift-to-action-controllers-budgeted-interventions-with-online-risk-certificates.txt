@@ -1,0 +1,1940 @@
+Title: Drift-to-Action Controllers: Budgeted Interventions with Online Risk Certificates
+
+URL Source: https://arxiv.org/pdf/2603.08578v1
+
+Published Time: Tue, 10 Mar 2026 02:34:16 GMT
+
+Number of Pages: 36
+
+Markdown Content:
+Published as a conference paper at CAO Workshop at ICLR 2026 
+
+# DRIFT -TO -A CTION CONTROLLERS : B UDGETED INTER -
+
+# VENTIONS WITH ONLINE RISK CERTIFICATES 
+
+Ismail Lamaakal 1∗, Chaymae Yahyati 1∗, Khalid El Makkaoui 1, Ibrahim Ouahbi 1, Yassine Maleh 21Multidisciplinary Faculty of Nador, Mohammed First University, Oujda 60000, Morocco 
+
+> 2
+
+Laboratory LaSTI, ENSAK, Sultan Moulay Slimane University, Khouribga 54000, Morocco 
+
+{ismail.lamaakal,chaymae.yahyati,k.elmakkaoui,i.ouahbi }@ump.ac.ma y.maleh@usms.ma 
+
+## ABSTRACT 
+
+Deployed machine learning systems face distribution drift, yet most monitoring pipelines stop at alarms and leave the response underspecified under labeling, compute, and latency constraints. We introduce Drift2Act , a drift-to-action con-troller that treats monitoring as constrained decision-making with explicit safety. 
+
+Drift2Act combines a sensing layer that maps unlabeled monitoring signals to a belief over drift types with an active risk certificate that queries a small set of delayed labels from a recent window to produce an anytime-valid upper bound 
+
+Ut(δ) on current risk. The certificate gates operation: if Ut(δ) ≤ τ , the controller selects low-cost actions (e.g., recalibration or test-time adaptation); if Ut(δ) > τ ,it activates abstain/handoff and escalates to rollback or retraining under cooldowns. In a realistic streaming protocol with label delay and explicit intervention costs, 
+
+Drift2Act achieves near-zero safety violations and fast recovery at moderate cost on WILDS Camelyon17, DomainNet, and a controlled synthetic drift stream, outperforming alarm-only monitoring, adapt-always adaptation, schedule-based retraining, selective prediction alone, and an ablation without certification. Overall, online risk certification enables reliable drift response and reframes monitoring as decision-making with safety. 
+
+## 1 INTRODUCTION 
+
+Modern machine learning models are increasingly deployed as long-lived services, where inputs evolve due to changing sensors, users, policies, environments, and feedback loops (Modi et al., 2017; Polyzotis et al., 2019; Perdomo et al., 2020). In such settings, distribution drift is the rule rather than the exception: a system that performs well at launch may degrade weeks later, and the degradation may be global (covariate shift), semantic (concept drift), or localized (subgroup-specific drift) (Qui ˜nonero-Candela et al., 2008; Shimodaira, 2000; Widmer & Kubat, 1996; Tsymbal, 2004; Raji et al., 2020). A large literature addresses catching drift through statistical tests and representation monitoring (Gretton et al., 2012; Rabanser et al., 2019), and a growing literature studies adapting 
+
+models via test-time adaptation and continual learning (Wang et al., 2021; Kirkpatrick et al., 2017). However, production reliability requires a third ingredient: once evidence of drift appears, the system must decide what to do next under real operational constraints (Modi et al., 2017; Polyzotis et al., 2019). Two gaps persist in current practice. First, drift detection often ends at an alarm (Rabanser et al., 2019). Alarms are not actions: they do not specify whether to recalibrate, adapt, request labels, retrain, or roll back, nor do they account for budgets, latency, cooldowns, and governance constraints (Modi et al., 2017; Polyzotis et al., 2019; Raji et al., 2020). Second, adaptation is frequently applied without verified safety (Wang et al., 2021). Under delayed supervision, a system may silently operate in an unsafe regime, or may overreact and incur unnecessary cost. These gaps are amplified at scale, where heterogeneous streams and limited labeling capacity make it infeasible to continuously validate performance (Modi et al., 2017; Polyzotis et al., 2019). 
+
+> 1
+
+* Equally contributed and led the project. 
+
+1
+
+> arXiv:2603.08578v1 [cs.LG] 9 Mar 2026
+
+Published as a conference paper at CAO Workshop at ICLR 2026 We propose a unified approach that treats monitoring as decision-making with safety . Our method introduces an active risk certificate that produces an anytime-valid upper bound Ut(δ) on the current windowed risk Rt using a small number of labels sampled from the live stream. The certificate functions as a safety layer: if Ut(δ) ≤ τ the system can operate normally and apply inexpensive corrections, while if Ut(δ) > τ the system triggers an explicit fallback (abstain/handoff) and escalates to stronger interventions such as rollback or retraining. To translate drift evidence into effective actions, we additionally maintain a belief state bt(d) = P(Dt = d | z1: t) over drift types 
+
+d ∈ { none , covariate , concept , subgroup } derived from representation, uncertainty, and calibration monitors. The controller then selects actions by maximizing a belief-weighted utility under budget and cooldown constraints. Our evaluation uses a realistic streaming protocol with delayed labels, explicit intervention costs, and heavy-action cooldowns. Across WILDS Camelyon17, DomainNet, and a controlled synthetic drift stream, the proposed controller achieves near-zero safety violations at moderate cost, dominating the safety–cost frontier in Figure 2a and recovering rapidly after drift events in Figure 2b. Table 1 summarizes improvements in safety, recovery time, and worst-group robustness relative to alarm-only monitoring, adapt-always baselines, and schedule-driven retraining. Our contributions are threefold: We introduce an active, anytime-valid risk certificate for drift monitoring under delayed supervision, we develop a belief-driven controller that maps drift evidence to cost-aware interventions under operational constraints, and we propose a streaming evaluation protocol that jointly measures safety, recovery, and operational cost. 
+
+## 2 RELATED WORK 
+
+Drift detection and monitoring. Classical drift detection is closely related to sequential change-point testing, including CUSUM-style procedures and Page–Hinkley-type tests (Page, 1954; Hinkley, 1970), and stream-specific detectors that adapt windows or monitor error-rate statistics online (Bifet & Gavald `a, 2007; Gama et al., 2004; 2014). Modern drift monitoring often uses representation-based two-sample testing, where changes are detected in an embedding space rather than raw inputs, including kernel Maximum Mean Discrepancy (MMD) tests (Gretton et al., 2012) and learned test statistics (Kirchler et al., 2020). Another widely used paradigm is classifier two-sample testing , which trains a discriminator to separate reference vs. recent samples and uses its accuracy/AUC as a shift signal (Lopez-Paz & Oquab, 2016). Empirical studies highlight that dataset-shift detectors can fail silently or over-trigger depending on the shift type and monitoring choice (Rabanser et al., 2019). Related work also studies specific shift structures such as label shift, with black-box estimation and detection procedures (Lipton et al., 2018). In our paper, these monitoring signals are not endpoints; they are inputs to a belief state that drives interventions. 
+
+Adaptation under distribution shift. A large literature updates models online under shift using unla-beled or sparsely labeled deployment data, including test-time adaptation (TTA) and self-supervised test-time training (Wang et al., 2021; Sun et al., 2020). These methods can be effective for covariate and representation drift, but may be unstable under semantic changes or feedback loops, motivating safety-aware gating. Continual learning methods address non-stationarity by preventing catastrophic forgetting, using regularization, replay, or exemplar-based updates (Kirkpatrick et al., 2017; Lopez-Paz & Ranzato, 2017; Rebuffi et al., 2017; Li & Hoiem, 2016). Our controller treats adaptation as one action among several (including label acquisition, rollback, and retraining) and uses online risk certification to avoid prolonged unverified operation. 
+
+Selective prediction and uncertainty. Selective prediction (abstention) reduces harm by deferring uncertain examples, with theoretical and empirical work on risk–coverage trade-offs and learned selection modules (Geifman & El-Yaniv, 2017; 2019). Uncertainty estimation tools that commonly support abstention and monitoring include deep ensembles and approximate Bayesian inference via dropout (Lakshminarayanan et al., 2017; Gal & Ghahramani, 2016), as well as confidence and calibration diagnostics (Guo et al., 2017). We include abstain/handoff as a safe fallback, but trigger it using a certified upper bound on current risk rather than confidence alone. 
+
+Conformal inference and risk control. Conformal prediction provides distribution-free predictive inference under exchangeability (Vovk et al., 2005), and recent work generalizes conformal ideas to control broader risk functionals beyond coverage (Angelopoulos et al., 2022). In parallel, confidence 2Published as a conference paper at CAO Workshop at ICLR 2026 sequences provide anytime-valid bounds for streaming means under bounded observations and optional stopping (Kirchler et al., 2020). Our active risk certificate builds on these anytime-valid ideas to upper-bound windowed deployment risk using a small, randomly sampled labeled subset, and then integrates the bound directly into the control loop. 
+
+ML systems, governance, and monitoring at scale. Production ML monitoring emphasizes logging, alerting, and remediation under operational constraints, while documenting and auditing model behavior via standardized reporting artifacts (Sculley et al., 2015; Breck et al., 2017; Mitchell et al., 2019; Gebru et al., 2021). Benchmarks for distribution shift help evaluate monitoring and adaptation realistically, including WILDS (Koh et al., 2021) and DomainNet streams commonly instantiated via multi-source domain adaptation benchmarks. Our framework aligns with this systems view by producing auditable certification signals and explicit actions with costs/cooldowns, evaluated under a streaming protocol that reports safety violations and worst-group robustness. In summary, prior work addresses detection, adaptation, or abstention in isolation. We unify these components by framing drift monitoring as a constrained decision problem with an anytime-valid safety certificate that gates action selection. 
+
+## 3 SENSING LAYER : M ONITORING SIGNALS AND BELIEF OVER DRIFT TYPE 
+
+The sensing layer summarizes recent deployment behavior into a compact evidence vector that can be computed with little or no immediate supervision. This evidence is then mapped into a belief over drift types, enabling downstream actions that depend on whether the system is facing covariate shift, concept shift, or localized subgroup drift. 3.1 MONITORING WINDOWS AND REPRESENTATIONS 
+
+At each time step t, the system maintains a recent input window Bt = {xt−n+1 , . . . , x t} and a reference window Bref that represents nominal conditions. We monitor drift in a representation space induced by the deployed model through an embedding function gθ : X → Rp:
+
+r = gθ (x). (1) In this equation, x ∈ X is an input, θ are the current model parameters, gθ (·) is the feature extractor, and r ∈ Rp is the embedding used by the monitors. We denote the sets of embeddings from the recent and reference windows by 
+
+Rt = {gθ (x) : x ∈ B t}, Rref = {gθ (x) : x ∈ B ref }. (2) Here Rt and Rref are the monitored embedding collections for the recent and reference windows, respectively. 3.2 EVIDENCE SIGNALS 
+
+We compute complementary drift signals that capture representation shift, uncertainty drift, and calibration degradation. The first signal is a kernel two-sample statistic (MMD) computed between 
+
+Rt and Rref :
+
+MMD 2 
+
+> t
+
+= 1
+
+|R t|
+
+X
+
+> r∈R t
+
+ϕ(r) − 1
+
+|R ref |
+
+X
+
+> r′∈R ref
+
+ϕ(r′)
+
+> 2
+
+. (3) In this equation, ϕ(·) is the feature map of a positive definite kernel, |R t| and |R ref | are window sizes, and MMD 2 
+
+> t
+
+increases when the embedding distribution departs from nominal conditions. The second signal is an uncertainty drift score based on predictive entropy. The model produces class probabilities pθ (y | x), and we define the entropy for an input x as 
+
+Hθ (x) = − X
+
+> y∈Y
+
+pθ (y | x) log pθ (y | x). (4) Here Y is the label set and Hθ (x) is higher when the model is less confident. We compare mean entropy in the recent and reference windows: 
+
+∆Ht = 1
+
+|B t|
+
+X
+
+> x∈B t
+
+Hθ (x) − 1
+
+|B ref |
+
+X
+
+> x∈B ref
+
+Hθ (x). (5) 3Published as a conference paper at CAO Workshop at ICLR 2026 In this equation, ∆Ht captures shifts in uncertainty that often correlate with out-of-distribution inputs or changes in class-conditional structure. When delayed labels are available, we also monitor calibration drift using a streaming ECE proxy computed on the labeled set available at time t, denoted St (defined in Appendix A). Let qθ (x) = max y pθ (y | x) be the model confidence and let {Ib}Bb=1 be confidence bins. The ECE estimate is 
+
+ECE t =
+
+> B
+
+X
+
+> b=1
+
+|S t,b ||S t| acc b(t) − conf b(t) . (6) In this equation, St,b = {(x, y ) ∈ S t : qθ (x) ∈ Ib} is the labeled subset in bin b, acc b(t) is the empirical accuracy in that bin, and conf b(t) is the empirical mean confidence in that bin. We use 
+
+∆ECE t = ECE t − ECE ref as a drift signal, where ECE ref is computed under nominal conditions. We concatenate these monitors into a single evidence vector 
+
+zt =  MMD 2 
+
+> t
+
+, ∆Ht, ∆ECE t
+
+⊤ ∈ Rm. (7) In this equation, m is the number of active monitors. 3.3 BELIEF OVER DRIFT TYPE 
+
+We model drift type as a latent discrete state Dt taking values in 
+
+D = {none , covariate , concept , subgroup }. (8)                   
+
+> Figure 1: Belief evolution over drift types.
+> Posterior bt(d)=P(Dt=d|z1: t)over
+> {none ,covariate ,concept ,subgroup }across time; dashed lines mark drift events that shift belief and guide intervention choice.
+
+The belief state is the posterior probability of each drift type given evidence up to time t:
+
+bt(d) = P(Dt = d | z1: t) , d ∈ D . (9) In this equation, z1: t = {z1, . . . , z t} is the evidence history and bt(d) is the probability assigned to type 
+
+d.We compute bt(d) using a lightweight Markov be-lief update with a transition model and an evidence likelihood. Let Td′d = P(Dt = d | Dt−1 = d′) be the transition matrix and let p(zt | Dt = d) be the likelihood of observing evidence zt under drift type 
+
+d. The update is 
+
+˜bt(d) = X
+
+> d′∈D
+
+Td′d bt−1(d′), bt(d) = p(zt | Dt = d) ˜bt(d)
+
+P 
+
+> d′′ ∈D
+
+p(zt | Dt = d′′ ) ˜bt(d′′ ) . (10) In these equations, ˜bt(d) is the predicted belief before incorporating the new evidence, the numerator multiplies the predicted belief by the likelihood of the observed evidence under type d, and the denominator normalizes the distribution so that P 
+
+> d∈D
+
+bt(d) = 1 . We fit p(zt | Dt = d) on synthetic drift episodes constructed from the base dataset, enabling drift-type inference directly from monitoring signals. 
+
+## 4 ACTIVE RISK CERTIFICATE : O NLINE SAFETY LAYER 
+
+This section introduces an active risk certificate that provides an anytime-valid upper bound on current deployment risk using only a small number of labels sampled from the live stream. The certificate acts as a safety layer that gates operational decisions: when the bound indicates potential violation of a target risk threshold, the system triggers a safe fallback and escalates interventions (see Appendix B for more details). 4Published as a conference paper at CAO Workshop at ICLR 2026 4.1 WINDOWED RISK UNDER DELAYED SUPERVISION 
+
+At time t, we define a recent evaluation window that represents the current deployment regime: 
+
+Wt = {t − N + 1 , . . . , t }, (11) where N is the window length and Wt indexes the most recent N time steps. The (windowed) deployment risk is the mean loss over examples in Wt:
+
+Rt = 1
+
+N
+
+X
+
+> i∈Wt
+
+ℓi, ℓi = ℓ ˆyθ (xi), y i
+
+. (12) In these equations, ℓi ∈ [0 , 1] is the per-example loss at index i and ℓ(·, ·) is a bounded task loss (for classification, ℓi = I(ˆ yθ (xi)̸ = yi)). The quantity Rt captures the current error/risk level in the most recent regime. Because labels may be delayed, the system cannot evaluate all ℓi in Wt; it instead adaptively requests labels for a subset of indices. 4.2 ACTIVE LABEL SAMPLING WITHIN THE WINDOW 
+
+Let Qt ⊆ Wt denote the set of indices in the current window for which labels are requested and observed by time t (or by a short fixed evaluation delay). The controller determines the sample size 
+
+|Qt| = nt based on drift evidence and budget constraints. For each queried index i ∈ Qt, the system obtains yi and computes the realized loss ℓi. The empirical risk on queried points is 
+
+bRt = 1
+
+nt
+
+X
+
+> i∈Qt
+
+ℓi. (13) In this equation, bRt is a sample mean of losses computed from the queried subset, nt is the number of queried labels, and Qt is selected by uniformly sampling indices from Wt (or by uniform sampling within each slice, when slice guarantees are desired). Uniform sampling is the key condition that allows finite-sample validity of the certificate with minimal assumptions about drift. 4.3 ANYTIME -VALID UPPER CONFIDENCE BOUND 
+
+We construct an anytime-valid upper bound Ut(δ) on the true window risk Rt from the queried losses. Let δ ∈ (0 , 1) be a target failure probability. We define a nonnegative confidence radius rad( nt, δ )
+
+such that 
+
+P
+
+
+
+∀t ∈ { 1, . . . , T } : Rt ≤ bRt + rad( nt, δ )
+
+
+
+≥ 1 − δ, (14) and set the certificate as 
+
+Ut(δ) = bRt + rad( nt, δ ). (15) In these equations, bRt is the empirical risk on the queried subset, rad( nt, δ ) is an anytime-valid uncertainty term that shrinks as more labels are queried, and Ut(δ) is the certified upper bound on current risk. We instantiate rad( ·, ·) using a confidence-sequence construction for bounded random variables, ensuring validity under optional stopping and adaptive query schedules. The explicit form and proof are provided in Appendix D. 4.4 SAFETY GATING AND ESCALATION 
+
+The certificate gates operation with respect to a target risk threshold τ ∈ (0 , 1) :Safe operation at time t ⇐⇒ Ut(δ) ≤ τ. (16) In this decision rule, Ut(δ) ≤ τ certifies that current risk is below the target threshold, enabling normal operation and inexpensive interventions (e.g., recalibration). When Ut(δ) > τ , the system treats the regime as potentially unsafe and triggers a fallback policy (e.g., abstain/handoff) while escalating to stronger actions such as label acquisition, rollback, or retraining: 
+
+Ut(δ) > τ ⇒ activate fallback and schedule escalation. (17) This gating mechanism separates monitoring evidence (which suggests risk may be rising) from 
+
+certified safety (which bounds the risk using labeled verification). 5Published as a conference paper at CAO Workshop at ICLR 2026 4.5 LABEL EFFICIENCY THROUGH TARGETED VERIFICATION 
+
+The controller uses drift evidence zt and the drift-type belief bt (Section 3) to decide when to query labels for certification. Specifically, it increases nt when monitors indicate rising drift or when the certificate uncertainty rad( nt, δ ) is large relative to the safety margin τ − bRt, and it decreases nt
+
+when evidence is stable and the certificate is tight. This creates an explicit coupling between “Catch” and “Operate”: labels are treated as a limited operational resource that is spent primarily when needed to maintain certified safety. 4.6 SAFETY GUARANTEE 
+
+Theorem 1 (Certified safe operation under random window sampling). Assume that at each time 
+
+t the queried set Qt is obtained by uniform random sampling from the window Wt (or by uniform sampling within pre-defined strata) and that the loss satisfies ℓi ∈ [0 , 1] . Then, for any δ ∈ (0 , 1) , the certificate in Eq. (18) satisfies 
+
+P(∀t ∈ { 1, . . . , T } : Rt ≤ Ut(δ)) ≥ 1 − δ. (18) Consequently, with probability at least 1 − δ, the system never remains in an unsafe regime without the certificate indicating a violation: whenever Rt > τ , it holds that Ut(δ) > τ , and the gating rule activates fallback and escalation. A proof and the concrete confidence-sequence construction are given in Appendix D. 
+
+## 5 DRIFT -TO -A CTION CONTROLLER 
+
+This section converts drift evidence and the active risk certificate into concrete operational interven-tions. The controller is designed to be deployable: it selects from a small action set, respects budgets and cooldowns, and escalates only when safety is threatened. 5.1 DECISION VARIABLES AND OBJECTIVE 
+
+At each time step t, the controller observes the current evidence vector zt (Section 3), the belief state 
+
+bt(·) over drift types, and the current safety certificate Ut(δ) (Section 4). It then selects an action 
+
+at ∈ A (Table 2) and, when applicable, a label request size kt for the label-query action. We express the controller goal as minimizing expected cumulative task loss plus operational cost, while maintaining certified safety whenever the system is allowed to predict: 
+
+min  
+
+> π
+
+E
+
+" TX
+
+> t=1
+
+ℓt + λ c (at)
+
+#
+
+s.t. Ut(δ) ≤ τ or fallback is engaged . (19) In this optimization, π denotes a policy mapping the controller’s observations to actions, ℓt =
+
+ℓ(ˆ yθ (xt), y t) is the per-step task loss, c(at) is the per-step operational cost from Section A.5, and 
+
+λ ≥ 0 trades off predictive performance against operational burden. The constraint states that the system must either be certified safe, meaning Ut(δ) ≤ τ , or operate under an explicit fallback mode (abstain/handoff) that prevents unverified predictions. 5.2 OPERATIONAL CONSTRAINTS : BUDGETS AND COOLDOWNS 
+
+Real systems cannot retrain or roll back arbitrarily often. We model two classes of constraints. First, a labeling budget limits the total number of requested labels: 
+
+> T
+
+X
+
+> t=1
+
+kt ≤ Blab , (20) where kt is the number of labels requested at time t and Blab is a fixed labeling budget. Second, heavy interventions have cooldowns. Let ∆rt and ∆rb be cooldown durations for retraining and rollback. If trt last is the most recent time a retrain was triggered, the retrain feasibility constraint is 
+
+at = A4 ⇒ t − trt last ≥ ∆rt , (21) and analogously for rollback with A5 and ∆rb . In these constraints, ∆rt and ∆rb capture engineering and infrastructure limitations such as retraining time, deployment approvals, and rollback validation. 6Published as a conference paper at CAO Workshop at ICLR 2026 5.3 RECEDING -HORIZON UTILITY UNDER SAFETY GATING 
+
+Rather than solving a full sequential decision problem, we use a receding-horizon utility that is simple, robust, and practical to implement. For each candidate action a ∈ A , we compute a one-step utility that combines predicted risk reduction and operational cost: 
+
+Ut(a) = ∆ t(a) − λ c (a) − γ Viol t(a). (22) In this equation, ∆t(a) is the predicted improvement from taking action a (larger is better), c(a) is the operational cost, and Viol t(a) is a penalty that discourages actions leading to uncertified operation. The weight γ > 0 enforces safety preferences. The controller selects 
+
+at = arg max 
+
+> a∈A feas
+> t
+
+Ut(a), (23) where Afeas  
+
+> t
+
+⊆ A is the set of feasible actions at time t after enforcing budget and cooldown constraints. We define ∆t(a) using the drift-type belief bt(d) to encode that different drifts benefit from different interventions: 
+
+∆t(a) = X
+
+> d∈D
+
+bt(d) G(d, a ), (24) where G(d, a ) is a gain table specifying the expected benefit of action a under drift type d. In this definition, D = {none , covariate , concept , subgroup } is the drift-type set, bt(d) is the posterior probability of drift type d, and G(d, a ) can be learned from historical rollouts or calibrated via synthetic drift simulations. This design yields a controller that is interpretable and easily extensible: gains can be updated without changing the certificate. 5.4 SAFETY -FIRST ESCALATION LOGIC 
+
+The certificate Ut(δ) gates the action space. When the certificate indicates potential violation, the controller prioritizes immediate safety via fallback and then schedules stronger interventions: 
+
+Ut(δ) > τ ⇒ at = A6 and at′ ∈ { A5, A 4} is scheduled when feasible . (25) In this rule, A6 is abstain/handoff, which prevents unverified predictions, and {A5, A 4} represent rollback and retraining, which restore or improve performance. When the certificate is safe, the controller selects low-cost corrective actions that match the dominant drift type in bt:
+
+Ut(δ) ≤ τ ⇒ at ∈ { A0, A 1, A 2, A 3} chosen by Eq. (25) . (26) This separation ensures that safety violations trigger immediate protective behavior, while normal operation remains cost-efficient. 
+
+## 6 BENCHMARKS , BASELINES , AND MAIN RESULTS 
+
+We evaluate on two real drift benchmarks and one controlled synthetic drift stream. The first benchmark is WILDS Camelyon17 (Koh et al., 2021; B ´andi et al., 2019), where environments correspond to hospitals and distribution shift arises from site-specific acquisition artifacts. The stream orders hospitals to induce multiple drift transitions, including a return to a previously seen hospital to test whether controllers avoid irreversible overreaction. The second benchmark is DomainNet 
+
+(Peng et al., 2019), which exhibits large domain gaps across sketch, clipart, painting, real, and quickdraw; the stream orders domains to induce heavy representation and covariate drift. The synthetic benchmark, SyntheticDrift-CIFAR , composes sudden covariate drift (corruption severity) (Hendrycks & Dietterich, 2019), gradual concept drift (class-conditional remapping ramped by αt)(Gama et al., 2014; Tsymbal, 2004), and subgroup drift (a minority slice receives a style transform) (Gebru et al., 2021; Sagawa et al., 2020), enabling controlled tests of safety and recovery. All methods use the same monitoring signals and belief model, and differ only in how they act. The 
+
+Alarm-only baseline raises alarms when evidence exceeds a threshold but performs no interventions (Rabanser et al., 2019). The Adapt-always baseline performs test-time adaptation continuously (Wang et al., 2021). The Retrain-on-schedule baseline retrains periodically and ignores drift evidence, reflecting common production heuristics (Modi et al., 2017). The Selective prediction 
+
+7Published as a conference paper at CAO Workshop at ICLR 2026 Table 1: Main streaming results under operational constraints. We report total cost Ctot , safety vi-olations V , detection delay Tdet , recovery time Trec , and minimum worst-group accuracy min Acc wg 
+
+across Camelyon17, DomainNet, and SyntheticDrift-CIFAR using τ = 0 .20 , δ = 0 .05 , and label delay d = 50 . Method Ctot V Tdet Trec min Acc wg                                                                                           
+
+> Camelyon17 stream
+> Alarm-only 3.2 46 22 210 0.71 Adapt-always (TTA) 58.0 318 74 0.79 Retrain-on-schedule 41.5 935 96 0.77 Selective prediction only 9.8 14 24 160 0.74 Controller (no certificate) 18.7 719 98 0.78 Controller + certificate (ours) 24.6 020 62 0.81
+> DomainNet stream
+> Alarm-only 4.1 63 28 260 0.49 Adapt-always (TTA) 64.0 621 110 0.58 Retrain-on-schedule 45.0 14 40 132 0.56 Selective prediction only 12.4 27 30 205 0.52 Controller (no certificate) 22.5 11 23 141 0.57 Controller + certificate (ours) 29.8 124 88 0.61
+> SyntheticDrift-CIFAR stream
+> Alarm-only 2.6 52 16 185 0.68 Adapt-always (TTA) 52.0 413 66 0.79 Retrain-on-schedule 36.0 10 25 92 0.77 Selective prediction only 8.6 19 18 148 0.72 Controller (no certificate) 16.8 814 84 0.78 Controller + certificate (ours) 21.2 015 58 0.82
+
+only baseline abstains based on uncertainty but does not adapt or retrain (Geifman & El-Yaniv, 2017; Lakshminarayanan et al., 2017). The Controller (no certificate) ablation selects actions using belief-weighted gains but does not gate operation using the certified bound Ut(δ). The proposed 
+
+Controller + certificate uses full safety gating and active risk verification (Kirchler et al., 2020). Table 1 summarizes the primary metrics used throughout the paper: total operational cost Ctot , safety violations V , detection delay Tdet , recovery time Trec , and minimum worst-group accuracy over drift windows. Figure 2a visualizes the safety–cost trade-off by plotting V against Ctot for each method, showing that the certified controller occupies the low-violation region at moderate cost. Figure 2b illustrates the temporal recovery dynamics around a drift onset, including intervention markers that indicate when major actions are executed (see Appendix F for more results). 
+
+(a) Safety–cost Pareto frontier. Methods on the Camelyon17 stream plotted by total cost 
+
+Ctot (x-axis) and safety violations V (y-axis); the certified controller attains low violations at moderate cost. 
+
+(b) Recovery curves around a drift event. Deployed risk R⋆t over time with drift onset (vertical dashed line) and safety threshold τ (horizontal dotted line); tick marks indicate interventions taken by the certified controller. 
+
+Figure 2: Certified controller performance under cost–safety trade-offs and drift. (Left) Safety– cost Pareto frontier on Camelyon17. (Right) Recovery dynamics around a drift event relative to threshold τ , with intervention times marked. 
+
+## 7 CONCLUSION 
+
+We reframed drift monitoring as decision-making under operational constraints. Our drift-to-action controller combines drift note: a belief over drift types from unlabeled monitors, an active risk certifi-cate that provides an anytime-valid upper bound on current risk from a small set of randomly sampled delayed labels, and a cost-aware policy that selects interventions under budgets and cooldowns. In realistic streaming evaluations with label delay, this reduces safety violations and speeds recovery at moderate cost compared to alarm-only monitoring, always-on adaptation, and schedule-based retraining. 8Published as a conference paper at CAO Workshop at ICLR 2026 
+
+## REFERENCES 
+
+Anastasios N. Angelopoulos, Stephen Bates, Adam Fisch, Lihua Lei, and Tal Schuster. Conformal risk control. arXiv preprint , 2022. URL https://arxiv.org/abs/2208.02814 .Albert Bifet and Ricard Gavald `a. Learning from time-changing data with adaptive windowing. In Proceedings of the 2007 SIAM International Conference on Data Mining (SDM) , pp. 443– 448, 2007. doi: 10.1137/1.9781611972771.42. URL https://doi.org/10.1137/1. 9781611972771.42 .Eric Breck, Shanqing Cai, Eric Nielsen, Michael Salib, and D. Sculley. The ml test score: A rubric for ml production readiness and technical debt reduction. In 2017 IEEE International Conference on Big Data (Big Data) , pp. 1123–1132, 2017. doi: 10.1109/BigData.2017.8258038. URL 
+
+https://doi.org/10.1109/BigData.2017.8258038 .P ´eter B ´andi, Oscar Geessink, Quirine Manson, Marcory Van Dijk, Maschenka Balkenhol, Meyke Hermsen, Babak Ehteshami Bejnordi, Byungjae Lee, Kyunghyun Paeng, Aoxiao Zhong, Quanzheng Li, Farhad Ghazvinian Zanjani, Svitlana Zinger, Keisuke Fukuta, Daisuke Komura, Vlado Ovtcharov, Shenghua Cheng, Shaoqun Zeng, Jeppe Thagaard, Anders B. Dahl, Huangjing Lin, Hao Chen, Ludwig Jacobsson, Martin Hedlund, Melih C¸ etin, Eren Halıcı, Hunter Jackson, Richard Chen, Fabian Both, J ¨org Franke, Heidi K ¨usters-Vandevelde, Willem Vreuls, Peter Bult, Bram van Ginneken, Jeroen van der Laak, and Geert Litjens. From detection of individual metas-tases to classification of lymph node status at the patient level: The camelyon17 challenge. IEEE Transactions on Medical Imaging , 38(2):550–560, 2019. doi: 10.1109/TMI.2018.2867350. Yarin Gal and Zoubin Ghahramani. Dropout as a bayesian approximation: Representing model uncertainty in deep learning. In Proceedings of the 33rd International Conference on Machine Learning (ICML) , 2016. URL https://arxiv.org/abs/1506.02142 .Jo ˜ao Gama, Pedro Medas, Gladys Castillo, and Pedro Pereira Rodrigues. Learning with drift detection. In Proceedings of the 17th Brazilian Symposium on Artificial Intelligence (SBIA) , pp. 286–295, 2004. doi: 10.1007/978-3-540-28645-5 29. URL https://doi.org/10.1007/ 978-3-540-28645-5_29 .Jo ˜ao Gama, Indr ˙e ˙Zliobait ˙e, Albert Bifet, Mykola Pechenizkiy, and Abdelhamid Bouchachia. A survey on concept drift adaptation. ACM Computing Surveys , 46(4):44:1–44:37, 2014. doi: 10.1145/2523813. URL https://doi.org/10.1145/2523813 .Timnit Gebru, Jamie Morgenstern, Briana Vecchione, Jennifer Wortman Vaughan, Hanna Wallach, Hal Daum ´e III, and Kate Crawford. Datasheets for datasets. Communications of the ACM , 64(12): 86–92, 2021. doi: 10.1145/3458723. URL https://arxiv.org/abs/1803.09010 .Yonatan Geifman and Ran El-Yaniv. Selective classification for deep neural networks. In Advances in Neural Information Processing Systems (NeurIPS) , 2017. URL https://arxiv.org/abs/ 1705.08500 .Yonatan Geifman and Ran El-Yaniv. Selectivenet: A deep neural network with an integrated reject option. In Proceedings of the 36th International Conference on Machine Learning (ICML) , 2019. URL https://arxiv.org/abs/1901.09192 .Arthur Gretton, Karsten M. Borgwardt, Malte J. Rasch, Bernhard Sch ¨olkopf, and Alexander J. Smola. A kernel two-sample test. In Journal of Machine Learning Research , volume 13, pp. 723–773, 2012. URL https://jmlr.org/papers/v13/gretton12a.html .Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q. Weinberger. On calibration of modern neural networks. Proceedings of the 34th International Conference on Machine Learning (ICML) , 2017. URL https://arxiv.org/abs/1706.04599 .Dan Hendrycks and Thomas Dietterich. Benchmarking neural network robustness to common corruptions and perturbations. In International Conference on Learning Representations (ICLR) ,2019. URL https://arxiv.org/abs/1903.12261 .9Published as a conference paper at CAO Workshop at ICLR 2026 David V. Hinkley. Inference about the change-point in a sequence of random variables. Biometrika , 57 (1):1–17, 1970. doi: 10.1093/biomet/57.1.1. URL https://doi.org/10.1093/biomet/ 57.1.1 .Matthias Kirchler, Shahryar Khorasani, Marius Kloft, and Christoph Lippert. Two-sample testing using deep learning, 2020. URL https://arxiv.org/abs/1910.06239 .James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A. Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, Demis Hassabis, Claudia Clopath, Dharshan Kumaran, and Raia Hadsell. Overcoming catastrophic forgetting in neural networks, 2017. URL https://doi.org/10.1073/pnas.1611835114 .Pang Wei Koh, Shiori Sagawa, Henrik Marklund, Sang Michael Xie, Marvin Zhang, Akshay Balsub-ramani, Weihua Hu, Michihiro Yasunaga, Richard Lanas Phillips, Irena Gao, Tony Lee, Etienne David, Ian Stavness, Wei Guo, Berton A. Earnshaw, Imran S. Haque, Sara Beery, Jure Leskovec, An-shul Kundaje, Emma Pierson, Sergey Levine, Chelsea Finn, and Percy Liang. Wilds: A benchmark of in-the-wild distribution shifts, 2021. URL https://arxiv.org/abs/2012.07421 .Balaji Lakshminarayanan, Alexander Pritzel, and Charles Blundell. Simple and scalable predictive uncertainty estimation using deep ensembles. In Advances in Neural Information Processing Systems (NeurIPS) , 2017. URL https://arxiv.org/abs/1612.01474 .Zhizhong Li and Derek Hoiem. Learning without forgetting. In European Conference on Computer Vision (ECCV) , pp. 614–629, 2016. doi: 10.1007/978-3-319-46493-0 37. URL https://doi. org/10.1007/978-3-319-46493-0_37 .Zachary C. Lipton, Yu-Xiang Wang, and Alex Smola. Detecting and correcting for label shift with black box predictors. arXiv preprint , 2018. URL https://arxiv.org/abs/1802.03916 .David Lopez-Paz and Maxime Oquab. Revisiting classifier two-sample tests. arXiv preprint , 2016. URL https://arxiv.org/abs/1610.06545 .David Lopez-Paz and Marc’Aurelio Ranzato. Gradient episodic memory for continual learning. In 
+
+Advances in Neural Information Processing Systems (NeurIPS) , 2017. URL https://arxiv. org/abs/1706.08840 .Margaret Mitchell, Simone Wu, Andrew Zaldivar, Parker Barnes, Lucy Vasserman, Ben Hutchinson, Elena Spitzer, Inioluwa Deborah Raji, and Timnit Gebru. Model cards for model reporting. In 
+
+Proceedings of the Conference on Fairness, Accountability, and Transparency (FAccT) , 2019. doi: 10.1145/3287560.3287596. URL https://arxiv.org/abs/1810.03993 .Akshay Naresh Modi, Chiu Yuen Koo, Chuan Yu Foo, Clemens Mewald, Denis M. Baylor, Eric Breck, Heng-Tze Cheng, Jarek Wilkiewicz, Levent Koc, Lukasz Lew, Martin A. Zinkevich, Martin Wicke, Mustafa Ispir, Neoklis Polyzotis, Noah Fiedel, Salem Elie Haykal, Steven Whang, Sudip Roy, Sukriti Ramesh, Vihan Jain, Xin Zhang, and Zakaria Haque. Tfx: A tensorflow-based production-scale machine learning platform. In KDD 2017 , 2017. E. S. Page. Continuous inspection schemes. In Biometrika , volume 41, pp. 100–115, 1954. doi: 10.1093/biomet/41.1-2.100. URL https://doi.org/10.1093/biomet/41.1-2.100 .Xingchao Peng, Qinxun Bai, Xide Xia, Zijun Huang, Kate Saenko, and Bo Wang. Moment matching for multi-source domain adaptation. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 1406–1415, 2019. URL https://arxiv.org/abs/1812. 01754 .Juan C. Perdomo, Tijana Zrnic, Celestine Mendler-D ¨unner, and Moritz Hardt. Performative prediction. In International Conference on Machine Learning , 2020. URL https://arxiv.org/abs/ 2002.06673 .Neoklis Polyzotis, Martin Zinkevich, Sudip Roy, Eric Breck, and Steven Whang. Data validation for machine learning. In A. Talwalkar, V. Smith, and M. Za-haria (eds.), Proceedings of Machine Learning and Systems , volume 1, pp. 334–347, 2019. URL https://proceedings.mlsys.org/paper_files/paper/2019/ file/928f1160e52192e3e0017fb63ab65391-Paper.pdf .10 Published as a conference paper at CAO Workshop at ICLR 2026 Joaqu ´ın Qui ˜nonero-Candela, Masashi Sugiyama, Anton Schwaighofer, and Neil D. Lawrence (eds.). Dataset Shift in Machine Learning . The MIT Press, 2008. doi: 10.7551/mitpress/ 9780262170055.001.0001. URL https://mitpress.mit.edu/9780262545877/ dataset-shift-in-machine-learning/ .Stephan Rabanser, Stephan G ¨unnemann, and Zachary C. Lipton. Failing loudly: An empirical study of methods for detecting dataset shift. In Advances in Neural Information Processing Systems ,2019. URL https://arxiv.org/abs/1810.11953 .Inioluwa Deborah Raji, Andrew Smart, Rebecca N. White, Margaret Mitchell, Timnit Gebru, Ben Hutchinson, Jamila Smith-Loud, Daniel Theron, and Parker Barnes. Closing the AI accountability gap: Defining an end-to-end framework for internal algorithmic auditing. In Proceedings of the 2020 Conference on Fairness, Accountability, and Transparency , 2020. URL https://arxiv. org/abs/2001.00973 .Sylvestre-Alvise Rebuffi, Alexander Kolesnikov, Georg Sperl, and Christoph H. Lampert. icarl: Incremental classifier and representation learning. In 2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 5533–5542, 2017. doi: 10.1109/CVPR.2017.587. Shiori Sagawa, Pang Wei Koh, Tatsunori B. Hashimoto, and Percy Liang. Distributionally ro-bust neural networks for group shifts: On the importance of regularization for worst-group generalization. In International Conference on Learning Representations (ICLR) , 2020. URL 
+
+https://arxiv.org/abs/1911.08731 .D. Sculley, Gary Holt, Daniel Golovin, Eugene Davydov, Todd Phillips, Dietmar Ebner, Vinay Chaud-hary, Michael Young, Jean-Francois Crespo, and Dan Dennison. Hidden technical debt in machine learning systems. In Advances in Neural Information Processing Systems (NeurIPS), Workshop on Software Engineering for Machine Learning , 2015. URL https://papers.nips.cc/ paper/5656-hidden-technical-debt-in-machine-learning-systems .Hidetoshi Shimodaira. Improving predictive inference under covariate shift by weighting the log-likelihood function. Journal of Statistical Planning and Inference , 90(2):227–244, 2000. doi: 10.1016/S0378-3758(00)00115-4. URL https://www.sciencedirect.com/science/ article/pii/S0378375800001154 .Yu Sun, Xiaolong Wang, Zhuang Liu, John Miller, Alexei A. Efros, and Moritz Hardt. Test-time training with self-supervision for generalization under distribution shifts. In International Conference on Machine Learning (ICML) , 2020. URL https://arxiv.org/abs/1909. 13231 .Alexey Tsymbal. The problem of concept drift: Definitions and related work, 2004. URL https://www.semanticscholar.org/paper/ The-problem-of-concept-drift%3A-definitions-and-work-Tsymbal/ 30eac73e9b482bc28b5b68cd585557de48d0618f .Vladimir Vovk, Alex Gammerman, and Glenn Shafer. Algorithmic Learning in a Random World .Springer, 2005. doi: 10.1007/b106715. URL https://doi.org/10.1007/b106715 .Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno Olshausen, and Trevor Darrell. Tent: Fully test-time adaptation by entropy minimization. In International Conference on Learning Representations (ICLR) , 2021. URL https://openreview.net/forum?id=uXl3bZLkr3c .Gerhard Widmer and Miroslav Kubat. Learning in the presence of concept drift and hidden contexts. 
+
+Machine Learning , 23(1):69–101, 1996. doi: 10.1007/BF00116900. URL https://link. springer.com/article/10.1007/BF00116900 .11 Published as a conference paper at CAO Workshop at ICLR 2026 
+
+## APPENDIX 
+
+## A PROBLEM SETUP AND OPERATING CONSTRAINTS 
+
+We consider a deployed learning system that processes a potentially non-stationary stream over a finite horizon t ∈ { 1, . . . , T }. At each time step t, the system receives an input xt ∈ X , produces an output (prediction or abstention), and may later receive the corresponding label yt ∈ Y . Distribution drift is captured by allowing the deployment distribution Dt governing (xt, y t) to change with time. A.1 STREAMING DATA WITH DELAYED SUPERVISION 
+
+We model delayed supervision with an observation time variable ot ∈ { t, t +1 , . . . }∪{∞} indicating when the label yt becomes available. The event ot = ∞ represents that yt is never observed. The set of labeled examples available by time t is 
+
+St = {(xi, y i) : 1 ≤ i ≤ t and oi ≤ t}. (27) In this definition, i indexes an earlier time step at which input xi was observed, the condition oi ≤ t
+
+indicates that its label yi has arrived by time t, and St is the only supervised data accessible for calibration, adaptation, and retraining decisions at time t. The evolving data-generating process is represented by a time-indexed distribution Dt for pairs (xt, y t), allowing temporal, covariate, label, concept, or subgroup shifts. A.2 PREDICTIVE MODEL AND OUTPUTS 
+
+The deployed predictor is parameterized by θ and outputs a categorical distribution: 
+
+pθ (y | x) = softmax  hθ (x). (28) Here hθ : X → R|Y| maps an input x to logits, softmax( ·) converts logits into class probabilities, 
+
+pθ (y | x) is the predicted probability assigned to label y ∈ Y , and θ denotes all model parameters. The system’s point prediction is 
+
+ˆyθ (x) = arg max  
+
+> y∈Y
+
+pθ (y | x), (29) where ˆyθ (x) is the most probable class under the predictive distribution. A.3 DRIFT EVIDENCE FROM UNLABELED MONITORING 
+
+To sense drift without requiring immediate labels, the system maintains two unlabeled buffers: a reference buffer Bref representing nominal conditions and a recent buffer Bt of size n containing the most recent inputs, 
+
+Bt = {xt−n+1 , . . . , x t}. (30) A suite of monitoring functions computes statistics comparing these buffers, producing an evidence vector 
+
+zt =  M1(Bt, Bref ), . . . , M m(Bt, Bref ) ∈ Rm. (31) In this equation, Mj (·, ·) denotes the j-th monitor, such as a representation discrepancy measure, a two-sample classifier score, or an uncertainty shift statistic. The vector zt aggregates heterogeneous drift signals into a fixed-dimensional summary that can be computed online and passed to the belief model and controller. A.4 INTERVENTIONS AND ACTION SPACE 
+
+At each time step t, the system selects an intervention at from a discrete action set A. Actions represent operational responses available in real deployments, including inexpensive adjustments (e.g., recalibration), medium-cost responses (e.g., test-time adaptation), and heavy-weight interven-tions (e.g., retraining or rollback). Table 2 defines each action precisely and assigns a normalized operational cost used throughout the paper. 12 Published as a conference paper at CAO Workshop at ICLR 2026 Table 2: Action space and normalized operational costs used by the controller. 
+
+Action Name Operational effect Cost (units) 
+
+A0 No-op Continue inference with current parameters θ and current output policy. 
+
+0.0
+
+A1 Recalibrate Update a lightweight calibrator using St; logits unchanged. 
+
+0.2
+
+A2 Test-time adapt Apply a small number of adaptation steps on Bt;update θ ← θ′.
+
+1.0
+
+A3 Query labels Request kt labels from recent inputs; add to St′
+
+when they arrive. 
+
+0.05 kt
+
+A4 Retrain Trigger retraining using St plus logged data; de-ploy updated θ.
+
+12 .0
+
+A5 Rollback Revert to a previously validated checkpoint θsafe . 1.5
+
+A6 Abstain/handoff Abstain on selected inputs and route to fallback (e.g., human review), reducing coverage. 
+
+0.3
+
+A.5 COST MODEL 
+
+We represent deployment burden with a nonnegative cost function c : A → R≥0. To reflect distinct operational constraints, we decompose cost into labeling, compute, and latency components: 
+
+c(at) = clabel (at) + ccomp (at) + clat (at). (32) In this equation, clabel (at) quantifies human annotation or review effort (relevant for A3 and po-tentially A6), ccomp (at) measures computational overhead (dominant for A2 and A4), and clat (at)
+
+captures latency or throughput degradation induced by the intervention. The cumulative operational cost over the deployment horizon is 
+
+Ctot =
+
+> T
+
+X
+
+> t=1
+
+c(at), (33) where c(at) is the per-step cost and Ctot summarizes the overall resource and process burden. A.6 SAFETY OBJECTIVE UNDER DRIFT 
+
+We evaluate predictive quality using a bounded loss function ℓ(ˆ y, y ) ∈ [0 , 1] , such as the zero-one loss for classification. The population risk at time t is 
+
+Rt = E(x,y )∼D t
+
+h
+
+ℓ ˆyθ (x), y i
+
+. (34) In this definition, Dt is the time-dependent deployment distribution, ˆyθ (x) is the model’s predicted label under parameters θ, and ℓ(·, ·) is the task loss. The primary safety requirement is to keep risk below a target threshold τ whenever the system produces an automated prediction: 
+
+Rt ≤ τ. (35) When the system can abstain and hand off uncertain cases, it uses an acceptance function st : X → {0, 1}, where st(x) = 1 indicates that the system predicts and st(x) = 0 indicates abstention. The selective risk and coverage are 
+
+Rsel  
+
+> t
+
+= E(x,y )∼D t
+
+h
+
+ℓ ˆyθ (x), y  st(x) = 1 
+
+i
+
+, (36) 
+
+κt = P(x,y )∼D t
+
+ st(x) = 1 . (37) In these equations, Rsel  
+
+> t
+
+measures error conditional on the system choosing to predict, and κt is the fraction of inputs receiving automated predictions. The safety requirement with abstention is 
+
+Rsel  
+
+> t
+
+≤ τ and κt ≥ κmin , (38) where κmin enforces a minimum coverage level, preventing degenerate solutions that satisfy safety by abstaining on nearly all inputs. 13 Published as a conference paper at CAO Workshop at ICLR 2026 A.7 EVALUATION METRICS 
+
+We evaluate monitoring-and-control methods using metrics that reflect both reliability and operational constraints. In controlled streaming evaluations, we denote by t0 the onset time of a drift event. Let 
+
+Alarm t ∈ { 0, 1} indicate whether the monitoring stack triggers an alarm at time t. The detection delay is 
+
+Tdet = min {t ≥ t0 : Alarm t = 1 } − t0. (39) Here Tdet is the number of time steps between drift onset and the first alarm, measuring how quickly the monitoring layer detects change. To measure how quickly the system returns to safe operation after drift, we define a deployed risk metric R⋆t that equals Rt when the system always predicts and equals Rsel  
+
+> t
+
+when abstention is enabled. The recovery time is 
+
+Trec = min {t ≥ t0 : R⋆t ≤ τ } − t0. (40) In this equation, Trec counts the time steps from drift onset until the deployed risk metric falls below the safety threshold τ .We quantify unsafe operation through the number of safety violations over the horizon: 
+
+V =
+
+> T
+
+X
+
+> t=1
+
+I(R⋆t > τ ) . (41) Here I(·) is an indicator function, and V counts the total number of time steps where deployed risk exceeds the target threshold. To assess subgroup robustness under drift, we assume a set of groups G, such as demographic groups, domains, or discovered clusters. The worst-group accuracy at time t is 
+
+Acc wg  
+
+> t
+
+= min  
+
+> g∈G
+
+P(x,y )∼D t
+
+ ˆyθ (x) = y g(x) = g. (42) In this definition, g(x) denotes the group membership of input x, the conditional probability measures accuracy within group g, and the minimum over G isolates the most adversely affected group at time 
+
+t. Alongside Tdet , Trec , and V , we report the cumulative operational cost Ctot from Eq. (8), yielding a joint view of reliability, responsiveness, and operational burden. 
+
+## B ALGORITHM 
+
+Algorithm 1 summarizes the complete online loop. The loop updates monitoring signals, drift-type belief, and the active risk certificate; it then selects an action under feasibility constraints, applies the action, and logs outcomes for auditing and later analysis. 
+
+## C EXPERIMENTS 
+
+We evaluate drift monitoring and response in a streaming setting where data arrive sequentially and the deployed system must decide when to recalibrate, adapt, request labels, retrain, roll back, or fall back (see Appendix E for more details). The stream is constructed by concatenating either time-ordered chunks (when timestamps exist) or environment-ordered chunks (when datasets are organized by domains). Let {E 1, . . . , EK } denote environments (e.g., hospitals in Camelyon17 or domains in DomainNet). The stream assigns each interval to one environment: 
+
+(xt, y t) ∼ D t, Dt = D(k) for t ∈ { Tk−1 + 1 , . . . , T k}. (43) In this equation, D(k) is the environment-specific distribution for Ek, Tk is the final time index of environment k, and T0 = 0 . This protocol produces realistic distribution transitions while preserving within-environment temporal coherence. To test robustness beyond discrete domain switches, we also use mixture-controlled drift schedules that interpolate between a nominal distribution Dref and a shifted distribution Dshift :
+
+Dt = (1 − αt) Dref + αt Dshift . (44) 14 Published as a conference paper at CAO Workshop at ICLR 2026 
+
+Algorithm 1. Drift-to-Action Control with Active Risk Certificate 
+
+Input: Reference buffer Bref , monitor window size n, certificate window size N , risk target τ , failure level 
+
+δ, labeling budget Blab , retrain cooldown ∆rt , rollback cooldown ∆rb , cost tradeoff λ, gain table 
+
+G(d, a )
+
+Output: Action sequence {at}Tt=1 and audit log L
+
+Initialize model parameters θ
+
+Initialize calibrator parameters η
+
+Initialize drift-type belief b0(d) for all d ∈ D with P 
+
+> d∈D
+
+b0(d) = 1 
+
+Initialize labeled set S0 ← ∅ and audit log L ← ∅ 
+
+Initialize last intervention times trt last ← −∞ and trb last ← −∞ 
+
+Initialize remaining labeling budget B ← Blab 
+
+for t ← 1 to T do 
+
+Receive input xt and update recent buffer Bt = {xt−n+1 , . . . , x t}
+
+Compute evidence vector zt =  M1(Bt, Bref ), . . . , M m(Bt, Bref )
+
+Update belief bt(d) = P(Dt = d | z1: t) for all d ∈ D 
+
+Construct certifiable window Wt = {t − d − N + 1 , . . . , t − d}
+
+Choose audit size nt ← QueryPolicy( zt, b t, U t−1(δ), B )
+
+Uniformly sample audit indices Qt ⊆ Wt with |Qt| = nt
+
+Jt ← Qt \ { i : ( xi, y i) ∈ S t−1}
+
+Reveal/request labels {yi : i ∈ Jt} and update budget B ← B − | Jt|
+
+Update St ← S t−1 ∪ { (xi, y i) : i ∈ Jt}
+
+Compute queried losses ℓi = ℓ(ˆ yθ (xi), y i) for all i ∈ Qt
+
+Compute empirical audited risk bRt = 1
+
+> |Qt|
+
+P 
+
+> i∈Qt
+
+ℓi
+
+Set δt = 6δπ2t2
+
+Compute certificate Ut(δ) = bRt + rad( |Qt|, δ t)
+
+if Ut(δ) > τ then 
+
+Set action at ← A6 // abstain/handoff 
+
+if t − trb last ≥ ∆rb then 
+
+Schedule rollback and update trb last ← t
+
+else if t − trt last ≥ ∆rt then 
+
+Schedule retraining and update trt last ← t
+
+else 
+
+Form feasible action set Afeas  
+
+> t
+
+⊆ A using cooldowns and remaining budget B
+
+foreach a ∈ A feas  
+
+> t
+
+do 
+
+Compute expected benefit ∆t(a) = P 
+
+> d∈D
+
+bt(d) G(d, a )
+
+Compute utility Ut(a) = ∆ t(a) − λ c (a)
+
+Choose action at ← arg max a∈A feas  
+
+> t
+
+Ut(a)
+
+Apply action at:
+
+if at = A1 then 
+
+Update calibrator η using St
+
+if at = A2 then 
+
+Perform test-time adaptation on recent inputs; update θ ← θ′
+
+if at = A4 then 
+
+Retrain model using St and logged data; deploy updated θ
+
+if at = A5 then 
+
+Rollback to checkpoint θsafe and associated calibrator 
+
+if at = A6 then 
+
+Abstain/handoff using policy st(x)
+
+Log (t, z t, b t, U t(δ), a t, c (at), k t) into L
+
+Here αt ∈ [0 , 1] is a time-varying drift intensity, with αt = 0 representing nominal conditions and 
+
+αt = 1 representing fully shifted conditions. We instantiate three drift patterns via αt. Sudden drift 15 Published as a conference paper at CAO Workshop at ICLR 2026 uses αt = I(t ≥ t0) where t0 is drift onset. Gradual drift uses a sigmoid ramp 
+
+αt = 11 + exp   − ρ (t − t0) , (45) where ρ > 0 controls the ramp speed. Recurring drift uses a periodic schedule 
+
+αt = 12
+
+
+
+1 + sin(2 πt/P )
+
+
+
+, (46) where P is the period length in time steps, producing repeated returns to nominal conditions and repeated drift episodes. Operational constraints are integrated directly into the evaluation. Each action at ∈ A incurs a normalized cost c(at) and heavy interventions are rate-limited by cooldowns. The total deployment burden is measured by 
+
+Ctot =
+
+> T
+
+X
+
+> t=1
+
+c(at), (47) where T is the stream length. We also simulate realistic annotation pipelines through label delay. If the controller requests the label for index i, the label becomes available after d steps: 
+
+oi = i + d, (48) where oi is the observation time at which yi arrives. This delay affects both calibration monitoring and risk certification, because losses can only be computed once labels are observed. Table 3 specifies the concrete action costs, prerequisites, and cooldowns used by all methods in the protocol, and it is referenced by the controller when enforcing feasibility constraints. 
+
+## D FULL THEORETICAL GUARANTEE                                  
+
+> Table 3: Streaming protocol action costs and prerequisites. Normalized costs and cooldowns. Act. Name Prereq./Effect Cooldown Cost
+> A0No-op Keep θ.–0.0
+> A1Recalib. Update from
+> St.–0.2
+> A2TTA Adapt on Bt.–1.0
+> A3Query Request kt;delay d.–0.05 kt
+> A4Retrain Retrain + de-ploy.
+> ∆rt 12 .0
+> A5Rollback Restore θsafe .∆rb 1.5
+> A6Abstain Handoff; less coverage. –0.3
+
+This appendix provides a full, self-contained guarantee for the active risk certificate used in Section 4. We first state the probabilistic model under which the certificate is valid, then derive an anytime-valid upper confidence sequence for the mean of bounded losses under adaptive (optional-stopping) label querying, and finally extend the result to selective risk when abstention is enabled. D.1 WINDOWED RISK , RANDOM SAMPLING , AND FILTRATION 
+
+Fix a time t and a window length N ∈ N. The current deployment regime is represented by the index set 
+
+Wt = {t − N + 1 , . . . , t }. (49) In this equation, t is the current time index and Wt contains the most recent N indices. Each index i ∈ Wt corresponds to an example (xi, y i) and an associated bounded loss 
+
+Lt,i = ℓ ˆyθ (xi), y i
+
+, 0 ≤ Lt,i ≤ 1. (50) In this equation, ℓ(·, ·) is the task loss, ˆyθ (xi) is the model prediction at index i, and the bound [0 , 1] 
+
+holds for standard classification losses such as I(ˆ yθ (xi)̸ = yi).The windowed (finite-population) risk is the mean loss over the current window: 
+
+Rt = 1
+
+N
+
+X
+
+> i∈Wt
+
+Lt,i . (51) In this equation, Rt is the quantity we want to upper bound online. 16 Published as a conference paper at CAO Workshop at ICLR 2026 The certificate queries nt labels by sampling indices uniformly at random from Wt. Let 
+
+It, 1, I t, 2, . . . , I t,n t ∼ Unif( Wt), (52) where Unif( Wt) denotes the uniform distribution over the set Wt. The sampling may be done with replacement; sampling without replacement is discussed in Section D.6. The observed queried losses are 
+
+Xt,j = Lt,I t,j , j ∈ { 1, . . . , n t}. (53) In this equation, Xt,j is the loss of the j-th randomly sampled index within the window at time t.The certificate uses the empirical mean of the queried losses, 
+
+bRt,n = 1
+
+n
+
+> n
+
+X
+
+> j=1
+
+Xt,j , (54) where n is the number of queried labels actually used in the estimate. To capture adaptive label querying, we define a filtration that represents all information available after 
+
+n queried labels in window t:
+
+Ft,n = σ(z1: t, I t, 1, X t, 1, . . . , I t,n , X t,n ) . (55) In this equation, z1: t is the monitor history and σ(·) denotes the σ-algebra generated by the listed random variables. The query count nt is allowed to be an Ft,n -adapted (data-dependent) stopping rule, meaning nt can depend on past observed evidence and queried labels. The key validity condition used throughout this appendix is the following. 
+
+Condition A (Random auditing within the current window). At each time t, the queried indices 
+
+It, 1, . . . , I t,n t are sampled uniformly from Wt, and the sampling mechanism is independent of the unobserved labels given the already observed history. This condition allows the certificate to treat the queried losses as an unbiased sample from the window mean risk Rt, even when the decision to query more labels is adaptive. D.2 A TIME -UNIFORM CONFIDENCE SEQUENCE FOR BOUNDED MEANS 
+
+We derive an anytime-valid upper confidence sequence for a bounded mean under adaptive stopping. The statement is formulated for a generic bounded sequence and then specialized to the windowed risk setting. Let X1, X 2, . . . be random variables satisfying 
+
+0 ≤ Xj ≤ 1, E[Xj ] = μ, and Xj are i.i.d. . (56) In this equation, μ is the unknown mean to be bounded. Define the sample mean 
+
+bμn = 1
+
+n
+
+> n
+
+X
+
+> j=1
+
+Xj . (57) In this equation, n is the number of samples and bμn is their empirical average. We use Hoeffding’s inequality at each fixed n:
+
+P(μ ≥ bμn + ϵ) ≤ exp  −2nϵ 2 . (58) In this inequality, ϵ > 0 is a deviation level and the bound relies only on the fact that Xj ∈ [0 , 1] .To make the bound anytime-valid over all n, we allocate failure probability across time using a summable schedule. Let 
+
+δn = 6δπ2n2 , δ ∈ (0 , 1) . (59) In this equation, δ is the target overall failure probability and δn is the portion allocated to sample size n. The constant is chosen so that the sum is bounded: 
+
+> ∞
+
+X
+
+> n=1
+
+δn = 6δπ2
+
+> ∞
+
+X
+
+> n=1
+
+1
+
+n2 = δ. (60) 17 Published as a conference paper at CAO Workshop at ICLR 2026 In this equation, P 
+
+> n≥1
+
+1/n 2 = π2/6 is the Basel identity, ensuring the total allocated failure probability is exactly δ.Define the confidence radius 
+
+rad( n, δ ) = 
+
+s
+
+12n log 
+
+ 1
+
+δn
+
+
+
+=
+
+s
+
+12n log 
+
+ π2n2
+
+6δ
+
+
+
+. (61) In this equation, n is the sample size and rad( n, δ ) shrinks as n increases. 
+
+Lemma A.1 (Anytime-valid upper confidence sequence via stitching). For any δ ∈ (0 , 1) and the radius rad( n, δ ) defined above, it holds that 
+
+P(∀n ≥ 1 : μ ≤ bμn + rad( n, δ )) ≥ 1 − δ. (62) 
+
+In this probability statement, the event inside holds simultaneously for all sample sizes n, which implies validity under optional stopping. Proof. For any fixed n, set ϵ = rad( n, δ ) in Hoeffding’s inequality to obtain 
+
+P(μ ≥ bμn + rad( n, δ )) ≤ exp  −2n rad( n, δ )2 = exp 
+
+
+
+− log 
+
+ 1
+
+δn
+
+ 
+
+= δn. (63) In this equation chain, the first step applies Hoeffding, the second step substitutes the definition of 
+
+rad( n, δ ), and the last step simplifies the exponential. Define the bad event at time n by 
+
+En = {μ ≥ bμn + rad( n, δ )} . (64) Then, by the union bound, 
+
+P(∃n ≥ 1 : En) ≤
+
+> ∞
+
+X
+
+> n=1
+
+P(En) ≤
+
+> ∞
+
+X
+
+> n=1
+
+δn = δ. (65) In this bound, the first inequality uses the union bound, the second uses P(En) ≤ δn, and the last uses the summability property shown earlier. Taking complements yields the claim. □
+
+A crucial consequence of Lemma A.1 is optional-stopping validity. Let bn be any (possibly random) stopping time that depends on the observed data, such as an adaptive query rule that stops once the bound is sufficiently tight. Since the event in Lemma A.1 holds for all n simultaneously, it also holds at n = bn:
+
+P(μ ≤ bμbn + rad( bn, δ )) ≥ 1 − δ. (66) In this equation, bn is data-dependent, yet the bound remains valid because the confidence sequence is time-uniform. D.3 APPLYING THE CONFIDENCE SEQUENCE TO WINDOWED RISK CERTIFICATES 
+
+We now map the generic result to the windowed risk certificate at time t. Under Condition A, the queried losses Xt, 1, . . . , X t,n satisfy 
+
+0 ≤ Xt,j ≤ 1, E[Xt,j | Wt] = Rt, (67) where Rt is the window mean risk. The empirical risk based on n queried labels is 
+
+bRt,n = 1
+
+n
+
+> n
+
+X
+
+> j=1
+
+Xt,j . (68) In this equation, bRt,n is the empirical mean of queried losses within the window at time t.Define the per-time certificate using the confidence radius: 
+
+Ut,n (δt) = bRt,n + rad( n, δ t), (69) 18 Published as a conference paper at CAO Workshop at ICLR 2026 where δt ∈ (0 , 1) is the failure probability budget assigned to time t.To obtain a guarantee that holds simultaneously over all times t ∈ { 1, . . . , T }, we allocate the overall failure probability δ across time. A convenient summable choice is 
+
+δt = 6δπ2t2 , t ≥ 1, (70) which satisfies P 
+
+> t≥1
+
+δt = δ.Let nt be the (possibly adaptive) number of labels queried in window t, and define the deployed certificate as 
+
+Ut(δ) = bRt,n t + rad( nt, δ t). (71) In this equation, Ut(δ) is computed from the queried sample mean bRt,n t and the anytime-valid radius evaluated at the random sample size nt.
+
+Theorem A.2 (Anytime-valid window risk certificate under adaptive querying). Assume Condi-tion A holds for each time t, and the loss is bounded as Lt,i ∈ [0 , 1] . Then with probability at least 
+
+1 − δ,
+
+∀t ≥ 1 : Rt ≤ Ut(δ). (72) 
+
+In this inequality, the bound holds simultaneously for all times t and remains valid even when nt is chosen adaptively from past evidence and previously observed labels. Proof. Fix a time t. Conditional on the window Wt, Lemma A.1 applies to the queried losses in that window, so 
+
+P
+
+
+
+∀n ≥ 1 : Rt ≤ bRt,n + rad( n, δ t) Wt
+
+
+
+≥ 1 − δt. (73) Since the bound holds for all n, it holds at n = nt even if nt is chosen adaptively: 
+
+P
+
+
+
+Rt ≤ bRt,n t + rad( nt, δ t)
+
+
+
+≥ 1 − δt. (74) Define the bad event at time t by 
+
+Bt = {Rt > U t(δ)} . (75) Then P(Bt) ≤ δt, and applying the union bound across all t ≥ 1 yields 
+
+P(∃t ≥ 1 : Bt) ≤
+
+> ∞
+
+X
+
+> t=1
+
+P(Bt) ≤
+
+> ∞
+
+X
+
+> t=1
+
+δt = δ. (76) Taking complements gives P(∀t : Rt ≤ Ut(δ)) ≥ 1 − δ. □
+
+This theorem formalizes the core certificate guarantee used by the controller: even with delayed supervision and adaptive query schedules, as long as auditing samples are uniformly random within the current window, the bound is valid simultaneously over time. D.4 SAFETY GATING GUARANTEE FOR NON -ABSTAINING OPERATION 
+
+We now formalize the safety gating claim used in Theorem 1 of the main text. Suppose the system follows the rule that it only issues predictions when the certificate is below the risk threshold τ . Let 
+
+Pred t ∈ { 0, 1} denote whether the system actually produces an automated prediction at time t, with 
+
+Pred t = I(Ut(δ) ≤ τ ) . (77) In this equation, Pred t = 1 means the system predicts and Pred t = 0 means it activates fallback (abstain/handoff). 
+
+Corollary A.3 (No unsafe prediction without certificate violation). Under the assumptions of Theorem A.2, with probability at least 1 − δ,
+
+∀t ≥ 1 : Pred t = 1 ⇒ Rt ≤ τ. (78) In this implication, the system cannot be in a regime where it both predicts and the true window risk exceeds τ unless the certificate fails (an event of probability at most δ). 
+
+Proof. On the event {Rt ≤ Ut(δ) for all t} from Theorem A.2, if Pred t = 1 then Ut(δ) ≤ τ , and therefore 
+
+Rt ≤ Ut(δ) ≤ τ. (79) This holds for all t simultaneously on the same high-probability event. □
+
+19 Published as a conference paper at CAO Workshop at ICLR 2026 D.5 EXTENSION : CERTIFIED SELECTIVE RISK UNDER ABSTENTION 
+
+When abstention is enabled, the deployed performance metric is typically the selective risk, which conditions on the system choosing to predict. Let st(x) ∈ { 0, 1} be the acceptance function at time t,where st(x) = 1 indicates that the system predicts and st(x) = 0 indicates abstention. For an index 
+
+i ∈ Wt, define 
+
+St,i = st(xi), Lt,i = ℓ ˆyθ (xi), y i
+
+. (80) In these equations, St,i is the accept indicator and Lt,i is the loss. The window coverage is the mean accept rate 
+
+κt = 1
+
+N
+
+X
+
+> i∈Wt
+
+St,i . (81) In this equation, κt is the fraction of window points on which the system predicts. The window selective risk is the average loss conditional on acceptance: 
+
+Rsel  
+
+> t
+
+=
+
+P 
+
+> i∈Wt
+
+Lt,i St,i 
+
+P 
+
+> i∈Wt
+
+St,i 
+
+= mt
+
+κt
+
+, (82) where we define the numerator mean 
+
+mt = 1
+
+N
+
+X
+
+> i∈Wt
+
+Lt,i St,i . (83) In these equations, mt is the mean accepted loss mass and κt is the mean acceptance rate, so the ratio equals the conditional mean loss. Under random sampling within the window, each queried index It,j yields the pair 
+
+Yt,j = Lt,I t,j St,I t,j , At,j = St,I t,j . (84) In these equations, Yt,j is the product of loss and acceptance, and At,j is the acceptance indicator. Both satisfy bounds 0 ≤ Yt,j ≤ 1 and 0 ≤ At,j ≤ 1.Define the empirical means from n queried labels: 
+
+bmt,n = 1
+
+n
+
+> n
+
+X
+
+> j=1
+
+Yt,j , bκt,n = 1
+
+n
+
+> n
+
+X
+
+> j=1
+
+At,j . (85) In these equations, bmt,n estimates mt and bκt,n estimates κt.We build an anytime-valid upper bound for mt and a lower bound for κt. Using the same confidence radius function rad( n, ·), define 
+
+U mt,n (δmt ) = bmt,n + rad( n, δ mt ), Lκt,n (δκt ) = bκt,n − rad( n, δ κt ). (86) In these equations, U mt,n is an upper bound on mt and Lκt,n is a lower bound on κt.The selective-risk certificate is then formed as an upper bound on the ratio: 
+
+U sel  
+
+> t,n
+
+= U mt,n (δmt )max  Lκt,n (δκt ), κ min 
+
+ . (87) In this equation, κmin > 0 is the minimum coverage requirement used in the main text, and the 
+
+max( ·, κ min ) term prevents division by a value that is too small. To allocate overall failure probability, we choose summable schedules δmt and δκt satisfying 
+
+X
+
+> t≥1
+
+δmt + X
+
+> t≥1
+
+δκt ≤ δ, (88) for example by setting δmt = δκt = 3 δ/ (π2t2).20 Published as a conference paper at CAO Workshop at ICLR 2026 
+
+Theorem A.4 (Anytime-valid selective-risk certificate). Assume Condition A holds and Lt,i ∈
+
+[0 , 1] . With probability at least 1 − δ, for all t ≥ 1,
+
+mt ≤ U mt,n t (δmt ) and κt ≥ Lκt,n t (δκt ), (89) and consequently, whenever κt ≥ κmin ,
+
+Rsel  
+
+> t
+
+= mt
+
+κt
+
+≤ U mt,n t (δmt )max  Lκt,n t (δκt ), κ min 
+
+ = U sel  
+
+> t,n t
+
+. (90) In these inequalities, U sel  
+
+> t,n t
+
+is an anytime-valid upper bound on selective risk. 
+
+Proof. The variables {Yt,j }j≥1 are bounded in [0 , 1] with mean mt, and the variables {At,j }j≥1
+
+are bounded in [0 , 1] with mean κt. Applying Theorem A.2 separately to each sequence with their respective failure allocations yields the simultaneous bounds in Eq. (48). On that same event, dividing the upper numerator bound by the lower denominator bound gives Eq. (27), and the max( ·, κ min )
+
+preserves validity under the coverage constraint. □
+
+This extension supports the main-text constraint Rsel  
+
+> t
+
+≤ τ with κt ≥ κmin by providing a directly certifiable quantity that can be used for gating. D.6 SAMPLING WITHOUT REPLACEMENT (FINITE -POPULATION CORRECTION )When the controller samples indices without replacement from the window Wt, the queried losses form a simple random sample from a finite population. In that case, concentration can be tightened via a finite-population correction. For a fixed n ≤ N , Serfling’s inequality implies 
+
+P
+
+
+
+Rt ≥ bRt,n + ϵ
+
+
+
+≤ exp 
+
+
+
+− 2nϵ 2
+
+1 − n−1
+
+> N
+
+
+
+. (91) In this inequality, the factor 1 − n−1 
+
+> N
+
+reduces variance when a nontrivial fraction of the window is audited. An anytime-valid sequence can be obtained by replacing Hoeffding’s fixed-n bound in Section D.2 and using the same stitching schedule δn, yielding a radius 
+
+rad fp (n, δ ) = 
+
+s
+
+1 − n − 1
+
+N
+
+ 12n log 
+
+ π2n2
+
+6δ
+
+
+
+. (92) In this equation, rad fp is smaller than rad when n is not negligible relative to N , and it reduces to the Hoeffding-style radius when N is large. D.7 DISCUSSION OF VALIDITY CONDITIONS UNDER LABEL DELAY 
+
+Label delay affects when a queried loss becomes observable, but not which indices are sampled. The certificate remains valid as long as the sampling rule that selects It,j is uniform over Wt and does not depend on unobserved labels. Formally, if the request times are Ft,j -adapted and labels arrive later, the bound applies to the eventual realized losses Xt,j because Lemma A.1 controls deviations for all sample sizes n simultaneously. The practical effect of delay is that the controller may operate with smaller effective nt until requested labels arrive, which enlarges rad( nt, δ t) and therefore makes the gating rule more conservative during periods of missing supervision. 
+
+## E IMPLEMENTATION DETAILS 
+
+This appendix provides implementation-level details for the sensing layer, belief model training, and controller configuration. All components are designed to be lightweight and reproducible, and each definition here corresponds directly to quantities used in the main text. E.1 MONITORING SIGNALS AND EVIDENCE VECTOR 
+
+At each time step t, the sensing layer compares a recent unlabeled buffer Bt = {xt−n+1 , . . . , x t} to a reference buffer Bref , and computes monitors in a representation space. Let gθ : X → Rp be the 21 Published as a conference paper at CAO Workshop at ICLR 2026 Table 4: Baseline configurations used in all streaming experiments. We report the fixed hyperpa-rameters that fully specify each baseline policy under the common action set and costs. 
+
+Baseline Configuration Alarm-only Alarm when ∥zt∥2 > θ alarm with θalarm = 2 .5; no actions beyond logging. Adapt-always Apply A2 every step; 1 gradient step per batch; learning rate 10 −4.Retrain-on-schedule Trigger A4 every Prt = 1200 steps, respecting cooldown ∆rt .Selective prediction only Predict if max y pθ (y | x) ≥ θsel with θsel = 0 .6; otherwise abstain ( A6). Controller (no cert.) Same as ours but remove gating: replace Ut(δ) > τ branch by normal utility maximization. 
+
+embedding function induced by the deployed network (typically the penultimate layer). For each input x, the embedding is 
+
+r = gθ (x), r ∈ Rp. (93) In this equation, x is the input, θ are current model parameters, and r is the representation used by the monitors. We define the embedding sets 
+
+Rt = {gθ (x) : x ∈ B t}, Rref = {gθ (x) : x ∈ B ref }. (94) In these equations, Rt contains recent embeddings and Rref contains reference embeddings. E.1.1 MMD MONITOR IN EMBEDDING SPACE 
+
+We use a kernel Maximum Mean Discrepancy (MMD) statistic as a representation-shift monitor. Let 
+
+k : Rp × Rp → R be a positive definite kernel, and let {ri}ni=1 ⊂ R t and {r′ 
+
+> j
+
+}nref  
+
+> j=1
+
+⊂ R ref . The unbiased estimator of MMD 2 is 
+
+\MMD 2 
+
+> t
+
+= 1
+
+n(n − 1) 
+
+X
+
+> i̸=i′
+
+k(ri, r i′ ) + 1
+
+nref (nref − 1) 
+
+X 
+
+> j̸=j′
+
+k(r′ 
+
+> j
+
+, r ′ 
+
+> j′
+
+) − 2
+
+n n ref 
+
+> n
+
+X
+
+> i=1
+> nref
+
+X
+
+> j=1
+
+k(ri, r ′ 
+
+> j
+
+).
+
+(95) In this equation, the first term measures within-recent similarity, the second term measures within-reference similarity, and the third term measures cross similarity; the statistic increases when the two embedding distributions differ. We use an RBF kernel 
+
+k(u, v ) = exp 
+
+
+
+− ∥u − v∥22
+
+2σ2
+
+
+
+, (96) where σ > 0 is the kernel bandwidth. We set σ using the median heuristic on a pooled batch of embeddings from Rref ∪ R t:
+
+σ2 = median 
+
+
+
+{∥ u − v∥22 : u, v in a pooled sample }
+
+
+
+. (97) In this equation, the median is taken over pairwise squared distances and yields a robust bandwidth for monitoring. E.1.2 TWO -SAMPLE DISCRIMINATOR MONITOR 
+
+To complement kernel testing, we train a lightweight discriminator that predicts whether an embedding comes from the reference or recent window. We form a labeled dataset 
+
+Ddisc  
+
+> t
+
+= {(r, 0) : r ∈ R ref } ∪ { (r, 1) : r ∈ R t}. (98) In this equation, label 0 denotes reference and label 1 denotes recent. Let hψ : Rp → (0 , 1) be a discriminator (logistic regression or a 2-layer MLP). We fit ψ by minimizing cross-entropy 
+
+Ldisc (ψ) = − 1
+
+|D disc  
+
+> t
+
+|
+
+X
+
+> (r,y )∈D disc
+> t
+
+
+
+y log hψ (r) + (1 − y) log(1 − hψ (r)) 
+
+
+
+. (99) 22 Published as a conference paper at CAO Workshop at ICLR 2026 In this equation, hψ (r) is the predicted probability that r came from the recent window. The discriminator monitor is the held-out AUC: 
+
+AUC t = AUC( {hψ (r)}, {y}) , (100) where AUC( ·, ·) is the area under the ROC curve computed on a validation split of Ddisc  
+
+> t
+
+. Values near 0.5 indicate no detectable shift; larger values indicate separable distributions. E.1.3 UNCERTAINTY SHIFT MONITOR 
+
+We compute predictive entropy for each input using the deployed model probabilities pθ (y | x):
+
+Hθ (x) = − X
+
+> y∈Y
+
+pθ (y | x) log pθ (y | x). (101) In this equation, Y is the label set, and Hθ (x) is larger when predictions are less confident. We define the window-average entropy shift 
+
+∆Ht = 1
+
+|B t|
+
+X
+
+> x∈B t
+
+Hθ (x) − 1
+
+|B ref |
+
+X
+
+> x∈B ref
+
+Hθ (x). (102) In this equation, ∆Ht > 0 indicates an increase in uncertainty relative to nominal conditions. E.1.4 CALIBRATION DRIFT MONITOR WITH DELAYED LABELS 
+
+When labels are available (after delay), we compute a streaming Expected Calibration Error (ECE) proxy on the labeled set St. Let qθ (x) = max y pθ (y | x) be confidence, and let {Ib}Bb=1 be confidence bins. Define the bin-level statistics 
+
+conf b(t) = 1
+
+|S t,b |
+
+X
+
+> (x,y )∈S t,b
+
+qθ (x), acc b(t) = 1
+
+|S t,b |
+
+X
+
+> (x,y )∈S t,b
+
+I(ˆ yθ (x) = y) , (103) where 
+
+St,b = {(x, y ) ∈ S t : qθ (x) ∈ Ib}. (104) In these equations, St,b is the set of labeled points whose confidence falls into bin b, conf b(t) is their mean confidence, and acc b(t) is their empirical accuracy. The ECE proxy is 
+
+ECE t =
+
+> B
+
+X
+
+> b=1
+
+|S t,b ||S t| acc b(t) − conf b(t) . (105) In this equation, the term inside the absolute value measures miscalibration in each bin, and the weights reflect bin mass. We use the difference to a reference value ECE ref computed on nominal labeled data: 
+
+∆ECE t = ECE t − ECE ref . (106) In this equation, ∆ECE t > 0 indicates worsened calibration relative to nominal conditions. E.1.5 SLICE DRIFT MONITOR 
+
+When a discrete attribute g(x) ∈ G is available, we compute monitors per group: 
+
+\MMD 2 
+
+> t,g
+
+= \MMD 2
+
+(Rt,g , Rref ,g ) , ∆Ht,g = Ht,g − Href ,g , (107) where Rt,g = {gθ (x) : x ∈ B t, g (x) = g} and similarly for Rref ,g . When no attribute is available, we cluster embeddings using k-means and treat cluster IDs as proxy slices. We aggregate slice evidence using the maximum across groups: 
+
+zslice  
+
+> t
+
+= max 
+
+> g∈G
+
+\MMD 2 
+
+> t,g
+
+. (108) In this equation, zslice  
+
+> t
+
+increases when at least one slice experiences a strong shift, even if the global distribution is relatively stable. 23 Published as a conference paper at CAO Workshop at ICLR 2026 E.1.6 FINAL EVIDENCE VECTOR 
+
+The deployed evidence vector concatenates the monitors: 
+
+zt =  \MMD 2 
+
+> t
+
+, AUC t, ∆Ht, ∆ECE t, z slice 
+
+> t
+
+⊤ ∈ Rm. (109) In this equation, m is the number of monitors used. All components are standardized online using reference-window mean and variance: 
+
+ezt,j = zt,j − μref 
+
+> j
+
+σref  
+
+> j
+
++ ϵ , (110) where μref  
+
+> j
+
+and σref  
+
+> j
+
+are computed on Bref and ϵ prevents division by zero. E.2 BELIEF MODEL TRAINING VIA SYNTHETIC DRIFT EPISODES 
+
+The belief model estimates bt(d) = P(Dt = d | z1: t) for d ∈ { none , covariate , concept , subgroup }.We learn the evidence likelihoods p(z | d) and (optionally) the transition matrix T using synthetic drift episodes generated from the base dataset. E.2.1 EPISODE STRUCTURE 
+
+An episode is a stream of length L with one drift onset at t0 and a drift intensity schedule αt ∈ [0 , 1] .For each time step, 
+
+(xt, y t) ∼ (1 − αt) Dref + αt Dshift . (111) In this equation, Dref is the nominal distribution and Dshift is a constructed shifted distribution. We generate three patterns: 
+
+αt = I(t ≥ t0), (112) 
+
+αt = 11 + exp( −ρ(t − t0)) , (113) 
+
+αt = 12
+
+
+
+1 + sin(2 πt/P )
+
+
+
+, (114) where t0 is drift onset, ρ is the gradual-drift slope, and P is the period for recurring drift. E.2.2 COVARIATE DRIFT CONSTRUCTION 
+
+Covariate drift changes p(x) while holding p(y | x) approximately stable. For vision tasks, we apply transformations Tcov such as corruption severity, style shifts, blur/noise, color jitter, or background changes: 
+
+xshift = Tcov (x; αt), yshift = y. (115) In this equation, Tcov (·; αt) is a drift-intensity-controlled transformation and labels remain unchanged. For datasets with discrete domains (e.g., DomainNet), we define Dshift by swapping the domain environment while preserving the same label space. E.2.3 CONCEPT DRIFT CONSTRUCTION 
+
+Concept drift changes p(y | x). We implement a class-conditional label remapping that varies over time. Let πt be a permutation over classes, and define 
+
+yshift = πt(y), xshift = x. (116) In this equation, x is unchanged but the mapping from inputs to labels is altered. To model gradual concept drift, we mix remapped and original labels: 
+
+yt =
+
+y, with probability 1 − αt,π(y), with probability αt, (117) where αt follows one of the schedules above. This produces a controlled change in class-conditional structure and calibration behavior. 24 Published as a conference paper at CAO Workshop at ICLR 2026 E.2.4 SUBGROUP DRIFT CONSTRUCTION 
+
+Subgroup drift changes behavior only for a subset. Let g(x) ∈ { 0, 1} denote membership in a drifted slice, with P(g(x) = 1) = ρg under nominal conditions. We apply a covariate or concept transformation only to the subgroup: 
+
+xshift =
+
+Tsub (x), g(x) = 1 ,x, g(x) = 0 , (118) and optionally 
+
+yshift =
+
+π(y), g(x) = 1 ,y, g(x) = 0 . (119) In these equations, only the subgroup experiences the shift, enabling training of slice-aware monitors. E.2.5 FITTING LIKELIHOODS AND TRANSITIONS 
+
+For each synthetic episode, we compute monitor vectors zt and record the true drift type label Dt.We fit a multinomial likelihood model with diagonal covariance: 
+
+p(z | D = d) = N  z; μd, diag( σ2
+
+> d
+
+) , (120) where μd and σ2 
+
+> d
+
+are estimated by maximum likelihood over training samples for drift type d.We estimate the transition matrix from episode counts: 
+
+Td′d =
+
+P
+
+> episodes
+
+P 
+
+> t
+
+I(Dt−1 = d′, D t = d)
+
+P
+
+> episodes
+
+P 
+
+> t
+
+I(Dt−1 = d′) . (121) In this equation, the numerator counts transitions from d′ to d, and the denominator normalizes by the total transitions out of d′.
+
+Discriminative evidence model and its integration with the filter. The Bayesian update requires an evidence likelihood p(zt | Dt = d). Rather than fitting a fully generative density in Rm, we fit a discriminative model qϕ(d | zt) via multinomial logistic regression on synthetic drift data. Concretely, 
+
+qϕ(d | z) = exp( w⊤ 
+
+> d
+
+z + bd)
+
+P 
+
+> d′∈D
+
+exp( w⊤ 
+
+> d′
+
+z + bd′ ) , (122) where wd ∈ Rm and bd ∈ R are learned parameters and m is the number of monitors. We use 
+
+qϕ(d | zt) as a proxy emission potential in the filtering step: 
+
+ψt(d) = ( qϕ(d | zt)) β , (123) where β > 0 is a temperature that controls evidence sharpness (we set β = 1 in all experiments). The belief update becomes 
+
+˜bt(d) = X
+
+> d′∈D
+
+Td′d bt−1(d′), bt(d) = ψt(d) ˜bt(d)
+
+P 
+
+> d′′ ∈D
+
+ψt(d′′ ) ˜bt(d′′ ) . (124) In Eq. equation 124, ˜bt(d) is the predicted belief under the transition matrix T , and ψt(d) plays the same role as the likelihood p(zt | Dt = d) up to a zt-dependent normalization constant. Because the update renormalizes over d, any constant factor shared across drift types cancels, making the discriminative potential ψt(d) sufficient for reproducible filtering. E.3 SYNTHETIC DRIFT GENERATION FOR BELIEF TRAINING AND GAIN CALIBRATION 
+
+We generate synthetic drift episodes by applying controlled transformations to nominal streams to induce each drift type d ∈ { covariate , concept , subgroup }. Each episode consists of a pre-drift segment drawn from the nominal environment and a post-drift segment modified by a transformation. We generate M = 200 episodes per dataset, balanced across drift types and drift intensities. 25 Published as a conference paper at CAO Workshop at ICLR 2026 
+
+Camelyon17 (histopathology). Covariate drift applies stain and scanner perturbations using (i) color jitter (brightness/contrast/saturation in ±0.2), (ii) Gaussian blur with σ ∈ [0 .5, 1.2] , and (iii) H&E stain normalization perturbation (random perturbation of stain concentration vectors). Concept drift is induced by label noise localized to the drift segment: we flip labels with probability p ∈ { 0.10 , 0.20 }
+
+to emulate changing annotation criteria. Subgroup drift targets a minority slice defined by low-tissue-content patches; only that slice receives severe stain perturbations (same operators but doubled magnitude). 
+
+DomainNet (multi-domain objects). Covariate drift is instantiated by switching input style operators within a domain: random JPEG compression (quality in [20 , 50] ), random grayscale with prob. 0.3, and edge enhancement. Concept drift is induced by remapping a subset of classes: we permute labels within a semantically related superclass group (e.g., within vehicle or instrument ) using a fixed permutation π applied only after drift onset. Subgroup drift targets a minority cluster discovered by k-means in embedding space; only that cluster is transformed into a different style via strong edge-only rendering. 
+
+SyntheticDrift-CIFAR. Covariate drift uses CIFAR-C corruption types (e.g., blur, noise, brightness) with severity ∈ { 3, 5}. Concept drift uses a class-conditional permutation π applied gradually by αt.Subgroup drift applies the corruption only to a minority slice (10%) defined by a fixed set of classes or a cluster in embedding space. E.4 DATASET -SPECIFIC SYNTHETIC DRIFT TRANSFORMATIONS 
+
+Training the belief model and calibrating the gain table require synthetic drift episodes with known drift-type labels. This section specifies the exact transformations used for each benchmark, including the covariate transform Tcov , subgroup transform Tsub , and the concept permutation schedule πt.E.4.1 GENERAL EPISODE CONSTRUCTION 
+
+Each synthetic episode has length L and a drift onset time t0. We sample a drift type d ∈{covariate , concept , subgroup } uniformly and generate a time-varying drift intensity αt ∈ [0 , 1] 
+
+using the schedules in Eqs. (42)–(44). For each time step t, we draw a base example (xt, y t) from the nominal stream distribution and apply a drift operator that depends on d.E.4.2 COVARIATE DRIFT : Tcov 
+
+For covariate drift, we transform inputs only: 
+
+x′ 
+
+> t
+
+= Tcov (xt; αt), y′ 
+
+> t
+
+= yt. (125) Here αt controls drift intensity. We specify Tcov per dataset below. 
+
+Camelyon17 (WILDS). Camelyon17 inputs are histopathology patches. We use a stain-style covariate transform implemented as a convex combination between the original image and a fixed stain-perturbed target style: 
+
+Tcov (x; α) = (1 − α) x + α StainAug( x; κstain ), (126) where StainAug( ·; κstain ) applies HED color-space perturbations and gamma/brightness jitter with strength κstain = 0 .6. This models site-specific acquisition shifts without changing class semantics. 
+
+DomainNet. DomainNet already contains discrete domains. For synthetic covariate drift within a domain, we use a corruption-based transform: 
+
+Tcov (x; α) = Corrupt( x; s(α)) , (127) where Corrupt( ·; s) is a standard image corruption operator (Gaussian blur or shot noise chosen uniformly) with severity s(α) = ⌈5α⌉ ∈ { 0, . . . , 5}.
+
+SyntheticDrift-CIFAR. We use CIFAR-10-C style corruptions: 
+
+Tcov (x; α) = CIFARCorrupt( x; s(α)) , (128) with severity s(α) = ⌈5α⌉ and corruption type fixed per episode (Gaussian noise, motion blur, or brightness). 26 Published as a conference paper at CAO Workshop at ICLR 2026 E.4.3 CONCEPT DRIFT : LABEL PERMUTATION πt
+
+For concept drift, we keep inputs unchanged but modify the conditional mapping by permuting labels after onset: 
+
+x′ 
+
+> t
+
+= xt, y′ 
+
+> t
+
+= πt(yt). (129) We sample a class permutation π⋆ uniformly from all permutations of the label set that move at least two classes. We then apply it with intensity αt using a mixture between identity and π⋆:
+
+πt(y) = 
+
+π⋆(y), with probability αt,y, with probability 1 − αt. (130) In Eq. equation 130, αt controls how frequently the permuted labeling rule is active, producing gradual concept shift when αt ramps and sudden concept shift when αt jumps. This construction is used for DomainNet and SyntheticDrift-CIFAR. For Camelyon17, where label semantics are binary tumor/non-tumor and permutation is not meaningful, we implement concept drift as class-conditional prior shift by flipping labels with probability αt on a fixed subset of patches near the decision boundary (identified by low confidence under the nominal model). E.4.4 SUBGROUP DRIFT : Tsub APPLIED TO A MINORITY SLICE 
+
+For subgroup drift, we define a slice indicator g(x) ∈ { 0, 1} with P(g(x) = 1) = psub under nominal conditions (we set psub = 0 .15 ). We apply a subgroup-only covariate transform: 
+
+x′ 
+
+> t
+
+=
+
+Tsub (xt; αt), if g(xt) = 1 ,xt, otherwise , y′ 
+
+> t
+
+= yt. (131) 
+
+Camelyon17 (WILDS). We define g(x) = 1 for a fixed subset of patches selected by tissue-type clustering in embedding space (minority cluster). We set 
+
+Tsub (x; α) = (1 − α) x + α StainAug( x; κsub ), (132) with stronger stain shift κsub = 0 .9 than the global covariate transform. 
+
+DomainNet. We define g(x) = 1 as one of the object categories (minority category) sampled per episode. We set 
+
+Tsub (x; α) = Corrupt( x; s(α)) , (133) using the same corruption family but applied only to the subgroup. 
+
+SyntheticDrift-CIFAR. We define g(x) = 1 as images from two fixed classes (e.g., classes 0 and 1), chosen once per episode. We apply a style-like transform implemented as color quantization and contrast shift with severity s(α) = ⌈5α⌉.E.4.5 REPRODUCIBILITY SETTINGS 
+
+For each dataset we generate M = 200 episodes of length L = 1500 with drift onset t0 sampled uniformly from [300 , 600] , and we use 5 random seeds per dataset. All transforms are applied on-the-fly with fixed transform parameters and seed-controlled randomness. The same generators are used for belief-model training and for gain-table calibration. E.5 CONTROLLER CONFIGURATION AND OPERATIONAL CONSTRAINTS 
+
+This section specifies hyperparameters and operational logic used by Algorithm 1. E.5.1 WINDOW SIZES AND BUFFERS 
+
+We set the monitor window length n and certificate window length N as 
+
+n = 256 , N = 1024 . (134) In these equations, n controls responsiveness of drift monitors and N controls the regime represented by the risk certificate. The reference buffer Bref is formed from a clean initial deployment segment of length nref :
+
+|B ref | = nref = 2048 . (135) In this equation, nref is chosen to provide stable reference statistics. 27 Published as a conference paper at CAO Workshop at ICLR 2026 E.5.2 LABEL DELAY AND AUDITING BUDGET 
+
+Requested labels arrive after a fixed delay d:
+
+oi = i + d, d = 50 . (136) In this equation, oi is the observation time for label yi.The labeling budget is 
+
+Blab = 3000 , (137) where Blab is the total number of labels that may be requested over a stream. E.5.3 COOLDOWNS AND FEASIBILITY 
+
+Retraining and rollback are rate-limited by cooldowns: 
+
+∆rt = 800 , ∆rb = 400 . (138) In these equations, ∆rt and ∆rb are time steps during which A4 or A5 cannot be executed again. At time t, the feasible action set is 
+
+Afeas  
+
+> t
+
+= {a ∈ A : Cool( a, t ) = 1 , Bud( a, t ) = 1 } , (139) where Cool( a, t ) enforces cooldown rules and Bud( a, t ) enforces remaining budget rules. For retrain feasibility: 
+
+Cool( A4, t ) = I t − trt last ≥ ∆rt 
+
+ , (140) and for rollback: 
+
+Cool( A5, t ) = I t − trb last ≥ ∆rb 
+
+ . (141) In these equations, trt last and trb last record the last execution time of retrain and rollback. E.5.4 QUERY POLICY FOR CERTIFICATE LABELS 
+
+The controller selects a query size kt as a function of drift evidence and certificate uncertainty. Let the current certificate be 
+
+Ut(δ) = bRt + rad( nt, δ t). (142) Define a safety margin 
+
+mt = τ − Ut(δ). (143) In this equation, mt > 0 indicates certified safety slack, while mt < 0 indicates a certificate violation. We set kt using a piecewise rule: 
+
+kt =
+
+
+
+kmax , Ut(δ) > τ, khigh , mt ≤ mlow or max j ezt,j ≥ ζ, klow , otherwise ,
+
+(144) with 
+
+kmax = 64 , khigh = 32 , klow = 8 , (145) and thresholds mlow = 0 .02 and ζ = 2 .0. In these equations, kmax is used during potential unsafe regimes, khigh is used when evidence is strong or safety margin is small, and klow is used during stable operation. E.6 GAIN TABLE CALIBRATION AND VALUES 
+
+The controller selects actions via a belief-weighted gain table G(d, a ), which encodes the expected benefit of taking action a ∈ A under drift type d ∈ D . This appendix specifies (i) the exact definition of “gain” used in our experiments, (ii) the offline calibration protocol, and (iii) the full numeric gain table values. 28 Published as a conference paper at CAO Workshop at ICLR 2026 E.6.1 DEFINITION OF GAIN AS WINDOWED RISK REDUCTION 
+
+Gain is defined in terms of reduction in certified windowed risk after applying an intervention. Let 
+
+Rt denote the windowed risk evaluated on ground-truth labels in simulation, and let R(a) 
+
+> t
+
+denote the counterfactual risk trajectory obtained by applying action a at time t and then executing the fixed deployment loop for a short horizon of length H (including the same monitoring windows, label delay model, and update rules). For each drift type d, we estimate the expected risk reduction at horizon H:
+
+∆R(d, a ) = E
+
+h
+
+Rbase  
+
+> t+H
+
+− R(a) 
+
+> t+H
+
+Dt = d
+
+i
+
+, (146) where Rbase  
+
+> t+H
+
+is the risk at t + H under the baseline “no-op” continuation ( A0), R(a) 
+
+> t+H
+
+is the risk at t + H when applying action a at time t, Dt is the drift-type state, and the expectation is over random drift episode realizations, window sampling, and label delay. We convert risk reduction into a dimensionless gain by normalizing by a fixed risk scale σR > 0:
+
+G(d, a ) = ∆R(d, a )
+
+σR
+
+. (147) In our experiments we set σR = 0 .10 so that G(d, a ) = 1 corresponds to an average 0.10 absolute reduction in windowed risk at horizon H.E.6.2 OFFLINE CALIBRATION PROTOCOL 
+
+We estimate G(d, a ) by generating synthetic drift episodes in each benchmark stream and evaluating counterfactual one-step interventions. For each dataset, we construct M synthetic drift episodes of length L by sampling a drift type d ∈ D , sampling a drift onset time t0, and applying the corresponding drift generator. We then roll out the deployed model to time t = t0 + ∆ (with ∆
+
+sampled uniformly in a short window after onset), and compute Rbase  
+
+> t+H
+
+and R(a) 
+
+> t+H
+
+for each candidate action a ∈ A using the exact update rules used at test time (calibrator update for A1, adaptation steps for A2, retrain trigger for A4, rollback for A5, and abstention policy for A6). All counterfactuals share the same drift realization, label delay, and sampling RNG state so that differences are attributable to the action. We set M = 200 episodes, L = 1500 steps, H = 150 steps, and use 5 random seeds per dataset; reported gains average across seeds. We emphasize that gains are calibrated once offline and then fixed for all streaming evaluations. The gain table does not use test labels from the evaluation stream; it is computed on separate synthetic episodes built from the same dataset distributions and augmentation generators. E.6.3 NUMERIC GAIN TABLES USED IN EXPERIMENTS 
+
+Table 5 reports the exact gain values used in all experiments. Values reflect average risk reduction at horizon H = 150 normalized by σR = 0 .10 (Eq. equation 147). Higher values indicate larger expected improvement. Entries for actions that are not applicable to a drift type (e.g., recalibration under pure covariate shift when labels are not yet available) are set to small positive values reflecting modest indirect benefits (e.g., stabilizing confidence), which we observed empirically in the calibration rollouts. Table 5: Gain table G(d, a ) used by the controller. Gains are computed by offline synthetic-drift calibration as normalized windowed risk reduction (Eqs. equation 146–equation 147) at horizon H = 150 with normalization σR = 0.10 . Rows correspond to drift types d ∈{none , covariate , concept , subgroup } and columns correspond to actions a ∈ { A0, . . . , A 6}.                                          
+
+> Drift type dA0A1(recalib.) A2(TTA) A3(query) A4(retrain) A5(rollback) A6(abstain) none 0.00 0.10 0.05 0.08 0.12 0.10 0.15 covariate 0.00 0.35 0.70 0.25 0.85 0.40 0.55 concept 0.00 0.20 0.30 0.75 1.05 0.60 0.65 subgroup 0.00 0.25 0.35 0.85 0.95 0.55 0.80
+
+Finally, we found that controller behavior is robust to moderate rescaling of G(d, a ): multiplying all gains by a constant does not change the argmax in Eq. (25), and small perturbations preserve the preferred action ordering under each drift type. 29 Published as a conference paper at CAO Workshop at ICLR 2026 E.6.4 ESCALATION LOGIC 
+
+Safety gating is applied using the certificate threshold τ :
+
+Ut(δ) ≤ τ ⇒ at ∈ { A0, A 1, A 2, A 3}, Ut(δ) > τ ⇒ at = A6 and schedule {A5, A 4}.
+
+(148) In this rule, A6 is an immediate protective mode, while {A5, A 4} are heavy interventions executed when cooldown constraints allow. We define a deterministic heavy-action priority: If Ut(δ) > τ :
+
+
+
+rollback if feasible, else retrain if feasible, else continue fallback and increase kt.
+
+(149) This ordering is used to prefer a known-safe checkpoint when available, while still enabling adaptation through retraining when rollback is not feasible. E.6.5 RECALIBRATION AND TEST -TIME ADAPTATION DETAILS 
+
+Recalibration uses temperature scaling with parameter T > 0 applied to logits: 
+
+pθ,T (y | x) = softmax 
+
+ hθ (x)
+
+T
+
+
+
+, (150) where T is optimized on the labeled set St by minimizing negative log-likelihood. Test-time adaptation updates θ using entropy minimization on recent unlabeled inputs: 
+
+θ ← θ − ηtta ∇θ
+
+1
+
+|B t|
+
+X
+
+> x∈B t
+
+Hθ (x)
+
+!
+
+, (151) where ηtta is a learning rate and Hθ (x) is predictive entropy. We use s = 5 gradient steps when executing A2.E.7 UTILITY FUNCTION AND SAFETY -VIOLATION PENALTY 
+
+The controller ranks feasible actions, 
+
+Ut(a) = ∆ t(a) − λ c (a) − γ Viol t(a), (152) where ∆t(a) is the belief-weighted gain, c(a) is the operational cost, and Viol t(a) penalizes actions that would lead to uncertified operation. We now define Viol t(a) explicitly. Let Ut(δ) be the current certificate value computed in Section 4, and let τ be the safety target. For each candidate action a at time t, we form a one-step-ahead conservative prediction of the post-action certificate, 
+
+bU (a) 
+
+> t
+
+(δ) = Ut(δ) − d∆U t(a), (153) where d∆U t(a) is an action-dependent expected reduction in the certificate bound. We set 
+
+d∆U t(a) = σU · ∆t(a), (154) with ∆t(a) = P 
+
+> d∈D
+
+bt(d) G(d, a ) and a fixed scale σU > 0 that converts gain units into certificate units. In all experiments we set σU = 0 .10 , so ∆t(a) = 1 corresponds to a predicted 0.10 absolute reduction in the certificate. The safety-violation penalty is then defined as the (hinge) excess of the predicted certificate above the target: 
+
+Viol t(a) = max 
+
+n
+
+0, bU (a) 
+
+> t
+
+(δ) − τ
+
+o
+
+. (155) In this definition, Viol t(a) = 0 when action a is predicted to keep the system certified safe ( bU (a) 
+
+> t
+
+(δ) ≤
+
+τ ), and Viol t(a) increases linearly with the margin by which safety would be violated. We set the penalty weight to 
+
+γ = 50 , (156) which makes uncertified operation strongly dominated unless it yields substantial expected gains. This value is fixed across all datasets and streams. 30 Published as a conference paper at CAO Workshop at ICLR 2026 Table 6: Ablations on the full streaming protocol. Metrics match the main paper: cumulative cost Ctot , safety violations V , detection delay Tdet , recovery time Trec , and minimum worst-group accuracy min Acc wg . The last column reports the false-intervention rate (FIR): the fraction of time steps in which the method intervenes ( at̸ = A0) while the deployed risk is already below the safety target. 
+
+Method variant Ctot V Tdet Trec min Acc wg FIR 
+
+Camelyon17 stream 
+
+Alarm-only 3.2(3) 46(4) 22(2) 210(18) 0.71(2) 0.05(1) 
+
+Adapt-always (TTA) 58 .0(21) 3(1) 18(2) 74(6) 0.79(1) 0.82(3) 
+
+Retrain-on-schedule 41 .5(18) 9(2) 35(3) 96(9) 0.77(1) 0.21(3) 
+
+Selective prediction only 9.8(6) 14(3) 24(2) 160(14) 0.74(2) 0.14(2) 
+
+Controller (no certificate) 18 .7(11) 7(2) 19(2) 98(8) 0.78(1) 0.16(2) 
+
+Ours (full) 24 .6(14) 0 20(2) 62(5) 0.81(1) 0.10(2) 
+
+DomainNet stream 
+
+Alarm-only 4.1(4) 63(5) 28(3) 260(21) 0.49(2) 0.06(1) 
+
+Adapt-always (TTA) 64 .0(25) 6(2) 21(2) 110(10) 0.58(2) 0.85(3) 
+
+Retrain-on-schedule 45 .0(20) 14(3) 40(4) 132(11) 0.56(2) 0.23(3) 
+
+Selective prediction only 12 .4(9) 27(4) 30(3) 205(17) 0.52(2) 0.18(2) 
+
+Controller (no certificate) 22 .5(13) 11(3) 23(2) 141(12) 0.57(2) 0.19(2) 
+
+Ours (full) 29 .8(16) 1(1) 24(2) 88(7) 0.61(1) 0.13(2) 
+
+SyntheticDrift-CIFAR stream 
+
+Alarm-only 2.6(2) 52(4) 16(2) 185(16) 0.68(2) 0.04(1) 
+
+Adapt-always (TTA) 52 .0(20) 4(1) 13(2) 66(5) 0.79(1) 0.80(3) 
+
+Retrain-on-schedule 36 .0(17) 10(2) 25(3) 92(8) 0.77(1) 0.20(3) 
+
+Selective prediction only 8.6(6) 19(3) 18(2) 148(12) 0.72(2) 0.15(2) 
+
+Controller (no certificate) 16 .8(10) 8(2) 14(2) 84(7) 0.78(1) 0.17(2) 
+
+Ours (full) 21 .2(12) 0 15(2) 58(5) 0.82(1) 0.09(2) 
+
+## F EXTRA EXPERIMENTS 
+
+This appendix provides additional empirical evidence that each component of the proposed system matters, and that the safety–cost advantages observed in Table 1 and Figures 2a–2b persist across operational settings. We emphasize interpretability and operational diagnostics: each subsection reports a compact set of tables (kept intentionally larger for readability) followed by detailed analysis of what the results mean in deployment terms. F.1 ABLATIONS THAT ISOLATE EACH COMPONENT 
+
+We test ablations that remove one design choice at a time while keeping the same action space, cost model, and streaming protocol (Table 3). The goal is to show which ingredients drive safety, which drive efficiency, and which prevent unnecessary intervention. 
+
+Interpretation. Table 6 highlights three practical takeaways. First, certification is what prevents unsafe operation under delayed labels . The controller without certificate has substantially more safety violations ( V increases from 0 to 7 on Camelyon17 and from 0 to 8 on SyntheticDrift-CIFAR). In streaming deployments, drift evidence alone cannot prevent long unsafe stretches because the system can mistakenly “believe” it has recovered while risk remains elevated. The certificate acts as a fail-safe: it forces fallback and escalation whenever verified risk is not under control. Second, adaptation-only strategies buy speed at a high operational price . Adapt-always is consistently among the fastest to recover, but its cost is extreme and its FIR is close to one: it intervenes almost continuously even during stable periods. This is the operational signature of methods that treat every input as a potential drift signal. In production, such behavior is often 31 Published as a conference paper at CAO Workshop at ICLR 2026 unacceptable due to compute, latency, and governance constraints, even when safety outcomes are good. Third, the full method reduces safety violations while remaining selective about interventions .Compared to retrain-on-schedule and selective-prediction-only baselines, the proposed system im-proves worst-group robustness and recovery time while keeping FIR low. Operationally, this means the controller is not “trigger-happy”: it intervenes primarily when needed, and it can justify interven-tions with both drift evidence and certified risk. F.2 COMPONENT -SPECIFIC ABLATIONS OF DRIFT 2A CT 
+
+To isolate how the internal pieces contribute, we keep the full streaming protocol but modify one internal module at a time. Table 7: Internal component ablations of D RIFT 2A CT (same controller interface). Each row removes one internal module: belief (replace with single drift-score thresholds), active labeling (replace with fixed label rate), certificate gating (do not force fallback when risk may be unsafe), and monitor stack (use MMD-only rather than multi-monitor). 
+
+Variant Ctot V Tdet Trec min Acc wg FIR 
+
+Camelyon17 stream 
+
+DRIFT 2A CT (full) 24 .6(14) 0 20(2) 62(5) 0.81(1) 0.10(2) 
+
+No belief (single score) 23 .3(13) 4(2) 21(2) 90(8) 0.78(1) 0.17(2) 
+
+No active labeling (fixed rate) 24 .1(13) 2(1) 20(2) 76(7) 0.80(1) 0.21(3) 
+
+No certificate gating 23 .7(12) 6(2) 20(2) 88(8) 0.79(1) 0.12(2) 
+
+MMD-only monitors 25 .0(14) 3(2) 24(3) 83(8) 0.79(1) 0.16(2) 
+
+DomainNet stream 
+
+DRIFT 2A CT (full) 29 .8(16) 1(1) 24(2) 88(7) 0.61(1) 0.13(2) 
+
+No belief (single score) 28 .5(15) 6(2) 25(2) 128(11) 0.58(2) 0.19(2) 
+
+No active labeling (fixed rate) 29 .2(16) 3(2) 24(2) 106(9) 0.60(1) 0.24(3) 
+
+No certificate gating 28 .9(15) 9(3) 24(2) 142(12) 0.59(1) 0.14(2) 
+
+MMD-only monitors 30 .5(17) 5(2) 29(3) 121(10) 0.58(2) 0.18(2) 
+
+Interpretation. Table 7 explains why the full system looks strong in the main paper. Removing belief collapses drift understanding into a single score; the controller then cannot distin-guish when to use inexpensive fixes (recalibration/TTA) versus when to acquire labels and retrain. The result is a systematic pattern: longer recovery ( Trec increases sharply) and more violations ( V
+
+increases), because actions become mismatched to the underlying drift mechanism. Removing active labeling spreads audits uniformly across time. In stable segments this wastes budget (FIR increases), while during drift the certificate tightens too slowly, leaving longer unsafe windows. This is exactly the operational failure that motivates active verification: labels are most valuable when uncertainty is high and risk is near the safety threshold. Removing certificate gating is the clearest safety regression. Even with a good belief model, the con-troller will sometimes choose actions that look beneficial under drift evidence but do not immediately restore safety under label delay. Without the gating rule, the system can keep predicting in that “gray zone,” driving violations upward. Finally, using only MMD reduces the breadth of drift evidence. On DomainNet, MMD-only delays detection and increases violations because some shifts manifest more strongly in uncertainty and calibration than in pure representation discrepancy. The multi-monitor design is therefore not an aesthetic choice; it is what stabilizes decisions across heterogeneous drifts. F.3 FALSE ALARMS AND UNNECESSARY INTERVENTIONS 
+
+We report how often methods intervene when no intervention was needed. We compute the false-intervention rate (FIR) on time steps where the deployed risk is already below the safety target, 32 Published as a conference paper at CAO Workshop at ICLR 2026 and we also report a heavy false-intervention rate restricted to retrain/rollback actions (which are the most disruptive operationally). Table 8: False-intervention diagnostics. FIR measures unnecessary interventions during already-safe operation; Heavy-FIR counts unnecessary retrain/rollback events. The certified controller remains selective, while adapt-always exhibits high unnecessary intervention by design.                                             
+
+> Camelyon17 DomainNet SyntheticDrift-CIFAR Method FIR Heavy-FIR FIR Heavy-FIR FIR Heavy-FIR Alarm-only 0.05(1) 0.00 0.06(1) 0.00 0.04(1) 0.00
+> Adapt-always (TTA) 0.82(3) 0.00 0.85(3) 0.00 0.80(3) 0.00
+> Retrain-on-schedule 0.21(3) 0.05(1) 0.23(3) 0.06(1) 0.20(3) 0.05(1)
+> Selective prediction only 0.14(2) 0.00 0.18(2) 0.00 0.15(2) 0.00
+> Controller (no certificate) 0.16(2) 0.02(1) 0.19(2) 0.03(1) 0.17(2) 0.02(1)
+> Controller + certificate (ours) 0.10(2) 0.01(1) 0.13(2) 0.02(1) 0.09(2) 0.01(1)
+
+Interpretation. Table 8 shows that the certificate reduces unnecessary churn in two ways. First, it prevents “panic actions” triggered by noisy monitors during stable periods, because the controller can demand a small number of verification labels and confirm that risk is still under τ . Second, it reduces heavy interventions in safe periods by making rollback/retrain conditional on certified risk rather than raw drift evidence. In contrast, schedule-based retraining produces heavy false interventions by construction: it retrains even when the stream is stable, which increases Heavy-FIR and inflates cost. F.4 SENSITIVITY TO LABEL DELAY AND LABELING BUDGET 
+
+We vary label delay d and labeling budget Blab to simulate different operational environments. Longer delays slow down verification, while smaller budgets restrict auditing and reduce the controller’s ability to tighten certificates during drift. Table 9: Sensitivity to label delay d (Camelyon17) Increasing delay slows recovery because verification arrives later, which delays safe exit from fallback and slows escalation decisions.                      
+
+> Delay dCtot VTdet Trec
+> 023 .1(12) 020(2) 54(5)
+> 25 23 .8(13) 020(2) 58(5)
+> 50 24 .6(14) 020(2) 62(5)
+> 100 26 .2(16) 1(1) 21(2) 78(7)
+
+Interpretation. Table 9 matches operational intuition. When d increases, the controller receives confirmation of current performance later, so it remains longer in conservative modes (fallback and higher auditing). This increases cost and recovery time. Importantly, violations remain controlled: even at d = 100 , unsafe operation remains rare because the system reacts conservatively when verification is delayed. Table 10: Sensitivity to labeling budget Blab (Camelyon17) Larger budgets tighten certificates faster around drift events, reducing recovery time and violations at moderate added cost.                      
+
+> Budget Blab Ctot VTdet Trec
+> 1000 21 .4(12) 2(1) 20(2) 86(8)
+> 2000 23 .0(13) 1(1) 20(2) 72(7)
+> 3000 24 .6(14) 020(2) 62(5)
+> 5000 26 .8(16) 020(2) 55(5)
+
+Interpretation. Table 10 shows that labeling budget primarily affects how quickly the system can certify safety and exit fallback after drift. With small budgets, the certificate remains wider for longer, producing longer recovery and occasional violations. With larger budgets, the controller can concentrate audits when needed, tighten the bound quickly, and recover faster. The key point is 33 Published as a conference paper at CAO Workshop at ICLR 2026 that the controller uses additional labels efficiently: cost increases are mild relative to the gains in recovery and safety. F.5 MORE DRIFT SHAPES : GRADUAL DRIFT AND RECURRING DRIFT 
+
+We evaluate two additional drift patterns beyond sudden shift: gradual drift (slowly increasing intensity) and recurring drift (periodic return of a previously seen shift). These settings stress-test whether the controller avoids permanent overreaction. Table 11: Gradual and recurring drift (SyntheticDrift-CIFAR) Gradual drift mainly increases recovery time, while recurring drift mainly tests whether the controller avoids repeated heavy interventions when the stream revisits regimes.                                     
+
+> Drift pattern Ctot VTdet Trec FIR min Acc wg
+> Sudden drift (baseline setting) 21 .2(12) 015(2) 58(5) 0.09(2) 0.82(1)
+> Gradual drift (slow ramp) 20 .6(12) 019(2) 72(6) 0.10(2) 0.81(1)
+> Gradual drift (fast ramp) 21 .5(12) 016(2) 63(5) 0.09(2) 0.82(1)
+> Recurring drift (short period) 22 .8(13) 014(2) 61(5) 0.11(2) 0.81(1)
+> Recurring drift (long period) 21 .9(12) 015(2) 60(5) 0.10(2) 0.82(1)
+
+Interpretation. Table 11 shows that gradual drift is not primarily a detection problem; it is a 
+
+verification pacing problem. Because degradation accumulates slowly, the certificate approaches the threshold more gradually, and the controller increases auditing and corrective actions later, extending recovery time slightly. Recurring drift tests whether controllers “thrash” by retraining repeatedly. The results show stable safety with only mild increases in FIR and cost, indicating that the combination of cooldowns, belief, and certificate gating prevents repeated overreaction when regimes reappear. F.6 COST SETTINGS : CHEAP VS EXPENSIVE LABELS 
+
+We vary the per-label annotation cost while keeping the same labeling budget ceiling and stream. This captures deployments where labels are either cheap (lightweight human verification) or expensive (expert review). Table 12: Effect of per-label cost (Camelyon17) When labels become expensive, the controller shifts toward adaptation and conservative fallback rather than frequent audits, increasing recovery time but preserving safety.                         
+
+> Per-label cost Ctot VTdet Trec FIR min Acc wg
+> 0.01 23 .5(13) 020(2) 58(5) 0.11(2) 0.81(1)
+> 0.05 24 .6(14) 020(2) 62(5) 0.10(2) 0.81(1)
+> 0.10 25 .2(15) 1(1) 21(2) 70(6) 0.12(2) 0.80(1)
+
+Interpretation. Table 12 shows a predictable and desirable adaptation in controller behavior. When labels are cheap, the controller audits more aggressively, tightens certificates quickly, and exits fallback sooner. When labels are expensive, the controller leans more on recalibration and TTA, and it tolerates longer fallback periods to avoid heavy label spending. Safety remains strong, indicating that the certificate gating continues to enforce conservative operation even when audits are costly. F.7 ROBUSTNESS TO MONITOR NOISE 
+
+We test robustness by corrupting monitor values (e.g., due to logging failures, representation drift noise, or unstable uncertainty estimates). We inject moderate noise into the monitor vector and measure how often this causes unnecessary actions. 
+
+Interpretation. Table 13 illustrates a key advantage of separating drift evidence from safety verification. Monitor noise increases action frequency and cost because the controller reacts to noisier signals. However, safety degrades slowly because the certificate prevents the controller from 34 Published as a conference paper at CAO Workshop at ICLR 2026 Table 13: Robustness to monitor noise (Camelyon17) With noisier monitors, drift evidence becomes less reliable and interventions become slightly more frequent; certificate gating prevents large safety regressions by requiring verification before unsafe operation persists.                               
+
+> Noise level Ctot VTdet Trec FIR min Acc wg
+> 0.00 24 .6(14) 020(2) 62(5) 0.10(2) 0.81(1)
+> 0.25 25 .1(15) 021(2) 64(5) 0.12(2) 0.81(1)
+> 0.50 26 .0(16) 1(1) 22(2) 70(6) 0.15(3) 0.80(1)
+> 0.75 27 .3(17) 2(1) 24(3) 78(7) 0.18(3) 0.79(1)
+
+continuing normal operation in regimes that cannot be verified as safe. In practical terms, monitor noise mostly causes efficiency loss rather than catastrophic safety loss, which is the desired failure mode in safety-constrained operation. F.8 OPTIONAL EXTRA BENCHMARK : TEMPORAL DRIFT IN AMAZON REVIEWS 
+
+To test a non-vision stream, we evaluate on a temporal Amazon Reviews stream, where time induces changing user behavior and class balance. We use the same evaluation metrics. Table 14: Amazon Reviews temporal stream. The certified controller maintains low violations and strong recovery while keeping costs moderate compared to always-adapt and schedule-based retraining. 
+
+Method Ctot V Tdet Trec min Acc wg FIR Alarm-only 3.0(3) 41(5) 20(2) 180(15) 0.73(1) 0.05(1) 
+
+Adapt-always (TTA) 56 .0(25) 4(2) 16(2) 70(7) 0.80(1) 0.79(3) 
+
+Retrain-on-schedule 38 .0(20) 9(3) 28(3) 96(9) 0.78(1) 0.20(2) 
+
+Controller (no certificate) 17 .9(12) 6(2) 18(2) 88(9) 0.79(1) 0.15(2) 
+
+Controller + certificate (ours) 23 .5(14) 0 19(2) 60(6) 0.82(1) 0.11(2) 
+
+Interpretation. Table 14 shows that the same system design transfers to a temporally evolving text domain. The certified controller attains strong safety and worst-group robustness without resorting to continuous adaptation. The cost remains moderate because the controller spends labels and heavy actions primarily during periods where certified risk indicates genuine danger. 
+
+## G DISCUSSION , L IMITATIONS , F UTURE WORK AND BROADER IMPACT 
+
+Discussion This work proposes a practical reframing of drift monitoring: rather than treating drift as an alarm that operators must interpret, the system maintains a certified view of current risk and converts evidence into cost-aware interventions. The empirical results in Table 1 together with the safety–cost trade-off in Figure 2a indicate that coupling active verification with belief-driven action selection reduces unsafe operation without requiring continuous adaptation. The recovery dynamics in Figure 2b further suggest that safety gating enables rapid escalation when needed while preserving cost-efficiency during stable regimes. 
+
+Limitations The primary limitation is that the certificate validity relies on random label sampling from the current evaluation window. Concretely, the guarantee in Theorem 1 requires that the queried indices are drawn uniformly from Wt (or uniformly within strata for slice-level certification). If labels are obtained through heavily biased selection, the empirical risk bRt may no longer represent the true window risk Rt, weakening the bound. In deployments where uniform sampling is difficult, one mitigation is to reserve a small fraction of queries for uniform auditing, using the remaining budget for targeted diagnostics. A second limitation concerns the choice of window length N and how Wt tracks the evolving regime. Under extreme non-stationarity, a short window reduces lag but increases variance, while a long window stabilizes estimates but can mix regimes and delay detection of rapid changes. Although the controller can partially compensate by increasing label queries when uncertainty is high, selecting N
+
+35 Published as a conference paper at CAO Workshop at ICLR 2026 remains a domain-dependent design choice. A promising direction is adaptive windowing, where N
+
+is adjusted online based on evidence stability and the certificate radius. Finally, our action space is intentionally small to match common production interventions. Richer action sets may further improve performance, including targeted data collection for specific slices, dynamic thresholding for abstention, and model patching via lightweight adapters. Future controllers could replace the belief-weighted gain model with learned policies, such as contextual bandits or reinforcement learning, while retaining the certificate as a safety constraint. Extending the framework to broader tasks, including regression, ranking, and structured prediction, requires task-specific loss definitions and may benefit from task-tailored monitoring signals. 
+
+Future Work Several directions can strengthen and broaden the framework. First, the certificate can be extended beyond a single global risk target to provide slice-conditional safety certificates, enabling explicit guarantees for vulnerable subgroups and supporting fairness-aware escalation when subgroup drift is detected. Second, richer action sets could improve recovery without relying on expensive retraining, including lightweight adapters, targeted data collection for specific slices, dynamic abstention thresholds, and retrieval of safe checkpoints conditioned on drift type. Third, the current receding-horizon controller can be replaced by learned policies (contextual bandits or reinforcement learning) that optimize long-run utility under explicit safety constraints, with the certificate serving as a hard guardrail. Fourth, improving robustness to practical monitoring noise remains important: combining representation monitors with causal or graph-based change detectors, and incorporating uncertainty about monitor reliability into the belief state, may reduce unnecessary interventions without sacrificing safety. Finally, applying the same principles to additional tasks— regression, ranking, and structured prediction—requires task-specific risk definitions and certificates, as well as benchmark protocols that reflect the corresponding operational costs and failure modes. Overall, the key message is that reliability under drift is not just a detection problem. By integrating drift evidence, costed interventions, and an explicit online safety certificate, we move from ‘detecting drift” to operating models responsibly in non-stationary environments. 
+
+Broader impact From a broader impact perspective, certified monitoring can reduce silent failures and improve accountability by producing auditable evidence of when and why interventions were triggered. At the same time, abstain/handoff can increase human workload, and naive deployment may disproportionately route uncertain cases from specific subgroups. For this reason, subgroup monitoring and coverage constraints should be reported alongside overall performance. Overall, this reframes monitoring as decision-making with safety. 36

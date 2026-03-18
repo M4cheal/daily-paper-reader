@@ -1,0 +1,863 @@
+Title: DeAR: Fine-Grained VLM Adaptation by Decomposing Attention Head Roles
+
+URL Source: https://arxiv.org/pdf/2603.01111v1
+
+Published Time: Tue, 03 Mar 2026 03:07:22 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# DeAR: Fine-Grained VLM Adaptation by Decomposing Attention Head Roles 
+
+## Yiming Ma 1,* Hongkun Yang 2,* Lionel Z. Wang 3,† Bin Chen 1,4,† Weizhi Xian 1 Jianzhi Teng 51Chongqing Research Institute of Harbin Institute of Technology 
+
+> 2
+
+## Haide College, Ocean University of China 
+
+> 3
+
+## Department of Management and Marketing, The Hong Kong Polytechnic University 
+
+> 4
+
+## International Research Center for Artificial Intelligence, Harbin Institute of Technology (Shenzhen) 
+
+> 5
+
+## Department of Applied Mathematics, The Hong Kong Polytechnic University 
+
+## Abstract 
+
+Prompt learning is a dominant paradigm for adapting pre-trained Vision-Language Models (VLMs) to downstream tasks. However, existing methods often rely on a simplistic, layer-centric view, assuming shallow layers capture gen-eral features while deep layers handle task-specific knowl-edge. This assumption results in uncontrolled interactions between learnable tokens and original tokens. Task-specific knowledge could degrades the model’s core generalization and creates a trade-off between task adaptation and the preservation of zero-shot generalization. To address this, we challenge the layer-centric view and propose DeAR , a framework that achieves fine-grained VLM adaptation by 
+
+De composing Attention head Roles. We posit that the func-tional specialization within VLMs occurs not between lay-ers, but at the finer-grained level of individual attention heads in the deeper layers. Based on this insight, we in-troduce a novel metric, Concept Entropy, to systematically classify attention heads into distinct functional roles: At-tribute, Generalization, and Mixed. Guided by these roles, we introduce specialized attribute tokens and a Role-Based Attention Mask mechanism to precisely control information flow, ensuring generalization heads remain isolated from task-specific knowledge. We further incorporate a Task-Adaptive Fusion Strategy for inference. Extensive experi-ments on fifteen datasets show that DeAR achieves a strong balance between task adaptation and generalization, out-performing previous methods across various tasks. 
+
+## 1. Introduction 
+
+Pre-trained Vision-Language Models (VLMs), such as CLIP [32], have emerged as a new paradigm in computer vision, demonstrating remarkable zero-shot generalization capabilities across a wide range of downstream tasks. By   
+
+> *Equal contribution. †Corresponding authors. CLS
+> Token
+> Patch
+> Tokens
+> Insert
+> Tokens
+> Traditional Prompt Learning
+> CLS
+> Token
+> Patch
+> Tokens
+> Attribute
+> Tokens
+> A-Prompt (Our Method)
+> Mask
+> L9 H0 L9 H0
+
+Figure 1. For a Generalization Head (e.g., Layer 9 Head 0), our Role-Based Mask explicitly blocking the original CLS and Patch tokens from interacting to the inserted Attribute Tokens. 
+
+leveraging contrastive learning on over 400 million image-text pairs, CLIP learns to align visual and textual inputs in a shared embedding space. This has led to impressive achievements in tasks such as text-image retrieval [32], vi-sual question answering (VQA) [7], and open-vocabulary detection and segmentation [8, 41]. Moreover, the impact of CLIP extends to traditional vision tasks, such as image classification and object detection [22], where its zero-shot performance can surpass that of fully supervised methods. Despite these successes, adapting CLIP to specific down-stream tasks remains a significant challenge. Its pre-trained knowledge often lacks the granularity required for special-ized domains. Although full fine-tuning could incorporate this new knowledge, it is computationally expensive and of-ten leads to ”catastrophic forgetting,” where the model loses its powerful zero-shot generalization abilities [20]. Con-sequently, Parameter-Efficient Fine-Tuning (PEFT) meth-ods have become the mainstream approach [26, 42]. These methods keep the VLM backbone frozen and introduce a small number of trainable parameters. PEFT strategies in-clude adapter-based methods and prompt learning. The former typically insert lightweight MLP layers to refine the output features [7, 36, 52], while prompt learning has emerged as a dominant and effective paradigm. Prompt learning for VLMs was pioneered by CoOp [49], which introduced ”soft prompts” , learnable continuous 
+
+> arXiv:2603.01111v1 [cs.CV] 1 Mar 2026
+
+vectors, into the text encoder to adapt to downstream tasks. Subsequent work extended this concept to the vision do-main, with VPT [17] demonstrating the effectiveness of vi-sual prompting. A key breakthrough came with MaPLe [18], which proposed the first multi-modal prompt learn-ing framework, tuning prompts in both the vision and text encoders and proving its superiority over uni-modal ap-proaches. However, even with a frozen backbone, prompt learning methods still risk losing generalization capabilities. Due to the nature of the Vision Transformer [4, 38], inserted to-kens inevitably interact with original tokens via multi-head self-attention, which can harm generalization. Existing so-lutions attempt to address this by carefully selecting which layers to inject prompts into—some targeting early layers (MaPLe), while others target deeper ones (MMRL). These conflicting, layer-based strategies reveal a fundamental gap: they treat entire Transformer layers as black boxes, ignor-ing the diverse functional roles played by individual atten-tion heads within them. This lack of a fine-grained, prin-cipled approach for integrating new knowledge results in the challenging trade-off between achieving effective adap-tation and maintaining generalization. To address these challenges, we draw inspiration from recent work on VLM interpretability [6] and propose a novel framework: DeAR , a novel framework for fine-grained VLM adaptation achieved by De composing 
+
+Attention head Roles. Given that CLIP’s final image rep-resentation is constructed by its late attention layers, we suppose that the key to effective task adaptation, while pre-serving generalization, is to focus on the functional special-ization of these individual heads. Our approach begins by quantitatively analyzing the function of each attention head in the later layers of a ViT-B-16 backbone [4]. Using our proposed Concept Entropy metric, we classify these heads into distinct functional roles: Attribute Heads, Generaliza-tion Heads, and Mixed Heads. Leveraging this functional classification, DeAR introduces specialized, learnable at-tribute tokens and employs a role-based Attention Mask strategy. This mechanism precisely controls the informa-tion flow, guiding attribute tokens to interact primarily with their corresponding expert heads, while critically isolating the generalization heads from any new task-specific knowl-edge (Figure 1). Our contributions are as follows: • We introduce Concept Entropy , a novel quantitative metric to systematically analyze and classify the func-tional roles of attention heads in ViT-B/16, revealing a clear specialization into Attribute, Generalization, and Mixed roles. • We propose the DeAR , which introduces a Role-Based Attention Mask to leverage this functional map. This mechanism achieves controllable fine-tuning by precisely routing new knowledge to expert heads while shielding generalization heads, achieving a balance between task-specific adaptation and the preservation of generalization capabilities. • We demonstrate through extensive experiments that DeAR achieves new state-of-the-art performance on the challenging base-to-novel generalization benchmark. 
+
+## 2. Related Work 
+
+2.1. Vision-Language Models (VLMs) 
+
+Foundational Vision-Language Models (VLMs) have rev-olutionized multimodal learning. This paradigm was pio-neered by CLIP [32], which established a powerful con-trastive learning framework on massive web-scale data. Subsequent efforts have expanded on this foundation in di-verse ways: ALIGN [16] demonstrated the power of train-ing on even larger, noisier datasets; Florence [46] aimed for a universal visual representation via multi-task pre-training; SigLIP [47] enhanced scalability with a simpler pairwise sigmoid loss; and more recently, OpenVision [23] has pro-posed full transparency by leveraging high-quality, LLM-generated synthetic captions. 
+
+2.2. Prompt Learning for VLMs 
+
+Prompt learning has emerged as a dominant parameter-efficient strategy for adapting VLMs. The line of research was pioneered by CoOp, which replaces hand-crafted tem-plates with learnable prompt vectors[49]. However, CoOp learns a single static prompt for the entire dataset, which tends to overfit seen classes and lacks adaptability to in-dividual images. Subsequent studies proposed CoCoOp, which conditions prompts on each image, and Task-Aware Clustering, which learns cluster-specific prompts for se-mantic subgroups[12, 50]. To preserve the general knowl-edge of the backbone, PromptSRC, ProGrad and TCP intro-duce various regularization techniques[11, 19, 51]. As research matured, the focus expanded from uni-modal text prompts toward multimodal strategies. MaPLe presents a framework for simultaneous prompting in both vision and language branches[18], and more recent work such as MMRL designs shared representation spaces to fa-cilitate deeper cross-modal interactions[9]. The latest trend pursues fine-grained semantics: LLaMP employs LLMs as adaptive prompt learners, ATPrompt constructs hybrid attribute–category prompt structures, PromptKD exploits prompts for knowledge distillation, and TextRefiner mines internal visual knowledge of VLMs to refine prompts with-out external models[24, 25, 45, 48]. Alternatively, Skip Tuning forgoes additional parameters altogether and instead modifies the full fine-tuning baseline with layer-wise and class-wise skipping to improve knowledge transfer [43]. Despite advances in VLMs and prompt learning, effi-ciently adapting these models while maintaining general-ization is still challenging. Most existing methods focus on designing representation spaces or using prompts to inject external knowledge, but rarely explore how internal infor-mation flows within the model. Our work, DeAR, addresses this by directly investigating these internal interactions to enable attribute-aware and interpretable prompt learning. 
+
+## 3. Method 
+
+3.1. Revisiting the Vision Transformer 
+
+The ViT-based image encoder first converts an image into a sequence of patch embeddings. An input image x is divided into N patches, which are linearly projected into 
+
+D-dimensional vectors. A learnable [CLS] token, zcls ,is prepended to this sequence, and position embeddings 
+
+Epos are added to yield the initial token sequence z0 ∈
+
+R(N +1) ×D .This sequence is then processed by a stack of L Trans-former layers. Each layer consists of a Multi-Head Self-Attention (MSA) module and a feed-forward MLP, with residual connections and layer normalization. Central to our work, the MSA mechanism allows tokens to inter-act through h parallel ”attention heads.” The MSA mod-ule’s output is computed by concatenating the outputs of all heads, i.e., MSA (z) = Concat (head 1, . . . , head h)Wo,where Wo is a final projection layer. Each individual head is computed via scaled dot-product attention: head i = softmax 
+
+ QiKTi
+
+√Dh
+
+
+
+Vi (1) The Query ( Qi), Key ( Ki), and Value ( Vi) matrices for each head i are learned linear projections of the input to-kens z using per-head weight matrices (Wqi , Wki , Wvi ).After passing through all L layers, the final state of the class token, zL
+
+> cls
+
+, is projected to yield the final image feature fcls .This multi-head self-attention mechanism forms the foun-dation of our controllable fine-tuning framework. 
+
+3.2. Identifying Functional Roles of Attention Heads 
+
+The core of DeAR is our hypothesis, inspired by recent in-terpretability studies [6], that the functional specialization of a VLM resides not at the layer level, but within individ-ual attention heads in the model’s deeper layers [33]. We propose a novel, unsupervised methodology to first identify 
+
+and then quantify the functional roles of these heads [39]. Our analysis focuses on the later layers (9–12) of ViT-B-16, which are known to be critical for constructing the final image representation. To avoid subjective, pre-defined attribute categories, we adopt an approach to automatically identify conceptual clusters from the heads’ description. Following Gandels-man et al. [6], we first use TEXTSPAN to generate a ranked list of top-N descriptive text phrases for each at-tention head. This yields a rich corpus of phrases describ-ing each head’s attentional focus. We then employ a pre-trained SBERT, S(·) [35], to map each phrase into a high-dimensional semantic space. Instead of classifying these phrase embeddings into a fixed set of categories, we per-form density-based clustering using HDBSCAN [29], a ro-bust algorithm that can discover clusters of varying shapes and densities without requiring a pre-specified number of clusters. This automated process reveals a diverse set of conceptual clusters directly from the data. Our clustering analysis revealed 12 distinct conceptual groups, including concepts such as location , text , object ,
+
+animal , photographic style , and emotion , etc. From these, we selected five frequent and semantically orthogonal con-cepts most relevant for general visual recognition tasks: 
+
+A = {color , shape , texture , object , location }.This process provides the conceptual basis for our subse-quent analysis, where the centroid of each selected cluster 
+
+cj is denoted by its embedding ¯sj = S(cj ).
+
+Quantifying Specialization with Concept Entropy. 
+
+With the core attributes established, we introduce a novel metric, Concept Entropy , to quantify the degree of func-tional specialization for each attention head (l, h ). For its top-N descriptive phrases D(l,h ), we first classify each phrase di to the closest attribute cluster cj ∈ C. This yields a probability distribution P(l,h ) over the attributes, where 
+
+P(l,h )(cj ) is the fraction of phrases assigned to cj . Finally, the Concept Entropy H(P(l,h )) is the Shannon entropy of this distribution. These steps are defined as: cat (di) = arg max   
+
+> cj∈C
+
+cos  S(di), ¯sj
+
+ (2) 
+
+P(l,h )(cj ) = 1
+
+N
+
+XNi=1 I cat (di) = cj
+
+ (3) 
+
+H(P(l,h )) = − Xkj=1 P(l,h )(cj ) log 2 P(l,h )(cj ) (4) where I(·) is the indicator function. A low Concept En-tropy score signifies that a head is highly specialized, con-centrating its function on a single core attribute ( Attribute Head ). Conversely, a high score indicates a generalist function, engaging with a wide range of abstract concepts (Generalization Head ). Heads with intermediate scores are classified as Mixed Heads . This role identification framework forms the foundation for DeAR’s controllable learning mechanism. 
+
+3.3. DeAR: Fine-Grained Attribute-Aware Prompt Learning 
+
+Building on our function analysis of attention heads, we in-troduce DeAR, a framework consisting of three key compo-nents: multimodal attribute-aware prompt learning, a role-EOT 
+
+> Token
+> Word  Embedding  Patch  Embedding
+> CLS
+> Proj
+> Vision Encoder
+> Layer 1
+> Patch
+> Token
+> CLS
+> Token
+> Vision Encoder
+> Layer J-1
+
+…
+
+> Attribute
+> Token
+> Vision Encoder
+> Layer J+1
+> (Role-based Mask)
+> Vision Encoder
+> Layer L-1
+> (Role-based Mask)
+> Attr
+> Proj
+> Text
+> Proj
+
+ℒ𝐀 𝐀 𝐀 
+
+> 𝐀
+
+ℒ𝐀 𝐀 𝐀 
+
+> 𝐀
+> Patch
+> Token
+> CLS
+> Token
+> Text Encoder
+> Layer 1
+> EOT
+> Token
+> BOT
+> Token
+> Text Encoder
+> Layer J-1
+
+…
+
+> Insert
+> Token
+> Text Encoder
+> Layer J+1
+> EOT
+> Token
+> BOT
+> Token
+> Insert
+> Token
+> BOT
+> Token
+> Text Encoder
+> Layer L-1
+> Fusion Weight
+
+Logit 
+
+Ground Truth 
+
+ℒ𝐀 𝐀 
+
+ℒ𝐀 𝐀 𝐀 𝐀 𝐀 𝐀 
+
+> Attribute
+> Token
+> Patch
+> Token
+> CLS
+> Token
+> A Photo of
+> Flower
+
+…
+
+…
+
+> Frozen
+> Text
+> Encoder
+> Frozen
+> Vision
+> Encoder
+
+Figure 2. The overall framework of DeAR. At a deep layer J, we insert learnable attribute tokens into the frozen vision encoder and the text encoder. Information flow in these subsequent layers is precisely controlled by our Role-Based Attention Mask mechanism. For inference, the class feature (from the [CLS] token) and attribute feature first compute the logits with the text feature. These logits are then combined via learnable fusion weights to produce the final prediction. Table 1. Representative examples of functionally specialized Attribute Heads identified in the later layers of ViT-B-16. Each head demon-strates a strong and unambiguous focus on a single core visual attribute, as evidenced by its top descriptive phrases. 
+
+Object Head Shape Head Texture Head Color Head Location Head (L12, H7) (L12, H5) (L11, H5) (L12, H10) (L12, H0) 
+
+- A stick - A regular octagon - Delicate embroidery - An image with cold green tones - Picture taken in Scotland - A cup - Rectangular object - Intricate architectural carving - Image with a red color - Photo taken in Barcelona - A bonnet - A wavy pattern - Artwork with kaleidoscopic patterns - A charcoal gray color - Photo taken in Tokyo, Japan - A trampoline - Herringbone pattern - Image with woven basket textures - Image with a yellow color - Image taken in South Africa - A shoelace - A scalene triangle - Artwork with Mondrian-like grids - Image with a blue color - Picture taken in Texas, USA - A bottle - A polka dot - Image with calligraphy writing - A platinum silver color - Photo taken in Paris, France 
+
+based attention mask mechanism, and a task-adaptive infer-ence strategy. The overall framework is shown in Figure 2. 
+
+3.3.1. Multimodal Attribute-Aware Prompting 
+
+To adapt CLIP for downstream tasks, DeAR introduces learnable tokens into both the vision and text encoders, en-suring new knowledge is aligned across modalities. 
+
+Vision-Side Prompting. We initialize a set of learnable ”attribute tokens,” {rattr ∈ RDv }attr ∈A, where Dv is the fea-ture dimension of the vision encoder. Here, A is the set of core visual attributes identified in our analysis, specifically 
+
+A = {color , shape , texture , object , location }. Based on the findings of Gandelsman et al. [6] that the final image repre-sentation in CLIP is predominantly constructed by the later attention layers, these attribute tokens are integrated into the higher layers of the image encoder V, beginning from the J-th layer (we set J = 9 in our experiments, following prior work on ViT analysis). For the image encoder V, the forward pass through the first J − 1 layers proceeds as standard: 
+
+[zℓ
+
+> cls
+
+, zℓp] = Vℓ([ zℓ−1 
+
+> cls
+
+, zℓ−1 
+
+> p
+
+]) ℓ = 1 , . . . , J − 1
+
+For subsequent layers ℓ ≥ J, the process involves the at-tribute tokens. Let rℓ−1 
+
+> attr
+
+be the state of an attribute token before entering layer ℓ. The Transformer layer Vℓ processes the augmented sequence to produce an updated, context-aware state ˜rℓ
+
+> attr
+
+. The input to the next layer, rℓ
+
+> attr
+
+, is then determined by a controlled mixture: 
+
+[zℓ
+
+> cls
+
+, zℓp, {˜rℓ
+
+> attr
+
+}attr ∈A] = Vℓ([ zℓ−1 
+
+> cls
+
+, zℓ−1 
+
+> p
+
+, {rℓ−1 
+
+> attr
+
+}attr ∈A]) [zℓ+1  
+
+> cls
+
+, zℓ+1  
+
+> p
+
+, {˜rℓ+1  
+
+> attr
+
+}attr ∈A]= Vℓ+1 ([ zℓ
+
+> cls
+
+, zℓp, {βrℓ 
+
+> attr
+
++ (1 − β)˜ rℓ
+
+> attr
+
+}attr ∈A]) (5) Inspired by MMRL++ [10], we control the information flow between layers using the hyperparameter β ∈ [0 , 1] . Apurely sequential evolution ( β = 0 ) allows tokens to adapt fully to the context of vision feature, but risks ”semantic drift,” where the token deviates from its core learned mean-ing. Conversely, a static re-injection of the raw token at each layer ( β = 1 ) strongly preserves the core meaning but prevents any contextual adaptation. Our approach Eq. (5) strikes a flexible balance: it allows the attribute token to absorb image-specific information via ˜rℓ 
+
+> attr
+
+while being regularized by its foundational prior rattr . This prevents the representation from deviating excessively from its core at-tribute meaning, leading to more stable prompt learning. 
+
+Text-Side Prompting. To ensure cross-modal alignment, we apply a symmetrical strategy to the text encoder W. We initialize a set of K learnable tokens, {pk}, which are in-jected from layer J to L between the [BOT] and word to-kens. Since text prompts for classification are typically sim-ple templates (e.g., “a photo of {cls }”), a small set of pa-rameters suffices for alignment without needing attribute-specific designs. The forward pass through the text encoder is then modified. For any given layer ℓ, let the full se-quence of input tokens be Tℓ−1. The output is computed as Tℓ = Wℓ(Tℓ−1), where the prompt tokens within Tℓ−1
+
+are defined conditionally: 
+
+pin ,ℓ k =
+
+(
+
+pℓ−1 
+
+> k
+
+if ℓ < J βpk + (1 − β)˜ pℓ−1 
+
+> k
+
+if ℓ ≥ J (6) Here, pin ,ℓ k is the input prompt for layer ℓ, ˜pℓ−1 
+
+> k
+
+is the context-aware output from the previous layer, and pk is the initial raw token. This controlled mixture, governed by 
+
+β, allows contextual adaptation while preventing semantic drift. At inference, only the final [EOT] feature is used. 
+
+3.3.2. Role-Based Attention Mask 
+
+Preserving generalization requires precise control over the information flow between the original and newly introduced attribute tokens. Building on our data-driven identification of head roles, we introduce a role-based attention mask 
+
+mechanism. This mechanism, applied within the deeper layers of the ViT ( l ≥ J), assigns a custom attention mask 
+
+M(l,h ) ∈ {−∞ , 0}Nseq ×Nseq to each head (l, h ) based on its specific function. The mask is applied additively to the raw attention scores: 
+
+S(l,h ) = Q(l,h )KT
+
+> (l,h )
+
+√Dh
+
++ M(l,h ) (7) Input       
+
+> Retrieval by object token
+> Retrieval by color token
+> Retrieval by shape token
+> Retrieval by location token
+> Retrieval by color token
+> Input Retrieval by texture token
+
+Figure 3. Results of attribute-conditioned image retrieval on Im-ageNet. For each query image, we retrieval using features from different learned attribute tokens. 
+
+An entry M(l,h )[i, j ] = −∞ effectively severs the connec-tion from query token i to key token j by setting its corre-sponding attention weight to zero post-softmax. To formally define the masks, we partition the token in-dices into disjoint sets: Icls for the [CLS] token, Ipatch for patch tokens, and Iattr for our learnable attribute tokens. The set of original token indices is Iorig = Icls ∪I patch . The mask construction depends on the head’s role: 
+
+Generalization and Other Specialized Heads. This cat-egory includes both Generalization Heads , and other Spe-cialized Heads not selected as core attributes (e.g., for ’numbers’ or ’text’). We hypothesize that both types of heads encode the model’s intrinsic, pre-trained capabili-ties that are crucial for zero-shot generalization. To pro-tect these foundational abilities from being perturbed by task-specific information, we implement a strict mask. This mask prohibits any interaction between the original tokens and our five learnable attribute tokens: 
+
+M(l,h )[i, j ] = 
+
+
+
+−∞ if (i ∈ I orig and j ∈ I attr )
+
+or (i ∈ I attr and j ∈ I orig )0 otherwise (8) This policy ensures that both generalist heads and other spe-cialist heads remain isolated, preserving their original func-tions. 
+
+Core Attribute Heads. These are the heads identified as specializing in one of our five core visual attributes a ∈ A
+
+(e.g., ’color’ ). The mask for such a head is designed to channel the corresponding learnable attribute token exclu-sively to its expert head, enabling focused learning. Let 
+
+Iattr (a) ⊂ I attr be the index set for the token(s) correspond-ing to attribute a. The mask is defined as: 
+
+M(l,h )[i, j ] = 
+
+(
+
+−∞ if j ∈ I attr and j / ∈ I attr (a)
+
+0 otherwise (9) This rule allows any query token to attend to all original tokens and its relevant attribute token, while blocking atten-tion to irrelevant ones. This promotes clean, disentangled attribute learning. 
+
+Mixed Heads. Heads with intermediate Concept Entropy are classified as Mixed Heads . We consider their func-tion to be multifaceted and flexible. Therefore, we permit unrestricted attention by applying an all-zeros mask where 
+
+M(l,h )[i, j ] = 0 , ∀i, j , allowing them to integrate informa-tion freely from all available tokens. 
+
+3.3.3. Final Feature Generation. 
+
+After passing through all L layers, the final hidden states of the [CLS] and attribute tokens are projected to generate features. The state of the original class token, zL
+
+> cls
+
+, is pro-jected by the pre-trained and frozen vision projection head, 
+
+Pvision (·), to yield the class feature fcls :
+
+fcls = Pvision (LN (zL
+
+> cls
+
+)) (10) Similarly, the final state of each attribute token, rL
+
+> attr
+
+, is pro-cessed by a shared, trainable projection head, Pattr (·), to yield a set of specialized attribute features {fattr }:
+
+fattr = Pattr (LN (rL
+
+> attr
+
+)) (11) This process yields a primary feature fcls retaining gener-alization, and specialized features fattr .To visually validate our attribute tokens capture seman-tic concepts, we conduct an attribute-conditioned image re-trieval, shown in Figure 3. 
+
+3.3.4. Training and Inference Training. DeAR’s training process balances classification accuracy on the target task with preserving the model’s pre-trained generalization. The total loss function is a weighted combination of a primary classification loss and two regu-larization terms: 
+
+Ltotal = LCE + λreg Lreg + λfusion Lfusion (12) where λreg and λfusion are hyperparameters that balance the contribution of each component. The primary loss, LCE (ˆ y, y), is the standard cross-entropy between the predicted logits ˆy (defined in our in-ference strategy [28], Eq. 19) and the ground-truth labels 
+
+y.To preserve the model’s foundational knowledge, we in-troduce a self-regularization loss, Lreg . This term encour-ages the final features from both the vision and text en-coders to remain close to their counterparts from the origi-nal, frozen CLIP model. Specifically, we regularize the final class feature fcls and the text feature ft:
+
+Lreg = LV 
+
+> reg
+
++ LT 
+
+> reg
+
+(13) 
+
+LV 
+
+> reg
+
+= 1 − cos (fcls , f orig cls ) (14) 
+
+LT 
+
+> reg
+
+= 1 − cos (ft, f orig  
+
+> t
+
+) (15) Here, f orig cls and f orig  
+
+> t
+
+are the features extracted from the un-modified CLIP model, and cos (·, ·) denotes the cosine sim-ilarity. To prevent over-reliance on the newly learned at-tribute features, we introduce a fusion-weight regulariza-tion, Lfusion . This loss encourages the inference mechanism to assign a higher weight to the more general class feature: 
+
+Lfusion = − log( αcls ) (16) where αcls is the softmax-normalized weight corresponding to the class feature. 
+
+Task-Adaptive Fusion for Inference. For inference, we propose a Task-Adaptive Fusion strategy that combines evidence from the protected class and specialized at-tribute features. We learn a small set of scalar weights, 
+
+{wk}k∈{ cls }∪ A, on the base classes, which are then fixed for novel classes. For a given image and m class text embeddings {tj }mj=1 ,we first compute similarity vectors for the class feature fcls 
+
+and each attribute feature fa:
+
+scls = τ · [sim (fcls , t1), . . . , sim (fcls , tm)] (17) 
+
+sa = τ · [sim (fa, t1), . . . , sim (fa, tm)] (18) where τ is CLIP’s frozen temperature parameter. The final logits ˆy are a weighted sum of these vectors. The fusion weights αk are derived from the learned scalars {wk} via softmax, where αk = ewk /(ewcls + P 
+
+> i∈A
+
+ewi ). The final logits are then computed as: 
+
+ˆy = αcls · scls + X
+
+> a∈A
+
+αa · sa. (19) This strategy assumes that a model’s reliance on specific at-tributes is a task-level prior (e.g., color is important for bird classification). By learning and transferring these priors, we achieve a more principled and effective fusion. 
+
+## 4. Experiments 
+
+4.1. Experiment settings 
+
+Implementation Details. Our implementation is based on the OpenCLIP with a ViT-B-16 backbone. We train the model using the AdamW optimizer with an initial learning rate of 1 × 10 −3. All experiments are conducted on three NVIDIA RTX 4090 GPUs. Further details are provided in the Appendix. Table 2. Comparison of DeAR with previous methods on base-to-novel generalization across 11 datasets. Bold values indicate the best results. 
+
+Method Average ImageNet Caltech101 OxfordPets StanfordCars Flowers102 Base Novel HM Base Novel HM Base Novel HM Base Novel HM Base Novel HM Base Novel HM CLIP (ICML2021) 69.34 74.22 71.70 72.43 68.14 70.22 96.84 94.00 95.40 91.17 97.96 94.12 63.37 74.89 68.65 72.08 77.80 74.83 CoOp (ICCV2021) 82.69 63.22 71.66 76.47 67.88 71.92 98.01 89.81 93.73 93.67 95.29 94.47 78.12 60.40 68.13 97.60 59.67 74.06 ProGrad (CVPR2023) 82.48 70.75 76.16 77.02 66.66 71.46 98.02 93.89 95.91 95.07 97.63 96.33 77.68 68.63 72.88 95.54 71.87 82.03 MaPLe (CVPR2023) 82.28 75.14 78.55 76.60 70.54 73.47 97.74 94.36 96.02 95.43 97.76 96.58 72.94 74.00 73.47 95.92 72.46 82.56 PromptSRC (ICCV2023) 84.26 76.10 79.97 77.60 70.73 74.01 98.10 94.03 96.02 95.33 97.30 96.30 78.27 74.97 76.58 98.07 76.50 85.95 ProVP (CVPR2024) 85.20 73.22 78.76 75.82 69.21 72.36 98.92 94.21 96.51 95.87 97.65 96.75 80.43 67.96 73.67 98.42 72.06 83.20 TCP (CVPR2024) 84.13 75.36 79.51 77.27 69.87 73.38 98.23 94.67 96.42 94.67 97.20 95.92 80.80 74.13 77.32 97.73 75.57 85.23 PromptKD (CVPR2024) 84.11 78.28 81.09 77.63 70.96 74.15 98.31 96.29 97.29 93.42 97.44 95.39 80.48 81.78 81.12 98.69 81.91 89.52 
+
+MMRL (CVPR2025) 85.68 77.16 81.20 77.90 71.30 74.45 98.97 94.50 96.68 95.90 97.60 96.74 81.30 75.07 78.06 98.97 77.27 86.78 TAC (CVPR2025) 85.24 77.60 81.24 78.57 71.03 74.61 98.57 95.27 96.89 95.93 98.17 97.04 81.63 74.17 77.72 97.97 76.87 86.15 SkipT (CVPR2025) 85.04 77.53 81.11 77.73 70.40 73.89 98.50 95.33 96.89 95.70 97.87 96.77 82.93 72.50 77.37 98.57 75.80 85.70 
+
+DeAR (Ours) 85.94 79.73 82.72 78.12 71.80 74.83 99.00 95.80 96.95 97.34 97.50 96.81 82.01 75.20 78.47 99.00 78.50 87.57 
+
+Method Food101 FGVC Aircraft SUN397 DTD EuroSAT UCF101 Base Novel HM Base Novel HM Base Novel HM Base Novel HM Base Novel HM Base Novel HM CLIP (ICML2021) 90.10 91.22 90.66 27.19 36.29 31.09 69.36 75.35 72.23 53.24 59.90 56.37 56.48 64.05 60.03 70.53 77.50 73.85 CoOp (ICCV2021) 88.33 82.26 85.19 40.44 22.30 28.75 80.60 65.89 72.51 79.44 41.18 54.24 92.19 54.74 68.69 84.69 56.05 67.46 ProGrad (CVPR2023) 90.37 89.59 89.98 40.54 27.57 32.82 81.26 74.17 77.55 77.35 52.35 62.45 90.11 60.89 72.67 84.33 74.94 79.35 MaPLe (CVPR2023) 90.71 92.05 91.38 37.44 35.61 36.50 80.82 78.70 79.75 80.36 59.18 68.16 94.07 73.23 82.35 83.00 78.66 80.77 PromptSRC (ICCV2023) 90.67 91.53 91.10 42.73 37.87 40.15 82.67 78.47 80.52 83.37 62.97 71.75 92.90 73.90 82.32 87.10 78.80 82.74 ProVP (CVPR2024) 90.32 90.91 90.61 47.08 29.87 36.55 83.14 74.71 78.73 62.11 65.53 63.77 97.12 72.91 83.29 87.30 79.00 83.00 TCP (CVPR2024) 90.57 91.37 90.97 41.97 34.43 37.83 82.63 78.20 80.35 82.77 58.07 68.25 91.63 74.73 82.32 87.13 80.77 83.83 PromptKD (CVPR2024) 89.43 91.27 90.34 43.61 39.68 41.55 82.53 80.88 81.70 82.86 69.15 75.39 92.04 71.59 80.54 86.23 80.11 83.06 MMRL (CVPR2025) 90.57 91.50 91.03 46.30 37.03 41.15 83.20 79.30 81.20 85.67 65.00 73.82 95.60 80.17 87.21 88.10 80.07 83.89 TAC (CVPR2025) 90.87 91.87 91.37 44.60 37.70 40.86 83.70 80.03 81.82 83.37 64.27 72.58 94.37 82.60 88.10 88.07 81.67 84.75 SkipT (CVPR2025) 90.67 92.03 91.34 45.37 37.13 40.84 82.40 79.03 80.68 83.77 67.23 74.59 92.47 83.00 87.48 87.30 82.47 84.81 
+
+DeAR (Ours) 90.10 91.90 90.93 47.10 38.90 42.61 83.82 81.80 82.80 83.90 75.60 79.62 97.00 87.90 92.22 87.90 82.10 84.90 
+
+Base-to-Novel Generalization. This is the primary eval-uation to assess DeAR’s ability to adapt to downstream tasks while preserving generalization. We conduct this evaluation across eleven image classification datasets: Im-ageNet [3], Caltech101 [5], OxfordPets [31], StanfordCars [21], Flowers102 [30], Food101 [1], FGVCAircraft [27], SUN397 [44], UCF101 [37], DTD [2], and EuroSAT [13]. We follow the standard setup: the model trains on 16-shot base classes and is evaluated on the test sets of both base and novel classes. As shown in Table 2, DeAR demon-strates clear superiority, achieving a new state-of-the-art harmonic mean of 82.72%. This result is driven by a sig-nificant 1.83% improvement on novel classes over the pre-vious best, MMRL. The substantial gain on unseen classes directly validates our core hypothesis: protecting general-ization heads is crucial for preserving the model’s founda-tional knowledge. 
+
+Domain Generalization. This evaluation measures the model’s robustness to out-of-distribution data and domain shifts. Following standard practice, we train the model on the 16-shot ImageNet training set (all classes) and di-rectly evaluate its performance, without further fine-tuning, on four challenging ImageNet variants: ImageNetV2 [34], ImageNet-Sketch [40], ImageNet-A [15], and ImageNet-R [14]. Table 4 presents the domain generalization re-sults. Our method demonstrates consistently strong ro-bustness across all four out-of-distribution datasets. DeAR achieves the best performance on ImageNet-A (51.80%) and ImageNet-R (78.83%), also is highly competitive in the other variants. 
+
+Few-Shot Learning. Few-shot learning evaluates the ca-pacity of the model for knowledge transfer and generaliza-tion when labeled data are limited. To quantify this capa-bility, we fine-tune DeAR on k shot subsets of the orig-inal training data, where k ∈ { 1, 2, 4, 8, 16 }. As shown in Figure 4. Across all settings from 1 to 16 shots, DeAR consistently outperforms the baseline methods, demonstrat-ing a slight but consistent performance advantage. This suggests that our DeAR framework provides robust perfor-mance even in limited labeled data. Detailed results on all 11 datasets are provided in the Appendix. 
+
+Cross-Dataset Generalization. To evaluate transfer abil-ity, we train DeAR on ImageNet (16 shots per class) and test it zero-shot on ten unseen datasets. Since the Task-Adaptive Fusion weights are optimized for ImageNet, they may not generalize. Therefore, for a fair evaluation on the target datasets, we adopt a decoupled inference strategy similar to MMRL [9], using only the protected class feature fcls for prediction. As shown in Table 3, DeAR sets a new state-of-the-art average accuracy of 67.60%, surpassing the pre-vious best method, MMRL, while maintaining comparable Table 3. Comparison of DeAR with previous methods on cross-dataset evaluation. Bold values indicate the best results.                                                                                     
+
+> Source Target ImageNet Average Caltech101 OxfordPets StanfordCars Flowers101 Food101 FGVC-Aircraft SUN397 DTD EuroSAT UCF101 CoOp 71.51 63.88 93.70 89.14 64.51 68.71 85.30 18.47 64.15 41.92 46.39 66.55 MaPLe 70.72 66.30 93.53 90.49 65.57 72.23 86.20 24.74 67.01 46.49 48.06 68.69 PromptSRC 71.27 65.81 93.60 90.25 65.70 70.25 86.15 23.90 67.10 46.87 45.50 68.75 MMRL 72.03 67.25 94.67 91.43 66.10 72.77 86.40 26.30 67.57 45.90 53.10 68.27 TAC 72.77 66.53 94.53 90.67 65.30 72.20 85.83 23.53 67.63 47.57 48.07 70.00 DeAR (Ours) 71.50 67.60 95.00 91.23 66.70 73.80 86.80 26.50 68.30 45.40 53.50 68.80
+
+Table 4. Comparison of DeAR with previous methods on domain generalization. Bold values indicate the best results. 
+
+Source Target ImageNet Average -V2 -S -A -R CoOp 71.51 59.28 64.20 47.99 49.71 75.21 MaPLe 70.72 60.28 64.07 49.15 50.90 76.98 PromptSRC 71.27 60.65 64.35 49.55 50.90 77.80 MMRL 72.03 60.59 64.47 49.17 51.20 77.53 TAC 72.77 61.63 65.97 50.30 51.73 78.50 
+
+DeAR (Ours) 71.50 61.25 64.87 49.50 51.80 78.83 
+
+performance on the source task (ImageNet). 1 2 4 8 16 
+
+> Number of training examples per class
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> Performance (%)
+> Average over 11 datasets
+> Methods
+> Linear probe
+> CoOp
+> MaPLe
+> PromptSRC
+> MMRL
+> DeAR (Ours)
+
+Figure 4. Comparison of DeAR with previous methods on few-shot learning. Detailed results are provided in the Appendix 
+
+4.2. Ablation Studies 
+
+To validate the effectiveness of the key components in our DeAR framework, we conduct a series of ablation studies on the average performance across all 11 datasets in the base-to-novel generalization setting. 
+
+Role-Based Attention Mask. To validate our core hy-pothesis, that role-based information control is superior to uniform strategies, we compare DeAR against two variants: All-Generalization, where all deep heads are shielded from attribute tokens, and All-Mixed, where all interactions are permitted. As shown in Table 5 validate our role-based design. The All-Generalization strategy maximizes novel-class perfor-mance at the cost of base-class learning, while the All-Mixed strategy does the opposite. Our proposed DeAR strikes the optimal balance between adaptation and gener-alization, achieving the best overall Harmonic Mean. 
+
+Table 5. Ablation on Role-Based Attention Mask. Mask Strategy Base Novel HM All-Generalization 81.25 80.12 80.68 All-Mixed 85.31 76.98 80.93 
+
+DeAR (Ours) 85.94 79.73 82.72 
+
+Impact of Loss Components. We also analyze the con-tribution of each component in our proposed loss function. We start with a baseline using only the cross-entropy clas-sification loss ( LCE ) and incrementally add our two regular-ization terms: the multimodal self-regularization ( Lreg ) and the fusion-weight regularization ( Lfusion ). As shown in Table 6, each loss component is vital. Adding Lreg significantly boosts Novel class performance (+4.24%). The subsequent addition of Lfusion further im-proves the overall Harmonic Mean, demonstrating the ben-efit of prioritizing the class feature. 
+
+Table 6. Ablation on Loss function components. Loss Function Base Novel HM 
+
+LCE 86.75 74.21 79.99 
+
+LCE + Lreg 85.03 78.45 81.61 
+
+LCE + Lreg + Lfusion 85.94 79.73 82.72 
+
+## 5. Conclusion 
+
+In this work, we propose the DeAR framework to en-hance the adaptation of CLIP by balancing task-specific knowledge with generalization preservation. DeAR of-fers a fine-grained controllable fine-tuning process. Us-ing our Concept Entropy, we decompose each attention head roles, allowing DeAR to direct new knowledge to at-tribute heads while protecting generalization heads. Ex-periments show that DeAR achieves state-of-the-art perfor-mance on base-to-novel generalization benchmarks and per-forms well on various tasks. More importantly, the learned attribute-aware representations offer significant potential for future applications requiring explicit semantic control, such as fine-grained retrieval. We demonstrate that fine-grained internal control is the path to better VLMs adapta-tion. 
+
+## References 
+
+[1] Lukas Bossard, Matthieu Guillaumin, and Luc Van Gool. Food-101 – mining discriminative components with random forests. In Computer Vision – ECCV 2014 , pages 446–461, Cham, 2014. Springer International Publishing. 7 [2] Mircea Cimpoi, Subhransu Maji, Iasonas Kokkinos, Sammy Mohamed, and Andrea Vedaldi. Describing textures in the wild. In 2014 IEEE Conference on Computer Vision and Pattern Recognition , pages 3606–3613, 2014. 7 [3] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale hierarchical image database. In 2009 IEEE Conference on Computer Vision and Pattern Recognition , pages 248–255, 2009. 7 [4] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-vain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale, 2021. 2 [5] Li Fei-Fei, R. Fergus, and P. Perona. Learning generative visual models from few training examples: An incremen-tal bayesian approach tested on 101 object categories. In 
+
+2004 Conference on Computer Vision and Pattern Recogni-tion Workshop , pages 178–178, 2004. 7 [6] Yossi Gandelsman, Alexei A. Efros, and Jacob Steinhardt. Interpreting CLIP’s image representation via text-based de-composition. In The Twelfth International Conference on Learning Representations , 2024. 2, 3, 4 [7] Peng Gao, Shijie Geng, Renrui Zhang, Teli Ma, Rongyao Fang, Yongfeng Zhang, Hongsheng Li, and Yu Qiao. Clip-adapter: Better vision-language models with feature adapters, 2025. 1 [8] Xiuye Gu, Tsung-Yi Lin, Weicheng Kuo, and Yin Cui. Open-vocabulary object detection via vision and language knowledge distillation, 2022. 1 [9] Yuncheng Guo and Xiaodong Gu. Mmrl: Multi-modal rep-resentation learning for vision-language models. In Proceed-ings of the Computer Vision and Pattern Recognition Confer-ence , pages 25015–25025, 2025. 2, 7 [10] Yuncheng Guo and Xiaodong Gu. Mmrl++: Parameter-efficient and interaction-aware representation learning for vision-language models, 2025. 5 [11] Changsheng Xu Hantao Yao, Rui Zhang. Tcp: Textual-based class-aware prompt tuning for visual-language model. In 
+
+The IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. 2 [12] Fusheng Hao, Fengxiang He, Fuxiang Wu, Tichao Wang, Chengqun Song, and Jun Cheng. Task-aware clustering for prompting vision-language models. In Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR) , pages 14745–14755, 2025. 2 [13] Patrick Helber, Benjamin Bischke, Andreas Dengel, and Damian Borth. Eurosat: A novel dataset and deep learning benchmark for land use and land cover classification. IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing , 12(7):2217–2226, 2019. 7 [14] Dan Hendrycks, Steven Basart, Norman Mu, Saurav Kada-vath, Frank Wang, Evan Dorundo, Rahul Desai, Tyler Zhu, Samyak Parajuli, Mike Guo, Dawn Song, Jacob Steinhardt, and Justin Gilmer. The many faces of robustness: A crit-ical analysis of out-of-distribution generalization. In 2021 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 8320–8329, 2021. 7 [15] Dan Hendrycks, Kevin Zhao, Steven Basart, Jacob Stein-hardt, and Dawn Song. Natural adversarial examples. In 
+
+2021 IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pages 15257–15266, 2021. 7 [16] Chao Jia, Yinfei Yang, Ye Xia, Yi-Ting Chen, Zarana Parekh, Hieu Pham, Quoc Le, Yun-Hsuan Sung, Zhen Li, and Tom Duerig. Scaling up visual and vision-language representation learning with noisy text supervision. In Proceedings of the 38th International Conference on Machine Learning , pages 4904–4916. PMLR, 2021. 2 [17] Menglin Jia, Luming Tang, Bor-Chun Chen, Claire Cardie, Serge Belongie, Bharath Hariharan, and Ser-Nam Lim. Vi-sual prompt tuning, 2022. 2 [18] Muhammad Uzair khattak, Hanoona Rasheed, Muhammad Maaz, Salman Khan, and Fahad Shahbaz Khan. Maple: Multi-modal prompt learning. In The IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023. 2 [19] Muhammad Uzair Khattak, Syed Talal Wasim, Muzam-mal Naseer, Salman Khan, Ming-Hsuan Yang, and Fa-had Shahbaz Khan. Self-regulating prompts: Foundational model adaptation without forgetting. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 15190–15200, 2023. 2 [20] James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al. Overcoming catastrophic forgetting in neu-ral networks. Proceedings of the national academy of sci-ences , 114(13):3521–3526, 2017. 1 [21] Jonathan Krause, Michael Stark, Jia Deng, and Li Fei-Fei. 3d object representations for fine-grained categorization. In 
+
+2013 IEEE International Conference on Computer Vision Workshops , pages 554–561, 2013. 7 [22] Liunian Harold Li, Pengchuan Zhang, Haotian Zhang, Jian-wei Yang, Chunyuan Li, Yiwu Zhong, Lijuan Wang, Lu Yuan, Lei Zhang, Jenq-Neng Hwang, Kai-Wei Chang, and Jianfeng Gao. Grounded language-image pre-training. In 
+
+2022 IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pages 10955–10965, 2022. 1 [23] Xianhang Li, Yanqing Liu, Haoqin Tu, Hongru Zhu, and Ci-hang Xie. Openvision: A fully-open, cost-effective family of advanced vision encoders for multimodal learning, 2025. 2 [24] Zheng Li, Xiang Li, Xinyi Fu, Xin Zhang, Weiqiang Wang, Shuo Chen, and Jian Yang. Promptkd: Unsupervised prompt distillation for vision-language models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 26617–26626, 2024. 2 [25] Zheng Li, Yibing Song, Ming-Ming Cheng, Xiang Li, and Jian Yang. Advancing textual prompt learning with anchored attributes. arXiv preprint arXiv:2412.09442 , 2024. 2 [26] Nayu Liu, Junnan Zhu, Yiming Ma, Zhicong Lu, Wenlei Xu, Yong Yang, Jiang Zhong, and Kaiwen Wei. Sara: Salience-aware reinforced adaptive decoding for large language mod-els in abstractive summarization. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 25450–25463, 2025. 1 [27] Subhransu Maji, Esa Rahtu, Juho Kannala, Matthew Blaschko, and Andrea Vedaldi. Fine-grained visual classi-fication of aircraft, 2013. 7 [28] Anqi Mao, Mehryar Mohri, and Yutao Zhong. Cross-entropy loss functions: Theoretical analysis and applications, 2023. 6[29] Leland McInnes, John Healy, Steve Astels, et al. hdbscan: Hierarchical density based clustering. J. Open Source Softw. ,2(11):205, 2017. 3 [30] Maria-Elena Nilsback and Andrew Zisserman. Automated flower classification over a large number of classes. In 2008 Sixth Indian Conference on Computer Vision, Graphics & Image Processing , pages 722–729, 2008. 7 [31] Omkar M Parkhi, Andrea Vedaldi, Andrew Zisserman, and C. V. Jawahar. Cats and dogs. In 2012 IEEE Conference on Computer Vision and Pattern Recognition , pages 3498– 3505, 2012. 7 [32] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision, 2021. 1, 2 [33] Maithra Raghu, Thomas Unterthiner, Simon Kornblith, Chiyuan Zhang, and Alexey Dosovitskiy. Do vision trans-formers see like convolutional neural networks? In Pro-ceedings of the 35th International Conference on Neural In-formation Processing Systems , Red Hook, NY, USA, 2021. Curran Associates Inc. 3 [34] Benjamin Recht, Rebecca Roelofs, Ludwig Schmidt, and Vaishaal Shankar. Do imagenet classifiers generalize to im-agenet? In International Conference on Machine Learning ,2019. 7 [35] Nils Reimers and Iryna Gurevych. Sentence-BERT: Sen-tence embeddings using Siamese BERT-networks. In Pro-ceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP) , pages 3982–3992, Hong Kong, China, 2019. As-sociation for Computational Linguistics. 3 [36] Dominykas Seputis, Serghei Mihailov, Soham Chatterjee, and Zehao Xiao. Multi-modal adapter for vision-language models, 2024. 1 [37] Khurram Soomro, Amir Zamir, and Mubarak Shah. Ucf101: A dataset of 101 human actions classes from videos in the wild. ArXiv , abs/1212.0402, 2012. 7 [38] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need, 2023. 2 [39] Jesse Vig and Yonatan Belinkov. Analyzing the structure of attention in a transformer language model. In Proceedings of the 2019 ACL Workshop BlackboxNLP: Analyzing and In-terpreting Neural Networks for NLP , pages 63–76, Florence, Italy, 2019. Association for Computational Linguistics. 3 [40] Haohan Wang, Songwei Ge, Zachary Lipton, and Eric P Xing. Learning robust global representations by penalizing local predictive power. In Advances in Neural Information Processing Systems . Curran Associates, Inc., 2019. 7 [41] Junjie Wang, Bin Chen, Bin Kang, Yulin Li, Weizhi Xian, Yichi Chen, and Yong Xu. Ov-dquo: Open-vocabulary detr with denoising text query training and open-world unknown objects supervision. Proceedings of the AAAI Conference on Artificial Intelligence , 39(7):7762–7770, 2025. 1 [42] Lionel Z. Wang, Yiming Ma, Renfei Gao, Beichen Guo, Han Zhu, Wenqi Fan, Zexin Lu, and Ka Chung Ng. Megafake: A theory-driven dataset of fake news generated by large lan-guage models, 2024. 1 [43] Shihan Wu, Ji Zhang, Pengpeng Zeng, Lianli Gao, Jingkuan Song, and Heng Tao Shen. Skip tuning: Pre-trained vision-language models are effective and efficient adapters them-selves. arXiv preprint arXiv:2412.11509 , 2024. 2 [44] Jianxiong Xiao, James Hays, Krista A. Ehinger, Aude Oliva, and Antonio Torralba. Sun database: Large-scale scene recognition from abbey to zoo. In 2010 IEEE Computer So-ciety Conference on Computer Vision and Pattern Recogni-tion , pages 3485–3492, 2010. 7 [45] Jingjing Xie, Yuxin Zhang, Jun Peng, Zhaohong Huang, and Liujuan Cao. Textrefiner: Internal visual feature as efficient refiner for vision-language models prompt tuning, 2024. 2 [46] Lu Yuan, Dongdong Chen, Yi-Ling Chen, Noel Codella, Xiyang Dai, Jianfeng Gao, Houdong Hu, Xuedong Huang, Boxin Li, Chunyuan Li, Ce Liu, Mengchen Liu, Zicheng Liu, Yumao Lu, Yu Shi, Lijuan Wang, Jianfeng Wang, Bin Xiao, Zhen Xiao, Jianwei Yang, Michael Zeng, Luowei Zhou, and Pengchuan Zhang. Florence: A new foundation model for computer vision, 2021. 2 [47] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer. Sigmoid loss for language image pre-training. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 11941–11952, 2023. 2 [48] Zhaoheng Zheng, Jingmin Wei, Xuefeng Hu, Haidong Zhu, and Ram Nevatia. Large language models are good prompt learners for low-shot image classification. In CVPR , 2024. 2 [49] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Learning to prompt for vision-language models. In-ternational Journal of Computer Vision , 130(9):2337–2348, 2022. 1, 2 [50] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Zi-wei Liu. Conditional prompt learning for vision-language models. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. 2 [51] Beier Zhu, Yulei Niu, Yucheng Han, Yue Wu, and Hanwang Zhang. Prompt-aligned gradient for prompt tuning. Interna-tional Conference on Computer Vision, 2023. 2 [52] Xiangyang Zhu, Renrui Zhang, Bowei He, Aojun Zhou, Dong Wang, Bin Zhao, and Peng Gao. Not all features mat-ter: Enhancing few-shot clip with adaptive prior refinement, 2023. 1 Supplementary Material for 
+
+# DeAR: Fine-Grained VLM Adaptation by Decomposing Attention Head Roles 
+
+## A. Implementation Details 
+
+This section provides a comprehensive overview of the implementation details used for all experiments to ensure full repro-ducibility. Our code is built upon PyTorch and will be made publicly available. 
+
+A.1. Dataset and Dataloader Configuration 
+
+For all datasets, we follow a consistent data loading and augmentation pipeline: • Image Pre-processing: Input images are resized to 224 × 224 pixels. For training, we apply standard augmentations including random resized crop with a scale range of (0 .5, 1.0) and random flip . The interpolation method used is bicubic. Finally, all images are normalized using the standard CLIP pixel mean [0 .4814 , 0.4578 , 0.4082] and standard deviation [0 .2686 , 0.2613 , 0.2757] .• Dataloader: For training, we use a batch size of 16. For evaluation, the batch size is set to 250. We use 8 worker threads for data loading to maximize efficiency. 
+
+A.2. Training and Optimization 
+
+Our training setup is designed for stable and efficient convergence: • Optimizer: We use the AdamW optimizer for all learnable parameters. • Learning Rate Schedule: The initial learning rate is set to 1×10 −3. We employ a cosine annealing learning rate scheduler over a total of 10 epochs. • Warmup: A 1-epoch constant warmup period is used at the beginning of training, with a warmup learning rate of 1×10 −5.This helps stabilize the model in the early stages of training. • Training Precision: We use Automatic Mixed Precision (AMP) to accelerate training and reduce memory consumption. 
+
+A.3. Model and DeAR Configuration 
+
+Backbone and Layer Selection. All experiments are conducted using the official pre-trained CLIP model with a ViT-B/16 backbone. We strategically inject our learnable tokens into the deep layers (Layers 9 to 12) of the encoders, corresponding to 
+
+J = 9 in the main text. This design choice is guided by prior findings demonstrating that functional specialization in Vision Transformers predominantly emerges in the final few layers. We further validated this through mean-ablation on our specific ViT-B/16 backbone. 
+
+Vision-Text Asymmetry. While the update mechanism is symmetric across modalities, the token definitions differ by design. Both the vision and text encoders insert learnable tokens at layers L9−12 with the same β-controlled flow (Eq. 5 & 6 in the main text) to prevent semantic drift. However, we intentionally exclude explicit Attribute Tokens from the text side. In CLIP-based classification, text features act as fixed anchors (via templates like “a photo of a {class }”) for semantic alignment. Keeping the text side simplified prevents over-complication while maintaining the integrity of these semantic anchors. 
+
+DeAR Hyperparameters. 
+
+• Token Injection: We use a learnable prompt/token length of K = 5 , selected via Density-Based Clustering Validation (DBCV). • Context Information Control: The hyperparameter β which controls the context information flow is set to 0.9. • Loss Weights: The balancing hyperparameters for our composite loss function are set to λreg = 1 .0 and λfusion = 0 .7. All hyperparameters were fixed across all 11 datasets after initial tuning on a validation set. Computational Cost. During training, the regularization term Lreg requires one additional forward pass through the frozen backbone, which increases the overall training cost by approximately 35% . We find this trade-off highly acceptable given the significant zero-shot generalization gains achieved. Crucially, during inference, the computational overhead is exactly zero, as the final adapted model retains the standard ViT architecture without requiring auxiliary modules. All experiments were conducted on a server equipped with three NVIDIA RTX 4090 GPUs. 
+
+> Table 7. Summary of key hyperparameters used in our experiments.
+
+Hyperparameter Value 
+
+Dataloader & Input 
+
+Batch Size (Train / Test) 16 / 250 Input Resolution 224 × 224 
+
+Augmentations RRCrop, RandomFlip, Normalize 
+
+Optimizer 
+
+Optimizer Name AdamW Learning Rate (Initial) 1 × 10 −3
+
+LR Scheduler Cosine Annealing Max Epochs 10 Warmup Epochs 1
+
+DeAR Specific 
+
+Backbone ViT-B/16 Attribute Token Length ( K) 5Injection Layers 9, 10, 11, 12 Knowledge Anchoring β 0.9 Regularization λreg 1.0 Fusion Loss λfusion 0.7 
+
+## B. Functional Roles of Attention Heads 
+
+To build the Role-Based Attention Mask for our DeAR framework, we systematically analyzed the top descriptive phrases for each attention head in the later layers (9-12) of the ViT-B/16 backbone. 
+
+Offline Concept Entropy Analysis. It is important to note that our framework does not rely on downstream task descrip-tions or labels for head discovery. Following TEXTSPAN, the Concept Entropy is computed via a one-time, offline analysis using a generic text corpus on the pre-trained backbone. The identified head roles are intrinsic to the model, kept frozen, and universally transferred to all downstream tasks without the need for re-discovery. 
+
+Q, K, V Masking Mechanism. To strictly enforce functional separation, we implement the role isolation directly within the self-attention mechanism. Specifically, a mask matrix (containing −∞ values) is applied to the Attention matrix before the Softmax operation. This definitively blocks the newly inserted Attribute Tokens from attending to (or being attended by) the original tokens associated with non-target heads, fully preserving the pre-trained backbone’s innate generalization flow. 
+
+Conceptual Clusters and Role Assignment. Our unsupervised analysis using TEXTSPAN and HDBSCAN identified 12 distinct conceptual clusters : Location, Object, Color, Shape, Texture, Animal, Human, Text, Number, Style, Emotion, and Action . We classify each head into one of four functional roles: 1. Core Attribute Heads: Heads focusing on the five selected core concepts ( Color, Shape, Texture, Object, Location ). These heads are assigned specific attribute tokens via Eq. 9. 2. Other Specialized Heads: Heads focusing on specific distinct concepts that are not part of the core set (e.g., Animal, Human ). To prevent interference, they are isolated from the new attribute tokens (using Eq. 8). 3. Generalization Heads: Heads focusing on abstract concepts or global composition (e.g., Style ). These are critical for zero-shot robustness and are also isolated. 4. Mixed Heads: Heads with no single dominant focus, allowing unrestricted attention flow. Table 8 details the classification for all heads in Layers 9-12.       
+
+> Table 8. Detailed functional role classification for Attention Heads in Layers 9–12 of ViT-B/16. We categorize each head into four roles: Core Attribute ,Other Specialized ,Generalization , and Mixed .
+
+Head Role (Concept) Representative Phrases 
+
+Layer 9 
+
+(9, 0) Core Attribute (Location) Photo taken in Gal´ apagos Islands, Photo taken in Okavango Delta, Bustling cityscape at night 
+
+(9, 1) Core Attribute (Location) Picture taken in Bhutan, Photo taken in the Rub’ al Khali, An image of Andorra 
+
+(9, 2) Mixed A network of veins, Eyes, Photograph taken in a rustic barn, A wiz-ard’s hat 
+
+(9, 3) Core Attribute (Location) Aerial view of a snowy landscape, Picture taken in the Swiss choco-late factories, Australian coral reef 
+
+(9, 4) Other Specialized (Emotion) Sarcastic raised eyebrow, Intrigued facial expression, A photo of a young person 
+
+(9, 5) Generalization (Style) Cinematic framing, Dramatic chiaroscuro photography, Retro-style poster design 
+
+(9, 6) Mixed Futuristic biotechnology, Artwork featuring zebra stripe motifs, Sur-real digital collage 
+
+(9, 7) Core Attribute (Texture) Delicate ceramic patterns, Close-up of a textured synthetic rubber, Ethereal double exposure 
+
+(9, 8) Other Specialized (Text) Artwork featuring Morse code typography, Bold graffiti, Film noir-inspired tones 
+
+(9, 9) Core Attribute (Location) Bustling cityscape at night, Picture taken in a city park, Serene coun-tryside sunrise 
+
+(9, 10) Generalization (Style) Detailed illustration of a celestial body, Stark minimalism, Geomet-ric tessellation 
+
+(9, 11) Mixed An image of three subjects, A photo with the letter T, detailed reptile close-up 
+
+Layer 10 
+
+(10, 0) Core Attribute (Object) Picture with a single domesticated animal, A trunk, A whisker, An irregular heptagon 
+
+(10, 1) Core Attribute (Color) Earthy color tones, Pop art colors, Image with a pink color, Film noir-inspired tones 
+
+(10, 2) Core Attribute (Texture) Photo of a furry animal, Close-up of a textured synthetic fabric, Mar-bleized design 
+
+(10, 3) Core Attribute (Location) Sunlit meadow path, Crumbling and abandoned building, Vibrant city alley 
+
+(10, 4) Other Specialized (Human) Image with a team of subjects, An image of two subjects, Crowded and bustling scene 
+
+(10, 5) Core Attribute (Object) An image of a Fashion Designer, A photograph of a small object, Striking fashion stance 
+
+(10, 6) Core Attribute (Location) Gritty urban street scene, Serene meadow landscape, Breathtaking canyons 
+
+(10, 7) Generalization (Style) Playful reflections, Cubist still life painting, Stark minimalism, Time-less classic artwork 
+
+(10, 8) Core Attribute (Location) Picture taken in a city park, Busy airport terminal, Urban alleyway 
+
+Continued on next page Table 8 – continued from previous page Head Role (Concept) Representative Phrases 
+
+(10, 9) Core Attribute (Object) An image of a dish, A photo of a young person, An image of fish, Colorful hot air balloons 
+
+(10, 10) Core Attribute (Shape) Image with an owl, A regular octagon, Image with a futuristic time travel device 
+
+(10, 11) Generalization (Style) Intricate pencil drawing, Unexpected symmetry, Futuristic trans-portation 
+
+Layer 11 
+
+(11, 0) Core Attribute (Object) A bookmark, A laptop, A bowl, A skirt, A jacket, A phone, A regular octagon 
+
+(11, 1) Core Attribute (Color) A platinum silver color, A gold color, A photo with the letter F, Image with a pink color 
+
+(11, 2) Other Specialized (Animal) Playful animals, Flowers, An image with dogs, Image with a butter-fly, An image with seagulls 
+
+(11, 3) Core Attribute (Location) Picture snapped in the Alaskan mountains, Photo taken in Bangkok Thailand, Ocean 
+
+(11, 4) Core Attribute (Texture) Photo of a furry animal, A bookmark, Close-up of a textured syn-thetic wood, A skirt 
+
+(11, 5) Core Attribute (Texture) Artwork featuring Morse code typography, Delicate embroidery, Kaleidoscopic patterns 
+
+(11, 6) Core Attribute (Location) Cultural exhibition, Photograph taken in a cozy cafe, Picture snapped in the Greek islands 
+
+(11, 7) Other Specialized (Action) Joyful toddlers, Hands in an embrace, A paw, An image with pedes-trians 
+
+(11, 8) Generalization (Style) Anime style image, A high-resolution image, Artwork featuring ab-stract fractal patterns 
+
+(11, 9) Core Attribute (Object) A necklace, A sock, A megaphone, A jacket, A fork, A belt, Precise clock mechanism 
+
+(11, 10) Core Attribute (Location) Tranquil boating on a lake, Peaceful rural farmland, Secluded beach cove 
+
+(11, 11) Core Attribute (Location) Bustling city nightlife, Secluded forest cabin, Energetic music festival crowd 
+
+Layer 12 
+
+(12, 0) Core Attribute (Location) Picture taken in the Scotland countryside, Photo taken in Barcelona Spain, Photo taken in Tokyo 
+
+(12, 1) Generalization (Style) Reflections, Central focal point, Motion freeze, Captivating city pulse, Dramatic skies 
+
+(12, 2) Generalization (Style) Ephemeral glimmers, Whispering horizons, Symmetry disrupted, Unconventional beauty 
+
+(12, 3) Mixed Picture with multiple wild animals, An image of a Chef de Cuisine, Picture with cars 
+
+(12, 4) Other Specialized (Human) Playful siblings, Image with a five people, A photo of a woman, A group photo 
+
+(12, 5) Core Attribute (Shape) Photo of a reptile, Image with a seagull, A scalene triangle, A snail, Herringbone pattern 
+
+(12, 6) Core Attribute (Location) Photo taken in Namib Desert, Photo taken in the Alaskan mountains, Scottish moors 
+
+(12, 7) Core Attribute (Object) A stick, A cup, A bonnet, A shoelace, A bottle, A belt, A jacket, A puddle 
+
+Continued on next page Table 8 – continued from previous page Head Role (Concept) Representative Phrases 
+
+(12, 8) Mixed A laptop, A rug, A shelf, A bag, Picture taken in an art gallery, Urban subway station 
+
+(12, 9) Other Specialized (Number) An image of the number 10, An image of the number 7, The number fifteen 
+
+(12, 10) Core Attribute (Color) An image with cold green tones, Image with a red color, A charcoal gray color 
+
+(12, 11) Other Specialized (Text) A photo with the letter J, A photo with the letter K, A swirling eddy, A photo with the letter C 
+
+## C. Complete Experiment Results 
+
+Our DeAR framework consistently outperforms previous approaches across all benchmark datasets. 
+
+C.1. Statistical Robustness and Variance 
+
+To ensure the statistical reliability of our improvements, we evaluate DeAR alongside a strong baseline (MMRL++) across multiple random seeds ( {1, 2, 3}). As presented in Table 9, DeAR exhibits extremely low variance across independent runs and consistently outperforms the baseline on both the average of the 11 base-to-novel datasets and the challenging ImageNet-1K benchmark. This validates that the performance gains are robust and directly attributable to the proposed role-based masking strategy rather than initialization artifacts.     
+
+> Table 9. Robustness Analysis. Results are reported as Mean ±Standard Deviation across 3 independent seeds.
+
+Average (11 Datasets) ImageNet-1K Method Base Novel HM Base Novel HM 
+
+MMRL++ 85.53 78.32 81.77 77.63 71.50 74.44 
+
+DeAR (Ours) 85.62 ±0.21 79.77 ±0.11 82.71 ±0.18 77.52 ±0.39 71.84 ±0.17 74.73 ±0.23 
+
+## D. Prompt Templates 
+
+Table 10 summarizes the specific prompt templates used for each dataset in our experiments. These templates are manually designed to better match the characteristics of each dataset. 
+
+## E. Additional Ablation Studies 
+
+Task-Adaptive Fusion Logic and DTD Discrepancy. A key component of DeAR is its Task-Adaptive Fusion strategy. The purpose of Lfusion is to encourage the model to prioritize the generalization feature ( fcls ) as the primary decision-maker, utilizing the specialized attributes ( fattr ) solely for fine-grained refinement. Without this loss constraint, the model risks over-relying on learned attributes, which degrades zero-shot capability. It is worth noting the behavioral difference on the Describable Textures Dataset (DTD). In the base-to-novel setting, predic-tions utilize the full Task-Adaptive Fusion ( fattr + fcls ), which heavily benefits texture-centric datasets like DTD. Conversely, in the cross-dataset evaluation protocol, predictions rely solely on the decoupled general-purpose feature ( fcls ) for strict fair-ness across methods. This discrepancy actually validates that our attribute tokens successfully capture critical fine-grained features that fcls alone might miss. As shown in Table 11, our proposed Task-Adaptive Fusion significantly outperforms a standard decoupled strategy (+1.23% HM). 
+
+Threshold Sensitivity and Role Ablation. The Role-Based Mask uses Concept Entropy quantiles to separate specialized heads (bottom 20% entropy) from generic heads (top 20% entropy). To demonstrate the stability of this heuristic, we con-(a) Average (11 datasets) (b) ImageNet (c) DTD       
+
+> (d) SUN397 (e) UCF101 (f) EuroSAT
+> (g) Food101 (h) Oxford Flowers (i) Caltech101
+> (j) Oxford Pets (k) FGVC Aircraft (l) Stanford Cars
+
+Figure 5. Few-Shot Performance Comparison. Comparison of DeAR with previous methods across 11 datasets. DeAR consistently achieves superior performance in few-shot settings. 
+
+duct a sensitivity analysis on ImageNet-1K (Table 12, Left). DeAR maintains a stable performance plateau across a broad threshold range (Top 10% to 30%), indicating it does not require fragile hyperparameter tuning. Furthermore, accurately identifying these roles is paramount. As shown in Table 12 (Right), randomly shuffling the assigned roles results in a severe performance drop (from 74.73% to 70.85%), conclusively proving the necessity of the proposed entropy-based role decomposition. Table 10. Prompt templates used for each dataset. 
+
+Dataset Prompt Template 
+
+OxfordPets a photo of a {} , a type of pet. OxfordFlowers a photo of a {} , a type of flower. FGVCAircraft a photo of a {} , a type of aircraft. DescribableTextures {} texture. EuroSAT a centered satellite photo of {} .StanfordCars a photo of a {} .Food101 a photo of {} , a type of food. SUN397 a photo of a {} .Caltech101 a photo of a {} .UCF101 a photo of a person doing {} .ImageNet a photo of a {} .ImageNetSketch a photo of a {} .ImageNetV2 a photo of a {} .ImageNetA a photo of a {} .ImageNetR a photo of a {} .
+
+> Table 11. Ablation study on the inference strategy. Average accuracy (%) on the base-to-novel benchmark.
+
+Inference Strategy Base Novel HM 
+
+Decoupled Inference 85.94 78.50 82.05 
+
+Task-Adaptive Fusion (Ours) 85.94 79.73 82.72  
+
+> Table 12. Sensitivity Analysis and Ablation Studies on ImageNet-1K.
+
+Sensitivity (Entropy Threshold %) Role & Attribute ( K) Ablation Threshold Q. IN-1K HM ( ±Std) Strategy IN-1K HM ( ±Std) 
+
+Top 10% 74.35 ± 0.21 Random Role Shuffle 70.85 ± 0.25 
+
+Top 20% 74.73 ± 0.23 DeAR ( K = 5 ) 74.73 ± 0.23 
+
+Top 30% 74.28 ± 0.20 Concept Cluster K = 3 73.85 ± 0.29 Top 40% 71.10 ± 0.24 Concept Cluster K = 7 74.01 ± 0.33 
+
+Sensitivity to ”Core Attribute” Selection. Our default design selects K = 5 core attributes. Table 12 (Right) also explores adjusting the granularity of these concept clusters. While K = 3 or K = 7 slightly underperform the optimal K = 5 , they still substantially exceed baseline performances, demonstrating the framework’s robustness to attribute granularity. 
+
+Visualization of Learned Task Priors. To further understand how DeAR adapts to different domains, we visualize the learned fusion weights αk (averaged over heads of the same attribute type) across all 11 datasets in Figure 6. The heatmap reveals highly interpretable patterns: • DTD (Texture Dataset): Shows a significantly higher weight for the Texture token. • OxfordPets & Flowers102: Exhibit balanced but elevated attention to Color and Shape .• FGVCAircraft & StanfordCars: Show reduced reliance on Color but maintain attention on Shape .• ImageNet: Maintains a strong reliance on the global [CLS] Feature .
+
+## F. Code 
+
+Code is available at our GitHub repository. CLS Feature 
+
+Color 
+
+Shape 
+
+Texture 
+
+Object 
+
+Location 
+
+ImageNet 
+
+Caltech101 
+
+OxfordPets 
+
+StanfordCars 
+
+Flowers102 
+
+Food101 
+
+FGVCAircraft 
+
+SUN397 
+
+DTD 
+
+UCF101 
+
+EuroSAT 
+
+> Dataset
+
+Task-Adaptive Fusion Weights Across Datasets 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+> Fusion Weight (  k)
+
+Figure 6. Visualization of Task-Adaptive Fusion Weights Across Datasets. The heatmap displays the magnitude of the learned fusion weights ( αk ) for the global [CLS] feature and the five specialized attribute tokens. Darker blue indicates higher importance.

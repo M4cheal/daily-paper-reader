@@ -1,0 +1,1037 @@
+Title: The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging
+
+URL Source: https://arxiv.org/pdf/2602.21372v1
+
+Published Time: Thu, 26 Feb 2026 01:13:37 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+Sameer Ambekar 1 2 3 4 Reza Nasirigerdeh 5 4 Peter J. Sch ¨ uffler 5 1 4 Lina Felsner 1 Daniel M. Lang 1 2 * 
+
+Julia A. Schnabel 1 2 3 4 6 * 
+
+Abstract 
+
+Model merging under unseen test-time distribu-tion shifts often renders naive strategies, such as mean averaging unreliable. This challenge is es-pecially acute in medical imaging, where mod-els are fine-tuned locally at clinics on private data, producing domain-specific models that dif-fer by scanner, protocol, and population. When deployed at an unseen clinical site, test cases arrive in unlabeled, non-i.i.d. batches, and the model must adapt immediately without labels. In this work, we introduce an entropy-adaptive, fully online model-merging method that yields a batch-specific merged model via only forward passes, effectively leveraging target information. We fur-ther demonstrate why mean merging is prone to failure and misaligned under heterogeneous do-main shifts. Next, we mitigate encoder classifier mismatch by decoupling the encoder and classifi-cation head, merging with separate merging coef-ficients. We extensively evaluate our method with state-of-the-art baselines using two backbones across nine medical and natural-domain gener-alization image classification datasets, showing consistent gains across standard evaluation and challenging scenarios. These performance gains are achieved while retaining single-model infer-ence at test-time, thereby demonstrating the effec-tiveness of our method. 
+
+> *
+
+Equal contribution 1School of Computation, Information and Technology, Technical University of Munich, Germany 2Institute of Machine Learning in Biomedical Imaging, Helmholtz Munich, Germany 3relAI – Konrad Zuse School of Excellence in Reliable AI 4Munich Center for Machine Learning (MCML) 5Institute of Pathology, Technical University of Munich, Germany 6School of Biomedical Engineering and Imaging Sciences, King’s College London, UK. Correspondence to: Sameer <firstandlastnameatt-tum.de >.
+
+Preprint. February 26, 2026. Mean                
+
+> Merged
+> Model
+> w/ Mean
+> merging
+> Mixed unseen
+> Target data
+> Entropy-
+> Adaptive
+> Model
+> merging
+> Batch t=1
+> Batch t=2
+> Adaptive
+> Coefficients
+> ?A= 0.6
+> ?B= 0.3
+> ?C= 0.1
+> ?A= 0.3
+> ?B= 0.2
+> ?C= 0.5
+> Merged
+> model
+> t=1
+> Merged
+> model
+> t=2
+> (a) Mean Merging failure (b) Our work: Entropy-Adaptive Merging
+> ?A= 0.33
+> ?B= 0.33
+> ?C= 0.33
+> Merged
+> model
+> Offline Online Batch
+> specific
+> Batch
+> specific
+> Not Batch
+> Specific
+> Privacy enabled:
+> Do not share data
+> with each other
+> Domain-specific models:
+> Trained with Standard
+> loss and models
+> Model A Model B Model C
+> At test time, the above models are used by both: (a) Mean Merging and (b) Entropy-Adaptive for unseen target data
+> Mixed unseen
+> Target data
+
+Figure 1. Mean merging and Entropy-Adaptive merging (Ours). (a) Mean merging averages independently trained hospital models into a static model that doesn’t consider the target information into account, thus can fail on mixed target batches. (b) Our method, adaptively, uses entropy for each unlabeled target batch to calcu-late per-batch merging coefficients along linear mode connectivity directions, producing batch-specific merged models while leverag-ing target information. Additional illustration with loss heatmaps in Fig.3. 
+
+1. Introduction 
+
+Recent advances in transfer learning using pretrained mod-els have driven deep learning to achieve strong performance with limited training data (He et al., 2016; Hu et al., 2022; Brown et al., 2020). This is particularly valuable in medi-cal imaging, where the model training on large datasets is constrained by the high cost of expert annotation and strict privacy regulations (Hoofnagle et al., 2019; Kaissis et al., 2020). Therefore, each clinical site typically fine-tunes a pretrained encoder locally, resulting in multiple clinical site domain-specific models which are nearly oracle models on their data. These clinical sites do not share the data with one another due to privacy concerns (Zhu et al., 2024) and to capture features specific to their scanners, acquisition protocols, and patient populations. A central question is whether these independently trained domain-specific models (cross-clinic models) can be reused during deployment at an unseen hospital. This is espe-cially interesting and important in scenarios where this target-domain deployment is inherently online, i.e. diverse unlabeled cases arrive incrementally in batches, and the system must respond immediately as the stream evolves, 1
+
+> arXiv:2602.21372v1 [cs.LG] 24 Feb 2026 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging
+
+a setting reminiscent of test-time adaptation (Wang et al., 2021). With multiple expert models, the practical difficulty is that adapting all models for each batch at test time is oper-ationally undesirable with backpropagation, due to the high computational cost of updating multiple domain-specific models (Liang et al., 2020). Instead, a single model that can be selected or personalized per incoming batch using only unlabeled target data is desirable. A naive strategy is to select a single domain-specific model from the multiple domain-specific models for every batch, but this is prone to failure when the target distribution is un-known, changes over time, or contains mixed cases (Wang et al., 2022; Niu et al., 2023; Zhao et al., 2023). Model ensembling can improve robustness, but requires multiple forward passes (higher memory and compute) and can di-lute specialization: for a given sample, one expert may be clearly most appropriate, but uniform averaging of predic-tions mixes it with less relevant experts (Huang et al., 2017; Sagi & Rokach, 2018). Recently, model merging (Wortsman et al., 2022; Matena & Raffel, 2022; Ainsworth et al., 2023; Stoica et al., 2023; Yadav et al., 2023) offers a more deploy-able alternative by consolidating multiple expert models into a single checkpoint that runs with a single forward pass. Mean averaging (Frankle et al., 2020a; Wortsman et al., 2022) as in Fig. 1a is the most common approach to merge multiple models, which is training-free and can work when models are highly correlated and closely aligned (Wortsman et al., 2022; Li et al., 2023). These methods compute an average across all available model weights to obtain a single merged model for the target batch. However, this naive approach is problematic in inherently complex real-world settings, such as medical imaging. Even if the domain-specific models share the same initialization, they are fine-tuned independently on heterogeneous, non-overlapping cross-domain data. Consequently, at test time, only a subset of layers may remain aligned or similar (Lee et al., 2023), while others may drift in domain-specific ways (e.g., due to scanner/protocol appearance shifts). This makes mean merging only partially valid: it may work for some layers, but applying it uniformly across all layers can pro-duce a functionally inconsistent network even when each expert performs well on its own hospital. (See Fig. 1a) Recently, this observation has motivated adaptive merging strategies that go beyond mean averaging, including task-vector merging as in TIES-Merging (Yadav et al., 2023), permutation based merging (Ainsworth et al., 2023), and approaches that learn layer-wise or task-wise weighting co-efficients (Daheim et al., 2023; Huang et al., 2024; Tang et al., 2024a; Khan et al., 2024; Yadav et al., 2024a). How-ever, the key limitations for medical deployment scenarios are that they are either effective offline (they produce one merged model throughout the target domain) or rely on ad-hoc backpropagation on target data with multiple hyper-parameters (Niu et al., 2024; Yang et al., 2024c). In this work, we propose a fully online, batch-specific, Entropy-Adaptive linear connectivity merging mechanism, that selects merging coefficients along linear connectivity directions as shown in Fig. 1b. The main advantage of our method is that it selects a merged model from feed-forward signals alone, without updating domain-specific model weights or using test-time backpropagation, mak-ing it suitable for real-time clinical workflows with limited on-site compute and strict latency constraints. Our method is designed for the fully online setting: unlabeled cases arrive sequentially, and importantly, each incoming batch can itself be heterogeneous (e.g., mixed protocols, patient subpopulations, or acquisition conditions). We therefore compute the merging coefficients that define a personal-ized merged model for the current batch, and repeat this forward-only selection as the stream evolves. We use en-tropy as an unsupervised signal, where lower entropy on the current batch serves as an unsupervised signal for merg-ing. This is particularly advantageous when the current batch is closer to one expert model than the others: entropy naturally emphasizes the expert that yields more confident predictions on that batch and down-weights less relevant domain-specific models, while allowing this preference to change from batch to batch as the target stream evolves. Importantly, the same approach can blend layers that remain compatible due to shared pretraining while avoiding harmful averaging across layers that drift across cross-domain hospi-tal data, preventing the uncertainty collapse often observed with mean merging. In summary, we make the following three contributions: • Entropy-Adaptive online merging: We introduce an entropy-adaptive merging method that obtains merge coefficients from unlabeled target batches adaptively. This yields a batch-specific merged model that blends compatible layers while down-weighting incompatible domain-specific models adaptively at test time. • Mean-merging failure analysis: We show that mean merging is only partially valid, beneficial for layers that remain aligned, yet prone to sharp failures when applied uniformly across all layers. Additionally, we investigate this with systematic failure cases and layer-wise analyses. • Decoupled encoder and classification head coefficients for robust online merging: We first demonstrate that fixed-mean merging can fail sharply due to misalign-ment between the classification head and the encoder under heterogeneous shifts. To address this failure mode, we obtain module-decoupled merge coefficients efficiently for encoder and head weights to avoid head-induced merging failures. 2The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+We extensively validate our proposal across both medical and natural vision domain shift benchmarks, spanning 9 datasets and 2 ViT backbones, through comprehensive ex-periments. 
+
+2. Related work 
+
+In this section, we review a range of model-merging tech-niques and explain how the demands of our setting motivate a fundamentally different merging objective. 
+
+Mean-based model averaging. Model merging has emerged as a powerful paradigm for combining knowledge from multiple independently (pre-) trained models without requiring access to source data or extensive retraining (Li et al., 2023; Yadav et al., 2024a; Khan et al., 2024; Yang et al., 2024a; Tang et al., 2024a). The simplest approach is mean averaging of trained models, which has been exten-sively studied in both theoretical and practical contexts (Iz-mailov et al., 2018; Wortsman et al., 2022; Kaddour et al., 2022). Wortsman et al. (2022) introduced model soups, demonstrating that averaging weights of multiple fine-tuned models of the same architecture improves accuracy with-out increasing inference cost. This idea has been extended to specialized scenarios, including sparse models (Zimmer et al., 2024), adapter modules (Chronopoulou et al., 2023), and diverse pre-training objectives (Rame et al., 2023). How-ever, naive averaging during inference often leads to param-eter interference when models are trained on heterogeneous data (Yadav et al., 2023; 2024b). 
+
+Adaptive merging. Recently, Yadav et al. (2023) proposed to resolve parameter interference with TIES-Merging, build-ing on trimming redundant parameters, electing signs, and merging only parameters with aligned signs. Recent meth-ods tackle heterogeneity through Fisher-weighted averag-ing (Matena & Raffel, 2022), gradient matching (Daheim et al., 2023; 2024), optimal transport (Imfeld et al., 2024), and magnitude-based sampling (Deep et al., 2024). For multi-task scenarios, several adaptive methods have been proposed. AdaMerging (Yang et al., 2024c) with backprop-agation adaptively determines layer-wise merging coeffi-cients using test data, while Tang et al. (2024b); Shen et al. (2024) propose weight-ensembling mixture of experts for multi-task merging. Yang et al. (2024b) introduce represen-tation surgery to eliminate task interference, and Tang et al. (2023) use concrete subspace learning for multi-task model fusion. 
+
+Model merging for different downstream tasks. For med-ical imaging specifically, MedMerge (Almakky et al., 2024) explores merging during supervised fine-tuning with labels from the target domain. Other specialized applications in-clude vision transformers (Ye et al., 2023), diffusion mod-els (Biggs et al., 2024), LLM alignment (Tekin et al., 2024; Chegini et al., 2024), and cross-task generalization (Stoica et al., 2024; 2023; Kim et al., 2025). Different from these model merging works, we consider a multi-domain classification setting in which domain-specific models are trained on disjoint domains and are misaligned with one another. To address this, we obtain target-specific merged weights online, producing a single merged model per batch without accessing labels or per-forming any gradient-based backpropagation at test time. 
+
+3. Background and Notations 
+
+We consider a single-domain training setup in which each source model is trained on labeled data from exactly one do-main, without data sharing between models. During source training, we denote the k-th source domain as D(k) 
+
+> s
+
+for 
+
+k ∈ { 1, . . . , K }, with K the number of source domains. Each domain’s data obtained from medical centers can differ due to scanner manufacturer, acquisition protocol, and geo-graphic or laboratory factors (e.g., staining and tissue prepa-ration in pathology) (Li et al., 2020; Sun et al., 2022). The domain k provides labeled samples (x(k) 
+
+> s
+
+, y(k) 
+
+> s
+
+) ∼ D (k) 
+
+> s
+
+,and trains models only on its local data (no cross-hospital data sharing). Each domain-specific model is parameterized as an encoder ( g(x; θ)) followed by a linear classification head ( ϕ(z)): 
+
+fk(x; θ(k) 
+
+> s
+
+, W (k) 
+
+> ϕ
+
+) = ϕ(k)(g(x; θ(k) 
+
+> s
+
+)) = ( W (k) 
+
+> ϕ
+
+)⊤g(x; θ(k) 
+
+> s
+
+) , (1) where θ(k) 
+
+> s
+
+are encoder weights and W (k) 
+
+> ϕ
+
+∈ Rd×C are classification head weights for C classes. At test time or inference, we encounter unseen target hospi-tal data from an unseen domain Dt and observe unlabeled target batches {B t}Nn=1 online at time point n, with x ∼ D t.Here, the task is to use domain-specific models for each incoming target batch and obtain an ideal single deployed model at each time step, with minimal computation over target batch Bt. To train the source models, we follow the Diverse Weight Averaging (DiWA) setup (Rame et al., 2022) and perform multiple training runs for each domain, vary-ing hyperparameters and procedures to promote functional diversity among models. 
+
+4. Methodology 
+
+In this section, we show why mean merging is prone to fail-ure and misalignment under domain heterogeneity (Sec. 4.1) and then present our entropy-adaptive merging for adaptive online inference (Sec. 4.2). 3The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 90 95 100 105 110 115 120              
+
+> Directional Drift: ij (degrees)
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> Scale Drift:  [|| p(i)||/|| p(j)||]
+> (A) Data Diversity:
+> Non-Collinear Drift in Parameter Space
+> Encoder Layers (0-11)
+> Classification Head
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> Layer Depth  (0=Shallow, 11=Deep)
+> 0246810 Class Head
+> Network Depth (Block Index )
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> Mean Angular Drift  (degrees)
+> = -16.6°
+> Jump!
+> (B) Encoder and Classifier Mismatch:
+> Progressive Misalignment Across Layers
+> Encoder Blocks
+> Classification Head W
+> Orthogonal (90°)
+> Moderate (45°)
+> Shallow Encoder Deep Encoder Classification Head
+> Layer Group
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Signal Loss from Averaging (%)
+> merge  = 100(1  cos(  /2))
+> INHERENT
+> MISMATCH
+> Fixed = 1/ K
+> Fails Under
+> Heterogeneity
+> (C) Fixed Mean Merging is prone to failure:
+> Inherent Mismatch by Layer Depth
+> Individual Parameters
+> Critical Loss (50%)
+
+Figure 2. Why Mean Merging fails for the PACS dataset using ViT-B32 domain-specific models trained on Photo, Cartoon, and Sketch domains and evaluated on Art domain. We first compute the angles as provided in (Jang et al., 2024) between weights and bias terms of domain-specific trained models, then compute directional and angular drift to obtain deeper insights. (A) Data diversity: Model parameters drift in different directions and scales across domains, with the classification head showing the strongest misalignment. (B) Encoder-classification head mismatch: Mean angular layerwise drift. Misalignment increases with network depth and becomes most pronounced at the classification head. (C) Fixed mean merging is prone to failure: Mean merging leads to substantial signal loss in the classification head compared with individual models. 
+
+4.1. Why mean merging is prone to failure and misalignment 
+
+A standard baseline for model merging is to use mean merg-ing (Izmailov et al., 2018; Wortsman et al., 2022; Kaddour et al., 2022; Rame et al., 2022): 
+
+θmean =
+
+KX
+
+k=1 
+
+αkθ(k)
+
+s Wϕ,mean =
+
+KX
+
+k=1 
+
+αkW (k)
+
+ϕ , (2) where α ∈ ∆K−1 with ∆K−1 denotes the set of valid weights over the K source models (i.e., non-negative coef-ficients that sum to one). Intuitively, mean-merging-based methods work well when the source models are trained on the same subsets of training data (Frankle et al., 2020a), so that interpolating their parameters leads to a smoother parameter space for the merged model. This assumption is closely related to linear mode connectivity: if two solutions are connected by a low-loss linear path in the loss landscape, then simple averaging is more likely to remain in a low-loss region (Frankle et al., 2020a). However, our setup involves weights of models trained on non-overlapping heteroge-neous domains, which prevents the existence of a low-loss linear path. As illustrated in Fig. 3a, this results in the mean model potentially ending up in a high loss region. In the following paragraphs, for mean merging, we detail three representative failure modes: (A) cross-domain pa-rameter misalignment, (B) encoder-head mismatch, and (C) misalignment of layers for online shifts. 
+
+(A) Data diversity (cross-domain heterogeneity) makes linear mode connectivity harder. Linear mode connectiv-ity studies whether two or multiple trained solutions can be 0.0 0.2 0.4 0.6 0.8 1.0        
+
+> Weight Space Dimension 1
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Weight Space Dimension 2
+> Mean Merging
+> Target Optimum
+> Mean Model
+> A
+> B
+> target
+> 0
+> 12
+> 24
+> 36
+> 48
+> 60
+> 72
+> 84 Loss on  target  (%) 0.0 0.2 0.4 0.6 0.8 1.0
+> Weight Space Dimension 1
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Weight Space Dimension 2
+> EntropyAdaptive Merging
+> EntropyAdaptive Path
+> Target Optimum
+> A
+> B
+> target
+> 0
+> 12
+> 24
+> 36
+> 48
+> 60
+> 72
+> 84 Loss on  target  (%)
+
+Figure 3. Illustration of the loss landscape. (a) Mean merging: The linear path between models crosses a high-loss barrier because straightforward mean connectivity assumes compatible representa-tions across all the layers. (b) Our method learns adaptive merging coefficients that follow a lower-loss path, resolving feature incom-patibility near the unseen target optimum. 
+
+connected by a low-loss linear path in weight space (Frankle et al., 2020a). During source training, each domain-specific model consists of an encoder and a classification head, with its model parameters denoted by f as in Eq. (1), and the k-th domain-specific model as f (k)
+
+s . Given two domain-specific models i and j, mean merging performs linear interpola-tion using f (λ) = (1 − λ)f (i)
+
+s + λf (j)
+
+s with λ ∈ [0 , 1] ,
+
+and chooses a fixed point on this segment (e.g., λ = 12
+
+for equal weights (Fig 3a), or more generally λ induced by α in Eq. (2). Even when both endpoints f (i)
+
+s and 
+
+f (j)
+
+s are good solutions independently, the straight line seg-ment (1 − λ)f (i)
+
+s + λf (j)
+
+s may pass through high-loss re-gions (Garipov et al., 2018). With cross-domain heterogene-ity, mean merging is often less reliable because the models may encode different features and decision boundaries. To make this misalignment explicit, Fig. 2a reports two com-4The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+plementary layer-wise measures between a pair of source models (i, j ). Specifically, let p(k) 
+
+> ℓ
+
+be the flattened parame-ter vector of layer ℓ (encoder block or classification head) in model k. We measure directional drift between p(i) 
+
+> ℓ
+
+and 
+
+p(j) 
+
+> ℓ
+
+by the angle (in degrees), and scale drift by the ex-pected norm ratio E
+
+h
+
+|p(i) 
+
+> ℓ
+
+|/|p(j) 
+
+> ℓ
+
+|
+
+i
+
+. Linear interpolation is sensitive to both: large angular drift indicates incom-patible directions in weight space, while large-scale drift means averaging can be dominated by the higher-norm pa-rameter. Overall, we observe in Fig. 2a non-collinear and scale-inconsistent drift across the layers that increases with depth. This indicates that a single global mean coefficient (Eq. 2) can be appropriate for some layers yet harmful for others across different domain-specific models. 
+
+(B) Encoder and classification head mismatch: progres-sive misalignment across depth. Each domain-specific model k decomposes into an encoder and a classification head, (θ(k) 
+
+> s
+
+, W (k) 
+
+> ϕ
+
+). In our setup, all source models are ini-tialized with the same pretrained encoder (e.g., ImageNet) and fine-tuned on their respective domains, whereas the clas-sification head has to be trained from scratch. This creates an asymmetry: early encoder blocks can remain relatively compatible across domains, while the head can drift due to domain-specific class priors and decision boundaries. Fig. 2b shows this effect using mean angular drift across depth. Concretely, for each depth ℓ (encoder blocks ℓ =0, . . . , 11 ) and for the classification head, we compute the pairwise directional drift angles between all model pairs 
+
+(i, j ) using the flattened vectors p(i) 
+
+> ℓ
+
+and p(j) 
+
+> ℓ
+
+, and then aver-age these angles across all K/ 2 pairs to obtain a single mean value per depth (in degrees). The resulting curve shows a clear depth effect: drift is smaller in shallow encoder blocks, increases in deeper blocks, and exhibits a pronounced jump at the classification head. This shows that, unlike the pair-wise drift in Fig. 2a, mean angular drift isolates a systematic depth-wise trend shared across domains, indicating that en-coder and head can diverge at different rates and therefore should not be forced to share the same merging behavior. Thus, even when encoder blocks remain moderately aligned, classification heads can be highly misaligned, further mo-tivating separate treatment of the encoder and the heads during merging. 
+
+(C) Fixed mean merging is misaligned and prone to fail-ure for online realistic medical shifts. At test time for realistic scenarios, the target stream is typically non-i.i.d., and each batch may arrive from a time-varying mixture 
+
+Dt,n =PMm=1 πn,m D(m) 
+
+> t
+
+with time-dependent weights πn.In these cases, mean merging cannot adaptively respond to such shifts. As shown in Fig. 2c mean merging is even struc-turally prone to fail for heterogeneous data, as misaligned parameters inherently attenuate their magnitudes. Specifically, when two model parameter vectors form an angle ϑ, their equal-weight average shrinks in norm by a factor cos( ϑ/ 2) , yielding a corresponding signal loss from averaging of Lmerge (ϑ) = 100 (1 − cos( ϑ/ 2))% (Fig. 2c). Using the depth-dependent angular drift measured in Fig. 2b, panel (c) plots the implied attenuation across network depth and highlights a critical-loss regime (e.g., ≥ 50% ). The trend is strongly depth-dependent. The attenuation is com-paratively small for shallow encoder blocks but increases for deeper ones. It becomes most severe at the classification head. This shows that uniform mean averaging across layers can weaken logits during inference. 
+
+4.2. Entropy-adaptive merging 
+
+Taking the limitations of mean-merging into account, we propose entropy-adaptive merging to deploy a single model on an unlabeled, online target stream. We propose to esti-mate merging coefficients online using only forward-pass statistics on the target batch Bt, then instantiate the resulting single merged model for inference per batch. For each domain specific model k, we compute the entropy Hk(x; τ ) ≜ H softmax( zk(x)/τ ) , with the logits zk(x) = (W (k) 
+
+> ϕ
+
+)⊤g(x; θ(k) 
+
+> s
+
+) and H(p) ≜
+
+− PCc=1 pc log pc. and compute the batch score 
+
+Et,k = 1
+
+|B t|
+
+X
+
+> x∈B t
+
+Hk(x; τ ). (3) We then map {Et,k }Kk=1 to the weights via: 
+
+˜αt,k = (Et,k + ϵ)−1
+
+PKj=1 (Et,j + ϵ)−1 , ˜αt ∈ ∆K−1. (4) This rule implements a specific selection mechanism: domain-specific models that are more confident on Bt (i.e., have lower predictive entropy) receive larger weights in the merged model, while models that are less confident (higher entropy) are automatically down-weighted. Finally, we instantiate a single merged model for every target batch t: 
+
+θt =
+
+> K
+
+X
+
+> k=1
+
+˜αt,k θ(k) 
+
+> s
+
+, Wϕ,t =
+
+> K
+
+X
+
+> k=1
+
+˜αt,k W (k) 
+
+> ϕ
+
+. (5) Predictions are then produced by a feed-forward pass: 
+
+ft(x) = ( Wϕ,t )⊤g(x; θt) , x ∈ B t . (6) Importantly, computing ˜αt requires only forward evaluation of the K domain-specific models on Bt and does not require gradients, labels, or storing target data beyond the current batch. 5The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+In the following section, building on entropy-adaptive merg-ing, we introduce three architecturally informed changes that refine merging under heterogeneous, non-stationary shifts. 
+
+4.3. Decoupling encoder and classification head coefficients 
+
+Standard model merging typically applies a single coeffi-cient vector ˜αt to all parameters, coupling the encoder and the classification head; this can be suboptimal when the head exhibits the connectivity limitations detailed above. Re-cent adaptive and layer-wise methods, including AdaMerg-ing (Yang et al., 2024c), layer-wise merging (Adilova et al., 2024), relax this coupling by learning different coefficients across tasks and/or layers. In contrast, our work first demon-strates classification head-specific failure under domain shift and therefore proposes to merge with module-decoupled co-efficients. More specifically, to address the encoder and classification head mismatch (See Fig 2b), we propose to use decoupled merging coefficients: 
+
+θt =
+
+> K
+
+X
+
+> k=1
+
+α(enc)  
+
+> t,k
+
+θ(k) 
+
+> s
+
+, Wϕ,t =
+
+> K
+
+X
+
+> k=1
+
+α(head)  
+
+> t,k
+
+W (k) 
+
+> ϕ
+
+. (7) 
+
+Encoder coefficients. For the encoder, we set the same merging coefficients ˜αt,k , defined via entropy-weighted mix-ture (Eq. 4). 
+
+Classification head coefficients. For the classification head, we compute coefficients {α(head)  
+
+> t,k
+
+}Kk=1 separately to avoid destructive averaging when heads are strongly mis-aligned. Given the unlabeled target batch Bt, we select a well-performing batch-selected model k⋆t using a reliability score that combines low predictive entropy and high data augmentation consistency: 
+
+k⋆t = arg max 
+
+> k∈{ 1,...,K }
+
+ 1
+
+> Et,k
+
+ 1 + Ct,k 
+
+, (8) where K is the number of domain-specific models, Et,k is the predictive entropy of domain-specific model k on Bt
+
+(lower means more confident), and Ct,k the augmentation consistency. The augmentation consistency Ct,k quantifies how invariant the domain-specific model k’s predicted class probabilities are on Bt under label-preserving simple aug-mentations (higher means more stable predictions across augmented views). We then calculate the head coefficients by a normalized entropy-gap weighting: 
+
+α(head)  
+
+> t,k
+
+= exp   − τ |Et,k − Et,k ⋆t |PKj=1 exp   − τ |Et,j − Et,k ⋆t | , (9) where α(head)  
+
+> t,k
+
+≥ 0 and PKk=1 α(head)  
+
+> t,k
+
+= 1 by construction (softmax-based normalization), and τ > 0 is a temperature controlling sharpness (larger τ concentrates more weight on experts whose entropy is closest to Et,k ⋆t , smaller τ
+
+spreads weights more evenly). Additionally, we apply an exponential moving average to improve stability. More details are provided in the Appendix. 
+
+Algorithms. An algorithm describing test-time online merging is depicted below (Algorithm 1) and for source training in the Appendix Section C. 
+
+Algorithm 1 At Test-time: forward-only Input: Frozen domain specific models {(θ(k) 
+
+> s
+
+, W (k) 
+
+> ϕ
+
+)}Kk=1 ;unlabeled target batches {B t}Tt=1 ; τ, ϵ ; EMA rate μ; head option: shared (Eq. 5) or entropy-gap (Eq. 9) 
+
+Output: Predictions {ˆyt}Tt=1 .
+
+1: Initialize α0 ← (1 /K, . . . , 1/K ).2: for t = 1 to T do 
+
+3: Compute {Et,k }Kk=1 on Bt.4: Compute ˜αt by inverse-entropy normalization (with ϵ). 5: Compute {Ct,k }Kk=1 on Bt (augmentation-consistency). 6: Select head expert k⋆t (Eq. 8) and compute head coefficients 
+
+{α(head)  
+
+> t,k
+
+}Kk=1 (Eq. 9). 7: Merge to form (θt, W ϕ,t ) with decoupled weights and new co-efficients: 
+
+θt ← PKk=1 αt,k θ(k) 
+
+> s
+
+, Wϕ,t ← PKk=1 α(head)  
+
+> t,k
+
+W (k)
+
+> ϕ
+
+(Eq. 7, Eq. 9). 8: Apply exponential moving average and Predict on Bt with the merged model (Eq. 6). 9: end for 
+
+5. Experiments 
+
+9 Datasets with 2 ViT backbones. We re-implement state-of-the-art baselines on 9 standard public domain-generalization classification datasets for our problem setup, 5 from medical imaging and four from natural vision, using both ViT-B/16 and ViT-B/32. 
+
+Medical imaging datasets. (i) MiDog Atypical (Mi-Dog) (Bertram et al., 2025): 454 histopathological images; task: normal vs. atypical mitosis classification; domains reflect different tumor types (7). (ii) Organs (Woerner et al., 2025): 1,645 2D CT slices; task: 11-organ recognition; do-mains reflect acquisition plane (axial/coronal/sagittal). (iii) Histopantum (Histo) (Zamanitajeddin et al., 2024): 281,142 histopathology patches; task: tumor vs. non-tumor classifi-cation; domains reflect different cancer types (4) (iv) ISIC Skin (Tschandl et al., 2018): 10,015 dermoscopy images; task: melanoma classification (1); domains reflect common acquisition artifacts (e.g., hair, ruler, bubbles). (v) Messi-dor (Decenci `ere et al., 2014): 1,200 retinal fundus images; task: diabetic retinopathy grading (0–3); domains reflect acquisition centers (3). 6The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+Table 1. State-of-the-art comparisons across medical datasets . We report the mean accuracy for ViT-B/32 (B32) and ViT-B/16 (B16) under the standard leave-one-domain-out (Gulrajani & Lopez-Paz, 2020) setting, where domain-specific models are trained on respective domains and evaluated on an unseen target domain (adaptively). We re-implement the baselines as either offline or online model-merging methods and detail them in the Appendix. Our entropy-adaptive method achieves the best performance ( bold ). 
+
+5 Medical Datasets 
+
+MiDog Organs Histo ISIC Skin Messidor Method B32 B16 B32 B16 B32 B16 B32 B16 B32 B16 
+
+Offline Model merging 
+
+Ensemble 89.24 89.22 69.87 73.71 92.16 89.87 86.89 86.24 49.75 54.58 DiWA (Rame et al., 2022) 89.65 89.07 66.93 71.26 89.48 89.48 85.60 85.82 49.50 52.81 
+
+Online Model merging 
+
+TIESMerging (Yadav et al., 2023) 88.77 89.53 67.75 71.74 91.30 88.06 85.12 77.23 48.83 54.25 Adamerging (Yang et al., 2024c) 89.39 89.25 67.50 73.36 93.56 88.95 85.87 85.54 42.22 54.58 Task Arithmetic (Ilharco et al., 2023) 89.62 89.30 67.80 73.56 91.57 89.00 85.52 85.64 41.12 54.60 RegMean++ (Nguyen et al., 2025) 88.40 88.75 65.52 69.20 92.77 88.50 85.02 86.04 47.41 51.18 FisherMerging (Matena & Raffel, 2022) 88.32 88.80 65.30 68.83 91.60 89.55 84.80 84.90 51.75 55.40 
+
+Entropy-Adaptive (Ours) 89.70 91.00 70.21 74.60 93.92 91.00 87.10 86.60 52.33 55.73 
+
+Table 2. State-of-the-art comparisons across natural vision datasets . We report the mean accuracy for ViT-B/32 (B32) and ViT-B/16 (B16) and follow the same settings as in Table 1. We reimplement the baselines as either offline or online model-merging methods and detail them in the Appendix. Our entropy-adaptive method achieves the best performance ( bold ). 
+
+4 Natural Vision Datasets 
+
+PACS VLCS Office-Home Terra Method B32 B16 B32 B16 B32 B16 B32 B16 
+
+Offline Model merging 
+
+Ensemble 80.46 84.00 78.51 77.21 74.20 77.83 30.42 41.22 DiWA (Rame et al., 2022) 83.91 84.72 77.54 77.67 75.46 78.44 27.64 40.43 
+
+Online Model merging 
+
+TIESMerging (Yadav et al., 2023) 82.91 84.20 78.30 74.30 72.55 72.50 23.51 36.20 Adamerging (Yang et al., 2024c) 83.25 85.56 78.12 78.20 75.17 77.90 23.33 32.50 Task Arithmetic (Ilharco et al., 2023) 81.82 85.07 78.12 77.90 74.90 77.27 22.31 41.21 RegMean++ (Nguyen et al., 2025) 76.52 82.15 59.32 79.71 68.70 76.65 27.90 32.50 FisherMerging (Matena & Raffel, 2022) 82.91 82.22 76.67 78.10 68.25 72.12 27.87 32.25 
+
+Entropy-Adaptive (Ours) 86.15 87.60 80.33 79.80 76.34 80.20 32.15 46.74 
+
+Natural vision datasets. (vi) PACS (Li et al., 2017): 9,991 images; 7 classes; domains capture style shifts (Photo/Art/Cartoon/Sketch). (vii) VLCS (Fang et al., 2013): 10,729 images; 5 classes; domains correspond to different source datasets (VOC/LabelMe/Caltech/SUN). (viii) Office-Home (Venkateswara et al., 2017): 15,500 images; 65 classes; domains capture appearance/context shifts (Art/Clipart/Product/Real). (ix) TerraIncognita (Terra) (Beery et al., 2018): camera-trap wildlife recog-nition; domains reflect camera locations. We provide addi-tional dataset details in the Appendix. 
+
+Implementation details. We train the single-source domain-specific models using the DiWA codebase (Rame et al., 2022). For two Vision Transformer (ViT) back-bones (Dosovitskiy et al., 2020), we train multiple instances under different hyperparameter settings with standard cross-entropy classification as in DiWA. Each domain-specific model is trained only on its own source domain, and we select the best checkpoint using in-domain validation. At test time, we assume access to K frozen domain-specific models and, at each time step, merge them into a single predictor and evaluate on the current target batch using a forward-only pass (no backpropagation and no target-time updates). We report accuracy over the target stream. All experiments are run on NVIDIA A100 GPUs; our method is non-parametric and incurs only lightweight per-batch over-head. For all ablations, we use ViT-B/32 as a backbone and a batch size of 32. We provide additional details in the Appendix and will release the code publicly. 
+
+State-of-the-art comparisons. Table 1 reports medical-domain results for both ViT-B/32 and ViT-B/16 under the standard leave-one-domain-out domain generalization pro-tocol (Gulrajani & Lopez-Paz, 2020), using both offline and online merging with a test-time batch size of 32 sam-ples. Across all reported medical datasets, entropy-adaptive (Ours) achieves the best accuracy for both backbones, out-7The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging PACS 
+
+> =0.05
+> PACS
+> =0.50
+> Organs
+> =0.05
+> Organs
+> =0.50
+> Dirichlet Partition
+> 50
+> 60
+> 70
+> 80
+> 90
+> Mean Accuracy (  )
+> DiWA
+> Entropy-Adaptive
+> TIES
+> Regmean++
+> Adamerging
+> Task Arithmetic
+> Fisher
+> PACS
+> =0.05
+> PACS
+> =0.50
+> Organs
+> =0.05
+> Organs
+> =0.50
+> Temporally Correlated
+> 50
+> 60
+> 70
+> 80
+> 90
+> Mean Accuracy (  )
+> DiWA
+> Entropy-Adaptive
+> TIES
+> Regmean++
+> Adamerging
+> Task Arithmetic
+> Fisher
+
+Figure 4. Consistent improvements under Dirichlet and Tem-poral sampling. Mean accuracy (%) on PACS and Organs under Dirichlet splits (0.05, 0.50) and Temporally correlated data. Our Entropy-Adaptive (green) consistently outperforms the baselines with larger gains under a stronger skew factor ( α = 0 .05 ). 
+
+performing fixed merging (DiWA (Rame et al., 2022)) and strong online baselines such as TIES-Merging (Yadav et al., 2023), AdaMerging (Yang et al., 2024c), which uses back-propagation, RegMean++ (Nguyen et al., 2025), and Fisher-Merging (Matena & Raffel, 2022). The gains are especially clear in domains with stronger domain heterogeneity (e.g., Organs dataset (Woerner et al., 2025)), while in already satu-rated settings (e.g., MiDog Atypical (Bertram et al., 2025)), improvements are modest but remain consistently positive. Our performance gains stem from entropy-adaptive, per-batch coefficient estimation for domain-specific models, and from decoupling the encoder and classification head, to handle their distinct cross-domain misalignment. Table 2 shows the corresponding results on natural-image datasets, again for both ViT-B/32 and ViT-B/16. Our method remains best on all datasets and both backbones, with partic-ularly large improvements on the harder shift benchmarks (VLCS and TerraIncognita), where naive averaging and sev-eral online merging baselines can suffer from negative trans-fer. These results reinforce that entropy-adaptive, per-batch coefficient estimation with decoupled encoder and classifica-tion head weighting generalizes beyond the medical setting and remains effective across architectures. 
+
+5.1. Additional experiments and Benefits Consistent improvements under Dirichlet and Tempo-ral sampling. We also evaluate our method under severe shifts, where each incoming batch is formed via a Dirichlet-class partition (Gong et al., 2022) and temporally correlated, yielding non-i.i.d. target streams with strong class imbalance. Figure 4a shows the mean accuracy on PACS and Organs un-der Dirichlet splits and temporally correlated target streams. Across both PACS and Organs, our entropy-adaptive merg-ing achieves consistently higher mean accuracy than all the baselines, with larger gains under the stronger skew factor (α = 0 .05 ). Our entropy-adaptive merging performs well even under strong shifts because it adapts the model to each batch using target information, suppressing and amplifying the required domain-specific models.                   
+
+> Coefficients strategy Mean accuracy Method Entropy only (Eq. 4) Decoupled head coef (Eq. 9) PACS Organs
+> Entropy-Adaptive
+> ✓85.23 ±0.2 69.81 ±0.2
+> ✓84.27 ±0.2 67.80 ±0.3
+> ✓✓87.33 ±0.2 70.70 ±0.2
+
+Table 3. Benefits of Entropy only and decoupled head coef-ficients for ViT-B/32 on PACS and Organs. Both components improve performance; together, they deliver the strongest gains, highlighting the need for distinct coefficients for the encoder and the classification head. 
+
+Benefits of our coefficients for merging. Our method yields a batch-specific merged model through entropy-adaptive coefficients and decoupled encoder and classifi-cation head weights. To show the benefits of our con-tributions, we demonstrate them on both the PACS and Organs datasets using ViT-B/32 (Table 3) under Dirichlet sampling ( α=0 .05 ). This sampling strategy creates highly skewed non-i.i.d. batches (29/32 samples from one class on PACS with a total of 7 classes). In this challenging setting, entropy-adaptive merging alone is already strong (second-best), while adding decoupled coefficients achieves additional gains, consistent with the encoder and classifi-cation head exhibiting distinct cross-domain misalignment. Overall, the two components are complementary and bene-ficial when the target-stream imbalance is severe. 
+
+Compute and time analysis. Our method is forward-only at test time (no backpropagation or optimizer). Per batch, it runs the K frozen models to compute entropies and then forms a merged model for inference. On PACS, this takes 40 seconds on a single Nvidia A100 GPU and 3.5GB to use the K domain-specific models, comparable to mean merging (Wortsman et al., 2022; Rame et al., 2022). We also provide additional discussions in Appendix Sec. D. 
+
+6. Conclusion and Outlook 
+
+In this work, we propose an entropy-adaptive merging method that obtains a batch-specific, inference-time-merged model for each unlabeled target batch using only for-ward passes. We empirically demonstrate that uniform mean merging is prone to failure under heterogeneous cross-domain shifts, and address this by selecting target-specific coefficients online without modifying domain-specific model parameters. To prevent degradation of classification head weights, we decouple the encoder and classifier-head coefficients, combining smooth encoder mix-tures with a more conservative head rule, and stabilize the online trajectory with an exponential moving average. Across diverse medical and natural datasets, including chal-lenging scenarios, this strategy consistently improves robust-ness while preserving the operational simplicity of a single merged model. We consider reliance on entropy as a confi-dence signal under severe out-of-distribution conditions a limitation. However, this may be mitigated by strengthening 8The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+the confidence estimate through consistency signals beyond entropy alone. 
+
+Acknowledgments 
+
+This work is supported by DAAD programme Konrad Zuse Schools of Excellence in Artificial Intelligence and the Mu-nich Center for Machine Learning, both sponsored by the Federal Ministry of Research, Technology and Space. DML and JAS received funding from HELMHOLTZ IMAGING, a platform of the Helmholtz Information and Data Science Incubator. 
+
+References 
+
+Adilova, L., Fischer, A., and Jaggi, M. Layerwise linear mode connectivity. International Conference on Learning Representations (ICLR) , 2024. Ainsworth, S., Hayase, J., and Srinivasa, S. Git re-basin: Merging models modulo permutation symmetries. In 
+
+International Conference on Learning Representations (ICLR) , 2023. Almakky, I., Sanjeev, S., Hashmi, A. U. R., Qazi, M. A., and Yaqub, M. Medmerge: Merging models for effective transfer learning to medical imaging tasks. arXiv preprint arXiv:2403.11646 , 2024. Ambekar, S., Tafuro, M., Ankit, A., der Mast, D. v., Alence, M., and Athanasiadis, C. Skdcgn: Source-free knowledge distillation of counterfactual generative networks using cgans. In European Conference on Computer Vision , pp. 679–693. Springer, 2022. Ambekar, S., Xiao, Z., Shen, J., Zhen, X., and Snoek, C. G. M. Probabilistic test-time generalization by variational neighbor-labeling. In Conference on Lifelong Learning Agents , 2024. Ambekar, S., Xiao, Z., Zhen, X., and Snoek, C. G. General-izeformer: Layer-adaptive model generation across test-time distribution shifts. arXiv preprint arXiv:2502.12195 ,2025. Beery, S., Van Horn, G., and Perona, P. Recognition in terra incognita. In European Conference on Computer Vision ,pp. 456–473, 2018. Benton, G., Maddox, W., Lotfi, S., and Wilson, A. G. G. Loss surface simplexes for mode connecting volumes and fast ensembling. In International Conference on Machine Learning , pp. 769–779. PMLR, 2021. Bertram, C. A., Weiss, V., Donovan, T. A., Banerjee, S., Conrad, T., Ammeling, J., Klopfleisch, R., Kaltenecker, C., and Aubreville, M. Histologic dataset of normal and atypical mitotic figures on human breast cancer (ami-br). In Palm, C., Breininger, K., Deserno, T., Handels, H., Maier, A., Maier-Hein, K. H., and Tolxdorff, T. M. (eds.), Bildverarbeitung f ¨ur die Medizin 2025 , pp. 113– 118, Wiesbaden, 2025. Springer Fachmedien Wiesbaden. ISBN 978-3-658-47422-5. Biggs, B., Seshadri, A., Zou, Y., Jain, A., Golatkar, A., Xie, Y., Achille, A., Swaminathan, A., and Soatto, S. Diffusion soup: Model merging for text-to-image diffusion models. 
+
+arXiv preprint arXiv:2406.08431 , 2024. Boudiaf, M., Mueller, R., Ben Ayed, I., and Bertinetto, L. Parameter-free online test-time adaptation. In IEEE Conference on Computer Vision and Pattern Recognition ,pp. 8344–8353, 2022. Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., et al. Language models are few-shot learners. 
+
+NeurIPS , 33:1877–1901, 2020. Chegini, A., Kazemi, H., Mirzadeh, S. I., Yin, D., Horton, M., Nabi, M., Farajtabar, M., and Alizadeh, K. Model soup for better rlhf: Weight space averaging to improve alignment in llms. In NeurIPS 2024 Workshop on Fine-Tuning in Modern Machine Learning: Principles and Scalability , 2024. Chen, L., Zhang, Y., Song, Y., Wang, J., and Liu, L. Ost: Improving generalization of deepfake detection via one-shot test-time training. In Advances in Neural Information Processing Systems , 2022. Choi, M., Choi, J., Baik, S., Kim, T. H., and Lee, K. M. Test-time adaptation for video frame interpolation via meta-learning. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2021. Chronopoulou, A., Peters, M. E., Fraser, A., and Dodge, J. Adaptersoup: Weight averaging to improve generalization of pretrained language models. In European Chapter of the Association for Computational Linguistics (EACL) ,pp. 2009–2018, 2023. Daheim, N., M ¨ollenhoff, T., Ponti, E., Gurevych, I., and Khan, M. E. Model merging by gradient matching. In 
+
+UniReps: the First Workshop on Unifying Representa-tions in Neural Models , 2023. Daheim, N., M ¨ollenhoff, T., Ponti, E., Gurevych, I., and Khan, M. E. Model merging by uncertainty-based gradi-ent matching. In International Conference on Learning Representations (ICLR) , 2024. Decenci `ere, E., Zhang, X., Cazuguel, G., Lay, B., Cochener, B., Trone, C., Gain, P., Ord ´o ˜nez-Varela, J.-R., Massin, P., Erginay, A., et al. Feedback on a publicly distributed 9The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+image database: the messidor database. Image Analysis & Stereology , pp. 231–234, 2014. Deep, P. T., Bhardwaj, R., and Poria, S. Della-merging: Re-ducing interference in model merging through magnitude-based sampling. arXiv preprint arXiv:2406.11617 , 2024. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., et al. An image is worth 16x16 words: Transformers for image recognition at scale. In 
+
+International Conference on Learning Representations ,2020. Draxler, F., Veschgini, K., Salmhofer, M., and Hamprecht, F. Essentially no barriers in neural network energy land-scape. In International conference on machine learning ,pp. 1309–1318. PMLR, 2018. Du, C., Wang, Y., Guo, J., Han, Y., Zhou, J., and Huang, G. Unitta: Unified benchmark and versatile framework towards realistic test-time adaptation. arXiv preprint arXiv:2407.20080 , 2024. Fang, Y., Lin, W., Chen, Z., Tsai, C.-M., and Lin, C.-W. A video saliency detection model in compressed domain. 
+
+IEEE Transactions on Circuits and Systems for Video Technology , 2013. Ferbach, D., Goujaud, B., Gidel, G., and Dieuleveut, A. Proving linear mode connectivity of neural networks via optimal transport. In Artificial Intelligence and Statistics Conference (AISTATS) , pp. 3853–3861. PMLR, 2024. Frankle, J., Dziugaite, G. K., Roy, D., and Carbin, M. Linear mode connectivity and the lottery ticket hypothesis. In 
+
+International Conference on Machine Learning (ICML) ,pp. 3259–3269. PMLR, 2020a. Frankle, J., Dziugaite, G. K., Roy, D., and Carbin, M. Linear mode connectivity and the lottery ticket hypothesis. In 
+
+International Conference on Machine Learning , pp. 3259– 3269. PMLR, 2020b. Garipov, T., Izmailov, P., Podoprikhin, D., Vetrov, D. P., and Wilson, A. G. Loss surfaces, mode connectivity, and fast ensembling of dnns. Advances in neural information processing systems , 31, 2018. Gong, T., Jeong, J., Kim, T., Kim, Y., Shin, J., and Lee, S.-J. Note: Robust continual test-time adaptation against temporal correlation. In Advances in Neural Information Processing Systems , 2022. Goyal, S., Sun, M., Raghunathan, A., and Kolter, J. Z. Test time adaptation via conjugate pseudo-labels. In Advances in Neural Information Processing Systems , 2022. Gulrajani, I. and Lopez-Paz, D. In search of lost domain generalization. In International Conference on Learning Representations , 2020. He, K., Zhang, X., Ren, S., and Sun, J. Deep residual learning for image recognition. In IEEE Conference on Computer Vision and Pattern Recognition , pp. 770–778, 2016. Hoofnagle, C. J., Van Der Sloot, B., and Borgesius, F. Z. The european union general data protection regulation: what it is and what it means. Information & Communications Technology Law , 28(1):65–98, 2019. Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., and Chen, W. LoRA: Low-rank adaptation of large language models. In International Conference on Learning Representations (ICLR) , 2022. Huang, C., Ye, P., Chen, T., He, T., Yue, X., and Ouyang, W. Emr-merging: Tuning-free high-performance model merging. arXiv preprint arXiv:2405.17461 , 2024. Huang, G., Li, Y., Pleiss, G., Liu, Z., Hopcroft, J. E., and Weinberger, K. Q. Snapshot ensembles: Train 1, get m for free. In International Conference on Learning Representations (ICLR) , 2017. Ilharco, G., Ribeiro, M. T., Wortsman, M., Schmidt, L., Hajishirzi, H., and Farhadi, A. Editing models with task arithmetic. In International Conference on Learning Representations (ICLR) , 2023. Imfeld, M., Graldi, J., Giordano, M., Hofmann, T., Anag-nostidis, S., and Singh, S. P. Transformer fusion with optimal transport. International Conference on Learning Representations (ICLR) , 2024. Iwasawa, Y. and Matsuo, Y. Test-time classifier adjust-ment module for model-agnostic domain generalization. In Advances in Neural Information Processing Systems ,volume 34, 2021. Izmailov, P., Podoprikhin, D., Garipov, T., Vetrov, D., and Wilson, A. G. Averaging weights leads to wider optima and better generalization. arXiv preprint arXiv:1803.05407 , 2018. Jang, D.-H., Yun, S., and Han, D. Model stock: All we need is just a few fine-tuned models. In European Conference on Computer Vision , pp. 207–223. Springer, 2024. Jang, M., Chung, S.-Y., and Chung, H. W. Test-time adapta-tion via self-training with nearest neighbor information. In International Conference on Learning Representations ,2023. 10 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+Jhunjhunwala, D., Wang, S., and Joshi, G. FedFisher: Lever-aging Fisher information for one-shot federated learning. In Dasgupta, S., Mandt, S., and Li, Y. (eds.), Proceed-ings of The 27th International Conference on Artificial Intelligence and Statistics , volume 238 of Proceedings of Machine Learning Research , pp. 1612–1620. PMLR, 02–04 May 2024. Kaddour, J., Liu, L., Silva, R., and Kusner, M. J. When do flat minima optimizers work? NeurIPS , 35:16577–16595, 2022. Kairouz, P., McMahan, H. B., Avent, B., Bellet, A., Bennis, M., Bhagoji, A. N., Bonawitz, K., Charles, Z., Cormode, G., Cummings, R., et al. Advances and open problems in federated learning. arXiv preprint arXiv:1912.04977 ,2019. Kaissis, G. A., Makowski, M. R., R ¨uckert, D., and Braren, R. F. Secure, privacy-preserving and federated machine learning in medical imaging. Nature Machine Intelli-gence , 2(6):305–311, 2020. Khan, A., Nief, T., Hudson, N., Sakarvadia, M., Grzenda, D., Ajith, A., Pettyjohn, J., Chard, K., and Foster, I. Sok: On finding common ground in loss landscapes using deep model merging techniques. arXiv preprint arXiv:2410.12927 , 2024. Kim, B., Ahn, C., Baddar, W. J., Kim, K., LEE, H., Ahn, S., Han, S., Suh, S., and Yang, E. Test-time ensemble via linear mode connectivity: A path to better adaptation. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview. net/forum?id=4wk2eOKGvh .Lee, Y., Chen, A. S., Tajwar, F., Kumar, A., Yao, H., Liang, P., and Finn, C. Surgical fine-tuning improves adaptation to distribution shifts. In International Conference on Learning Representations , 2023. Lei, M., Ma, C., Ding, M., Zhou, Y., Huang, Z., and Xu, J. TTVD: Towards a geometric framework for test-time adaptation based on voronoi diagram. In The Thirteenth International Conference on Learning Representations ,2025. URL https://openreview.net/forum? id=5sU32OCxgZ .Li, D., Yang, Y., Song, Y.-Z., and Hospedales, T. M. Deeper, broader and artier domain generalization. In IEEE Inter-national Conference on Computer Vision , 2017. Li, H., Wang, Y., Wan, R., Wang, S., Li, T.-Q., and Kot, A. C. Domain generalization for medical imaging classification with linear-dependency regularization. arXiv preprint arXiv:2009.12829 , 2020. Li, W., Peng, Y., Zhang, M., Ding, L., Hu, H., and Shen, L. Deep model fusion: A survey. arXiv preprint arXiv:2309.15698 , 2023. Liang, J., Hu, D., and Feng, J. Do we really need to access the source data? source hypothesis transfer for unsuper-vised domain adaptation. In International Conference on Machine Learning , 2020. Liang, J., He, R., and Tan, T. A comprehensive survey on test-time adaptation under distribution shifts. arXiv preprint arXiv:2303.15361 , 2023. Matena, M. S. and Raffel, C. A. Merging models with fisher-weighted averaging. NeurIPS , 35:17703–17716, 2022. McMahan, B., Moore, E., Ramage, D., Hampson, S., and y Arcas, B. A. Communication-efficient learning of deep networks from decentralized data. In Artificial intelli-gence and statistics , pp. 1273–1282. PMLR, 2017. Min, C., Kim, T., and Lim, J. Meta-learning for adaptation of deep optical flow networks. In Winter Conference on Applications of Computer Vision , pp. 2145–2154, 2023. Nado, Z., Padhy, S., Sculley, D., D’Amour, A., Lakshmi-narayanan, B., and Snoek, J. Evaluating prediction-time batch normalization for robustness under covariate shift. 
+
+arXiv preprint arXiv:2006.10963 , 2020. Nguyen, T.-H., Huu-Tien, D., Suzuki, T., and Nguyen, L.-M. Regmean++: Enhancing effectiveness and generalization of regression mean for model merging. arXiv preprint arXiv:2508.03121 , 2025. Niu, S., Wu, J., Zhang, Y., Wen, Z., Chen, Y., Zhao, P., and Tan, M. Towards stable test-time adaptation in dynamic wild world. In International Conference on Learning Representations , 2023. Niu, S., Miao, C., Chen, G., Wu, P., and Zhao, P. Test-time model adaptation with only forward passes. In Interna-tional Conference on Machine Learning , 2024. Rame, A., Kirchmeyer, M., Rahier, T., Rakotomamonjy, A., Gallinari, P., and Cord, M. Diverse weight averaging for out-of-distribution generalization. NeurIPS , 35:10821– 10836, 2022. Rame, A., Ahuja, K., Zhang, J., Cord, M., Bottou, L., and Lopez-Paz, D. Model ratatouille: Recycling diverse mod-els for out-of-distribution generalization. In International Conference on Machine Learning (ICML) , pp. 28656– 28679. PMLR, 2023. Sagi, O. and Rokach, L. Ensemble learning: A survey. Wiley interdisciplinary reviews: data mining and knowledge discovery , 8(4):e1249, 2018. 11 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+Sahoo, S., ElAraby, M., Ngnawe, J., Pequignot, Y. B., Pre-cioso, F., and Gagn ´e, C. A layer selection approach to test time adaptation. In NeurIPS 2024 Workshop on Fine-Tuning in Modern Machine Learning: Principles and Scalability , 2024. Shen, L., Tang, A., Yang, E., Guo, G., Luo, Y., Zhang, L., Cao, X., Du, B., and Tao, D. Efficient and effec-tive weight-ensembling mixture of experts for multi-task model merging. arXiv preprint arXiv:2410.21804 , 2024. Simsek, B., Ged, F., Jacot, A., Spadaro, F., Hongler, C., Gerstner, W., and Brea, J. Geometry of the loss landscape in overparameterized neural networks: Symmetries and invariances. In International Conference on Machine Learning (ICML) , pp. 9722–9732. PMLR, 2021. Stoica, G., Bolya, D., Bjorner, J., Ramesh, P., Hearn, T., and Hoffman, J. Zipit! merging models from different tasks without training. arXiv preprint arXiv:2305.03053 , 2023. Stoica, G., Bolya, D., Bjorner, J., Hearn, T., and Hoffman, J. Zipit! merging models from different tasks without training. International Conference on Learning Repre-sentations (ICLR) , 2024. Sun, T., Meng, T., and Liu, Y. Camelyon 17 challenge: A comparison of traditional machine learning (svm) with the deep learning method. Wireless Communications and Mobile Computing , 2022(1):9910471, 2022. Tang, A., Shen, L., Luo, Y., Ding, L., Hu, H., Du, B., and Tao, D. Concrete subspace learning based interference elimination for multi-task model fusion. arXiv preprint arXiv:2312.06173 , 2023. Tang, A., Shen, L., Luo, Y., Hu, H., Do, B., and Tao, D. Fu-sionbench: A comprehensive benchmark of deep model fusion. arXiv preprint arXiv:2406.03280 , 2024a. Tang, A., Shen, L., Luo, Y., Yin, N., Zhang, L., and Tao, D. Merging multi-task models via weight-ensembling mixture of experts. arXiv preprint arXiv:2402.00433 ,2024b. Tang, A., Shen, L., Luo, Y., Yang, E., Hu, H., Zhang, L., Du, B., and Tao, D. Fusionbench: A comprehensive benchmark of deep model fusion. Journal of Machine Learning Research , 2025. Tekin, S. F., Ilhan, F., Huang, T., Hu, S., Yahn, Z., and Liu, L. H3 fusion: Helpful, harmless, honest fusion of aligned llms. arXiv preprint arXiv:2411.17792 , 2024. Tschandl, P., Rosendahl, C., and Kittler, H. The ham10000 dataset, a large collection of multi-source dermatoscopic images of common pigmented skin lesions. Scientific data , 5(1):1–9, 2018. Venkateswara, H., Eusebio, J., Chakraborty, S., and Pan-chanathan, S. Deep hashing network for unsupervised domain adaptation. In IEEE Conference on Computer Vision and Pattern Recognition , pp. 5018–5027, 2017. Vray, G., Tomar, D., Gao, X., Thiran, J.-P., Shelhamer, E., and Bozorgtabar, B. Reservoirtta: Prolonged test-time adaptation for evolving and recurring domains. arXiv preprint arXiv:2505.14511 , 2025. Wang, D., Shelhamer, E., Liu, S., Olshausen, B., and Darrell, T. Tent: Fully test-time adaptation by entropy minimiza-tion. In International Conference on Learning Represen-tations (ICLR) , 2021. Wang, J., Liu, Q., Liang, H., Joshi, G., and Poor, H. V. Tackling the objective inconsistency problem in hetero-geneous federated optimization. In Advances in Neural Information Processing Systems , volume 33, pp. 7611– 7623. Curran Associates, Inc., 2020. Wang, Q., Fink, O., Van Gool, L., and Dai, D. Contin-ual test-time domain adaptation. In IEEE Conference on Computer Vision and Pattern Recognition , pp. 7201– 7211, 2022. Woerner, S., Jaques, A., and Baumgartner, C. F. A compre-hensive and easy-to-use multi-domain multi-task medical imaging meta-dataset. Scientific Data , 12(1):666, 2025. Wortsman, M., Ilharco, G., Gadre, S. Y., Roelofs, R., Gontijo-Lopes, R., Morcos, A. S., Namkoong, H., Farhadi, A., Carmon, Y., Kornblith, S., et al. Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time. In 
+
+International Conference on Machine Learning (ICML) ,pp. 23965–23998. PMLR, 2022. Xiao, Z. and Snoek, C. G. Beyond model adaptation at test time: A survey. arXiv preprint arXiv:2411.03687 , 2024. Xiao, Z., Zhen, X., Shao, L., and Snoek, C. G. M. Learning to generalize across domains on single test samples. In 
+
+International Conference on Learning Representations ,2022. Xiao, Z., Zhen, X., Liao, S., and Snoek, C. G. M. Energy-based test sample adaptation for domain generalization. In International Conference on Learning Representations ,2023. Xiao, Z., Shen, J., Derakhshani, M. M., Liao, S., and Snoek, C. G. M. Any-shift prompting for generalization over distributions. In CVPR , 2024. Yadav, P., Tam, D., Choshen, L., Raffel, C., and Bansal, M. Resolving interference when merging models. NeurIPS ,2023. 12 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+Yadav, P., Raffel, C., Muqeeth, M., Caccia, L., Liu, H., Chen, T., Bansal, M., Choshen, L., and Sordoni, A. A survey on model moerging: Recycling and routing among spe-cialized experts for collaborative learning. arXiv preprint arXiv:2408.07057 , 2024a. Yadav, P., Vu, T., Lai, J., Chronopoulou, A., Faruqui, M., Bansal, M., and Munkhdalai, T. What matters for model merging at scale? arXiv preprint arXiv:2410.03617 ,2024b. Yang, E., Shen, L., Guo, G., Wang, X., Cao, X., Zhang, J., and Tao, D. Model merging in llms, mlllms, and beyond: Methods, theories, applications and opportunities. arXiv preprint arXiv:2408.07666 , 2024a. Yang, E., Shen, L., Wang, Z., Guo, G., Chen, X., Wang, X., and Tao, D. Representation surgery for multi-task model merging. Forty-first International Conference on Machine Learning , 2024b. Yang, E., Wang, Z., Shen, L., Liu, S., Guo, G., Wang, X., and Tao, D. Adamerging: Adaptive model merging for multi-task learning. International Conference on Learn-ing Representations (ICLR) , 2024c. Yang, X., Chen, X., Li, M., Wei, K., and Deng, C. A versa-tile framework for continual test-time domain adaptation: Balancing discriminability and generalizability. In Pro-ceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition (CVPR) , pp. 23731–23740, June 2024d. Ye, P., Huang, C., Shen, M., Chen, T., Huang, Y., Zhang, Y., and Ouyang, W. Merging vision transformers from differ-ent tasks and domains. arXiv preprint arXiv:2312.16240 ,2023. Yunis, D., Patel, K. K., Savarese, P. H. P., Vardi, G., Frankle, J., Walter, M., Livescu, K., and Maire, M. On convexity and linear mode connectivity in neural networks. In OPT 2022: Optimization for Machine Learning (NeurIPS 2022 Workshop) , 2022. Zamanitajeddin, N., Jahanifar, M., Xu, K., Siraj, F., and Rajpoot, N. Benchmarking domain generalization al-gorithms in computational pathology. arXiv preprint arXiv:2409.17063 , 2024. Zhang, M., Marklund, H., Dhawan, N., Gupta, A., Levine, S., and Finn, C. Adaptive risk minimization: Learning to adapt to domain shift. In Advances in Neural Information Processing Systems , volume 34, 2021. Zhang, Y., Wang, X., Jin, K., Yuan, K., Zhang, Z., Wang, L., Jin, R., and Tan, T. Adanpc: Exploring non-parametric classifier for test-time adaptation. In International Con-ference on Machine Learning , 2023. Zhao, H., Liu, Y., Alahi, A., and Lin, T. On pitfalls of test-time adaptation. In International Conference on Machine Learning , 2023. Zhu, Y., Yin, X., Wee-Chung Liew, A., and Tian, H. Privacy-preserving in medical image analysis: A review of meth-ods and applications. In International Conference on Parallel and Distributed Computing: Applications and Technologies , pp. 166–178. Springer, 2024. Zimmer, M., Spiegel, C., and Pokutta, S. Sparse model soups: A recipe for improved pruning via model averag-ing. In International Conference on Learning Represen-tations (ICLR) , 2024. 13 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+# APPENDIX 
+
+A. Additional Datasets details 
+
+Natural Vision datasets. We use four natural vision datasets, each containing multiple visually distinct domains 
+
+(e.g., acquisition source or artistic style) with a shared la-bel space, enabling leave-one-domain-out evaluation. (i) 
+
+PACS (Li et al., 2017) contains 9, 991 images from seven classes across four domains (Photo, Art-painting, Cartoon, Sketch), and is widely used to study style shifts that alter low-level statistics while preserving semantic labels. (ii) 
+
+VLCS (Fang et al., 2013) contains 10 , 729 images from five classes across four domains (VOC2007, LabelMe, Caltech, SUN), capturing dataset-source shifts from different col-lection pipelines and scene/object statistics. (iii) Office-Home (Venkateswara et al., 2017) contains 15 , 500 images spanning 65 classes over four domains (Art, Clipart, Prod-uct, Real-World), providing a larger and more fine-grained DG benchmark. (iv) TerraIncognita (Beery et al., 2018) is a camera-trap wildlife recognition dataset where domain shift is induced by geographically distinct camera locations and environmental conditions, with the common preprocessing that treats locations as domains. 
+
+Medical imaging datasets. To evaluate robustness under clinically realistic distribution shifts, we consider medical imaging benchmarks spanning histopathology, dermoscopy, mammography, and CT anatomy classification. (v) MiDog Atypical (MIDOG 2025 Atypical Training Set) (Bertram et al., 2025) contains 11,939 mitotic figures from 454 la-beled images across seven domains (breast carcinoma, lung carcinoma, lymphosarcoma, neuroendocrine tumor, cuta-neous mast cell tumor, melanoma, and soft tissue sarcoma). The dataset is explicitly constructed to induce domain shift via tumor-type heterogeneity, species variation (human and canine), scanner diversity (five different whole-slide scan-ners), and lab-specific tissue preparation protocols. An-notations are obtained via a three-expert blinded major-ity vote for binary classification (normal vs. atypical mi-tosis), making this a challenging DG setting where stain-ing/scanner artifacts and morphology changes can strongly perturb low-level texture statistics while preserving the un-derlying diagnostic task. (vi) Organs is derived from the Liver Tumor Segmentation Benchmark (LiTS) and pro-vides 2D CT slices for multiclass organ recognition under viewpoint changes. Specifically, we use three variants, or-gans axial, organs coronal, and organs sagittal each contain-ing 1,645 images with 11 organ labels (heart, left/right lung, liver, spleen, pancreas, left/right kidney, bladder, left/right femoral head). This setup naturally supports a DG pro-tocol by treating the slicing plane (axial/coronal/sagittal) as the domain, while keeping the label space fixed across domains. (vii) HISTOPANTUM is a pan-cancer tumor detec-tion dataset released in the referenced study, covering four cancer types as domains: colorectal (CRC), uterus (UCEC), ovary (OV), and stomach (STAD), with 40 WSIs per domain sourced from TCGA studies. An experienced pathologist annotates tumor and non-tumor regions, from which the dataset is formed as 281,142 patches of size 512 ×512 (at about 0.5 mpp) that are resized to 224 ×224 during training and evaluation, with binary labels tumor vs. non-tumor. This dataset exhibits multiple distribution shifts simultaneously, including covariate shift (center/scanner/stain variability), prior shift (different class proportions across cancer types), and class-conditional shift (tumor morphology differs by cancer type while non-tumor tissue is more consistent). (viii) 
+
+ISIC Skin is instantiated as DG for melanoma classification using ISIC2019 for training/validation (melanoma vs. be-nign), with 12,360 training images and 2,060 validation images. Domain labels are defined by artifact annotations, splitting the ISIC2019 training set into five groups: dark cor-ner (2,351), hair (4,884), gel bubble (1,640), ruler (672), and clean (2,796). Generalization is evaluated on four OOD test sets: Derm7pt-Dermoscopic (872), Derm7pt-Clinical (839), PH2 (200), and PAD-UFES-20 (531), where the shift in-cludes both artifact-driven changes and modality differences (dermoscopic vs. clinical photographs). (ix) Mammo (mam-mography) uses a CBIS-DDSM-style setup where labels include benign, benign-without-callback, and malignant, and evaluation is commonly performed either as a 3-way classification task or as benign-vs-malignant depending on the protocol. 
+
+B. Additional Related work 
+
+Test-time adaptation. Test-time adaptation optimizes the source trained model during inference target data to address unseen distribution shifts via gradient updates (Chen et al., 2022; Choi et al., 2021; Min et al., 2023; Xiao et al., 2022; Sahoo et al., 2024; Xiao & Snoek, 2024; Liang et al., 2023; Xiao et al., 2024; 2023; Boudiaf et al., 2022; Kim et al., 2025; Vray et al., 2025; Ambekar et al., 2025; Yang et al., 2024d; Lei et al., 2025; Du et al., 2024). The standard fine-tuning approaches typically adjust a fixed set of param-eters, such as batch normalization statistics (Zhang et al., 2021; Nado et al., 2020), full model parameters (Wang et al., 2021; Liang et al., 2020), or single-dimensional linear lay-ers (Jang et al., 2023; Iwasawa & Matsuo, 2021; Zhang et al., 2023). Beyond these, recent works have explored overall layer selection (Sahoo et al., 2024) and surgical fine-tuning (Lee et al., 2023) for targeted adaptation. These methods have been evaluated on unseen scenarios, including noise-corrupted datasets (Wang et al., 2021; Goyal et al., 2022) and datasets with varying domain information (Iwa-sawa & Matsuo, 2021; Liang et al., 2020). Test-time adap-tation is orthogonal to model merging: merging decides 14 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+which single model to deploy by consolidating multiple hos-pital experts into a single merged model, while Test-time adaptation decides how this merged model can adapt further to the incoming target stream. 
+
+Federated learning. In Federated Learning (FL) (McMa-han et al., 2017), multiple clients train a global model under the supervision of a central server without sharing their raw data (Kairouz et al., 2019). The clients only share the local models with the server, which, in turn, performs model ag-gregation (merging). The federated training is an iterative process that continues for a specified number of communi-cation rounds or until the global model converges. There are different model merging methods in FL including FedAvg 
+
+(McMahan et al., 2017), FedNova (Wang et al., 2020), and 
+
+FedFisher (Jhunjhunwala et al., 2024). FedAvg (McMahan et al., 2017) is the de facto standard merging method in FL, which takes the weighted average, based on the sample sizes of the clients, over the weights of the local models. Fed-Nova normalizes the gradients from the clients’ local models before merging them. FedFisher computes the Fisher in-formation matrices for the local models and uses them as the basis for the global model. However, FL merging rules target iterative training-time aggregation to a single global model and therefore do not suit our inference setting, which requires online merging of fixed domain-specific models using only unlabeled target batches and forward-only com-putation. 
+
+Mode connectivity. Mode connectivity provides theoretical grounding for model merging by establishing that indepen-dently trained models can often be connected by low-loss paths in weight space (Garipov et al., 2018; Frankle et al., 2020b; Draxler et al., 2018). Here, weight space means the (very high-dimensional) space of all network parameters, that is all weights and biases stacked into one long vector, so each trained model corresponds to a single point in that space. Linear mode connectivity (Frankle et al., 2020b) shows that models trained from the same initialization of-ten exhibit approximately linear connectivity, although this can break under strong heterogeneity. Recent work ex-plores mode connectivity in broader contexts, including loss surface simplexes (Benton et al., 2021), convexity proper-ties (Yunis et al., 2022), geometric perspectives (Simsek et al., 2021), and proving connectivity via optimal trans-port (Ferbach et al., 2024). 
+
+C. Additional Implementation details 
+
+C.1. Source training: Independently training the source models 
+
+To construct diverse source models, we follow the DIWA method (Diverse Weight Averaging) (Rame et al., 2022) setup and train multiple runs per hospital by varying hy-perparameters and training procedures, explicitly target-ing functional diversity among candidate solutions. More specifically, for each domain or hospital k we train a set of candidates {fk,m }Mk 
+
+> m=1
+
+using standard cross-entropy loss on (x(k) 
+
+> s
+
+, y(k) 
+
+> s
+
+), and then select one representative domain specific model per hospital via the hospital-specific vali-dation split, yielding the final domain specific model pool 
+
+{fk}Kk=1 .
+
+C.2. Evaluation setting 
+
+We use a unified online test-time adaptation (TTA) eval-uation protocol, where target samples arrive sequentially as unlabeled batches {B t}Tt=1 . All methods are evaluated under identical data ordering and batching, and we reimple-ment the standard baselines across all datasets. To isolate the effect of adaptive merging from general-purpose test-time training, we restrict test-time updates to merging-related parameters (e.g., coefficients/weights that determine how domain-specific models are combined), while keeping the underlying expert backbones fixed. For adaptive baselines that rely on optimization, we enforce a fixed compute bud-get by using the same number of update steps per batch across methods, whereas our approach performs forward-only inference and does not backpropagate through target data. Operationally, at each time step t, the method produces a single merged predictor tailored to Bt and then evaluates it on Bt in a feed-forward manner, which matches the deploy-ment constraint of streaming inference with limited compute and no target-time training. 
+
+C.3. Source training algorithm Algorithm 2 Source training and domain-specific model selection Input: Following Rame et al. (2022), domains S =
+
+{D(k) 
+
+> s
+
+}Kk=1 with labeled splits (D(k)tr , D(k)val ); hyperparam-eter set H.
+
+Output: One domain specific model per domain 
+
+{(θ(k) 
+
+> s
+
+, W (k) 
+
+> ϕ
+
+)}Kk=1 .                                      
+
+> 1: for k= 1 to Kdo
+> 2: for each h∈ H do
+> 3: Train candidate (θk,h , W ϕ,k,h )on D(k)tr using Eq. 1. 4: Compute validation loss R(k)val (h)on D(k)val .5: end for
+> 6: Select h⋆k= arg min h∈H R(k)val (h).7: Set (θ(k)
+> s, W (k)
+> ϕ)←(θk,h ⋆k, W ϕ,k,h ⋆k).8: end for
+
+C.4. Hyperparameters 
+
+We re-implement the following baseline methods for our merging setup using (Tang et al., 2025): Reg-Mean++ (Nguyen et al., 2025), AdaMerging (Yang et al., 15 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+2024c), Task Arithmetic (Ilharco et al., 2023), TIES-Merging (Yadav et al., 2023), and Fisher Merging (Matena & Raffel, 2022). Unless stated otherwise, we use the hyper-parameter settings recommended in the original papers or official implementations. We will release the code. 
+
+RegMean++. We follow the default configuration and use 50 batches with a batch size of 32. The Gram-matrix reg-ularization strength is set to λreg = 0 .01 , and we do not downweight off-diagonal entries in the Gram matrix, i.e., reduce the nondiagonal ratio is set to 1.0. 
+
+AdaMerging. Task-wise merge coefficients are optimized using Adam with a learning rate of 10 −3 for a single epoch. Coefficients are initialized to 0.3 and updated using a batch size of 32. During optimization, coefficients are clamped to the interval [0 , 1] .
+
+Task Arithmetic. We use a fixed task-vector scaling coeffi-cient and set the scaling factor λ to 0.3 for all experiments. 
+
+TIES-Merging. We adopt the standard configuration with a scaling factor of 0.3 and a trimming ratio kthreshold = 0 .2.The merge operator is chosen as the mean. 
+
+Fisher Merging. Fisher information is estimated using 500 samples. We normalize the Fisher weights, set the minimum Fisher weight to 10 −6 to avoid numerical issues, and use a batch size of 32 throughout. 
+
+Layer-wise domain-specific models misalignment. Fig-ure 5 provides a mechanistic ablation supporting our merg-ing design on the PACS dataset using ViT-B32, where S0, S1, and S2 from the figure represent the source models trained on Photo, Cartoon, and Sketch, respectively. Specif-ically, we compute pairwise parameter angles as in (Jang et al., 2024) between domain-specific models and observe a clear layer-wise pattern: representation layers remain com-paratively aligned, whereas the classification head is highly misaligned across domains. This explains why global mean merging can be partially effective (when it averages aligned encoder components) yet fails sharply when applied uni-formly to the head, which lacks a shared basin across hospi-tals. Motivated by this, our method decouples encoder and classification head merging, enabling soft entropy-weighted fusion for the encoder while using a more conservative rule for the head during online inference. 
+
+D. Additional Discussions: Rationales and Motivation 
+
+This appendix provides detailed justifications for the key methodological decisions in our entropy-adaptive test-time merging framework. 0 1 2 3 4 5 6 7 8 9 10 11 C                                                                                                                                                                                                                                                                                                                                                                        
+
+> Block Number
+> Attention_Proj_Bias
+> Attention_Proj_Weight
+> Attention_QKV_Bias
+> Attention_QKV_Weight
+> CLS_Token
+> Classifier Layer
+> LayerNorm_Bias
+> LayerNorm_Weight
+> MLP_FC1_Bias
+> MLP_FC1_Weight
+> MLP_FC2_Bias
+> MLP_FC2_Weight
+> Patch_Embedding
+> Position_Embedding
+> Layer Type
+> 112 100 101 102 105 113 111 113 109 110 106 99
+> 102 103 104 104 105 104 105 105 104 105 105 107
+> 766666666766
+> 56 61 82 89 99 101 102 103 101 100 99 98
+> 0
+> 76
+> 0000000000000
+> 0000000000000
+> 31 73 70 76 75 85 95 89 62 41 32 45
+> 62 92 100 101 102 102 103 102 99 95 95 96
+> 103 98 96 103 109 106 109 108 106 111 107 84
+> 98 103 103 105 105 104 105 103 102 94 91 96
+> 113
+> 0
+> (A) S0 vs S1: Angle (C=Classifier Layer)
+> 012345678910 11 C
+> Block Number
+> Attention_Proj_Bias
+> Attention_Proj_Weight
+> Attention_QKV_Bias
+> Attention_QKV_Weight
+> CLS_Token
+> Classifier Layer
+> LayerNorm_Bias
+> LayerNorm_Weight
+> MLP_FC1_Bias
+> MLP_FC1_Weight
+> MLP_FC2_Bias
+> MLP_FC2_Weight
+> Patch_Embedding
+> Position_Embedding
+> Layer Type
+> 146 148 149 149 149 148 146 148 151 150 152 156
+> 155 154 154 154 155 155 155 154 155 154 154 153
+> 178 178 178 178 178 178 178 178 178 178 178 178
+> 161 158 158 157 156 156 156 156 156 156 156 156
+> 0
+> 160
+> 0000000000000
+> 0000000000000
+> 172 159 162 162 162 159 156 157 164 169 171 169
+> 159 156 156 156 156 156 156 156 157 158 158 158
+> 148 148 149 149 148 148 146 148 151 150 153 161
+> 156 155 155 155 155 155 155 155 156 158 158 157
+> 152
+> 0
+> (B) S0 vs S2: Angle (C=Classifier Layer)
+> 012345678910 11 C
+> Block Number
+> Attention_Proj_Bias
+> Attention_Proj_Weight
+> Attention_QKV_Bias
+> Attention_QKV_Weight
+> CLS_Token
+> Classifier Layer
+> LayerNorm_Bias
+> LayerNorm_Weight
+> MLP_FC1_Bias
+> MLP_FC1_Weight
+> MLP_FC2_Bias
+> MLP_FC2_Weight
+> Patch_Embedding
+> Position_Embedding
+> Layer Type
+> 101 111 110 109 106 99 103 99 100 100 101 106
+> 103 104 102 102 101 101 100 101 101 101 101 100
+> 176 176 176 176 176 176 176 176 176 176 176 176
+> 143 140 121 114 105 103 102 102 103 103 104 106
+> 109
+> 124
+> 96 103 92 87 83 77 75 73 73 66 93 69 73
+> 131 109 106 98 81 72 74 72 74 75 98 72 69
+> 157 128 128 123 124 116 109 114 134 150 156 145
+> 139 112 104 103 103 102 102 102 104 107 107 107
+> 109 114 115 108 103 106 106 104 102 99 100 115
+> 105 102 102 101 101 101 100 101 102 108 111 107
+> 95
+> 76
+> (C) S1 vs S2: Angle (C=Classifier Layer)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Angle (°)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> 160
+> Angle (°)
+> 80
+> 100
+> 120
+> 140
+> 160
+> Angle (°)
+
+Figure 5. Layer-wise domain-specific models misalignment. 
+
+Pairwise parameter angles between domain-specific models across ViT and classification head components show that encoder layers are largely aligned, while the classification head (C) is strongly misaligned, motivating head-aware merging. 
+
+D.1. Why Entropy as the Primary Confidence Metric Information-theoretic optimality and unsupervised per-formance proxy. Entropy directly quantifies uncertainty in the predictive distribution, providing a principled mea-sure that captures the full probability distribution rather than just the mode. Lower entropy on target data corre-lates with lower test error without requiring labels, making it ideal for test-time adaptation where ground truth is un-available (Wang et al., 2021). Unlike maximum softmax probability, entropy is sensitive to the entire probability mass distribution across classes, capturing multi-modal un-certainty patterns common in medical imaging. Prior work in test-time adaptation consistently shows entropy minimiza-tion improves out-of-distribution performance. Computing entropy requires only a forward pass through the model with complexity O(C) per sample for C classes, making it feasible for real-time deployment while maintaining dif-ferentiability and smoothness properties that enable stable computations. 
+
+D.2. Decoupling Encoder and Classification Head Coefficients Differential initialization and alignment properties. En-coders share pretrained ImageNet initialization and undergo fine-tuning, while classification heads are trained from ran-dom initialization, leading to fundamentally different align-ment properties between domain-specific models. Fig. 2b from the main paper shows angular drift increases mono-tonically with depth, peaking at the classification head with angles exceeding 80° for some domain pairs, indicating near-orthogonality. Encoders learn transferable features such as edges, textures, and shapes that generalize across domains, while heads specialize to domain-specific class priors and decision boundaries optimized on heterogeneous distributions. Linear mode connectivity holds more reliably for encoder parameters due to shared initialization basin but breaks down for classification heads. Averaging near-orthogonal classification head vectors leads to severe norm shrinkage, as shown in Fig. 2c of the main paper, reduc-ing discriminative power and margin size. This motivates our decoupling strategy, which allows smooth averaging for 16 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+encoders while enabling hard selection for heads. 
+
+D.3. Why Not Layer-wise Merging Coefficients Computational cost vs. benefit trade-off. Comput-ing separate merging coefficients for each of the L lay-ers would require O(K × L) forward passes to evaluate each domain-specific model’s per-layer features on the tar-get batch, becoming prohibitively expensive for deep net-works. Layer-wise coefficients require either optimization-based approaches with significant computational overhead or heuristics that lack principled justification compared to our entropy-based global selection. Module-level decou-pling between encoder and head captures the most critical architectural distinction, the differential training regimes and alignment properties, while layer-wise schemes may over-fit to noise in small batches. Our experiments show that encoder/head decoupling achieves 85-90% of the per-formance gains that full layer-wise merging would provide, while requiring only two sets of coefficients instead of dozens. The interpretability and computational efficiency of our two-level approach make it more practical for clini-cal deployment, where inference speed and explainability are paramount, and the marginal gains from full layer-wise merging do not justify the added complexity in most scenar-ios. 
+
+D.4. Inverse-Entropy Normalization Formula Monotonic preference and valid probability weights. The inverse mapping ˜αt,k = (Et,k +ϵ)−1  
+
+> PKj=1 (Et,j +ϵ)−1
+
+ensures lower en-tropy yields higher weight, directly encoding the intuition that confident models should dominate the merge while producing valid convex weights satisfying the simplex con-straint ∆K−1. The inverse operation amplifies differences between low-entropy experts while gracefully handling high-entropy uncertain models without numerical instability. Adding ϵ prevents division by zero when a model achieves near-zero entropy and provides numerical stability in edge cases. The closed-form rule requires no backpropagation, optimization, or iterative procedures, enabling efficient on-line adaptation. Compared to softmax-style exponential weighting, inverse normalization provides more balanced weight distribution and avoids extreme concentration on a single model, which is crucial when multiple domain-specific models have similarly low entropy values. 
+
+D.5. Why DiWA for source training: Linear mode connectivity Functional diversity through varied training procedures. 
+
+Training multiple runs per hospital with diverse hyperpa-rameters including learning rates, augmentations, and opti-mizers produces models that explore different regions of the loss landscape, improving ensemble coverage and functional diversity. Training multiple runs prevents collapsing onto a single solution, ensuring the domain-specific model pool has sufficient variety for selective merging during test-time adaptation. Medical datasets are often small and sensitive to hyperparameter choices, so diverse training reduces reliance on finding the single optimal hyperparameter configuration. DiWA demonstrates that weight averaging across diverse runs improves out-of-distribution generalization without in-ference overhead, providing a strong empirical foundation. Training Mk candidates per hospital and selecting one rep-resentative model via the hospital-specific validation split ensures each domain-specific model is both representative of its domain and well-performing, balancing diversity with quality. 
+
+D.6. Single-Domain Training Setup Privacy preservation and realistic deployment con-straints. Medical data privacy regulations such as GDPR of-ten prohibit raw data sharing across institutions, and single-domain training respects these constraints by keeping all pa-tient data local to each hospital. This setup naturally extends to federated learning scenarios where only model weights, not data, are communicated between institutions. Many real-world healthcare systems cannot centralize data due to legal, ethical, or infrastructural barriers, making our method prac-tical for actual clinical deployment. Training exclusively on local data allows each model to fully specialize in its hospi-tal’s unique characteristics, including scanner manufacturer, acquisition protocol, and patient population demographics. Pooling heterogeneous medical data can lead to negative transfer, where different acquisition protocols interfere with learning, whereas single-domain training sidesteps this issue entirely. New hospitals can independently train models and add them to the pool without retraining existing models, en-abling decentralized, scalable deployment as the healthcare network grows. 
+
+D.7. Layer-wise Directional and Scale Drift Metrics Complementary geometric characterization of misalign-ment. Directional drift measured as the angle θij between corresponding parameter vectors captures orientation mis-alignment, while scale drift measured as the norm ratio 
+
+∥p(i)∥/∥p(j)∥ captures magnitude imbalance, and both are necessary for complete characterization of parameter space relationships. The angle between weight vectors directly relates to the dot product in merged models, affecting the effective signal strength post-averaging through the cosine of the angle. Directional drift is scale-invariant and robust to overall magnitude differences, while scale drift identifies when one model dominates due to larger parameter norms. Large angular drift exceeding 45° (based on the dataset) suggests poor linear mode connectivity, as the straight-line 17 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+path between models deviates significantly from the func-tional directions of both endpoints. Computing these metrics per layer reveals depth-dependent misalignment patterns as shown in Fig. 2a of the main paper, and high drift, espe-cially directional, at specific layers, predicts poor perfor-mance from uniform mean merging, empirically validating our adaptive approach. 
+
+D.8. Online Non-i.i.d. Target Batches Temporal distribution shifts in realistic deployment. 
+
+Medical imaging systems experience temporal shifts in-cluding protocol changes, seasonal patient demographics, equipment drift, and technician turnover, violating stan-dard i.i.d. assumptions. Modeling the target stream as 
+
+Dt = PMm=1 πt,m D(m) 
+
+> t
+
+with time-varying mixture weights 
+
+πt captures these realistic non-stationarities. Time-varying 
+
+πt implies optimal merging weights α∗ 
+
+> t
+
+also vary over time, motivating online recomputation per batch rather than us-ing fixed weights. The mixture formulation captures both smooth concept drift from gradual πt changes and sudden distribution shifts from abrupt πt jumps, increasing robust-ness across diverse scenarios. Each sub-distribution D(m)
+
+> t
+
+may correspond to a different scanner, protocol, or artifact type, with πt reflecting their prevalence in batch Bt, and our entropy-based approach automatically adapts to these changing compositions without explicit shift detection. 
+
+D.9. Shared Pretrained Initialization for Encoders Transfer learning and representation alignment. Using ImageNet pretrained weights as initialization for all domain-specific encoders provides a common reference point θ(0) 
+
+> ℓ
+
+from which domain-specific fine-tuning deviates, creating a natural alignment baseline. Pretrained representations cap-ture general visual features including edges, textures, colors, and shapes that transfer across domains, reducing the dis-tance domain-specific models must traverse during training. Shared initialization increases the likelihood of linear mode connectivity between encoder parameters, as all models start from the same basin in the loss landscape and typically remain in nearby regions after fine-tuning. Transfer learn-ing from large-scale pretrained models is standard practice in medical imaging due to limited labeled data availabil-ity, making this assumption realistic and broadly applicable. The common initialization enables meaningful computation of layer-wise drift ∆(k) 
+
+> ℓ
+
+= θ(k) 
+
+> s,ℓ
+
+− θ(0)  
+
+> ℓ
+
+, quantifying domain-specific specialization relative to the pretrained baseline, and empirically, models initialized from the same check-point exhibit lower angular drift than randomly initialized models, supporting our encoder merging strategy. 
+
+D.10. Why Not Optimize Merging Weights Catastrophic forgetting and computational constraints. 
+
+Optimizing merging weights through gradient descent on target batches would require multiple forward-backward passes per batch, increasing inference time by an order of magnitude and making real-time deployment infeasible. Optimization-based approaches require stopping criteria and learning rate schedules, which introduce additional hyper-parameters that need to be tuned without validation labels. Gradient-based updates to either source models or merg-ing coefficients can cause catastrophic forgetting where the model loses source domain knowledge and fails when the tar-get distribution shifts back. Methods such as test-time train-ing that update batch normalization statistics or model pa-rameters have shown instability on non-i.i.d. streams, where each batch may come from a different sub-distribution. Our closed-form approach provides a deterministic, reproducible mapping from batch statistics to weights, simplifying debug-ging and analysis. In medical applications, interpretability and predictability are crucial for regulatory approval, and optimization-based black-box adaptation is harder to vali-date than our explicit entropy-based rule. 
+
+D.11. Medical Imaging Specific Considerations Scanner heterogeneity and clinical safety requirements. 
+
+Medical imaging exhibits extreme domain shifts due to scanner manufacturer differences (Siemens, GE, Philips), acquisition protocols (T1-weighted, T2-weighted, FLAIR), and site-specific factors like field strength (1.5T vs 3T in MRI). These shifts are more severe than typical computer vision domain gaps, creating strong misalignment between hospital-specific models that justifies our adaptive approach. Clinical deployment requires methods that maintain high performance without fine-tuning on potentially small or bi-ased target samples, making our forward-only, label-free ap-proach particularly suitable. Regulatory requirements such as FDA approval favor transparent, deterministic methods over black-box optimization, and our closed-form entropy-based rule provides clear audit trails. Patient safety demands robustness to outliers and artifacts, and our method’s en-semble averaging provides natural redundancy compared to single-model deployment. The batch-wise adaptation aligns with radiology workflows, where studies are typically processed in groups, and privacy regulations that prevent data sharing make our federated-compatible single-domain training essential for multi-institutional collaboration. 
+
+D.12. Functional diversity through independent training runs. 
+
+DiWA (Rame et al., 2022) demonstrates that models ob-tained from independent training runs exhibit greater func-tional diversity than models collected along a single training 18 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+trajectory (e.g., checkpoints from different epochs). This diversity arises because different hyperparameter configu-rations and random seeds cause SGD to explore different regions of the loss landscape, leading to functionally dis-tinct solutions even when all achieve similarly low training loss. In mathematical terms, let fk(x; θk,m ) denote the m-th trained model from hospital k; DiWA shows that the vari-ance in predictions Var [fk(x; θk,m )] across different runs m
+
+is significantly higher than the variance across epochs within a single run. This increased variance is beneficial for out-of-distribution generalization because diverse models make different types of errors, and their ensemble (or in our case, adaptive merge) can compensate for individual weaknesses. For medical imaging with severe domain shifts, we expect high variance in which features and decision boundaries generalize to unseen hospitals, making functional diversity particularly valuable. The DiWA framework provides a prin-cipled way to obtain this diversity through simple training protocol variations rather than complex ensemble architec-tures. 
+
+D.13. Bias-variance-covariance-locality decomposition and OOD success. 
+
+DiWA (Rame et al., 2022) introduces a novel decomposition of expected error for weight-averaged models that extends classical bias-variance theory to the parameter-space aver-aging regime: E[error ] = bias 2 + variance − covariance +
+
+locality . The variance term captures dispersion in predic-tions across different models, the covariance term measures agreement between models (negative contribution reduces error when models agree on correct predictions), and the lo-cality term quantifies how well the averaged weights remain in low-loss regions despite nonlinearity. Critically, DiWA shows that when the marginal distribution changes at test time (as in OOD scenarios), the variance term dominates this decomposition, meaning diverse models that reduce variance provide the largest error reduction. This theoretical insight directly applies to our multi-hospital setting: each target hospital represents a distribution shift from all source hospitals, so the test-time marginal distribution pDt (x) dif-fers from source distributions pD(k)
+
+> s
+
+(x). By training diverse models per hospital and then adaptively selecting among them based on target batch entropy, we exploit both the variance-reduction benefits of diversity (having multiple can-didate solutions) and the covariance-reduction benefits of selection (choosing models that agree with the target’s struc-ture). The locality term is managed through our entropy-based weighting, which avoids averaging highly misaligned models that would produce out-of-basin interpolations. 
+
+D.14. Practical benefits for federated medical imaging deployment. 
+
+In multi-hospital collaborations, enforcing uniform train-ing procedures across institutions is often impractical due to differences in computational resources, ML expertise, legacy systems, and institutional policies. DiWA’s philos-ophy aligns perfectly with this reality: it embraces rather than fights the heterogeneity in training procedures. Each hospital can train using whatever hyperparameters, augmen-tations, and optimizers work best for their local setup, and the resulting functional diversity across hospitals becomes an asset rather than a liability. This is particularly valuable in medical imaging where hospitals may have institution-specific practices: some may use aggressive data augmenta-tion to combat limited labeled data, others may use specific preprocessing pipelines adapted to their scanner character-istics, and some may have access to more computational resources enabling larger batch sizes or longer training. DiWA-inspired training allows each hospital to optimize for its local constraints while contributing a diverse model to the global pool. Furthermore, hospitals can independently update their models over time by training new diverse runs and selecting improved representatives without requiring coordination or synchronization with other institutions. This decentralized improvement aligns with the federated nature of healthcare systems. 
+
+D.15. Alignment with transfer learning and shared initialization. 
+
+All domain-specific models in our framework start from the same pretrained encoder initialization (e.g., ImageNet weights). DiWA’s analysis shows that shared initialization is critical for successful weight averaging because it provides a common reference point that keeps diverse solutions within ”averageable” distance in parameter space. Without shared initialization, models trained from different random seeds could converge to functionally equivalent but parameter-space misaligned solutions (permutation modes), making weight averaging ineffective. The pretrained initialization serves as an anchor that implicitly coordinates the parameter space across all domain-specific models, even when they undergo diverse fine-tuning procedures. This alignment is particularly strong in early encoder layers where pre-trained features (edges, textures, basic shapes) remain rele-vant across medical imaging domains, while later layers and the classification head specialize more to domain-specific patterns. Our decoupled merging strategy explicitly ex-ploits this architecture-dependent alignment: encoders ben-efit from soft averaging due to shared initialization keeping them in the same basin, while classification heads require hard selection due to their domain-specific specialization. DiWA’s framework provides the theoretical justification for why weight averaging works despite diverse training, and 19 The Mean is the Mirage: Entropy-Adaptive Model Merging under Heterogeneous Domain Shifts in Medical Imaging 
+
+our method extends this by adding test-time adaptation that responds to each target batch’s characteristics rather than computing a single fixed average. 
+
+D.16. Architectural implications of encoder–head decoupling. 
+
+Encoders initialized from ImageNet pretrained weights learn rich hierarchical representations that constrain fine-tuning trajectories to remain close to their initialization, enabling effective feature reuse across hospitals. Despite heteroge-neous data, encoders across sites tend to share similar low-and mid-level features and differ mainly in how deeper fea-tures are weighted and combined, which makes linear mode connectivity and soft averaging more plausible. In con-trast, classification heads trained from random initialization must learn decision boundaries entirely from scratch, often resulting in near-orthogonal weight vectors that reflect dif-ferent class priors and boundary geometries. Averaging such misaligned heads yields weak, attenuated hybrid decision boundaries, motivating hard selection that chooses the sin-gle best-aligned head instead. More broadly, this suggests that model components benefiting from transfer learning and shared initialization are amenable to soft averaging due to implicit alignment, whereas components trained from scratch require more conservative, selection-based strate-gies. 
+
+D.17. Non-i.i.d. target streams and adaptive merging necessity. 
+
+Medical imaging data streams are inherently non-i.i.d., ex-hibiting temporal structure driven by daily patient demo-graphics, equipment maintenance cycles, protocol updates, and seasonal effects. Such streams can be naturally modeled as a time-varying mixture Dt = PMm=1 πt,m D(m) 
+
+> t
+
+, where the mixture weights πt evolve over time and reflect chang-ing latent sub-populations. Fixed model merging with static weights αk implicitly assumes a stationary target distribu-tion and therefore breaks down when these mixture propor-tions shift. Weights that are optimal for an average target distribution become suboptimal as soon as πt deviates from this average, which is especially problematic during rare ar-tifact changes or abrupt sub-population changes. In contrast, our adaptive approach recomputes the merging weights ˜αt
+
+per batch, allowing the merged model to automatically track distribution shifts and select the most appropriate source models for each batch, without requiring explicit shift de-tection. 
+
+D.18. Relationship to domain generalization vs. domain adaptation. 
+
+Domain generalization aims to train on multiple source domains to generalize to unseen targets without any adap-tation, whereas our setting trains models independently per hospital to respect privacy constraints. Traditional domain adaptation, in contrast, typically assumes access to unla-beled target data for offline adaptation prior to deployment; instead, we perform online adaptation on streaming target batches without storing target data. Our approach sits be-tween these paradigms: domain-specific training produces specialist models, reminiscent of multi-source domain gen-eralization, while test-time merging enables adaptation to target distributions, akin to domain adaptation. Crucially, unlike many domain adaptation methods that require large amounts of target data, our batch-level strategy operates effectively with small batches (16–64 samples) that are re-alistic in clinical workflows. This design avoids negative transfer from pooling heterogeneous medical data during training while still providing adaptive flexibility at test time, positioning our method squarely between domain general-ization and domain adaptation. 
+
+D.19. Handling class imbalance across hospitals and target batches. 
+
+Different hospitals often exhibit distinct class prevalences due to variations in patient demographics, referral patterns, and disease incidence, which induce different class priors in the domain-specific models trained at each site. As a result, classification heads trained under these imbalanced conditions may internalize different decision thresholds tai-lored to their local distributions, leading to misalignment when transferred across hospitals. Target batches can fur-ther deviate from any single source hospital’s class balance, but entropy naturally adapts to this setting: models whose learned priors better match the target batch composition tend to produce lower predictive entropy. Consequently, our entropy-based selection implicitly performs importance reweighting by favoring models aligned with the target batch distribution, without requiring explicit estimation of class frequencies. While extreme imbalance scenarios could mo-tivate extensions such as per-class entropy weighting, our current batch-level approach already provides robust behav-ior without the need for class-wise stratification. 20

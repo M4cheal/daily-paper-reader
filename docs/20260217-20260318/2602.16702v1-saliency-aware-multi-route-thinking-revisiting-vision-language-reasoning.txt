@@ -1,0 +1,1041 @@
+Title: Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning
+
+URL Source: https://arxiv.org/pdf/2602.16702v1
+
+Published Time: Thu, 19 Feb 2026 02:05:42 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+Mingjia Shi 1 Yinhan He 1 Yaochen Zhu 1 Jundong Li 1
+
+## Abstract 
+
+Vision-language models (VLMs) aim to reason by jointly leveraging visual and textual modalities. While allocating additional inference-time compu-tation has proven effective for large language mod-els (LLMs), achieving similar scaling in VLMs remains challenging. A key obstacle is that visual inputs are typically provided only once at the start of generation, while textual reasoning ( e.g. , early visual summaries) is generated autoregressively, causing reasoning to become increasingly text-dominated and allowing early visual grounding errors to accumulate (Fig 1). Moreover, vanilla guidance for visual grounding during inference is often coarse and noisy, making it difficult to steer reasoning over long texts. To address these challenges, we propose Saliency-Aware Princi-ple (SAP) selection. SAP operates on high-level reasoning principles rather than token-level trajec-tories, which enable stable control over discrete generation under noisy feedback while allowing later reasoning steps to re-consult visual evidence when renewed grounding is required. In addition, SAP supports multi-route inference, enabling par-allel exploration of diverse reasoning behaviors. SAP is model-agnostic and data-free, requiring no additional training. Empirical results show that SAP achieves competitive performance, espe-cially in reducing object hallucination, under com-parable token-generation budgets while yielding more stable reasoning and lower response latency than CoT-style long sequential reasoning. 
+
+## 1. Introduction 
+
+Vision–language models (VLMs) aim to solve multimodal reasoning tasks by jointly processing visual inputs (e.g., images or regions) and textual inputs (e.g., instructions or intermediate thoughts) (Liu et al., 2025). Recent advances 
+
+> 1
+
+University of Virginia. Correspondence to: Jundong Li <jun-dong@virginia.edu >.
+
+Preprint. February 19, 2026. What will happen next?                          
+
+> Long Sequential Reasoning
+> … looks like a toothbrush ... Wait, let‘s take a look at
+> the faucet … This is a bathroom sink used for washing
+> or rinsing … Wait, a toy is placed near the sink... Wait,
+> let’s look at the toy. The toy looks like reptile (or
+> dinosaur )… The setup looks playful or staged , so the
+> toy may be there for humor or a photo ,not for
+> practical use … Wait, photos are taken by cameras …
+> It seems like someone is
+> coming to rinse out the mouth .
+> Rt 1 : From a functional perspective , the
+> dinosaur toy may be a toothbrush holder …
+> So, it’s a toothbrush …
+> Rt 2 : From a behavioral logic perspective ,
+> toothbrush and tap water …
+> This scene will be photographed
+> by a camera for humor.
+> Vision -Language Reasoning
+> Multi -Route (Wide) Selection
+> LongCoT VLM
+> Text -Dominated Chains
+> Routes ( Rt ): guided paths
+> SAP (ours)
+> Object Hallucination
+> (limited visual attention)
+> Visual Evidences
+> Saliency -Aware Principle
+> (visual guidance)
+> Inputs:
+> Outputs: Outputs:
+> grounding
+
+Figure 1. Text reliance in vision-language reasoning. Our SAP, a multi-route approach, employs visual grounding as guidance, alleviating object hallucination in text-dominated LongCoT. 
+
+in large language models (LLMs) have shown that allocating additional inference-time computation—such as generating longer reasoning sequences or exploring multiple reasoning routes—can often improve reasoning quality (Wei et al., 2022; Wang et al., 2022). This capability, commonly re-ferred to as inference-time scaling , has become a central mechanism for enhancing LLM-based reasoning systems (Liu et al., 2025). Nevertheless, whether similar inference-time scaling can be achieved in VLMs remains an open question, despite growing interest in multimodal chain-of-thought (COT) reasoning research (Wang et al., 2025c). Traditional inference-time scaling relies on the ability of LLMs to iteratively refine reasoning over long inference horizons, where intermediate reasoning states are revisited, corrected, and extended as generation proceeds (Wei et al., 2022; Yao et al., 2023). In the multimodal setting, this requires not only producing longer textual reasoning chains but also continuously incorporating and re-evaluating visual evidence throughout inference. In contrast to language-only reasoning, where intermediate representations remain in the same textual modality, vision–language reasoning generally require repeatedly align textual reasoning states with visual grounding (Wang et al., 2025c). Consequently, effective scaling critically depends on the revisiting of visual information rather than a one-time visual summary (which could be viewed as extrapolated visual information that may accumulate errors) at the beginning of the reasoning process. However, such high quality visual grounding is difficult to achieve due to a systematic discrepancy between the textual and visual modalities during the autoregressive generation process. Textual representations are explicitly generated and updated at every decoding step, whereas visual infor-mation is typically incorporated through fixed encodings or limited cross-modal interactions (Lu et al., 2019). As 1
+
+> arXiv:2602.16702v1 [cs.CV] 18 Feb 2026
+
+Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning image  prompt text  thinking 
+
+> Attention  (%)
+
+Sequence of Autoregressive Reasoning  
+
+> final answer thinking Image -prompt
+> 25.31%
+> 2.71% 0.02%
+> final answer
+
+Text Reliance in Reasoning 
+
+(diminishing visual attention) 
+
+Text -Dominated Reasoning: Visual Hallucination    
+
+> image
+> key info. & obj.
+> -cylinder
+> -cube
+> salient objects:
+
+1 2    
+
+> fitness screen
+> principles thinking routes
+> detect
+> Saliency -Aware Principles
+> matched saliency
+
+1 diverse routes 2 consensus results 3
+
+> fitness :
+
+Visual Info.  Evolutionary Thinking      
+
+> plug -to -play black box
+> visual grounding consistency
+> robust d iscrete routes
+> OCR
+> MMBench POPE -recall
+> ScienceQA RealWorldQA
+> Chart
+> Instruct Thinking Ins.+SAP
+> init.
+> gene record
+> guide
+> perception
+
+Figure 2. Better perception (Right) is obtained by SAP (Middle) evaluated by perception-intensive benchmarks, OCRVQA and POPE-recall, about object hallucination. Left: Text reliance in reasoning from Qwen3-VL-8B-Thinking on MS-COCO. Right: Saliency-Aware Principle (SAP) selection pipeline and empirical comparison between SAP implementation with Qwen3-VL-8B serie on benchmarks. 
+
+generation length increases, this discrepancy causes the rea-soning process to become increasingly text-dominated, a phenomenon that has been empirically linked to hallucina-tion and biased visual reasoning in prior work (Hendricks et al., 2018; Rohrbach et al., 2018). While it may appear sufficient to summarize visual content early and rely on the text afterwards (Wang et al., 2025c; Zhao et al., 2025), such summarization is inherently lossy: Omissions or misinter-pretations introduced during early summarization cannot be corrected by later reasoning steps . Consequently, inference-time scaling amplifies early visual grounding errors, leading to a reasoning route that drifts away from the underlying visual evidence (Fig. 2). A general approach to mitigating this issue is to introduce supervision signals during inference that encourage the model to attend to underutilized vision modalities (Zhao et al., 2024). However, providing effective guidance in vi-sion–language reasoning presents fundamental challenges. In multimodal tasks, due to the subjectivity of evaluators and annotators, supervision signals often reflect inconsistent and implicit evaluation principles regarding how visual evidence should be used, leading to noisy and difficult-to-calibrate feedback (Liu et al., 2025). Moreover, inference-time rea-soning unfolds through discrete textual generation processes, where guidance signals are inherently coarse, making them difficult to propagate to intermediate multimodal reasoning trajectories (Zhu et al., 2025). Together, these factors render stable and general inference-time optimization particularly challenging in the multimodal setting. To address these challenges, we introduce Saliency-Aware Principle Selection (SAP) for vision–language reasoning. SAP adopts a model-agnostic, black-box formulation of test-time scaling that leverages visual saliency as a modality-aware guidance signal, enabling consistent and high-quality utilization of informative visual evidence throughout the inference process rather than relying on a one-time visual summary. By operating on high-level reasoning principles instead of token-level trajectories, SAP mitigates the ac-cumulation of early visual grounding errors and prevents long-horizon reasoning from drifting toward text-only states. Moreover, performing inference-time optimization in a dis-crete principle space allows SAP to remain robust to coarse, evaluator-dependent supervision signals, avoiding reliance on fine-grained trajectory scoring or task-specific heuristics. Empirically, we find that SAP achieves performance com-parable to strong proprietary VLMs under similar token budgets, without additional training or new data. By re-allocating inference-time computation from single-route long chain-of-thought (LongCoT) (Chen et al., 2025) to multi-route, principle-guided exploration, SAP achieves per-formance gains previously attainable with computationally inefficient deeper reasoning. Moreover, multi-route infer-ence enables parallel execution: unlike LongCoT reasoning, where later tokens strictly depend on earlier ones, SAP allows multiple reasoning routes to be instantiated and eval-uated independently. This property supports flexible load balancing across parallel model instances, yielding higher throughput and lower latency in large-scale deployment. The contributions are summarized as follows: • We emphasize a known tendency of VLMs toward text-dominated reasoning and demonstrate that, in long inference, it can also hinder reasoning by limiting the ability to revisit visual evidence at later reasoning stages of single reasoning route. • We propose Saliency-Aware Principle Selection (SAP), a model-agnostic and data-free approach that promotes better usage of visual evidence. • We demonstrate that SAP achieves inference-time scal-ing under competitive token budgets and performance. By enabling parallel evaluation of multiple reason-ing routes, SAP achieves lower response latency than LongCoT-style sequential reasoning. 
+
+## 2. Problem Formulation 
+
+In this paper, we formulate inference-time scaling as an optimization problem over reasoning routes executed during the inference phase. Given a prompt p and a language model φ, a reasoning route ρ ∈ R specifies how inference 2Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+unfolds across steps, where R denotes the space of feasible reasoning routes. Route ρ determining the structure and progression of intermediate reasoning. The objective of inference-time scaling is to identify a reasoning route that maximizes task utility: 
+
+ρ⋆ = arg max  
+
+> ρ∈R
+
+f (ρ), (1) where simplified f (ρ) ← f (ρ; p, φ ) evaluates the utility of the outputs induced by ρ. Here, inference-time scaling does not refer solely to generating a longer chain of reasoning along a single trajectory. Instead, it refers to allocating additional inference-time computation to explore multiple alternative reasoning routes and to select higher-quality ones. As the inference budget increases, more candidates in R can be instantiated and evaluated, improving the like-lihood of identifying a reasoning route with higher utility. In this sense, inference-time scaling corresponds to scal-ing the search over reasoning behaviors rather than merely extending a single route. 
+
+## 3. Methodology 
+
+To achieve the above objective, we propose Saliency-Aware Principle Selection (SAP), an inference-time optimization approach for vision–language reasoning. SAP is composed of three key components: (i) principle-guided reasoning generation, which parameterizes reasoning behaviors using high-level principles; (ii) evolutionary principle refinement, which performs population-based selection under ordinal and noisy feedback; and (iii) saliency-aware evaluation, which provides a stable modality-aware signal for compar-ing candidate principles. An overview of the SAP approach is illustrated in the right part of Fig. 2. 
+
+3.1. Principle-Guided Reasoning Generation 
+
+3.1.1. I NTRACTABLE ROUTE SEARCH 
+
+Direct optimization of the task utility f over the reasoning route space R as shown in Eq. (1) to achieve test-time scaling for VLM is intractable due to both theoretical and practical reasons. First, we note that a reasoning route is not a fixed-length variable but the emergent output of autoregres-sive generation under the language model φ. As inference-time computation is scaled, reasoning routes become longer and increasingly sparse, making direct sampling and evalua-tion more time-consuming in practice. In addition, the space 
+
+R is inherently discrete and redundant. Small local modifi-cations to token sequences often do not lead to meaningful changes in the final reasoning outcome, while semantically distinct reasoning behaviors may be separated by large com-binatorial gaps. Therefore, information in the route space is sparsely distributed: many distinct routes induce similar final outputs, while high-quality routes are rare and difficult to identify. This discreteness and sparsity make it difficult to efficiently compare, rank, or refine reasoning routes, ren-dering direct optimization over R impractical. To make this problem amenable to optimization, we parameterize the routes using a set of high-level reasoning principles .3.1.2. P RINCIPLE -GUIDED REASONING 
+
+We start by defining principle reasoning as a form of infer-ence in which the reasoning process is guided by explicit, high-level principles that specify how the model should reason, rather than the exact intermediate tokens to be gen-erated. Compared to a specific route, a reasoning principle provides guidance on reasoning behavior—such as how visual evidence should be revisited during the generation process, how intermediate hypotheses should be verified, or how different modalities should be balanced—without constraining to a particular token-level realization. For example, in a vision–language reasoning task, a princi-ple may instruct the model to explicitly re-examine visual evidence whenever an intermediate textual conclusion is formed or to verify spatial relations by checking the relative positions of all relevant objects in the image . We note that such a principle x is itself a compact textual description, but it does not prescribe a single reasoning trace. Instead, under a fixed language model, the same principle x ∈ X may induce multiple concrete reasoning trajectories, depending on how the model instantiates the principle at the token level. We denote each such instantiation as a reasoning route ρ(x) given principle x. This parameterization yields the equivalent optimization objective 
+
+x⋆ = arg max  
+
+> x∈X
+
+f  ρ(x), (2) which shifts inference-time optimization from unstructured reasoning routes to a more compact principle space. 3.1.3. P RINCIPLE SELECTION 
+
+Principle-guided reasoning shifts inference-time control from token-level trajectories to high-level reasoning direc-tives. This shift raises a central question: How should rea-soning principles be selected and refined during inference? 
+
+In VLMs, principle selection is challenging for two reasons closely tied to multimodal inference. First, during long-horizon generation, visual evidence becomes increasingly difficult to revisit, making it necessary to favor principles that explicitly preserve visual grounding throughout rea-soning. In addition, feedback available at inference time is inherently discrete and ordinal, providing only relative comparisons between reasoning behaviors ( e.g. , preferring A to B) rather than forcing them into scalar scores. These properties indicate that principle selection should operate directly over discrete candidates, rely on relative comparisons instead of absolute scores, and remain robust 3Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+Algorithm 1 Initialization: sample principles and τ routes 
+
+Require: images I, prompt p, #init. N , #routes τ 
+
+> 1:
+
+O ← GROUND (I), x ← [ ]  
+
+> 2:
+
+for i = 1 to N do  
+
+> 3:
+
+xi ← φx(p, O) {sample one principle } 
+
+> 4:
+
+ri, s i ← [ ] , [ ]  
+
+> 5:
+
+for j = 1 to τ do  
+
+> 6:
+
+ri,j , s i,j ← φrs (p, I, x i) 
+
+> 7: APPEND
+
+(ri, r i,j ); APPEND (si, s i,j ) 
+
+> 8:
+
+end for  
+
+> 9: APPEND
+
+(x, x i) 
+
+> 10:
+
+end for  
+
+> 11:
+
+return x, {ri,j , s i,j }i∈[N ], j ∈[τ ]              
+
+> Table 1. Notation: Saliency-Aware Principle Selection (SAP).
+> p,xprompt [input], reasoning principle [variable]
+> r,sreasoning [thinking] and summary [output]
+> μ,λ,τ#elites, #new individuals, #routes(width) [hyperparam.]
+> φ,fLLM, utility and fitness metric on ( r,s) [those given]
+
+under noisy and inconsistent feedback. Motivated by these requirements, we adopt a population-based evolutionary selection strategy to refine reasoning principles. 
+
+3.2. Saliency-Aware Principle Evolution for Vision–Language Reasoning 
+
+Built on the principle-level formulation in Eq. (2), we form inference-time scaling in VLMs as a saliency-guided evo-lutionary optimization problem over reasoning principles. The proposed approach unifies three key components: (i) 
+
+principle-level reasoning as the discovery of routes, (ii) vi-sual saliency as the modality-aware grounding signal, and 
+
+(iii) population-based evolutionary search as the optimiza-tion mechanism. Together, these components provide a practical and robust approach to inference-time scaling un-der discrete generation and noisy multimodal feedback. 3.2.1. A PPROACH OVERVIEW 
+
+Given an input image I and a prompt p, we first extract a set of salient visual elements O = GROUND (I), which identify image regions likely to be relevant for reasoning. These salient elements serve as a modality-aware reference for evaluation rather than being injected directly into the language model. Conditioned on the prompt p and the salient elements O, we initialize a population of reasoning principles {xi}i∈[μ+λ], where each principle specifies high-level guidance on how visual evidence should be utilized. For each principle xi, the language model φ performs in-ference, producing multiple routes’ reasoning outputs and summaries ( r and s, ( τ : #routes)) 
+
+(ri,j , s i,j ) ∼ φ(r, s | xi, p, I), j ∈ [τ ],
+
+which instantiate the reasoning route ρ(xi) induced by the 
+
+Algorithm 2 (μ + λ) Evolution: select elites and resample 
+
+Require: principles x, images I, prompt p, #routes τ 
+
+> 1:
+
+N ← | x| { N = μ + λ}, f ← [ ]  
+
+> 2:
+
+for i = 1 to N do  
+
+> 3:
+
+ri, s i ← MULTI ROUTE INFER (p, I, x i, τ ) 
+
+> 4:
+
+ℓi ← DISCRETE EVAL (ri, s i) 
+
+> 5:
+
+fi ← MAP LEVEL TOSCORE (ℓi) {internal only } 
+
+> 6: APPEND
+
+(f, f i) 
+
+> 7:
+
+end for  
+
+> 8:
+
+idx ← TOP K(f, k = μ) 
+
+> 9:
+
+xμ ← x[idx ] 
+
+> 10:
+
+xλ ← [ ]  
+
+> 11:
+
+for n = 1 to N − μ do  
+
+> 12:
+
+xn ← φx(p, x μ) {offspring from elites } 
+
+> 13: APPEND
+
+(xλ, x n) 
+
+> 14:
+
+end for  
+
+> 15:
+
+x+ ← CONCAT (xμ, x λ) 
+
+> 16:
+
+return x+ new population of principles principle xi. This design ensures that visual information remains available throughout inference while allowing dif-ferent principles to induce distinct reasoning behaviors. 3.2.2. S ALIENCY -AWARE PRINCIPLE EVALUATION 
+
+Each principle is evaluated with a set of discrete criteria that capture both reasoning quality and visual grounding (details are in Appendix B). Specifically, SAP is derived from four ordinal signals from the reasoning outcomes as follows: • Consensus match ci: it measures whether a represen-tative answer, detailed in Appendix B, induced by xi
+
+agrees with the population-level majority, capturing global answer stability under diverse principles. • Within-principle diversity di: it reflects how distinct the τ reasoning routes are under the same principle, encouraging controlled exploration without instability. • Uncertainty penalty ui: it measures the confidence of the selected reasoning routes, penalizing systematically over-confident or ambiguous behaviors. • Evidence validity ei: it evaluates whether the visual entities referenced in the reasoning correspond to valid salient regions in O, enforcing visual grounding con-sistency without exposing saliency information to the language model and avoiding trivial principles. All criteria take values in {low , medium , high }, reflect-ing the inherently ordinal nature of multimodal supervision. 4Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+3.2.3. E VOLUTIONARY OPTIMIZATION 
+
+The above discrete criteria are combined into a scalar fitness: 
+
+fi = X
+
+> t∈{ c,d,e }
+
+wtScore( ti) − wuPen( ui), (3) where Score and Pen (which stands for penalty) are defined as ordinal mappings (low , medium , high ) → (0 , 1, 2) ,and {wc, w d, w e, w u} are the weights for each criterion. Based on the fitness scores, we perform population evolution using a (μ+λ) selection scheme. In each iteration, the top-μ
+
+principles are retained as elites (individuals with the highest fitness), while a new set of λ principles is generated by sampling conditioned on the elites. The elites and newly generated principles are combined as an updated population 
+
+{x+ 
+
+> i
+
+}i∈[μ+λ] = {xμm}m∈[μ] ∪ { xλn}n∈[λ].
+
+By iteratively evolving principles under saliency-aware eval-uation, the proposed approach allocates inference-time com-putation to explore diverse reasoning behaviors while pro-gressively favoring principles that maintain visual ground-ing throughout long-horizon inference. This provides a population-based approximation to the principle-level opti-mization objective in Eq. (2), enabling robust inference-time scaling in VLMs. Details are in Alg. 1 and Alg. 2, 
+
+3.3. Framework Analysis 
+
+In this part, we provide theoretical analysis that quantifies how inference-time scaling operates in SAP by explicitly characterizing, in terms of (μ, λ, T ), the probability of opti-mization improvement and the coverage of effective reason-ing principles achieved by the evolutionary search, where 
+
+T is the total number of iterations. Under the evolutionary algorithm with elite selection, iterative filtering ensures that the population fitness is non-decreasing across generations, such that the best-performing principles monotonically im-prove as optimization proceeds. 
+
+Theorem 3.1 (Optimization and generalization with 
+
+(μ + λ) evolution ). Consider the (μ + λ) evolutionary procedure over a principle space X . Let Ft denote the best fitness in the population at iteration t, and let T be the total number of iterations. Then the following properties hold: 1. (Optimization stability ) Due to elite selection, the best fitness is non-decreasing: Ft+1 ≥ Ft, ∀t. Moreover, if each offspring sample has probability at least qt of instantiating a principle with fitness strictly greater than Ft, then the probability of improvement in one iteration satisfies Pr( Ft+1 > F t) ≥ 1 − (1 − qt)λ.2. (Generalization as coverage ) Suppose there exists a set of effective principles Xgood ⊂ X , and each offspring sample has probability at least q > 0 of belonging to Xgood . Then the probability that the evolutionary procedure discovers at least one effective principle within T iterations is lower bounded by 1 − (1 − q)λT .
+
+Theorem 3.1 explains how inference-time scaling emerges in SAP. The optimization guarantee ensures stability: elite preservation prevents degeneration by retaining the best-performing principles across iterations. At the same time, the improvement bound shows that increasing λ raises the probability of discovering strictly better principles at each iteration. Beyond optimization, the generalization bound characterizes the growing coverage of the principle space .Since each iteration evaluates λ newly sampled principles, after T iterations the search explores on the order of λT 
+
+distinct candidates. As λ or T increases, the probability of encountering effective principles outside the current popula-tion grows monotonically. Together, these results show that inference-time scaling in SAP is achieved by allocating ad-ditional computation to explore and select among alternative reasoning principles, rather than extending a single reason-ing trajectory. Formal proofs are provided in Appendix D. 3.3.1. C OMPARISON WITH LONG CHAIN -OF -THOUGHT 
+
+SAP further exhibits a scaling advantage over traditional long chain-of-thought (CoT) reasoning by operating in a parallel and population-based manner. Consider a fixed inference-time token budget L. In long CoT reasoning, to-kens are generated sequentially along a single trajectory, and transformer-based decoding incurs a quadratic attention cost w.r.t. the sequence length, i.e., O(L2), together with strict sequential dependencies that limit parallelism across decoding steps. In contrast, SAP allocates the same token budget across multiple shorter reasoning routes evaluated in parallel. Let L = ( μ + λ)τ ¯ℓ, where ¯ℓ denotes the aver-age length of each reasoning route. Each route incurs an attention cost of O(¯ℓ2), yielding a total attention cost of 
+
+O (μ + λ)τ ¯ℓ2, which is strictly lower than O(L2) when 
+
+¯ℓ ≪ L. Moreover, reasoning routes across different prin-ciples and routes are independent and can be executed in parallel, avoiding the sequential bottleneck inherent to long CoT. Therefore, SAP scales inference-time reasoning by parallel exploration and selection rather than by elongating a single reasoning chain, providing a more computationally efficient alternative under inference budgets. 3.3.2. D ATA - AND GRADIENT -FREE SCALING 
+
+SAP is a plug-to-play method in a fully data- and gradient-free manner. The evolutionary search is performed directly in the space of reasoning principles, using the fixed knowl-edge already encoded in the pretrained model, without in-troducing additional training data or external supervision. Rather than acquiring new knowledge, SAP explores orga-nizing and applying existing knowledge during inference. This aligns closely with the nature of reasoning, which con-cerns how information is structured, combined, and verified, 5Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+rather than what new information is learned (Zhu et al., 2025). Consequently, SAP improves reasoning quality by reallocating computation to search for better reasoning be-haviors within the model’s capabilities, avoiding the cost and potential bias of data collection or retraining. 
+
+## 4. Empirical Study 
+
+4.1. Experiment Setups 
+
+We evaluate SAP on a diverse set of multimodal reason-ing benchmarks. All experiments are conducted in a pure inference setup without any parameter updates. 
+
+Models. We use Qwen3-VL-8B (Li et al., 2026) as the backbone vision–language model. All reasoning, princi-ple generation, and aggregation steps are performed by the same frozen model. For visual grounding, we employ the Segment Anything Model (SAM) (Kirillov et al., 2023) for automatic mask generation, with object labels produced by a lightweight external captioner. Unless otherwise specified, the model only observes the original image(s) and a compact textual grounding summary, without access to intermediate visual crops or region-level supervision. Publicly reported models (xAI, 2024; Achiam et al., 2023; Anthropic, 2024; Team et al., 2024) are posted in Tab 2 for better comparison. 
+
+Inference procedure. Given a prompt p and one or multiple images I, SAP maintains a population of μ + λ reasoning principles. For each principle xi, the model generates τ
+
+reasoning traces in a single forward call. Principle fitness is computed using the discrete utility function defined in Eq. (3), and population evolution follows a (μ+λ) selection scheme. After the final generation, SAP optionally performs a single aggregation call to synthesize the final answer. 
+
+Benchmarks. We evaluate SAP on 16 vision–language benchmarks using VLMEvalKit (Duan et al., 2024). Details of each benchmark are provided in Appendix C. For clarity, benchmarks are grouped into two sets according to their evaluation focus: Reasoning / Knowledge / General and 
+
+OCR / Document / Diagram / Real-world . All results are reported under a unified inference-time decoding budget. 
+
+Hyperparameters. Unless otherwise specified, we use 
+
+μ + λ = 4 with μ = 2 , λ = 2 , and τ = 2 . Discrete fitness weights are fixed to wc = wd = we = wu = 1 . The total number of evolutionary generations T is set to 2 by default, the scaling of which is further investigated in the efficiency ablation. The maximum number of grounded objects per image is capped to limit computational overhead, and all discretization thresholds are kept fixed across datasets. 
+
+Evaluation protocol. We follow the official evaluation protocols of each benchmark. For exact-answer datasets, we use exact string matching. For multiple-choice datasets, answers are mapped to the corresponding option labels. No dataset-specific tuning is performed. All reported results are averaged over the full validation or test splits. Throughout the paper, average performance (avg. perf.) refers to the average score across all benchmarks, excluding MME due to its distinct scoring scale. 
+
+Baselines. We compare SAP against standard inference strategies under identical model backbones and evaluation settings. Specifically, we consider: (i) Instruct , which di-rectly generates an answer from the input image(s) and question; (ii) Thinking , which allows explicit intermediate reasoning traces during generation; and (iii) SAP , which per-forms principle-based evolutionary reasoning at inference time. All methods use the same checkpoints and decoding configurations, without any additional finetuning. 
+
+4.2. Comparison 
+
+SAP achieves higher average performance across bench-marks and exhibits markedly more stable inference-time behavior than LongCoT-style scaling. While the thinking 
+
+model improves results on several reasoning-heavy bench-marks (e.g., MMBench and SEEDBench), it also incurs sub-stantial regressions on perception- and grounding-sensitive tasks. Notably, compared to the Instruct baseline, LongCoT shows clear drops on POPE-recall (83.9 → 79.6), TextVQA (82.3 → 77.2), and OCRVQA (63.2 → 44.1), indicating that longer sequential reasoning can weaken visual grounding. In contrast, SAP maintains performance close to the base-line on these benchmarks, with degradations consistently bounded within a small margin (typically < 5 points), while remaining competitive on reasoning-oriented tasks. As a result, SAP achieves a higher overall average score than LongCoT under the same inference-time budget. Impor-tantly, this improvement does not come from introducing additional knowledge, but from preserving the ability to re-consult visual evidence during later reasoning stages ( e.g. 
+
+better POPE-recall), thereby avoiding the robustness–depth trade-off observed in LongCoT inference-time scaling. 
+
+4.3. Ablation Study 
+
+All module ablations are evaluated and compared with the default setting, as well as the corresponding standard In-struct and LongCoT Thinking baselines. 
+
+Modules of SAP. Table 3 shows that the core compo-nents, i.e., evolution and diversity of SAP, are necessary for effective inference-time optimization. When population evolution is removed ( EVO GEN =0), increasing the number of routes alone fails to improve performance, indicating that route diversity without selection is insufficient. Conversely, disabling multi-route reasoning ( τ = 1 ) significantly de-6Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+Table 2. Comparison between longer and wider reasoning strategies across 16 vision-language benchmarks. SAP yields better perception and higher average performance with stable visual grounding. Benchmarks are grouped into two sets according to their evaluation focus. All methods use the same backbone and inference-time decoding budget unless otherwise specified. Baselines: Qwen3-VL-8B-Instruct; Qwen3-VL-8B-Thinking: LongCoT, sequential inference-time scaling; SAP (ours): parallel inference-time scaling on routes. 
+
+Reproduced Results Reported Results (References) 
+
+benchmarks ( ↑) instruct thinking ins.+SAP (ours) Grok-1.5V GPT-4V Claude-S Claude-O Gemini-1.5 avg. except MME 75.4 75.9 76.6 
+
+Set I. Vision and Thinking: Perception / Reasoning / General Knowledge 
+
+POPE-recall (Li et al., 2023b) 83.9 79.6 ↓ 89.9 ↑ – – – – –MME-p (Fu et al., 2025) 1744.7 1663.2 ↓ 1755.5 ↑ – – – – –MME-r (Fu et al., 2025) 656.7 722.5 ↑ 689.9 ↑ – – – – –MMBench (Liu et al., 2024a) 70.7 87.0 ↑ 82.9 ↑ – – – – –SEEDBench (Li et al., 2023a) 68.5 78.3 ↑ 77.3 ↑ – – – – –MMMU (Yue et al., 2024) 62.4 62.3 ↓ 62.3 ↓ 53.6 56.8 53.1 59.4 58.5 
+
+Set II. Special Cases: Science / Text / OCR / Document / Diagram / Real-world 
+
+ScienceQA (Saikh et al., 2022) 88.0 92.5 ↑ 92.2 ↑ – – – – –TextVQA (Singh et al., 2019) 82.3 77.2 ↓ 81.3 ↓ 78.1 78.0 – – 73.5 OCRVQA (Pham et al., 2025) 63.2 44.1 ↓ 62.8 ↓ – – – – –OCRBench (Liu et al., 2024b) 56.8 65.9 ↑ 60.2 ↑ – – – – –ChartQA (Masry et al., 2022) 82.7 77.2 ↓ 78.1 ↓ 76.1 78.5 81.1 80.8 81.3 
+
+DocVQA (Mathew et al., 2021) 92.2 91.6 ↓ 90.6 ↓ 85.6 88.4 89.5 89.3 86.5 InfoVQA (Mathew et al., 2022) 82.6 84.1 ↑ 83.1 ↑ – – – – –AI2D (Kembhavi et al., 2016) 79.2 82.2 ↑ 80.1 ↑ 88.3 78.2 88.7 88.1 80.3 BLINK (Fu et al., 2024b) 68.2 60.3 ↓ 62.6 ↓ – – – – –RealWorldQA (rea) 70.3 72.8 ↑ 73.3 ↑ 68.7 61.4 51.9 49.8 67.5 
+
+Table 3. Ablation of SAP modules. Harmful principles should not be aggregated. Evolution and filtering are verified important. settings #gen. evo. #routes τ decision avg. perf. instruct 0 1 – 75.4 w/o evolution 0 τ elite 73.4 w/o multi-route T 1 elite 73.0 full SAP T τ elite 76.6 
+
+w/ summarizer T τ agg. 74.8 
+
+grades performance, as evolutionary refinement collapses to single-trajectory optimization. The full SAP configuration, which combines evolutionary refinement and route diversity preferences of elite selection, achieves the best average per-formance. Replacing elite selection with aggregation further reduces performance, showing that many routes and princi-ples are in fact detrimental, and that effective inference-time reasoning requires explicitly filtering. 
+
+Evolutionary hyperparameters. The following results show that since SAP does not introduce new knowledge, its inference-time scaling has an inherent upper bound. In-creasing the elite size μ does not consistently improve per-formance, indicating that high survival rates can retain sub-optimal principles and hinder the progress of the population. Overall, balanced exploration rather than maximizing sur-vival is more effective for inference-time optimization. 
+
+λ #new born 2 2 4 4 6
+
+μ #elites 2 4 2 4 6avg. perf. 76.6 74.8 76.8 76.5 76.8 Diversity  
+
+> Consensus
+> Evidence
+> Diversity
+> Consensus
+> Evidence
+> w/ routes aggregator w/o routes aggregator
+> 76.6
+> 67.9
+> 68.4
+> 75.2 74.8
+> 73.1
+> 72.4
+> 69.1
+> Avg. performance
+> Avg. performance
+
+Figure 3. Ablation on weights of rewarding terms in fitness (loss design): aggregation of routes for final answer reduces the reliance on consensus in multimodal reasoning. Diversity, consensus, ev-idence refer to weights ratio of wd, w c, w e where P w = 1 and uncertainty penalty is always 1, wu = 1 .8B   
+
+> 4B
+> 2B
+> thinking
+> instruct
+> SAP
+> #parallel models
+> Avg. response time
+> 1816
+> 0.5
+> 5
+> 0.1
+> sec.
+
+Figure 4. SAP supports inference-time speedup via parallelism. 
+
+Fitness weights. This ablation investigates the effect of different weight combinations in the discrete fitness function. We vary the relative weights assigned to the criteria defined in Section 3.2.2, i.e., consensus match , within-principle diversity , evidence consistency , and uncertainty penalties ,while keeping the evolutionary procedure fixed. This analy-sis evaluates how different inductive biases in principle se-lection influence inference-time reasoning behavior. Fig. 3 shows that the importance of each fitness component de-7Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+pends critically on whether route aggregation is applied. In the default non-aggregated setting, configurations that assign higher weight to consensus ( wc) achieve better perfor-mance, indicating that explicit agreement across reasoning routes is necessary to stabilize final predictions. When addi-tional route aggregation is enabled for final decision making, performance becomes substantially more sensitive to within-principle diversity ( wd), as aggregation implicitly enforces agreement and shifts the optimization focus toward explor-ing diverse yet informative reasoning behaviors. Across both aggregated and non-aggregated settings, evidence con-sistency remains a necessary complementary signal. While evidence grounding alone is insufficient to drive strong per-formance, combining high evidence consistency with either strong consensus (w/o agg.) or high diversity (w/ agg.) yields more stable and reliable reasoning outcomes. 
+
+Response time. Fig. 4 shows that on a single device, SAP exhibits higher latency than LongCoT-style reasoning due to its multi-route generation and iterative principle refinement. In parallel settings, however, SAP achieves substantially lower response time. SAP decomposes inference into T
+
+rounds of short-route generation and principle updates (with 
+
+T =2 by default), where all routes within a round are in-dependent and can be executed in parallel. This structure avoids long token-level dependencies and large intermedi-ate context synchronization required by LongCoT, reducing pipeline stalls and improving GPU utilization. By adjusting the number of iterations and routes, SAP matches LongCoT in total token count and computation while achieving lower wall-clock latency through parallelism. 
+
+Model scales. To examine the effect of model scales, we additionally evaluate SAP’s average performance on Qwen3-VL-Instruct-2B, -4B, and -30B. SAP consistently improves the performance of these models.             
+
+> sizes 2B 4B 8B 30B instruct 60.4 75.4 75.4 77.3 +SAP 66.6 75.6 76.6 78.1
+
+Model architectures. To further verify the generality of SAP, we evaluate it on additional vision–language back-bones, including InternVL3.5-8B (Wang et al., 2025a) and DeepSeek-VL2 (4.5B Mix-of-Experts) (Wu et al., 2024b). Across both models, SAP consistently improves empirical performance on overall and reasoning-oriented benchmarks, demonstrating that its benefits are not tied to a specific ar-chitecture or model scale. These results indicate that SAP can serve as a general inference-time optimization strategy applicable across diverse vision–language models.             
+
+> models InternVL3 5 +SAP Deepseek-VL2 +SAP MMMU 74.6 75.3 51.2 56.7 MMBench 83.4 84.6 79.5 79.8
+
+## 5. Related Works 
+
+Multimodal inference-time scaling. Recent work has argued that reducing over-reliance on visual features can improve robustness in vision-language models (Wang et al., 2024), particularly by mitigating spurious correlations and hallucinations (Zhao et al., 2025; Wang et al., 2025c). We complement this perspective by showing that, during long sequential reasoning, overly suppressing visual features can be detrimental when later reasoning steps require renewed access to visual evidence. Lin et al. (Lin et al., 2025) in-vestigate inference-time scaling with multimodal chain-of-thought, demonstrating benefits over text-only reasoning, but at the cost of long, sequential generation. Wang et al. (Wang et al., 2025b) introduce a vision value model to guide inference-time search toward visually grounded generations. However, existing approaches primarily scale inference along a single reasoning trajectory, either by ex-tending chain-of-thought or performing sequential search. In contrast, our work explores multi-route reasoning , allo-cating computation to parallel principle-level routes with 
+
+discrete evaluations , which enables selective re-grounding in visual evidence and improves stability and parallelism. 
+
+Evolutionary Prompt. Prior work has shown that large language models (LLMs) can exhibit reasoning behaviors through prompting (Kojima et al., 2022). demonstrated that simple instruction-level cues enable zero-shot reasoning, while (Pryzant et al., 2023) treated prompts as optimizable objects via gradient-inspired search. More recently, (Wu et al., 2024a) surveyed the growing intersection of evolu-tionary computation and LLMs, (van Stein & B ¨ack, 2024) proposed LLAM-EA, where evolutionary operators act over algorithmic structures generated by LLMs. This shift from prompt-based reasoning to evolutionary frameworks involv-ing LLMs primarily applies evolution offline. In contrast, our work studies evolutionary reasoning at inference time ,where populations of structured reasoning units evolve. 
+
+## 6. Conclusions 
+
+In this work, we revisit a well-known tendency of vi-sion–language models toward text-dominated reasoning and show that, in long-horizon inference, this behavior has a negative effect by preventing later reasoning steps from re-consulting visual evidence when it becomes necessary. Based on this analysis, we propose a new inference-time scaling paradigm for vision–language reasoning, Saliency-Aware Principle Selection (SAP), which is data-free, model-agnostic, and operates at the level of high-level reasoning principles rather than token-level trajectories. By enabling multi-route, principle-guided exploration with sustained ac-cess to visual evidence, SAP provides an effective and par-allelizable alternative to sequential LongCoT reasoning. 8Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. Further optimization of paral-lel inference efficiency may reduce unnecessary inference overhead and lower energy consumption. Especially if there is an efficient principle library for all problems, it can fur-ther reduce the consumption of parallel inference on each route, thereby further reducing energy consumption. 
+
+## References 
+
+Realworldqa dataset. https://huggingface.co/ datasets/visheratin/realworldqa .Achiam, J., Adler, S., Agarwal, S., Ahmad, L., Akkaya, I., Aleman, F. L., Almeida, D., Altenschmidt, J., Altman, S., Anadkat, S., et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 , 2023. Anthropic, A. The claude 3 model family: Opus, sonnet, haiku. Claude-3 Model Card , 1(1):4, 2024. Chen, Q., Qin, L., Liu, J., Peng, D., Guan, J., Wang, P., Hu, M., Zhou, Y., Gao, T., and Che, W. Towards reasoning era: A survey of long chain-of-thought for reasoning large language models. arXiv preprint arXiv:2503.09567 ,2025. Duan, H., Yang, J., Qiao, Y., Fang, X., Chen, L., Liu, Y., Dong, X., Zang, Y., Zhang, P., Wang, J., et al. Vlmevalkit: An open-source toolkit for evaluating large multi-modality models. In Proceedings of the 32nd ACM International Conference on Multimedia , pp. 11198– 11201, 2024. Fu, C., Chen, P., Shen, Y., Qin, Y., Zhang, M., Lin, X., Yang, J., Zheng, X., Li, K., Sun, X., et al. Mme: A com-prehensive evaluation benchmark for multimodal large language models. In The Thirty-ninth Annual Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2025. Fu, L., Kuang, Z., Song, J., Huang, M., Yang, B., Li, Y., Zhu, L., Luo, Q., Wang, X., Lu, H., et al. Ocrbench v2: An improved benchmark for evaluating large multimodal models on visual text localization and reasoning. arXiv preprint arXiv:2501.00321 , 2024a. Fu, X., Hu, Y., Li, B., Feng, Y., Wang, H., Lin, X., Roth, D., Smith, N. A., Ma, W.-C., and Krishna, R. Blink: Multi-modal large language models can see but not perceive. In 
+
+European Conference on Computer Vision , pp. 148–166. Springer, 2024b. Hendricks, L. A., Burns, K., Saenko, K., Darrell, T., and Rohrbach, A. Women also snowboard: Overcoming bias in captioning models. In Proceedings of the European conference on computer vision (ECCV) , pp. 771–787, 2018. Kembhavi, A., Salvato, M., Kolve, E., Seo, M., Hajishirzi, H., and Farhadi, A. A diagram is worth a dozen images. In European conference on computer vision , pp. 235–251. Springer, 2016. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A. C., Lo, W.-Y., et al. Segment anything. In Proceedings of the IEEE/CVF international conference on computer vision ,pp. 4015–4026, 2023. Kojima, T., Gu, S. S., Reid, M., Matsuo, Y., and Iwasawa, Y. Large language models are zero-shot reasoners. Ad-vances in neural information processing systems , 35: 22199–22213, 2022. Li, B., Wang, R., Wang, G., Ge, Y., Ge, Y., and Shan, Y. Seed-bench: Benchmarking multimodal llms with gener-ative comprehension. arXiv preprint arXiv:2307.16125 ,2023a. Li, M., Zhang, Y., Long, D., Chen, K., Song, S., Bai, S., Yang, Z., Xie, P., Yang, A., Liu, D., et al. Qwen3-vl-embedding and qwen3-vl-reranker: A unified frame-work for state-of-the-art multimodal retrieval and ranking. 
+
+arXiv preprint arXiv:2601.04720 , 2026. Li, Y., Du, Y., Zhou, K., Wang, J., Zhao, W. X., and Wen, J.-R. Evaluating object hallucination in large vision-language models. arXiv preprint arXiv:2305.10355 ,2023b. Lin, Y., Wang, A., Chen, M., Liu, J., Liu, H., Su, J., and Xiao, X. Investigating inference-time scaling for chain of multi-modal thought: A preliminary study. arXiv preprint arXiv:2502.11514 , 2025. Liu, Y., Duan, H., Zhang, Y., Li, B., Zhang, S., Zhao, W., Yuan, Y., Wang, J., He, C., Liu, Z., et al. Mmbench: Is your multi-modal model an all-around player? In 
+
+European conference on computer vision , pp. 216–233. Springer, 2024a. Liu, Y., Li, Z., Huang, M., Yang, B., Yu, W., Li, C., Yin, X.-C., Liu, C.-L., Jin, L., and Bai, X. Ocrbench: on the hidden mystery of ocr in large multimodal models. Sci-ence China Information Sciences , 67(12):220102, 2024b. Liu, Z., Wang, P., Xu, R., Ma, S., Ruan, C., Li, P., Liu, Y., and Wu, Y. Inference-time scaling for generalist reward modeling. arXiv preprint arXiv:2504.02495 , 2025. 9Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+Lu, J., Batra, D., Parikh, D., and Lee, S. Vilbert: Pre-training task-agnostic visiolinguistic representations for vision-and-language tasks. Advances in neural informa-tion processing systems , 32, 2019. Masry, A., Do, X. L., Tan, J. Q., Joty, S., and Hoque, E. Chartqa: A benchmark for question answering about charts with visual and logical reasoning. In Findings of the association for computational linguistics: ACL 2022 ,pp. 2263–2279, 2022. Mathew, M., Karatzas, D., and Jawahar, C. Docvqa: A dataset for vqa on document images. In Proceedings of the IEEE/CVF winter conference on applications of computer vision , pp. 2200–2209, 2021. Mathew, M., Bagal, V., Tito, R., Karatzas, D., Valveny, E., and Jawahar, C. Infographicvqa. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , pp. 1697–1706, 2022. Pham, H. Q., Nguyen, T. K.-B., Van Nguyen, Q., Tran, D. Q., Nguyen, N. H., Van Nguyen, K., and Nguyen, N. L.-T. Viocrvqa: novel benchmark dataset and vision-reader for visual question answering by understanding vietnamese text in images. Multimedia Systems , 31(2): 106, 2025. Pryzant, R., Iter, D., Li, J., Lee, Y. T., Zhu, C., and Zeng, M. Automatic prompt optimization with” gradient descent” and beam search. arXiv preprint arXiv:2305.03495 , 2023. Rohrbach, A., Hendricks, L. A., Burns, K., Darrell, T., and Saenko, K. Object hallucination in image captioning. 
+
+arXiv preprint arXiv:1809.02156 , 2018. Saikh, T., Ghosal, T., Mittal, A., Ekbal, A., and Bhat-tacharyya, P. Scienceqa: A novel resource for question answering on scholarly articles. International Journal on Digital Libraries , 23(3):289–301, 2022. Singh, A., Natarajan, V., Shah, M., Jiang, Y., Chen, X., Batra, D., Parikh, D., and Rohrbach, M. Towards vqa models that can read. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 8317–8326, 2019. Team, G., Georgiev, P., Lei, V. I., Burnell, R., Bai, L., Gulati, A., Tanzer, G., Vincent, D., Pan, Z., Wang, S., et al. Gemini 1.5: Unlocking multimodal understand-ing across millions of tokens of context. arXiv preprint arXiv:2403.05530 , 2024. van Stein, N. and B ¨ack, T. Llamea: A large language model evolutionary algorithm for automatically generat-ing metaheuristics. IEEE Transactions on Evolutionary Computation , 2024. Wang, W., Gao, Z., Gu, L., Pu, H., Cui, L., Wei, X., Liu, Z., Jing, L., Ye, S., Shao, J., et al. Internvl3. 5: Advancing open-source multimodal models in versatility, reasoning, and efficiency. arXiv preprint arXiv:2508.18265 , 2025a. Wang, X., Wei, J., Schuurmans, D., Le, Q., Chi, E., Narang, S., Chowdhery, A., and Zhou, D. Self-consistency im-proves chain of thought reasoning in language models. 
+
+arXiv preprint arXiv:2203.11171 , 2022. Wang, X., Yang, Z., Li, L., Lu, H., Xu, Y., Lin, C.-C., Lin, K., Huang, F., and Wang, L. Scaling inference-time search with vision value model for improved visual comprehension. In Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision , pp. 1173–1184, 2025b. Wang, Y., Sun, P., Li, Y., Zhang, H., and Hu, D. Can textual semantics mitigate sounding object segmentation preference? In European Conference on Computer Vision ,pp. 340–356. Springer, 2024. Wang, Y., Wu, S., Zhang, Y., Yan, S., Liu, Z., Luo, J., and Fei, H. Multimodal chain-of-thought reasoning: A comprehensive survey. arXiv preprint arXiv:2503.12605 ,2025c. Wei, J., Wang, X., Schuurmans, D., Bosma, M., Xia, F., Chi, E., Le, Q. V., Zhou, D., et al. Chain-of-thought prompting elicits reasoning in large language models. Advances in neural information processing systems , 35:24824–24837, 2022. Wu, X., Wu, S.-h., Wu, J., Feng, L., and Tan, K. C. Evolu-tionary computation in the era of large language model: Survey and roadmap. IEEE Transactions on Evolutionary Computation , 2024a. Wu, Z., Chen, X., Pan, Z., Liu, X., Liu, W., Dai, D., Gao, H., Ma, Y., Wu, C., Wang, B., et al. Deepseek-vl2: Mixture-of-experts vision-language models for advanced multi-modal understanding. arXiv preprint arXiv:2412.10302 ,2024b. xAI. Grok-1.5 vision. https://x.ai , 2024. Technical report. Yao, S., Yu, D., Zhao, J., Shafran, I., Griffiths, T., Cao, Y., and Narasimhan, K. Tree of thoughts: Deliberate problem solving with large language models. Advances in neural information processing systems , 36:11809–11822, 2023. Yue, X., Ni, Y., Zhang, K., Zheng, T., Liu, R., Zhang, G., Stevens, S., Jiang, D., Ren, W., Sun, Y., et al. Mmmu: A massive multi-discipline multimodal understanding and reasoning benchmark for expert agi. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 9556–9567, 2024. 10 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+Zhao, J., Wei, X., and Bo, L. R1-omni: Explainable omni-multimodal emotion recognition with reinforce-ment learning. arXiv preprint arXiv:2503.05379 , 2025. Zhao, L., Deng, Y., Zhang, W., and Gu, Q. Mitigating object hallucination in large vision-language models via image-grounded guidance. arXiv preprint arXiv:2402.08680 ,2024. Zhu, H., Hao, S., Hu, Z., Jiao, J., Russell, S., and Tian, Y. Reasoning by superposition: A theoretical perspec-tive on chain of continuous thought. arXiv preprint arXiv:2505.12514 , 2025. 11 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+## A. More Discussion 
+
+Limitations. We note several limitations of the current approach for further research. SAP is most effective and responds quickly only in large-scale or parallel inference settings, where its multi-route design can amortize computational costs. In addition, its performance depends on the quality of the prompt templates of the evolutionary system and the principle of generation, which requires careful design. Future work may explore meta-level principles for guiding principle generation itself, enabling more systematic control over diversity and randomness in the principle space. 
+
+Visual modality diminishes in textual autoregressive generation. As illustrated in Fig. 2, during long vision–language reasoning, the contribution of visual information tends to diminish as generation progresses. While early reasoning steps may actively rely on visual evidence, later steps increasingly focusing more exclusively on the textual space. This phenomenon reflects a fundamental discrepancy between modalities: textual representations are explicitly generated and updated at every decoding step, whereas visual inputs are typically incorporated only indirectly through fixed encodings or limited cross-modal interactions. Once visual information is compressed into an early textual summary, any omissions or misinterpretations become difficult to correct in subsequent reasoning steps. As inference-time computation is scaled by increasing generation length, such early grounding errors are therefore amplified rather than mitigated. Beyond this modality imbalance, inference-time optimization in VLMs faces two intrinsic challenges. 
+
+Challenge I: inconsistent and ordinal signals. First, supervision signals in multimodal reasoning are inherently in-consistent and ordinal. Evaluations of vision–language reasoning outputs—whether provided by humans or models—are often based on heterogeneous and implicit criteria, particularly regarding how visual evidence should be used. For the same reasoning outcome, different evaluators may emphasize different aspects, such as visual grounding, logical complete-ness, or conciseness. Unlike language-only settings, where such inconsistency primarily affects stylistic preferences, in vision–language reasoning it directly influences whether and how visual evidence is incorporated. As a result, supervision does not define a single well-calibrated scalar objective. Instead, what is naturally available is an ordinal signal : a partial ordering that indicates which reasoning behaviors are preferable to others, rather than forcing heterogeneous judgments into a single quantitative score. 
+
+Chanllenge II: sparse and discrete search space. Second, the search space of inference-time reasoning is discrete and sparse. Both token-level reasoning trajectories and higher-level reasoning principles are discrete objects drawn from a combinatorial space without a smooth local structure. This challenge is further amplified in vision–language reasoning, where different reasoning behaviors may rely on different subsets of visual evidence, making local comparisons between candidates ill-defined. Consequently, optimization strategies that rely on continuity assumptions or local gradient information are poorly suited for this setting. Taken together, these properties suggest that effective inference-time optimization in VLMs should (i) operate directly on discrete candidates, (ii) rely on relative comparisons rather than absolute scalar supervision, and (iii) remain robust under noisy and inconsistent feedback. These requirements motivate a population-based, selection-driven optimization paradigm for principle-level reasoning, which we adopt in our approach. 
+
+## B. Implementation Details & Code Report: Saliency-Aware Principle Selection 
+
+SAP Overview. Given a question p and one or multiple images I = {Ik}Kk=1 , SAP performs (i) grounding, (ii) principle generation and evolutionary selection, and (iii) final aggregation. Throughout the process, the LLM only observes the 
+
+original images and a compact textual grounding summary ; object lines and crops are used only for fitness evaluation and are never fed back to the LLM. All assessment signals are discretized into three levels: low /medium /high .
+
+Step 1: Multi-image grounding. For each image Ik, SAP calls a grounding service (e.g., SAM-based AMG) to obtain a set of grounded objects Ok = {ok,j }Mk
+
+> j=1
+
+, each with a label ℓk,j (obtained via an external captioner/labeler), and optional mask/bbox/score metadata. SAP converts {O k}Kk=1 into a compact grounding summary string g that only describes counts and image sizes (optionally plus other lightweight statistics). SAP also builds a label map so that any object reference can be canonicalized as img#k obj#j( ℓk,j ).
+
+Step 2: Initialize a principle population. SAP samples an initial population of principles {xi}μ+λi=1 by a single LLM call conditioned on (p, g ) (and optionally the images if desired by implementation, but not required). Each xi is a short textual 12 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+instruction that specifies a reasoning strategy (e.g., “verify with grounded objects before answering”). 
+
+Step 3: One-call multi-route reasoning per principle. For each generation, SAP evaluates each principle xi with exactly one LLM call. The LLM is provided with (p, g, I, x i) and is asked to internally generate τ distinct reasoning routes under the same principle: 
+
+{(ri,j , s i,j )}τj=1 .
+
+Each route produces a candidate final answer , a short list of reasons, an uncertainty level ui,j ∈{low , medium , high }, and a list of evidence references. The LLM also outputs a within-principle diversity level 
+
+di ∈ { low , medium , high } summarizing how different the τ routes are. 
+
+Step 4: Representative answer and global consensus. SAP selects a representative route per principle (typically preferring lower uncertainty and non-empty answers) and obtains a representative answer y⋆i . SAP then computes a global consensus answer ¯y by majority vote over {y⋆i } and converts the winning fraction into a discrete consensus level 
+
+c ∈ { low , medium , high }. In addition, SAP assigns each principle a discrete match-to-consensus level 
+
+ci =
+
+
+
+high , y⋆i = ¯ y, 
+
+median , y∗ 
+
+> i
+
+∼φ ¯y
+
+low , otherwise .
+
+This design enforces that principles are rewarded only if their representatives’ answers align with the population-level agreement. y∗ ∼φ ¯y means y∗ is judged as the same meaning of ¯y by language model φ.
+
+Step 5: Evidence validation and discretization. SAP canonicalizes each cited evidence item into the format 
+
+img#k obj#j( ℓk,j ) using the label map. It then evaluates whether cited object indices are valid grounding outputs (valid vs. invalid references). The ratio of valid references is discretized into an evidence level ei ∈ { low , medium , high }, with empty evidence treated as low . This evidence level is used as a lightweight grounding-consistency signal; it never requires the LLM to see object crops. 
+
+Step 6: Discrete-level fitness and selection. For each principle xi, SAP computes a scalar fitness score from four discrete signals: consensus match ci, within-principle diversity di, representative uncertainty ui (from the representative route), and evidence level ei. Internally, SAP maps low /medium /high to ordinal scores and combines them with integer weights: 
+
+fi ← wc Score( ci) + wd Score( di) + we Score( ei) − wu Pen( ui),
+
+where Score( low , medium , high ) = (0 , 1, 2) and Pen( low , medium , high ) = (0 , 1, 2) . SAP selects the top-μ princi-ples as elites and (if more generations remain) asks the LLM to propose λ new principles conditioned on the elites and their fitness, forming the next (μ + λ) population. 
+
+Step 7: Final aggregation. After the last generation, SAP produces the final answer by aggregating the evaluated principles. Optionally, it issues one final LLM call conditioned on (p, g ) and the list of representative summaries to synthesize a final answer with brief reasons and a discrete uncertainty level. If the aggregator fails, SAP falls back to the representative answer from the global-consensus group with conservative uncertainty. 
+
+B.1. Framework: Principle Evolutionary Reasoning 
+
+Building on the above formulation, we approximate the principle-level optimization objective via population-based evo-lutionary search, referred to as Principle Evolutionary Reasoning (PER). PER is proposed as a general framework for inference-time scaling by iteratively improving a population of reasoning principles with respect to the utility function f .The overall procedure consists of initialization and iterative evolution. As shown in Alg. 1, an initial population of principles 
+
+{xi}i∈[μ+λ] is sampled conditioned on the prompt p. For each principle xi, the language model generates multiple reasoning traces and summaries, 
+
+(ri,j , s i,j ) ∼ φ(r, s | xi, p ), j ∈ [τ ],
+
+which instantiate the reasoning route ρ(xi) induced by the principle. 13 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+Given these outputs, each principle is evaluated by a task-specific utility metric, producing a fitness score 
+
+fi = f ({ri,j , s i,j }),
+
+which estimates the effectiveness of the corresponding reasoning route. Based on these fitness scores, PER performs population evolution as described in Alg. 2. Specifically, a (μ + λ) selection scheme is adopted: the top-μ principles 
+
+{xμm}m∈[μ] = Top μ
+
+ {(xi, f i)}i∈[μ+λ]
+
+
+
+are retained as elites, while a new set of λ principles is generated by sampling conditioned on the elites, 
+
+xλn ∼ φ(x | { xμm}m∈[μ], p ), n ∈ [λ].
+
+The elites and newly generated principles are combined to form the updated population 
+
+{x+ 
+
+> i
+
+}i∈[μ+λ] = {xμm}m∈[μ] ∪ { xλn}n∈[λ].
+
+By iteratively applying population evolution, PER provides a population-based approximation to the optimization problem in Equ. (2), enabling robust inference-time scaling under discrete generation and noisy feedback. 
+
+## C. Related Benchmarks 
+
+Benchmarks. We evaluate SAP on a diverse set of vision–language benchmarks spanning robustness, general reasoning, scientific understanding, OCR-centric reasoning, document analysis, and real-world generalization. 
+
+POPE (Li et al., 2023b) evaluates object hallucination and existence verification by constructing balanced positive and negative samples. It directly measures whether models can correctly ground answers in visual evidence rather than prior bias. 
+
+MME (Fu et al., 2025) assesses multimodal robustness by separating perception and reasoning abilities. The reasoning subset emphasizes logical inference beyond direct visual recognition, making it suitable for evaluating inference-time reasoning strategies. 
+
+MMBench (Liu et al., 2024a) is a large-scale multiple-choice benchmark for general multimodal understanding, covering object recognition, attribute reasoning, spatial relations, and commonsense inference. It serves as a standard indicator of overall VLM capability. 
+
+SEEDBench (Li et al., 2023a) evaluates general visual reasoning and understanding across perception, logic, and common-sense tasks, emphasizing consistency across heterogeneous question types. 
+
+MMMU (Yue et al., 2024) targets college-level multimodal reasoning in mathematics, physics, chemistry, and engineering. Many questions involve diagrams or multiple images, requiring structured reasoning and cross-image integration. 
+
+ScienceQA (Saikh et al., 2022) evaluates scientific question answering with visual contexts, combining diagrams with domain knowledge and multi-step reasoning. 
+
+TextVQA (Singh et al., 2019) measures scene text understanding, where correct answers depend on reading and reasoning over text embedded in natural images. 
+
+OCRVQA (Pham et al., 2025) and OCRBench (Liu et al., 2024b; Fu et al., 2024a) further stress OCR-centric reasoning under complex layouts and challenging visual conditions, focusing on accuracy and robustness of text grounding. 
+
+ChartQA (Masry et al., 2022) evaluates reasoning over charts and plots, requiring numerical comparison and interpretation grounded in visualized data. 
+
+DocVQA (Mathew et al., 2021) and InfoVQA (Mathew et al., 2022) focus on document understanding, where models must reason over scanned documents, tables, and forms with dense textual content. 
+
+AI2D (Kembhavi et al., 2016) tests diagram understanding in science education scenarios, emphasizing relational and structural reasoning over visual components. 14 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+BLINK (Fu et al., 2024b) evaluates multimodal entity linking, requiring alignment between visual entities and background knowledge. 
+
+RealWorldQA assesses open-world robustness using real-life images and unconstrained questions, testing generalization beyond curated benchmarks (rea). https://huggingface.co/datasets/visheratin/realworldqa 
+
+## D. Algorithm Analysis 
+
+D.1. Notation and Setup 
+
+Let X denote the (discrete) space of reasoning principles. The (μ + λ) evolutionary procedure maintains a population 
+
+Pt = {x(t) 
+
+> i
+
+}Ni=1 , N = μ + λ, 
+
+at iteration t ∈ { 0, 1, . . . , T }. Each principle x ∈ X induces a set of reasoning outcomes (trajectories and summaries) via one model call, and is assigned a fitness value f (x) ∈ R through the discrete assessment and ordinal mapping described in Eq. (3). Define the best fitness in the population at iteration t as 
+
+Ft = max 
+
+> x∈Pt
+
+f (x).
+
+Elites and offspring. At iteration t, the elite set Et ⊆ Pt consists of the top-μ principles in Pt ranked by fitness. The offspring multiset Ot = {X(t) 
+
+> n
+
+}λn=1 is generated by sampling from a conditional distribution induced by the LLM-based proposer: 
+
+X(t) 
+
+> n
+
+∼ φx(· | p, E t), n ∈ [λ],
+
+and the next population is formed as 
+
+Pt+1 = Et ∪ Ot.
+
+We emphasize that the discrete evaluation in SAP is used only to produce ordinal levels and an internal ranking/selection signal; no continuous confidence calibration is assumed. 
+
+D.2. Assumptions on Sampling and Dependence Assumption D.1 (Conditional i.i.d. offspring sampling) . Conditioned on the history Ht up to iteration t (which includes 
+
+p, all past populations, and thus Et), the offspring samples X(t)1 , . . . , X (t) 
+
+> λ
+
+are conditionally independent and identically distributed according to φx(· | p, E t).Assumption D.1 is satisfied when each offspring is generated by an independent call to the proposer (or independent decoding randomness) conditioned on the same (p, E t). If implementation introduces mild dependence, the probability bounds below can be extended under standard negative dependence conditions; we state the i.i.d. form for clarity and reviewer readability. 
+
+D.3. Optimization Guarantees 
+
+D.3.1. M ONOTONE BEST -FITNESS (NO REGRESSION )
+
+Theorem D.2 (Monotone best-fitness under (μ + λ) selection) . For all iterations t ≥ 0, the best fitness is non-decreasing: 
+
+Ft+1 ≥ Ft.
+
+Proof. By definition, Et contains the top-μ elements of Pt ordered by f (·), and therefore contains at least one maximizer of 
+
+f over Pt. Hence 
+
+max 
+
+> x∈Et
+
+f (x) = max 
+
+> x∈Pt
+
+f (x) = Ft.
+
+Since Pt+1 = Et ∪ Ot and Et ⊆ Pt+1 ,
+
+Ft+1 = max 
+
+> x∈Pt+1
+
+f (x) ≥ max 
+
+> x∈Et
+
+f (x) = Ft.
+
+15 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+D.3.2. O NE -STEP IMPROVEMENT PROBABILITY 
+
+While Theorem D.2 shows stability (no regression), the optimization speed is governed by how likely the procedure produces strictly better principles. 
+
+Improvement set. Define the set of principles that strictly improve upon the current best: 
+
+At = {x ∈ X : f (x) > F t}.
+
+Assumption D.3 (Per-iteration improvement mass) . There exists qt ∈ [0 , 1] such that conditioned on Ht,
+
+Pr 
+
+
+
+X(t) 
+
+> n
+
+∈ A t | H t
+
+
+
+≥ qt for each n ∈ [λ].
+
+Assumption D.3 does not require knowing At explicitly; it only postulates that the proposer distribution retains at least qt
+
+probability mass on strictly improving principles. 
+
+Theorem D.4 (One-step improvement bound) . Under Assumptions D.1 and D.3, the probability of a strict improvement at iteration t satisfies 
+
+Pr( Ft+1 > F t | H t) ≥ 1 − (1 − qt)λ.
+
+Consequently, 
+
+Pr( Ft+1 > F t) ≥ E 1 − (1 − qt)λ  .
+
+Proof. A strict improvement occurs if at least one offspring lies in At:
+
+{Ft+1 > F t} ⊇ 
+
+> λ
+
+[
+
+> n=1
+
+{X(t) 
+
+> n
+
+∈ A t}.
+
+Equivalently, no improvement implies none of the offspring hits At:
+
+{Ft+1 = Ft} ⊆ 
+
+> λ
+
+\
+
+> n=1
+
+{X(t) 
+
+> n
+
+/∈ A t}.
+
+Conditioning on Ht and using conditional independence (Assumption D.1), 
+
+Pr( Ft+1 = Ft | H t) ≤ Pr 
+
+> λ
+
+\
+
+> n=1
+
+{X(t) 
+
+> n
+
+/∈ A t} Ht
+
+!
+
+=
+
+> λ
+
+Y
+
+> n=1
+
+Pr( X(t) 
+
+> n
+
+/∈ A t | H t)
+
+≤ (1 − qt)λ,
+
+where the last inequality follows from Assumption D.3. Taking complements gives 
+
+Pr( Ft+1 > F t | H t) = 1 − Pr( Ft+1 = Ft | H t) ≥ 1 − (1 − qt)λ.
+
+Finally, removing the conditioning yields the stated unconditional bound by taking expectation over Ht.
+
+Remark D.5 (Small-qt regime and the role of λ). When qt is small, the improvement probability satisfies 
+
+1 − (1 − qt)λ ≈ λq t,
+
+showing that increasing λ approximately linearly amplifies the chance of obtaining a strictly better principle in each iteration. 16 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+D.3.3. M ULTIPLE ITERATIONS : A (LOOSE ) BOUND ON IMPROVEMENT WITHIN T STEPS 
+
+For completeness, we provide a standard union-style lower bound on obtaining at least one strict improvement over a horizon of T iterations. 
+
+Corollary D.6 (At least one improvement within T iterations (lower bound)) . Under Assumptions D.1 and D.3, and assuming qt ≥ qmin for t = 0 , . . . , T − 1,
+
+Pr( ∃ t ∈ { 0, . . . , T − 1} : Ft+1 > F t) ≥ 1 − (1 − qmin )λT .
+
+Proof. Condition on each iteration and apply Theorem D.4: 
+
+Pr( Ft+1 = Ft | H t) ≤ (1 − qt)λ ≤ (1 − qmin )λ.
+
+Assuming conditional independence across iterations is not necessary for an upper bound on the probability of no improve-ments : by iterated conditioning, 
+
+Pr( no improvements in T iterations ) ≤ 
+
+> T−1
+
+Y
+
+> t=0
+
+(1 − qmin )λ = (1 − qmin )λT .
+
+Taking complements yields the claim. The above corollary is intentionally conservative; it is included to illustrate scaling with λT and to align with coverage-style arguments below. 
+
+D.4. Generalization as Coverage in the Principle Space 
+
+D.4.1. C OVERAGE MODEL 
+
+We use a coverage-based notion of generalization: larger inference budgets explore more candidate principles, increasing the probability of encountering effective principles that induce reliable reasoning behaviors beyond the initial population. 
+
+Definition D.7 (Effective principle set) . Let Xgood ⊆ X denote the (unknown) set of effective principles under the task distribution of interest (e.g., principles that produce stable, grounded, and reliable outputs according to SAP’s discrete assessments). 
+
+Assumption D.8 (Per-sample coverage lower bound) . There exists qgood ∈ [0 , 1] such that for every iteration t and every offspring sample X(t) 
+
+> n
+
+,
+
+Pr 
+
+
+
+X(t) 
+
+> n
+
+∈ X good | H t
+
+
+
+≥ qgood .
+
+Assumption D.8 states that the proposer retains a nontrivial probability of sampling effective principles. This is the standard requirement for coverage guarantees in randomized search. D.4.2. D ISCOVERY PROBABILITY WITHIN T ITERATIONS 
+
+Proposition D.9 (Coverage increases with λT ). Under Assumptions D.1 and D.8, the probability that at least one effective principle is sampled within T iterations is lower bounded by 
+
+Pr 
+
+
+
+∃ t ∈ { 0, . . . , T − 1}, ∃ n ∈ [λ] s.t. X(t) 
+
+> n
+
+∈ X good 
+
+
+
+≥ 1 − (1 − qgood )λT .
+
+Proof. Define the event that no effective principle is sampled in iteration t:
+
+Et := 
+
+> λ
+
+\
+
+> n=1
+
+{X(t) 
+
+> n
+
+/∈ X good }.
+
+Conditioned on Ht and using conditional independence (Assumption D.1), 
+
+Pr( Et | H t) = 
+
+> λ
+
+Y
+
+> n=1
+
+Pr( X(t) 
+
+> n
+
+/∈ X good | H t) ≤ (1 − qgood )λ,
+
+17 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+where the inequality follows from Assumption D.8. Now consider the event of no discovery over T iterations: TT −1 
+
+> t=0
+
+Et. By iterated conditioning, 
+
+Pr  
+
+> T−1
+
+\
+
+> t=0
+
+Et
+
+!
+
+= E
+
+"T −1Y
+
+> t=0
+
+Pr( Et | H t)
+
+#
+
+≤ 
+
+> T−1
+
+Y
+
+> t=0
+
+(1 − qgood )λ = (1 − qgood )λT .
+
+Taking complements yields 
+
+Pr  
+
+> T−1
+
+[
+
+> t=0
+
+Ect
+
+!
+
+≥ 1 − (1 − qgood )λT ,
+
+which is exactly the probability of sampling at least one effective principle within T iterations. 
+
+Remark D.10 (Scaling in λ and T ). The bound 1 − (1 − qgood )λT is monotone increasing in both λ and T . For small qgood ,it satisfies 
+
+1 − (1 − qgood )λT ≈ λT q good ,
+
+making explicit that increasing the exploration width ( λ) and/or the number of iterations ( T ) improves coverage of the principle space. 
+
+D.5. Connecting Optimization and Coverage to Inference-Time Scaling 
+
+The results above jointly support the inference-time scaling interpretation of SAP/PER: elite selection ensures optimization stability (Theorem D.2), while increasing inference budget via larger λ and/or T improves both the per-iteration chance of strict improvement (Theorem D.4) and the probability of discovering effective principles through coverage (Proposition D.9). These properties match the operational definition of scaling in our setting: allocating additional compute to explore and select among alternative reasoning principles and routes, rather than extending a single fixed trajectory. 
+
+## E. Template Design 
+
+System Prompt Template Design. A central objective of SAP is to prevent inference-time reasoning from drifting toward text-only heuristics and to ensure that reasoning remains grounded in visual evidence throughout long generation horizons. This objective is realized through a carefully designed family of user prompt templates that are shared across all stages of SAP, with stage-specific constraints. Different VLMs should correspond to different templates. 
+
+Motivation. We identify two recurring failure modes in long-horizon vision–language reasoning. First, visual information is typically provided only once at the beginning of generation, whereas textual reasoning states (e.g., early visual summaries) are updated autoregressively. As generation proceeds, reasoning therefore becomes increasingly text-dominated, allowing early visual grounding errors to compound over time. Second, auxiliary textual signals—such as grounding summaries or evaluator feedback—are often noisy, incomplete, or heuristic; yet, they are easily over-trusted by the model as factual evidence. Together, these effects cause models to rely excessively on intermediate text states instead of re-consulting the original image(s), leading to unstable inference-time scaling. 
+
+Design Principle. To address these issues, SAP enforces a strict evidence hierarchy in all user prompts. The original image(s) are explicitly designated as the primary and most reliable source of information. Textual grounding summaries are framed as optional references that may be missing, incomplete, or incorrect. Their role is limited to suggesting where to look 
+
+in the image, rather than what to believe . Whenever textual cues conflict with visual observations, the model is instructed to re-examine the image(s) and respond conservatively if ambiguity remains. This principle is shared across all SAP stages to counteract text-dominated autoregressive drift. 
+
+Template Overview. SAP employs four user prompt templates corresponding to different inference-time stages: ( i)principal initialization, ( ii ) principal evolution, ( iii ) principle-guided multi-route reasoning, and ( iv ) final answer aggregation. Despite their different roles, all templates explicitly reinforce visual dominance, uncertainty awareness, and conservative decision-making under noisy feedback. 
+
+(1) Principle Initialization Template. The goal of principle initialization is to generate a diverse set of high-level reasoning principles before producing concrete answers. The prompt instructs the model to focus on how to reason from visual evidence rather than encoding task-specific conclusions. 18 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning                                                   
+
+> Generate several high-level reasoning principles for answering the visual question. The image(s) are the primary source of truth. The grounding summary is optional and may be incomplete or incorrect. Each principle should describe ageneral way to reason from visual evidence, not aspecific answer. Avoid assuming details that cannot be directly verified from the image(s).
+
+This template encourages diversity in reasoning strategies while ensuring that all principles remain anchored to observable visual cues. 
+
+(2) Principle Evolution Template. During evolutionary refinement, principles are updated based on their observed utility. The evolution prompt presents prior principles and their relative performance while explicitly discouraging overfitting to noisy or short-term feedback.                                                 
+
+> Refine the reasoning principles for visual question answering. The image(s) remain the most reliable evidence. Fitness signals and summaries may be noisy and should be used cautiously. Preserve strengths of effective principles, discard misleading ones, and propose new principles that better encourage verification against visual evidence. Do not assume that high-scoring principles are always correct.
+
+This design ensures that evolutionary updates favor principles that improve visual grounding rather than exploit accidental correlations in evaluator signals. 
+
+(3) Principle-Guided Multi-route Reasoning Template. Given a fixed principle, SAP requires the model to generate multiple distinct reasoning routes in parallel. Each route must independently justify its conclusion using visual evidence and explicitly report uncertainty when the evidence is weak.                                                         
+
+> Answer the visual question using the image(s) and the single active reasoning principle below. Generate multiple distinct reasoning routes under the same principle. For each route: -Base the reasoning on observable visual evidence. -Cite visual cues when possible. -Report uncertainty if evidence is weak or ambiguous. The grounding summary is only areference and may be incorrect. If unsure, do not guess.
+
+By construction, this template discourages blind reliance on early textual summaries and promotes repeated visual consulta-tion across alternative reasoning routes. 
+
+(4) Final Aggregation Template. The final aggregation stage synthesizes candidate answers produced under different principles. The prompt emphasizes conservative selection based on visual support rather than textual agreement or majority voting.                                              
+
+> Synthesize afinal answer from multiple candidate answers. Treat the image(s) as the authoritative evidence. Candidate answers may be inconsistent or incorrect. Prefer answers that are better supported by visual evidence. Express uncertainty if no answer is clearly justified. Do not introduce new assumptions beyond what can be verified from the image(s).
+
+Implicit Template Constraints. Beyond stage-specific instructions, SAP enforces several implicit constraints that are shared across all prompt templates. These constraints are implemented purely at the prompt level and shape inference-time behavior without introducing additional supervision. 
+
+Evidence Hierarchy Block. All SAP prompts explicitly prioritize visual evidence over any textual signals. 19 Saliency-Aware Multi-Route Thinking: Revisiting Vision-Language Reasoning 
+
+[Evidence Hierarchy] - Image(s) are the most reliable evidence. - Textual summaries and feedback are auxiliary and may be noisy. - Text must never override visual observation. - When uncertainty remains, respond conservatively. 
+
+Grounding-as-Reference Rule. Grounding summaries are treated strictly as weak references. 
+
+[Grounding Reference Rule] - Grounding summaries may be incomplete or incorrect. - Use them only to guide where to look in the image(s). - Do not assume grounded attributes unless visually verified. - If conflicts arise, trust the image(s). 
+
+Strict Output Rule. To support reliable evaluation and comparison, SAP enforces a strict structured-output constraint. 
+
+[Strict Output Rule] - Follow the specified JSON schema exactly. - Do not add extra fields or free-form explanations. - Use predefined discrete levels for uncertainty and evaluation. - If information is missing, return a valid placeholder. 
+
+Effect. Together, these prompt templates and shared constraints form a unified inference-time control mechanism that reallocates computation toward repeated validation against visual evidence. SAP introduces no new knowledge, external supervision, or task-specific heuristics. Instead, it reshapes how existing model capacity is used during inference, enabling stable and effective inference-time scaling under discrete generation and noisy multimodal feedback. 20

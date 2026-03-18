@@ -1,0 +1,1079 @@
+Title: FOZO: Forward-Only Zeroth-Order Prompt Optimization for Test-Time Adaptation
+
+URL Source: https://arxiv.org/pdf/2603.04733v1
+
+Published Time: Fri, 06 Mar 2026 01:22:30 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# FOZO: Forward-Only Zeroth-Order Prompt Optimization for Test-Time Adaptation 
+
+# Xingyu Wang Tao Wang Sichuan University, Chengdu, China 
+
+# Abstract 
+
+Test-Time Adaptation (TTA) is essential for enabling deep learning models to handle real-world data distribution shifts. However, current approaches face significant lim-itations: backpropagation-based methods are not suitable for low-end deployment devices, due to their high computa-tion and memory requirements, as well as their tendency to modify model weights during adaptation; while tradi-tional backpropagation-free techniques exhibit constrained adaptation capabilities. In this work, we propose Forward-Only Zeroth-Order Optimization (FOZO), a novel and prac-tical backpropagation-free paradigm for TTA. FOZO lever-ages a memory-efficient zeroth-order prompt optimization, which is led by objectives optimizing both intermediate feature statistics and prediction entropy. To ensure effi-cient and stable adaptation over the out-of-distribution data stream, we introduce a dynamically decaying perturbation scale during zeroth-order gradient estimation and theoret-ically prove its convergence under the TTA data stream assumption. Extensive continual adaptation experiments on ImageNet-C, ImageNet-R, and ImageNet-Sketch demon-strate FOZO’s superior performance, achieving 59.52% Top-1 accuracy on ImageNet-C (5K, level 5) and outper-forming main gradient-based methods and SOTA forward-only FOA (58.13%). Furthermore, FOZO exhibits strong generalization on quantized (INT8) models. These findings demonstrate that FOZO is a highly competitive solution for TTA deployment in resource-limited scenarios. Code: https://github.com/eVI-group-SCU/FOZO 
+
+# 1. Introduction 
+
+Deep learning has revolutionized computer vision [11, 20], achieving state-of-the-art performance in tasks. However, models often encounter data distribution shifts [33] between training and test environments in real-world deployment. To address this, Test-Time Adaptation (TTA) [23, 38] has emerged as a promising paradigm, dynamically adjusting pre-trained models with unlabeled test data to improve gen-eralization on unseen target domains. 0 250 500 750 1000 1250 1500 Time budget for TTA (s) 
+
+58 
+
+60 
+
+62 
+
+64 
+
+66 Average ACC@1 (%)  ACC@1=65% FOZO (base) FOZO (Dynamic Perturbation) FOA ZOA 
+
+Figure 1. Convergence Curves of Forward-Only Test-Time Adap-tation Algorithms. Average ACC@1 (%) of various Test-Time Adaptation (TTA) methods on ImageNet-C (level 5) versus adap-tation time (s). Per original settings, FOA and ZOA use 28 for-ward propagation (FP), while our FOZO method employs 26 FP. FOZO (Dynamic) consistently surpasses FOZO (Base) in accu-racy, demonstrating the effectiveness of our dynamic perturbation strategy. Furthermore, FOZO achieves superior performance and faster convergence than FOA and ZOA. Notably, FOZO reaches 65% ACC@1 in only 66% of the runtime required by FOA and ZOA, respectively. 
+
+Existing TTA methods have made significant progress [21, 32]. Notable approaches include gradient-free adap-tation and gradient-based adaptation. The former typically works by adjusting the normalization of feature represen-tations [23] or model outputs [2]. The methods following this approach maintain the original model weights and thus reduce the risk of forgetting the source domain. However, since they do not explicitly construct adaptation objectives based on the model feedback from the given test samples, their learning capacity is limited [3, 48], leading to subop-timal adaptation performance. Unlike the gradient-free ap-proach, the gradient-based approach usually applies explicit optimization objectives [38] to update the model weights, such as entropy minimization [39]. Several methods fol-low this approach and have achieved SOTA performance [21, 30, 31]. Nevertheless, they still face challenges in prac-1
+
+> arXiv:2603.04733v1 [cs.CV] 5 Mar 2026
+
+tical deployment scenarios. These scenarios typically of-fer limited computation resources and memory to conduct the adaptation, or require hard-coded or quantized model weights that are difficult to update [10]. Recent research has explored methods that update learn-able parameters solely through a forward pass, aiming to address challenges in existing TTA algorithms and develop more practical methods. The core advantage of this strategy is its reliance solely on the model’s forward pass, obviating backpropagation and significantly reducing computational and memory overheads. An example is FOA[32], which in-jects learnable input prompts and updates them with covari-ance matrix adaptation evolution strategy (CMA-ES) [13]. However, despite the small number of learnable prompts, their high dimensionality still poses challenges for accurate update estimation with CMA-ES [12], leading to slow con-vergence during adaptation and suboptimal performance. ZOA [7] updates normalization layer parameters through zeroth-order optimization. But this method directly mod-ifies internal model components, limiting its applicability in scenarios where model parameters are immutable [22]. Inspired by the zeroth-order gradient estimation tech-nique [36], we propose a novel Forward-Only Zeroth-order Optimization (FOZO) paradigm for test-time adaptation. Instead of relying on CMA-ES to update prompts, FOZO relies on the model’s forward pass to estimate prompt gra-dients, while avoiding the expensive backward propagation. Nevertheless, applying the zeroth-order forward gradient estimation in TTA scenarios faces severe optimization chal-lenge: the out-of-distribution data stream leads to unreliable gradient estimates, hindering robust adaptation. To address this problem, we introduce a dynamic per-turbation scheme that adaptively adjusts perturbation scale within the zeroth-order gradient approximation. This helps the model quickly adapt to new domains, escaping initial suboptimal solutions while achieving stable convergence af-ter initial adaptation. We theoretically show that the pro-posed zeroth-order prompt optimization method converges with the dynamic perturbation scheme (Theorem 1 and 2). Furthermore, to enable adaptation in unsupervised opti-mization environment, we designed a refined unsupervised loss function, including the model’s prediction entropy and the activation statistical differences between source and tar-get domain samples, which is computed from both the shal-low and deep layers of the model. Extensive experimen-tal results demonstrate that FOZO achieves superior perfor-mance compared to prior gradient-based methods while us-ing only forward passes and maintaining low memory con-sumption. It also surpasses the SOTA forward-only adap-tation method [32] with faster convergence. Notably, we further verify the effectiveness of FOZO under the practical deployment settings where models are quantized or test data arrives continually without knowing the domain boundary. In summary, our contributions are: • We introduce a zeroth-order prompt optimization ap-proach, based on which we build a novel forward-only test-time adaptation method that avoids updating param-eters and achieves superior efficiency. • To address the optimization challenge of zeroth-order test-time adaptation caused by distribution shifts in TTA data stream, we proposing a dynamic perturbation scheme to assist optimization. • We theoretically prove the convergence properties of the proposed method, based on the classical stochastic pertur-bation approximation [37] and local r-effective rank as-sumption [24]. • To validate the proposed method, we establish various test-time adaptation settings, and conduct thorough ab-lation and analysis. FOZO demonstrates superior perfor-mance to prior approaches and shows strong adaptation capability with the quantized models and practical con-tinual TTA scenario. 
+
+# 2. Related Work 
+
+2.1. Test-Time Adaptation 
+
+The pioneering works of gradient-based TTA are TTT [38] and OSHOT [8], which implicitly align features from train-ing and test domains by introducing self-supervised tasks during both phases. The strategy adopted and extended by subsequent methods [14, 42, 45, 47]. However, TTT re-quires modifying the model’s training process, which has led subsequent works to explore fully test-time adaptation (TTA). A landmark is TENT [39], it updates batch-norm parameters by minimizing output entropy, inspiring numer-ous extensions focused on stability [31], additional self-supervised signals [5, 19, 25], and anti-forgetting regular-ization [30, 41]. Despite significant progress, their fundamental re-liance on backpropagation limits deployment in resource-constrained edge devices or black-box models lacking gra-dient support. This fundamental limitation has driven the development of Forward-only TTA methods based entirely on forward propagation, which has garnered attention due to its high computational efficiency and ease of deployment, typically avoiding iterative optimization of core model pa-rameters. Early works like AdaBN [23] and PredBN [26] primarily focused on BN layer calibration by replac-ing statistics. More sophisticated strategies include T3A [17], which adapts by adjusting only the classifier head via online-updated ‘pseudo-prototypes’, and LAME [2], which directly corrects output logits online through Laplace Approximated Maximum-a-Posteriori estimation without modifying model parameters. Recently, FOA [32] proposed a novel paradigm for optimizing model parameters without backpropagation, by employing an evolutionary algorithm 2Algorithm 1 Forward-Only Zeroth-Order Optimization for Test-Time Adaptation 
+
+Input : Test batches {B t}Tt=1 , learning rate schedule ηt, ini-tial perturbation scale ϵ0, minimal perturbation scale ϵmin ,number of prompts p, number of SPSA samples n
+
+Output : The predictions {Y t}Tt=1  
+
+> 1:
+
+Initialize Learnable prompt P = {pk ∈ Rd|k ∈ N, 1 ≤
+
+k ≤ p}, ϵt = ϵ0 
+
+> 2:
+
+for t = 1 , . . . , T do  
+
+> 3:
+
+seeds, projected grads ← []  
+
+> 4:
+
+Adjust the perturbation scale ϵt by Eqn. 12  
+
+> 5:
+
+for j = 1 , . . . , n do  
+
+> 6:
+
+Sample random seed s and generate Z ∼ N (0 , I d) 
+
+> 7:
+
+Compute P+ = P + ϵtZ and P− = P − ϵtZ 
+
+> 8:
+
+Propagate Bt with P± to obtain {e0 
+
+> N
+
+}± 
+
+> 9:
+
+Predict { ˆYjt }± with {e0 
+
+> N
+
+}± 
+
+> 10:
+
+Calculate ℓ+ = L(P+; Bt), ℓ− = L(P−; Bt) 
+
+> 11:
+
+projected grad = ( ℓ+ − ℓ−)/(2 ϵt) 
+
+> 12:
+
+projected grads [j] ← projected grad  
+
+> 13:
+
+seeds [j] ← s 
+
+> 14:
+
+end for  
+
+> 15:
+
+for j = 1 , . . . , n do  
+
+> 16:
+
+Regenerate Zj using seeds [j] 
+
+> 17:
+
+Update P ← P − (ηt/n ) · projected grads [j] · Z 
+
+> 18:
+
+end for  
+
+> 19:
+
+Select best ˆYt from { ˆYjt }± 
+
+> 20:
+
+end for 
+
+[13] to update learnable visual prompts at the ViT input layer. 
+
+2.2. Zeroth-Order Optimization 
+
+Zeroth-order optimization (ZO) methods do not rely on ex-plicit gradient, which makes them particularly useful when gradients are difficult, unavailable, or prohibitively expen-sive to compute. For instance, the classical zeroth-order stochastic gradient descent (ZO-SGD) [36] estimates gradi-ents by performing random perturbations in the parameter space and comparing the function values [29, 34]. How-ever, classical theoretical lower bounds [27] indicate that the convergence rate of many ZO methods slows down lin-early with the model parameter dimension d, making them inefficient for high-dimensional problems. To overcome this limitation, recent research [1, 4, 43] has shown that if the gradient possesses low-dimensional structure, the query complexity can scale linearly with the intrinsic dimension and logarithmically with the number of parameters. The Memory-efficient Zero-Order Optimizer (MeZO) [24] pro-poses the local effective rank assumption and theoretically proves that its per-step loss reduction does not depend on the parameter dimension d, but the effective Hessian rank. 
+
+# 3. Overview 
+
+3.1. Prompt Optimization 
+
+Visual-Prompt Tuning [18] has demonstrated superior pa-rameter and data efficiency in adapting pre-trained Vision Transformer (ViT) [9] to downstream application domains. We thus aim to leverage its efficiency and develop test-time adaptation method. Specifically, for an N -layer pre-trained ViT, the input embedding to the first layer, E0 =
+
+{ej
+
+> 0
+
+, j ∈ N, 0 ≤ j ≤ m}, comprises a learnable [CLS] 
+
+token e00 ∈ Rd and m embeddings corresponding to im-age patches. In this setup, a set of learnable d-dimensional prompts P = {pk ∈ Rd|k ∈ N, 1 ≤ k ≤ p} is inserted into 
+
+E0 before the first layer L1. The subsequent forward pass through the frozen layers is defined as: 
+
+[F1, E1] = L1frozen ([ Plearnable , E0]) (1) 
+
+[Fi, Ei] = Lifrozen ([ Fi−1, Ei−1]) i = 2 , 3, . . . , N (2) 
+
+ˆy = Head frozen (e0 
+
+> N
+
+), (3) where Fi ∈ Rp×d denotes the intermediate feature state of prompt P, ˆy is the output prediction. [Fi, Ei] ∈
+
+R(p+m+1) ×d, and [·, ·] means concatenation along the se-quence length dimension. The superscripts ‘frozen’ and ‘learnable’ indicate the state of the parameters. Overall, given a batch of unlabeled test data Bt ∼ D test ,our optimization objective is defined as: 
+
+min  
+
+> p
+
+L(P; Bt), (4) where L is an unsupervised learning objective. 
+
+3.2. Forward-only Adaptation: The Challenge 
+
+While being efficient and not altering model weights, prompt optimization usually requires backpropagation to optimize the adaptation objectives, which leads to two ma-jor challenges when developing effective test-time adap-tation method: 1) The backward pass is computation-heavy and memory-intensive, which is not practical in many resource-limited deployment devices such as low-power FPGA chips. 2) Unlike prompt optimization with given set of data, data in TTA come with online and varying distribu-tions, which may hinder accuracy and convergence of opti-mization. 
+
+The latest SOTA backward-free prompt tuning TTA method [32] formulates the adaptation process as forward-only paradigm. It optimizes a learnable d-dimensional prompt using Covariance Matrix Adaptation Evolution Strategy (CMA-ES), which requires only forward pass to update the input prompt. Despite updating few learnable prompts, it is still challenging for CMA-ES algorithm to effectively optimize the prompts due to its inherent O(d2)
+
+3(a) Forward-Only Zeroth-Order Optimization (b) Deep-Shallow Aligning Loss Function Tuned Frozen 
+
+Prediction Entropy Deep-Layer Dist.Alignment Shallow-Layer Dist.Alignment Zeroth-order Gradient Estimation Update Loss Loss Transformer Layer                    
+
+> MLP Head
+> … … MLP Head Figure 2. Overview of our proposed FOZO. (a) Forward-Only Zeroth-Order Optimization. This diagram illustrates how FOZO adaptively updates learnable visual prompts ( P) at test time using a zeroth-order gradient estimation. For each test batch, the model performs two forward passes by perturbing the prompt Pin positive ( P+ϵtZ) and negative ( P−ϵtZ) directions. Here, Zis a perturbation vector generated from a random seed s, and ϵtis a dynamically adjusted perturbation step size. (b) Deep-Shallow Aligning Loss Function. We compute the mean ( μT) and standard deviation ( σT) of the [CLS] token activations by grouping shallow ( e01, . . . , e 0
+> N/ 2) and deep (e0
+> N/ 2+1 , . . . , e 0
+> N) layers of the model, and align them with pre-computed source domain statistics ( μS, σ S).
+
+complexity [12], resulting in slow convergence and subop-timal performance under the TTA data stream. To address the above challenges and develop efficient prompt-based TTA approach, we instead focus on theoretically grounded zeroth-order gradient estimation with specifically designed optimization technique and seek to prove its convergence. 
+
+# 4. Forward-Only Zeroth-Order Optimization 
+
+In this section, we present Forward-Only Zeroth-Order Op-timization (FOZO) for TTA (as illustrated in Algorithm 1 and in Fig. 2). We first introduce zeroth-order gradient esti-mation. Then, we present a convergence analysis for FOZO. Subsequently, we introduce a dynamic perturbation scheme. It achieves forward-only adaptation and addresses the opti-mization challenge under TTA data streams. Finally, we de-scribe the unsupervised loss function optimized by FOZO. 
+
+4.1. Zeroth-Order Gradient Estimation 
+
+In the TTA scenario, unlike traditional offline training, mod-els are updated at each time step t based on the current data 
+
+Bt. We aim to estimate the gradient on the input prompts with zeroth-order estimator SPSA (Simultaneous Perturba-tion Stochastic Approximation)[37]: 
+
+bg(Z) = L(Pt + ϵtZ; Bt) − L (Pt − ϵtZ; Bt)2ϵt
+
+Z, (5) Where Z ∼ N (0 , I d) ∈ Rd. Nevertheless, simple one-sample of Z produces inaccurate estimation, we thus lever-age a variant of n-SPSA gradient estimator that averages the gradient estimates over n random samples of Z:
+
+b∇L (Pt; Bt) = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+bg(Zi). (6) More accurate estimate only requires more forward passes. This is particularly suitable for resource-constrained de-vices. Based on the estimated gradient, we then formulate zeroth-order optimization to update prompt as: 
+
+Pt+1 = Pt − η b∇L (Pt; Bt). (7) Where η is the learning rate. 
+
+4.2. Convergence Analysis 
+
+We then establish the convergence property of proposed zeroth-order gradient estimation based on two assumptions: 
+
+Assumption 1 : ℓ-smoothness . The loss function L is 
+
+ℓ-smooth, with an L-Lipschitz continuous gradient [28]. 
+
+Assumption 2 : Local r-effective rank . [24]. The Hes-sian matrix of the loss function has a low effective rank property in the local region in which the optimization pro-cess takes place. This means that, despite the high dimen-sionality of the model parameters d, the variation of the loss 4function is mainly concentrated in a few (r) significant di-rections, where r ≪ d.
+
+4.2.1. Expected Loss Derivation 
+
+Based on the ℓ-smoothness of the loss function L, our loss function has the standard quadratic upper bound: 
+
+L(Pt+1 ) ≤ L (Pt) + ∇L (Pt)⊤(Pt+1 − Pt)+ ℓ
+
+2 ∥Pt+1 − Pt∥2. (8) Substituting the zeroth-order gradient estimation single-step update rule Eqn. 7, into the above inequality and taking the expectation, we obtain: 
+
+Et[L(Pt+1 )] ≤ L (Pt)
+
+− ηEt[∇L (Pt)⊤ b∇L (Pt; Bt)] + η2ℓ
+
+2 Et[∥ b∇L (Pt; Bt)∥2],
+
+(9) where the expectation Et[·] is taken over all randomness in-troduced at step t, including the data batch Bt ∼ D test and the SPSA random perturbation Zt ∼ N (0 , I d).
+
+4.2.2. Convergence Rate 
+
+We first establish FOZO’ expected descent with a single op-timization step and then prove its convergence over itera-tions. 
+
+Theorem 1 (Expected Descent). Assuming the loss ex-hibits local r-effective rank, and referring to the relevant proofs in Supplementary B (Eqn. 15 and Eqn. 17), the ex-pected loss can be bounded as: 
+
+E[L(Pt+1 )] ≤ L (Pt) −η∥∇L (Pt)∥2
+
+| {z }
+
+> True Gradient Descent
+
++ η2ℓ
+
+2 γE[∥∇L (Pt; B)∥2]
+
+| {z }
+
+> Variance Term
+
++ Cηℓϵ 2 
+
+> t
+
+r
+
+| {z }
+
+> Bias Term
+
+,
+
+(10) where C is a constant, γ = Θ( r/n ) is a factor related to the local r-effective rank [24], and n is the number of SPSA samples. In Theorem 1, the bias term Cηℓϵ 2 
+
+> t
+
+r di-rectly quantifies the error introduced by the perturbation. For precise convergence to a stationary point, theory dic-tates that this bias term must eventually diminish, implying 
+
+ϵt → 0. Conversely, in the early stages of optimization or when facing significant domain shifts, a larger ϵt can pro-mote exploration, aiding navigation in noisy environments and preventing premature convergence to suboptimal local minima. We therefore propose dynamic adjustment strat-egy for ϵt, decaying from ϵ0 to ϵmin , aiming to balance ex-ploration and convergence in practice. The variance term represents the variance introduced by the zeroth-order esti-mation, whose magnitude is controlled by the effective rank 
+
+r rather than the parameter dimension d.
+
+Theorem 2 (Convergence Rate): It can be proved that within T iterations, the FOZO algorithm satisfies: 
+
+1
+
+T 
+
+> T−1
+
+X
+
+> t=0
+
+E[|∇L (Pt)|2] ≤ L(P0) − L ∗
+
+T η 
+
++ Cℓϵ 2 
+
+> t
+
+r + ηℓγσ 2
+
+2 ,
+
+(11) where L∗ is a lower bound of the loss function ( L(P) ≥L∗), and σ2 is a uniform bound on the stochastic gradi-ent variance ( EB[∥∇L (P; B)∥2] ≤ σ2). This indicates that FOZO’s convergence rate is related to r, rather than param-eter dimension d. As the number of iterations T → ∞ , the first term on the right-hand side L(P0)−L ∗ 
+
+> T η
+
+→ 0. The algo-rithm will eventually enter and remain within the neighbor-hood of a stationary point, the size of which is controlled by 
+
+η and ϵt. We can achieve a smaller convergence neighbor-hood by dynamically adjusting ϵt and using a learning rate schedule. 
+
+For a detailed proof of Theorem 1 and 2, please refer to Supplementary B 
+
+4.3. Dynamic Perturbation. 
+
+From our convergence analysis (Section 4.2, Theorem 1) the bias term Cηℓϵ 2 
+
+> t
+
+r necessitates ϵt → 0 for precise con-vergence. However, in noisy OOD data streams or early optimization, zeroth-order gradient estimation can be inac-curate (Fig. 1), where a larger ϵt offers stronger exploration, helping escape local minima or overcome noise. Therefore, a strong condition dictates that ϵt must be dynamically ad-justed to balance exploration and exploitation. This means employing a larger ϵt when gradients are large or optimiza-tion is unstable to aid exploration, and decaying ϵt suffi-ciently as the gradient norm approaches zero to ensure pre-cise convergence. To approximate this theoretical strong condition, we in-troduce a dynamic perturbation strategy for ϵt. This strat-egy employs a larger ϵt during early adaptation or upon de-tecting new data domain shifts to avoid local minima, then decays ϵt by a fixed factor per iteration as optimization sta-bilizes, capped by ϵmin . Additionally, ϵt resets to ϵ0 upon detecting new data domain shifts or optimization stalls (in-dicated by significant loss fluctuations). The update rule for 
+
+ϵ is as follows: 
+
+ϵt =
+
+(
+
+ϵ0 if Lt > τ · ¯Lt
+
+max( ϵmin , ϵ t−1 · α) otherwise , (12) 5FP Gauss Shot Impul Defcs Gls Mtn Zm Snw Frst Fg Brt Cnt Els. Px. JPG Avg Time Memory #Params NoAdapt 1 57.1 57.0 57.7 46.8 35.9 52.8 45.9 62.4 62.6 65.8 78.0 32.1 45.3 67.0 67.4 55.57 94 819 0                                                
+
+> LAME 156.7 56.4 57.4 46.2 35.2 52.1 45.1 58.6 61.8 62.9 77.7 24.6 43.9 66.8 66.9 54.16 97 819 0
+> T3A 156.8 57.7 59.1 40.8 36.9 53.2 46.1 62.2 59.6 60.4 78.2 12.1 45.5 68.2 69.5 53.76 311 823 0
+> FOA 257.2 57.5 58.1 48.6 37.7 54.3 47.6 64.2 65.2 66.8 78.0 51.3 48.6 67.7 69.1 58.13 224 831 2304 ZOA 258.0 58.0 59.5 49.8 39.5 55.3 49.0 64.6 64.3 66.8 78.0 48.9 50.2 67.8 68.7 58.56 198 859 26145 FOZO 257.8 57.8 58.9 50.2 39.2 55.3 49.2 65.3 66.8 67.5 78.6 56.9 51.0 68.3 70.1 59.52 179 831 2304 Table 1. Continual adaptation results : Comparison with forward-only methods on ImageNet-C (5k, level 5). FP denote the number of forward propagations per single sample. For a fair comparison with the same number of forward propagations, and referencing ZOA’s reproduced results, FOA’s population size K is set to 2, FOZO’s number of SPSA is set to 1, and ZOA’s steps is set to 1. Time (s) is measured for processing ImageNet-C (5k, level 5) on an NVIDIA RTX 4090 GPU. Memory usage (MiB) is the peak GPU memory allocated by tensors, measured on a single adaptation batch. #Params is the number of parameters updated during TTA.
+
+where the historical average loss ¯Lt = β ¯Lt−1 + (1 − β)Lt,
+
+β ∈ [0 , 1) , and τ > 1 is a predefined threshold factor. 
+
+4.4. Loss Function 
+
+Unlike prompt learning in domain-specific data, data stream in TTA comes with no label. Thus we design unsupervised loss function to both aligning intermediate feature statistics and minimizing prediction entropy. 
+
+4.4.1. Aligning Deep-Shallow Feature Statistics 
+
+To achieve robust adaptation, we propose a group-wise Deep-Shallow alignment strategy. This involves collecting 
+
+[CLS] token activations from both shallow ( e01, . . . , e 0
+
+> N/ 2
+
+)and deep ( e0
+
+> N/ 2+1
+
+, . . . , e 0 
+
+> N
+
+) layers of the model during in-ference and computing their respective means and variances (μTk , σ Tk ) and aligning them with pre-computed source do-main statistics ( μSk , σ Sk ). Thus the aligning objective Lstats 
+
+can be expressed as: 
+
+Lstats = X
+
+> k∈{ shallow,deep }
+
+ ∥μTk − μSk ∥2 + ∥σTk − σSk ∥2
+
+
+
+(13) 
+
+4.4.2. Entropy Minimization Loss 
+
+To encourage confident predictions on the unlabeled target domain, we incorporate an entropy minimization loss, de-fined as: 
+
+Lent = −
+
+> B
+
+X
+
+> i=1
+> K
+
+X
+
+> a=1
+
+pi,a log( pi,a ) (14) where B is the batch size, K is the number of classes, and 
+
+pi,a is the predicted probability for class a of sample i.Together, the total loss function is defined as: 
+
+L = λLstats + Lent (15) where λ is a hyper-parameter balancing the two objectives. 
+
+# 5. Experiments 
+
+5.1. Experiment Setup 
+
+5.1.1. Datasets and Baselines 
+
+We used the following data sets to benchmark the perfor-mance of FOZO: ImageNet-C [15], ImageNetV2 [35], and ImageNet-Sketch [40]. FOZO is primarily compared with a set of established methods. These include forward-only approaches such as LAME [2], T3A [17], FOA [32], and ZOA [7]. Additionally, we compare against backward-based methods like TENT [39], EATA [30], SAR [31], and DeYO [21]. All experiments utilize the ViT-Base [9] model as the source model backbone, with its weights initialized from the timm repository [44]. For quantized models, we employ 8-bit PTQ4ViT [46]. We report the Acc@1 for all exper-iments. All baseline methods utilize the hyperparameters reported in their respective papers. 
+
+5.1.2. Implementation Details 
+
+For fair comparison, we set the batch size of test samples to 64. We use 3 prompt embeddings, initialized uniformly. We employ an n-SPSA zero-order gradient estimator, where n
+
+is set to 1 as specified in Eqn. 6. The initial learning rate η
+
+in Eqn. 7 is 0.08. In Eqn. 8, The decay factor α is set to 0.9 , the threshold factor τ to 1.05, and the moving average factor β for the historical average loss to 0.9. The trade-off parameter λ in Eqn. 15 is set to 0.4. Following FOA, source training statistics are estimated using the validation set of ImageNet-1K. Please refer to Supplementary A for more implementation details. 
+
+5.1.3. Continual Adaptation Setting 
+
+To simulate real-world scenarios with dynamic data shifts, our main experiments are conducted under Continual Adap-tation. Under this experimental setup, domain identity is unknown and no modifications are made to the model upon domain switching, i.e., continuous adaptation. We follow the RobustBench benchmark [6], utilizing the ImageNet-C 6Gauss Shot Impul Defcs Gls Mtn Zm Snw Frst Fg Brt Cnt Els. Px. JPG Avg Time Memory #Params NoAdapt 57.1 57.0 57.7 46.8 35.9 52.8 45.9 62.4 62.6 65.8 78.0 32.1 45.3 67.0 67.4 55.57 94 819 0TENT 57.4 60.1 60.8 42.0 41.0 53.7 49.2 62.7 59.9 64.1 78.4 60.0 48.9 68.4 68.3 58.32 208 5495 39936 DEYO 58.1 60.5 61.0 46.5 49.7 57.8 51.9 64.1 63.0 64.3 78.5 61.4 57.5 68.3 68.9 60.76 282 5499 39936 SAR 58.3 60.9 61.3 48.2 48.7 58.4 50.7 62.6 61.9 64.0 78.4 59.9 54.6 68.0 69.4 60.36 393 5495 29184 EATA 57.0 61.6 61.5 52.0 48.4 59.5 52.9 63.9 61.8 66.0 78.7 62.8 54.7 69.3 69.8 61.35 218 5496 39936 FOA (FP=28) 57.4 60.8 62.9 53.1 45.1 58.3 53.2 66.5 67.2 67.6 80.1 57.6 51.3 68.5 70.2 61.32 2391 831 2304 
+
+ZOA (FP=28) 58.9 61.6 63.3 53.8 46.8 58.9 53.2 65.2 61.9 68.3 78.6 59.2 56.1 69.5 71 61.75 2405 859 26145 FOZO (FP=26) 58.5 62.1 63.1 53.0 48.0 57.4 55.7 66.1 68.1 67.3 79.8 64.5 54.4 70.1 70.9 62.60 2102 831 2304 
+
+FOZO (FP=28) 58.4 62.8 64.2 53.1 43.2 58.3 56.3 66.5 68.5 68.3 80.2 64.1 54.3 70.3 71.6 62.67 2351 831 2304 
+
+Table 2. Continual adaptation results : Comparison with backpropagation methods on ImageNet-C (5k, level 5). When FP=28, ZOA’s steps is set to 14, and FOA’s population size K is 28. For FOZO, the number of SPSA n is set to 13 when FP=26, and 14 when FP=28. Gauss Shot Impul Defcs Gls Mtn Zm Snw Frst Fg Brt Cnt Els. Px. JPG Avg NoAdapt 56.2 55.9 56.5 45.8 34.6 52.1 43.5 61.4 62.1 65.9 77.3 30.4 43.5 65.5 66.5 54.48 LAME 55.8 55.6 56.2 45.5 33.6 51.7 42.7 58.4 61.1 64.5 77.1 16.4 42.0 64.9 66.3 52.79 T3A 56.0 56.4 57.8 42.3 36.1 53.0 43.7 62.3 58.2 56.4 77.3 11.1 43.9 66.9 68.6 52.67 FOA 56.5 56.5 57.3 47.7 36.2 53.1 45.1 63.2 64.6 69.9 77.4 48.6 46.0 66.2 67.6 57.07 ZOA 57.1 56.8 57.7 47.8 37.6 54.1 46.7 63.4 62.9 65.3 77.4 46.2 46.1 67.0 67.4 56.91 FOZO 57.5 56.6 57.7 49.3 38.3 54.1 47.7 64.1 64.7 68.1 77.1 51.4 48.5 66.6 68.2 58.00 
+
+Table 3. Comparison with the forward-only methods on quantized ViT models (8bit PTQ4ViT). 
+
+FP R Sketch Memory #Params NoAdapt 1 59.5 44.9 819 0
+
+LAME 1 58.9 44.4 819 0
+
+T3A 1 55.1 48.3 823 0
+
+FOA 2 63.2 49.7 831 2304 ZOA 2 63.6 49.8 859 26145 FOZO 2 64.1 50.5 831 2304 Table 4. Performance comparison on ImageNet-R and ImageNet-Sketch datasets. 
+
+(5k) dataset, where only 5k images are randomly sampled per domain instead of the full 50,000. 
+
+5.2. Full Precision Models 
+
+5.2.1. Comparison with forward-only methods 
+
+Table 1 presents a comparison of FOZO with other forward-only methods. Under the setting of only two forward passes, our proposed FOZO, which employs prompt optimization without modifying model parameters, achieves a higher accuracy of 59.52%. This performance surpasses FOA (58.13%), an existing SOTA forward-only prompt optimiza-tion method, and also outperforms ZOA (58.56%), which adapts by optimizing normalization layers. Notably, FOZO achieves this while updating only 8.8% of the parameters compared to ZOA. 
+
+5.2.2. Comparison with backpropagation methods 
+
+Table 2 presents a comparison of FOZO with backward-propagation algorithms, highlighting the inherent trade-off between runtime and memory consumption. Backward-propagation methods typically exhibit lower runtime but incur substantial memory overhead. Conversely, forward-only algorithms are characterized by a minimal memory footprint but often require more processing time. For a fair comparison, we align with FOA’s experimental setup, employing 28 forward passes for forward-only algorithms. The experimental results demonstrate that FOZO achieves the best accuracy (62.65%). Among forward-only methods, FOZO exhibits superior runtime performance compared to both FOA and ZOA, and furthermore, its memory footprint is lower than that of ZOA. 
+
+5.2.3. Comparison on Additional Datasets 
+
+To evaluate FOZO’s effectiveness across diverse datasets, we conducted experiments on two common adaptation benchmarks: ImageNet-R and ImageNet-Sketch. As shown in Tab.4, FOZO maintains the best average accuracy under continuous adaptation, indicating that our dynamic pertur-bation strategy can effectively adapt to the distribution shifts induced by domain switching. 
+
+5.3. Quantized Models 
+
+In practical applications, hardware constraints, particularly on edge devices, mobile platforms, and embedded sys-7- Acc. (Top-1) ∆
+
+NoAdapt 55.1 -Base FOZO (ZO + Entropy) 57.3 +2.2 + Deep-shallow Feature Alignment 60.1 +2.8 + Dynamic Perturbation 62.7 +2.6   
+
+> Table 5. Ablation study of FOZO components. The results are obtained with ImageNet-C (5k, level5).
+
+tems, impose stringent requirements on model memory footprint, computational complexity, and power consump-tion. Deploying full-precision (e.g., 32-bit floating-point) models in these resource-constrained environments often presents challenges such as insufficient storage, slow infer-ence speeds, and reduced battery life. Consequently, model quantization, particularly 8-bit integer (INT8) quantization, emerges as a crucial optimization technique. By converting model weights and activations from floating-point to low-bit integers, quantization significantly reduces model size, accelerates inference, and lowers power consumption. We compare backward-free methods on the quantized model, which does not support backward propagation well. As shown in Table 3, both FOA and FOZO demonstrate considerable improvements over other forward-only meth-ods. Our proposed FOZO method consistently outperforms ZOA, achieving the highest overall average Top-1 accuracy of 58.0%, surpassing FOA’s 57.07%. 
+
+5.4. Ablation Studies 
+
+5.4.1. Component Analysis 
+
+Table 5 shows the progressive performance gains as FOZO’s components are introduced. Starting from NoAd-apt (55.1%), our Base FOZO (ZO+ Entropy) improves ac-curacy by 2.2%. The most substantial gain comes from Deep-Shallow Feature Statistics Alignment (2.8%), high-lighting its importance. Finally, Dynamic Perturbation (Full FOZO) provides an additional 2.6% accuracy improvement. 
+
+5.4.2. Convergence Rates 
+
+To evaluate the convergence speed of our method during the adaptation, we design the following experiment: For each of the corruption in the ImageNet-C dataset, we perform a full round of model adaptation. Each adaptation round comprised 782 batches. During adaptation, we recorded the cumulative run time and calculated the average model accu-racy within the batch. Subsequently, all cumulative run time and average accuracy from these 15 corruption types were averaged, the results are plotted in Figure 1. This clearly in-dicates that our proposed dynamic perturbation method can accelerate convergence speed. 1 2 3 4 5 6 7 8 9 10             
+
+> Number of Prompts
+> 60
+> 62
+> Accuracy (%)
+> (a) Accuracy and Memory vs. Number of Prompts
+> 4816 32 64 128
+> Batch Size
+> 61
+> 62
+> Accuracy (%)  (b) Accuracy vs. Batch Size
+> 830
+> 840
+> Memory (MiB)
+> Accuracy
+> Memory
+> Figure 3. Ablation Study of FOZO Hyperparameters on ImageNet-C (Gaussian Noise, level 5).
+
+5.4.3. Hyperparameters Analysis 
+
+To evaluate FOZO’s sensitivity to key hyperparameters, we conduct more ablation studies. Fig E.1(a) shows minor ac-curacy variations across 1 to 10 prompts. While 8 prompts yield the highest accuracy (62.5%), practical test-time adap-tation often precludes fine-tuning prompts on unseen data. Therefore, we select 3 prompts for our main experiments, balancing performance with practical considerations. Fig E.1(b) reveals the effect of batch size. Smaller batches (e.g., 4, 8, 16) show reduced accuracy (e.g., 60.9% at batch size 4) due to higher variance in statistics and noisy zeroth-order gradient estimates. Performance peaks at batch size 32 (62.3%), benefiting from more adaptation steps. How-ever, increasing to 128 leads to a slight decrease (61.2%), as large batches may over-smooth feature statistics, los-ing fine-grained domain information. For our main experi-ments, we select a batch size of 64 to ensure a fair compar-ison. 
+
+# 6. Conculsion 
+
+We propose Forward-Only Zeroth-Order Optimization (FOZO), a novel forward-only TTA paradigm. Compared to the latest forward-only methods, FOZO offers significant advantages: it consistently achieves higher accuracy with notably lower runtime, memory, and number of parameters needing updates. Furthermore, both theoretical analysis and experiments demonstrate that our dynamic perturba-tion strategy enables faster convergence during adaptation. These advantages demonstrate that FOZO serves as a highly efficient solution, particularly suited for deployment on resource-constrained edge devices and quantized models. 8References 
+
+[1] Krishnakumar Balasubramanian and Saeed Ghadimi. Zeroth-order (non)-convex stochastic optimization via conditional gradient and gradient updates. In NeurIPS ,pages 3459–3468, 2018. 3 [2] Malik Boudiaf, Romain M¨ uller, Ismail Ben Ayed, and Luca Bertinetto. Parameter-free online test-time adaptation. In 
+
+CVPR , pages 8334–8343. IEEE, 2022. 1, 2, 6 [3] Collin Burns and Jacob Steinhardt. Limitations of post-hoc feature alignment for robustness. In CVPR , pages 2525– 2533. Computer Vision Foundation / IEEE, 2021. 1 [4] HanQin Cai, Daniel McKenzie, Wotao Yin, and Zhenliang Zhang. Zeroth-order regularized optimization (ZORO): ap-proximately sparse gradients and adaptive sampling. SIAM J. Optim. , 32(2):687–714, 2022. 3 [5] Dian Chen, Dequan Wang, Trevor Darrell, and Sayna Ebrahimi. Contrastive test-time adaptation. In CVPR , pages 295–305. IEEE, 2022. 2 [6] Francesco Croce, Maksym Andriushchenko, Vikash Se-hwag, Edoardo Debenedetti, Nicolas Flammarion, Mung Chiang, Prateek Mittal, and Matthias Hein. Robustbench: a standardized adversarial robustness benchmark. In Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2021. 6, 2 [7] Zeshuai Deng, Guohao Chen, Shuaicheng Niu, Hui Luo, Shuhai Zhang, Yifan Yang, Renjie Chen, Wei Luo, and Mingkui Tan. Test-time model adaptation for quantized neu-ral networks. In Proceedings of the 33rd ACM International Conference on Multimedia , page 7258–7267, New York, NY, USA, 2025. Association for Computing Machinery. 2, 6, 1 [8] Antonio D’Innocente, Francesco Cappio Borlino, Silvia Bucci, Barbara Caputo, and Tatiana Tommasi. One-shot un-supervised cross-domain detection. In ECCV (16) , pages 732–748. Springer, 2020. 2 [9] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-vain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale. In ICLR . OpenReview.net, 2021. 3, 6, 1 [10] Amir Gholami, Sehoon Kim, Zhen Dong, Zhewei Yao, Michael W Mahoney, and Kurt Keutzer. A survey of quan-tization methods for efficient neural network inference. In 
+
+Low-power computer vision , pages 291–326. Chapman and Hall/CRC, 2022. 2 [11] Ross B. Girshick, Jeff Donahue, Trevor Darrell, and Jitendra Malik. Rich feature hierarchies for accurate object detection and semantic segmentation. In CVPR , pages 580–587. IEEE Computer Society, 2014. 1 [12] Nikolaus Hansen. The cma evolution strategy: A tutorial. 
+
+arXiv preprint arXiv:1604.00772 , 2016. 2, 4 [13] Nikolaus Hansen and Andreas Ostermeier. Completely de-randomized self-adaptation in evolution strategies. Evolu-tionary computation , 9(2):159–195, 2001. 2, 3 [14] Nicklas Hansen, Rishabh Jangir, Yu Sun, Guillem Aleny` a, Pieter Abbeel, Alexei A. Efros, Lerrel Pinto, and Xiaolong Wang. Self-supervised policy adaptation during deployment. In ICLR . OpenReview.net, 2021. 2 [15] Dan Hendrycks and Thomas G. Dietterich. Benchmarking neural network robustness to common corruptions and per-turbations. In ICLR (Poster) . OpenReview.net, 2019. 6, 2 [16] Dan Hendrycks, Steven Basart, Norman Mu, Saurav Kada-vath, Frank Wang, Evan Dorundo, Rahul Desai, Tyler Zhu, Samyak Parajuli, Mike Guo, Dawn Song, Jacob Steinhardt, and Justin Gilmer. The many faces of robustness: A criti-cal analysis of out-of-distribution generalization. In ICCV ,pages 8320–8329. IEEE, 2021. 2 [17] Yusuke Iwasawa and Yutaka Matsuo. Test-time classifier ad-justment module for model-agnostic domain generalization. In NeurIPS , pages 2427–2440, 2021. 2, 6, 1 [18] Menglin Jia, Luming Tang, Bor-Chun Chen, Claire Cardie, Serge J. Belongie, Bharath Hariharan, and Ser-Nam Lim. Vi-sual prompt tuning. In ECCV (33) , pages 709–727. Springer, 2022. 3 [19] Hiroaki Kingetsu, Kenichi Kobayashi, Yoshihiro Okawa, Ya-suto Yokota, and Katsuhito Nakazawa. Multi-step test-time adaptation with entropy minimization and pseudo-labeling. In ICIP , pages 4153–4157. IEEE, 2022. 2 [20] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E. Hinton. Imagenet classification with deep convolutional neural net-works. In NIPS , pages 1106–1114, 2012. 1 [21] Jonghyun Lee, Dahuin Jung, Saehyung Lee, Junsung Park, Juhyeon Shin, Uiwon Hwang, and Sungroh Yoon. Entropy is not enough for test-time adaptation: From the perspective of disentangled factors. In The Twelfth International Confer-ence on Learning Representations , 2024. 1, 6 [22] Brian Lester, Rami Al-Rfou, and Noah Constant. The power of scale for parameter-efficient prompt tuning. In EMNLP (1) , pages 3045–3059. Association for Computational Lin-guistics, 2021. 2 [23] Yanghao Li, Naiyan Wang, Jianping Shi, Jiaying Liu, and Xiaodi Hou. Revisiting batch normalization for practical domain adaptation. In ICLR (Workshop) . OpenReview.net, 2017. 1, 2 [24] Sadhika Malladi, Tianyu Gao, Eshaan Nichani, Alex Damian, Jason D. Lee, Danqi Chen, and Sanjeev Arora. Fine-tuning language models with just forward passes. In 
+
+NeurIPS , 2023. 2, 3, 4, 5 [25] Muhammad Jehanzeb Mirza, Pol Jan´ e-Soneira, Wei Lin, Mateusz Kozinski, Horst Possegger, and Horst Bischof. Act-mad: Activation matching to align distributions for test-time-training. In CVPR , pages 24152–24161. IEEE, 2023. 2 [26] Zachary Nado, Shreyas Padhy, D. Sculley, Alexander D’Amour, Balaji Lakshminarayanan, and Jasper Snoek. Evaluating prediction-time batch normalization for robust-ness under covariate shift. CoRR , abs/2006.10963, 2020. 2 [27] A. S. Nemirovsky and D. B. Yudin. Problem complexity and method efficiency in optimization. Journal of the Opera-tional Research Society , 35(5), 1984. 3 [28] Yurii E. Nesterov. Introductory Lectures on Convex Opti-mization - A Basic Course . Springer, 2004. 4 [29] Yurii E. Nesterov and Vladimir G. Spokoiny. Random gradient-free minimization of convex functions. Found. Comput. Math. , 17(2):527–566, 2017. 3 
+
+9[30] Shuaicheng Niu, Jiaxiang Wu, Yifan Zhang, Yaofo Chen, Shijian Zheng, Peilin Zhao, and Mingkui Tan. Efficient test-time model adaptation without forgetting. In ICML , pages 16888–16905. PMLR, 2022. 1, 2, 6 [31] Shuaicheng Niu, Jiaxiang Wu, Yifan Zhang, Zhiquan Wen, Yaofo Chen, Peilin Zhao, and Mingkui Tan. Towards stable test-time adaptation in dynamic wild world. In ICLR . Open-Review.net, 2023. 1, 2, 6 [32] Shuaicheng Niu, Chunyan Miao, Guohao Chen, Pengcheng Wu, and Peilin Zhao. Test-time model adaptation with only forward passes. In ICML . OpenReview.net, 2024. 1, 2, 3, 6 [33] Sinno Jialin Pan and Qiang Yang. A survey on transfer learning. IEEE Trans. Knowl. Data Eng. , 22(10):1345–1359, 2010. 1 [34] Maxim Raginsky and Alexander Rakhlin. Information-based complexity, feedback and dynamics in convex programming. 
+
+IEEE Trans. Inf. Theory , 57(10):7036–7056, 2011. 3 [35] Benjamin Recht, Rebecca Roelofs, Ludwig Schmidt, and Vaishaal Shankar. Do imagenet classifiers generalize to im-agenet? In ICML , pages 5389–5400. PMLR, 2019. 6 [36] J.C. Spall. Multivariate stochastic approximation using a simultaneous perturbation gradient approximation. IEEE Transactions on Automatic Control , 37(3):332–341, 1992. 2, 3[37] J.C. Spall. Multivariate stochastic approximation using a simultaneous perturbation gradient approximation. IEEE Transactions on Automatic Control , 37(3):332–341, 1992. 2, 4[38] Yu Sun, Xiaolong Wang, Zhuang Liu, John Miller, Alexei A. Efros, and Moritz Hardt. Test-time training with self-supervision for generalization under distribution shifts. In 
+
+ICML , pages 9229–9248. PMLR, 2020. 1, 2 [39] Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno A. Ol-shausen, and Trevor Darrell. Tent: Fully test-time adaptation by entropy minimization. In ICLR . OpenReview.net, 2021. 1, 2, 6 [40] Haohan Wang, Songwei Ge, Zachary C. Lipton, and Eric P. Xing. Learning robust global representations by penalizing local predictive power. In NeurIPS , pages 10506–10518, 2019. 6, 2 [41] Qin Wang, Olga Fink, Luc Van Gool, and Dengxin Dai. Con-tinual test-time domain adaptation. In CVPR , pages 7191– 7201. IEEE, 2022. 2 [42] Renhao Wang, Yu Sun, Arnuv Tandon, Yossi Gandelsman, Xinlei Chen, Alexei A Efros, and Xiaolong Wang. Test-time training on video streams. Journal of Machine Learning Re-search , 26(9):1–29, 2025. 2 [43] Yining Wang, Simon S. Du, Sivaraman Balakrishnan, and Aarti Singh. Stochastic zeroth-order optimization in high dimensions. In AISTATS , pages 1356–1365. PMLR, 2018. 3 [44] Ross Wightman. Pytorch image models, 2019. 6, 1 [45] Moslem Yazdanpanah and Parham Moradi. Visual domain bridge: A source-free domain adaptation for cross-domain few-shot learning. In CVPR Workshops , pages 2867–2876. IEEE, 2022. 2 [46] Zhihang Yuan, Chenhao Xue, Yiqi Chen, Qiang Wu, and Guangyu Sun. Ptq4vit: Post-training quantization for vision transformers with twin uniform quantization. In ECCV (12) ,pages 191–207. Springer, 2022. 6, 1 [47] Jianfeng Zhang, Xuecheng Nie, and Jiashi Feng. Inference stage optimization for cross-scenario 3d human pose estima-tion. In NeurIPS , 2020. 2 [48] Hao Zhao, Yuejiang Liu, Alexandre Alahi, and Tao Lin. On pitfalls of test-time adaptation. In ICML , pages 42058– 42080. PMLR, 2023. 1 
+
+10 FOZO: Forward-Only Zeroth-Order Prompt Optimization for Test-Time Adaptation 
+
+# Supplementary Material 
+
+# A. Implementation Details 
+
+A.1. General Experiment Setup 
+
+All experiments utilize the ViT-Base [9] model as the source model backbone, with its weights initialized from the timm repository [44]. For quantized models, we employ 8-bit PTQ4ViT [46]. All baseline methods utilize the hyperpa-rameters reported in their respective papers. 
+
+A.2. Forward-Only Adaptation Methods 
+
+This section details the hyperparameters and specific con-figurations used for the back-free test-time adaptation meth-ods evaluated. 
+
+FOZO adapts the model by learning new input prompts. We use 3 prompt embeddings, initialized uniformly. We employ an n-SPSA zero-order gradient estimator, where n
+
+is set to 1 as specified in Eqn. 6 for 2 forward passes, and set to 14 for 28 forward passes. The initial learning rate η
+
+in Eqn. 7 is 0.08. In Eqn. 12, The decay factor α is set to 0.9 , the threshold factor τ to 1.05, and the moving average factor β for the historical average loss to 0.9. The trade-off parameter λ in Eqn. 15 is set to 0.4. Source training statistics are estimated using the validation set of ImageNet-1K. 
+
+LAME [2]. We reproduce the LAME method, employing its reported hyperparameters. For Vision Transformer (ViT) features, the LAME method employs k-Nearest Neighbors (kNN) affinity, with the number of neighbors k set to 5. 
+
+T3A [17]. We reproduce the Test-Time Classifier Adjust-ment (T3A) method, adhering to its reported hyperparam-eters unless stated otherwise. The primary T3A hyperpa-rameter, M , controls the number of low-entropy supports retained per class. While the original work explored values like {1, 5, 20 , 50 , 100 , N/A } (where N/A means retaining all samples), for our experiments, we consistently set M to 20. 
+
+FOA [32]. We reproduce the FOA method, adhering to their reported hyperparameters unless stated otherwise. FOA adapts the model by learning 3 new input prompts. Optimization is performed via a derivative-free CMA-ES algorithm with a population size of 28. The trade-off param-eter λ of fitness function is set to 0.4 for ImageNet-C, V2, and Sketch, and 0.2 for ImageNet-R. For activation shifting, the step size γ is 1.0, and historical statistics are updated with an exponential moving average factor α = 0 .1.
+
+ZOA [7]. We reproduce the ZOA method, adhering to their reported hyperparameters unless stated otherwise. For the ViT model, we add the perturbation vectors ϵ and νwith the step size of 0.02 and 0.05, respectively. We set the learn-ing rate of θ and α to be 0.0005 and 0.01, respectively. We set the maximum number of domain knowledge parameters as N = 32. For multiple forward propagations, the steps is adjusted accordingly. For instance, 14 steps are employed for 28 forward passes. 
+
+A.3. Back-Based Adaptation Methods 
+
+This section details the hyperparameters and specific con-figurations used for the back-based test-time adaptation methods evaluated. 
+
+TENT [39]. We reproduce the TENT method, adhering to their reported hyperparameters unless stated otherwise. We employ SGD with 0.9 momentum, updating only the affine parameters of layer normalization layers. The stan-dard batch size is 64. For the ViT model, the learning rate is 0.001. 
+
+DeYO [21]. We reproduce the DeYO method, adhering to their reported hyperparameters unless stated otherwise. We employ SGD with 0.9 momentum, updating only the affine parameters of layer normalization layers. For the ViT model, the learning rate is 0.00025. Key DeYO hyperpa-rameters are TEnt = 0 .4 × ln C, Ent 0 = 0 .5 × ln C, and 
+
+TPLPD is set to 0.2. 
+
+SAR [31]. We reproduce the SAR method, adhering to its reported hyperparameters. For the ViT model, we employ SGD with 0.9 momentum, updating only the affine param-eters of Layer Normalization layers. Consistent with the original work, we freeze blocks9, blocks10, and blocks11 for adaptation. The learning rate is 0.001. 
+
+EATA [30]. We reproduce the EATA method, adhering to its reported hyperparameters unless stated otherwise. We employ SGD with 0.9 momentum and 0.0 weight decay, updating only the affine parameters of batch normalization layers. The learning rate is 0.00025, and the model is up-dated for 1 step per batch. Key EATA hyperparameters are 1the entropy margin E0 = 0 .4 × ln C, the cosine similarity threshold ϵ = 0 .05 , and the Fisher regularization trade-off parameter β = 2000 . For calculating the Fisher informa-tion, 2000 source samples are utilized. The moving average factor α for updating model probabilities is set to 0.1. 
+
+A.4. Continual Adaptation 
+
+In this setup, the model undergoes continuous adaptation across all domains without re-initialization upon domain switching. This simulates a scenario where the model must continually adjust to sequential distribution shifts, build-ing upon previous adaptations. We adhere to the Robust-Bench benchmark [6], using the ImageNet-C (5k) dataset, where only 5,000 images are sampled per domain (instead of 50,000). This choice simulates a resource-constrained online setting and focuses on the method’s ability to adapt with limited data per shift. 
+
+A.5. Datasets 
+
+We used the following datasets to benchmark the perfor-mance of experiments: 
+
+ImageNet-C [15] is constructed by applying 15 distinct corruption types (e.g., Gaussian noise, motion blur, pixe-lation) across five severity levels to the original ImageNet validation set. This benchmark introduces diverse perturba-tions to simulate real-world image degradation, specifically designed to evaluate neural network robustness to common corruptions. 
+
+ImageNet-R [16] extends the ImageNet dataset to evalu-ate model generalization on non-natural or stylized images, such as cartoons, graffiti, embroidery, and sculptures. It comprises approximately 30,000 images across 200 Ima-geNet classes, all rendered in artistic or alternative mediums like paintings, origami, or animations. 
+
+ImageNet-Sketch [40] comprises hand-drawn sketches corresponding to all ImageNet images, designed to evalu-ate model performance on abstract, human-drawn artistic styles. 
+
+# B. Proofs 
+
+In this section, we prove Theorems 1 and 2 proposed in the main paper. We begin by establishing the fundamen-tal ℓ-smoothness descent lemma. Then, we decompose the SPSA gradient estimator using Taylor expansion and ana-lyze its bias and variance by leveraging some fundamental assumptions previously introduced. These derived bounds are then substituted back into the descent lemma, ultimately leading to the convergence analysis of FOZO. 
+
+B.1. Basic Theorem: ℓ-Smoothness Descent Lemma 
+
+Based on the ℓ-smoothness assumption of the loss function 
+
+L, we have the standard quadratic upper bound: 
+
+L(Pt+1 ) ≤ L (Pt) + ∇L (Pt)⊤(Pt+1 − Pt)+ ℓ
+
+2 ∥Pt+1 − Pt∥2, (B.1) substituting the update rule Pt+1 − Pt = −η b∇L (Pt; Bt),we obtain: 
+
+L(Pt+1 ) ≤ L (Pt) − η∇L (Pt)⊤ b∇L (Pt; Bt)+ η2ℓ
+
+2 ∥ b∇L (Pt; Bt)∥2.
+
+(B.2) Taking the expectation on both sides conditioned on Pt:
+
+Et[L(Pt+1 )] − L (Pt) ≤ − ηEt[∇L (Pt)⊤ b∇L (Pt; Bt)] + η2ℓ
+
+2 Et[∥ b∇L (Pt; Bt)∥2],
+
+(B.3) where the expectation Et[·] is taken over all randomness in-troduced at step t, including the data batch Bt ∼ D test and the SPSA random perturbation Zt ∼ N (0 , I ). Our task is to bound the two expectation terms on the right-hand side separately. 
+
+B.2. Decomposing the Gradient Estimator 
+
+To bound the expectation terms derived from the Eqn.B.3, we first analyze the SPSA gradient estimator. This section details its decomposition using Taylor expansion. The SPSA gradient estimator at time t is defined as: 
+
+b∇L (Pt; Bt) = 12ϵt
+
+(L (Pt + ϵtZt; Bt)
+
+−L (Pt − ϵtZt; Bt)) Zt
+
+(B.4) A third-order Taylor expansion of L(Pt ± ϵtZt; Bt):
+
+L(Pt + ϵtZt; Bt) = L(Pt; Bt) + ϵtZ⊤ 
+
+> t
+
+∇L (Pt; Bt)+ ϵ2
+
+> t
+
+2 Z⊤ 
+
+> t
+
+∇2L(Pt; Bt)Zt
+
++ ϵ3
+
+> t
+
+6 D3L(Pξ1 ; Bt)[ Zt, Zt, Zt]+ O(ϵ4 
+
+> t
+
+),
+
+(B.5) 
+
+L(Pt − ϵtZt; Bt) = L(Pt; Bt) − ϵtZ⊤ 
+
+> t
+
+∇L (Pt; Bt)+ ϵ2
+
+> t
+
+2 Z⊤ 
+
+> t
+
+∇2L(Pt; Bt)Zt
+
+− ϵ3
+
+> t
+
+6 D3L(Pξ2 ; Bt)[ Zt, Zt, Zt]+ O(ϵ4 
+
+> t
+
+),
+
+(B.6) 2where Pξ1 lies between Pt and Pt + ϵtZt, and Pξ2 lies between Pt and Pt − ϵtZt. D3L[·, ·, ·] denotes the third-order derivative tensor of the loss function applied to three vectors. Substituting Eqs. B.5 and B.6 into the SPSA formula, Eq. B.4, we obtain: 
+
+b∇L (Pt; Bt) =  Z⊤ 
+
+> t
+
+∇L (Pt; Bt) Zt
+
++ ϵ2
+
+> t
+
+12 
+
+ D3L(Pξ1 ; Bt)[ Zt, Zt, Zt]+D3L(Pξ2 ; Bt)[ Zt, Zt, Zt] Zt
+
++ O(ϵ4 
+
+> t
+
+)
+
+(B.7) Thus, the expectation of the SPSA gradient estimate with respect to Zt is: 
+
+EZt [ b∇L (Pt; Bt)] = EZt
+
+  Z⊤ 
+
+> t
+
+∇L (Pt; Bt) Zt
+
+
+
++ ϵ2
+
+> t
+
+12 EZt
+
+  D3L(Pξ1 ; Bt)[ Zt, Zt, Zt]+D3L(Pξ2 ; Bt)[ Zt, Zt, Zt] Zt
+
+
+
++ O(ϵ4 
+
+> t
+
+)= ∇L (Pt; Bt)+ ϵ2
+
+> t
+
+12 EZt
+
+  D3L(Pξ1 ; Bt)[ Zt, Zt, Zt]+D3L(Pξ2 ; Bt)[ Zt, Zt, Zt] Zt
+
+
+
++ O(ϵ4 
+
+> t
+
+).
+
+(B.8) It is worth noting that the n-SPSA gradient estimator, 
+
+b∇n-SPSA , is formed by averaging n independent SPSA gra-dient estimators. Due to the linearity of expectation, the expected value of b∇n-SPSA is simply the average of the ex-pected values of these individual estimators. Since each in-dividual SPSA estimator has the same expectation as de-rived above, the expected value of the n-SPSA estimator retains the same form. Therefore, for the sake of brevity and to avoid redundant derivations, we only present the detailed decomposition and expectation analysis for the single-sample SPSA estimator here. 
+
+B.3. Bounding −ηEt[∇L (Pt)⊤ b∇L (Pt; Bt)] 
+
+We first take the expectation of b∇L (Pt; Bt) with respect to 
+
+Zt, and then with respect to Bt:
+
+EZt [ b∇L (Pt; Bt)] = EBt
+
+h
+
+EZt [ b∇L (Pt; Bt)] 
+
+i
+
+= EBt [∇L (Pt; Bt)+ ϵ2
+
+> t
+
+12 EZt
+
+  D3L(Pξ1 ; Bt)[ Zt, Zt, Zt]+D3L(Pξ2 ; Bt)[ Zt, Zt, Zt] Zt
+
+
+
++O(ϵ4 
+
+> t
+
+) .
+
+(B.9) Since EBt [∇L (Pt; Bt)] = ∇L (Pt), we obtain: 
+
+Et[ b∇L (Pt; Bt)] = ∇L (Pt)+ ϵ2
+
+> t
+
+12 Et
+
+  D3L(Pξ1 ; Bt)[ Zt, Zt, Zt]+D3L(Pξ2 ; Bt)[ Zt, Zt, Zt] Zt
+
+
+
++ O(ϵ4 
+
+> t
+
+)
+
+(B.10) Let b(Pt; Bt) be the expected bias term introduced by non-zero ϵt, defined as: 
+
+b(Pt; Bt) = ϵ2
+
+> t
+
+12 Et
+
+  D3L(Pξ1 ; Bt)[ Zt, Zt, Zt]+D3L(Pξ2 ; Bt)[ Zt, Zt, Zt] Zt
+
+
+
++ O(ϵ4 
+
+> t
+
+).
+
+(B.11) Then the first term in the descent lemma becomes: 
+
+−ηEt[∇L (Pt)⊤ b∇L (Pt; Bt)] = −η∇L (Pt)⊤Et[ b∇L (Pt; Bt)] = −η∇L (Pt)⊤ (∇L (Pt) + b(Pt; Bt)) = −η∥∇L (Pt)∥2 − η∇L (Pt)⊤b(Pt; Bt)
+
+(B.12) According to Assumption 1 ( ℓ-smoothness), the third-order derivative of the loss function is bounded, typically controlled by a constant LH . Simultaneously, Assumption 2 (Local Effective Rank) indicates that despite the high di-mensionality d of the parameter space, the curvature and higher-order variations of the loss function are primarily concentrated in a subspace with an effective dimension 
+
+r ≪ d. Therefore, ∥b(Pt; Bt)∥ can be bounded propor-tionally to ϵ2 
+
+> t
+
+ℓr , where ℓ is the Lipschitz constant, and LH
+
+is of the same order as ℓ. Specifically, there exists a constant 
+
+C1 such that ∥b(Pt; Bt)∥ ≤ C1ϵ2 
+
+> t
+
+ℓr .Therefore 
+
+| − η∇L (Pt)⊤b(Pt; Bt)|≤ η∥∇L (Pt)⊤∥∥ b(Pt; Bt)∥≤ GC 1ϵ2 
+
+> t
+
+ℓr = Cϵ 2 
+
+> t
+
+ℓr, 
+
+(B.13) where G is an upper bound for ∥∇L (Pt)⊤∥, and C =
+
+GC 1.Thus, the first term in the descent lemma can be bounded as 
+
+−ηEt[∇L (Pt)⊤ b∇L (Pt; Bt)] 
+
+≤ − η∥∇L (Pt)∥2 + Cϵ 2 
+
+> t
+
+ℓr (B.14) 
+
+B.4. Bounding η2ℓ 
+
+> 2
+
+Et[∥ b∇L (Pt; Bt)∥2]
+
+For the n-SPSA estimator, the expectation of its squared norm can be bounded as [24]: 3Time budget 0 100 200 300 400 500 600 700 800 900 1000 1100 1200 1300 1400 FOZO (base) 59.5 59.6 60.0 60.6 60.9 61.3 61.7 62.0 62.3 62.5 62.8 63.0 63.2 63.3 63.4 FOA 58.0 59.0 60.5 61.6 62.4 63.1 63.6 64.1 64.4 64.7 64.9 65.1 65.4 65.5 65.7 ZOA 58.7 59.7 61.2 62.5 63.4 63.8 64.1 64.3 64.6 64.8 65.0 65.1 65.2 65.3 65.4 FOZO 59.5 59.8 61.7 63.0 63.7 64.3 64.8 65.2 65.5 65.7 66.0 66.2 66.3 66.4 66.6 
+
+Table C.1: Detailed data on the time budget and accuracy comparison of Forward-Only Test-Time Adaptation Algorithms. 
+
+Et[∥ b∇L (Pt; Bt)∥2] ≤ γE[∥∇L (Pt; B)∥2] (B.15) where γ = Θ( r/n ) is a factor related to the effective rank. Despite the potentially large parameter dimension 
+
+d, due to the low effective rank property of the loss func-tion landscape, the convergence rate of zeroth-order meth-ods does not slow down proportionally to d as in classical analysis, but rather proportionally to r.Therefore, the second term in the descent lemma is bounded as: 
+
+η2ℓ
+
+2 Et[∥ b∇L (Pt; Bt)∥2]
+
+≤ η2ℓ
+
+2 γE[∥∇L (Pt; B)∥2]
+
+(B.16) 
+
+B.5. Integrating into the Descent Lemma 
+
+Substituting the bounds for the bias term and variance term back into the initial expression of the descent lemma Eqn.B.3: 
+
+E[L(Pt+1 )] − L (Pt) ≤ − η∥∇L (Pt)∥2
+
++ Cηℓϵ 2 
+
+> t
+
+r
+
++ η2ℓ
+
+2 γE[∥∇L (Pt; B)∥2].
+
+(B.17) This completes the proof of Theorem 1. 
+
+B.6. Convergence 
+
+The variance of the gradient noise introduced by randomly arriving mini-batches is bounded, i.e., E[∥∇L (Pt; B)∥2] ≤
+
+σ2. Therefore, we obtain: 
+
+E[L(Pt+1 )] − L (Pt) ≤ − η∥∇L (Pt)∥2
+
++ Cηℓϵ 2 
+
+> t
+
+r + η2ℓγσ 2
+
+2
+
+. (B.18) Summing the above inequality from t = 0 to T − 1, where 
+
+T is the number of iterations over a period of time:  
+
+> T−1
+
+X
+
+> t=0
+
+ηE[∥∇L (Pt)∥2] ≤ 
+
+> T−1
+
+X
+
+> t=0
+
+E[L(Pt)] 
+
+− 
+
+> T−1
+
+X
+
+> t=0
+
+E[L(Pt+1 )] + 
+
+> T−1
+
+X
+
+> t=0
+
+
+
+Cηℓϵ 2 
+
+> t
+
+r + η2ℓγσ 2
+
+2
+
+
+
+(B.19) 
+
+η 
+
+> T−1
+
+X
+
+> t=0
+
+E[∥∇L (Pt)∥2] ≤ L (P0) − E[L(PT )] + T
+
+
+
+Cηℓϵ 2 
+
+> t
+
+r + η2ℓγσ 2
+
+2
+
+ (B.20) The loss cannot decrease indefinitely, meaning L(PT ) ≥L∗. Thus, we have E[L(PT )] ≥ L ∗:
+
+η 
+
+> T−1
+
+X
+
+> t=0
+
+E[∥∇L (Pt)∥2] ≤ L (P0) − L ∗
+
++ T
+
+
+
+Cηℓϵ 2 
+
+> t
+
+r + η2ℓγσ 2
+
+2
+
+ (B.21) Within T iterations, the upper bound for the expected aver-age squared gradient norm is: 
+
+1
+
+T 
+
+> T−1
+
+X
+
+> t=0
+
+E[|∇L (Pt)|2] ≤ L(P0) − L ∗
+
+T η 
+
++ Cℓϵ 2 
+
+> t
+
+r + ηℓγσ 2
+
+2| {z }
+
+> Error Floor
+
+(B.22) As the number of iterations T → ∞ , the first term on the right-hand side L(P0)−L ∗ 
+
+> T η
+
+→ 0. This implies that the ex-pected average squared gradient norm of the algorithm does not diverge, but is instead bounded by an ’Error Floor’: 
+
+lim  
+
+> T→∞
+
+1
+
+T 
+
+> T−1
+
+X
+
+> t=0
+
+E[∥∇L (Pt)∥2] ≤ Cℓϵ 2 
+
+> t
+
+r + ηℓγσ 2
+
+2 (B.23) The algorithm will eventually enter and remain within the neighborhood of a stationary point (a point where the gradi-ent is zero). The size of this neighborhood is controlled by 
+
+η and ϵt.
+
+# C. More Details on Figure 1 
+
+In this section, we present the detailed experimental results for each method shown in Figure 1 of the main paper. Table C.1 present the detailed experimental results for all methods shown in Figure 1. All results were tested on ImageNet-C (level 5). To evaluate the convergence rate of different methods across all corruptions, we reset the model param-eters at each domain switch. We recorded the ACC@1 for 4α=0.1 α=0.2 α=0.3 α=0.4 α=0.5 α=0.6 α=0.7 α=0.8 α=0.9                                                                    
+
+> ACC@1 59.13 59.15 59.04 59.34 59.33 59.45 59.47 59.50 59.52
+> Table D.1: Effects of the decay factor αin Eqn. 12. We report the continual adaptation results on ImageNet-C (5k,level 5) with 2 forward passes.
+> β=0.1 β=0.2 β=0.3 β=0.4 β=0.5 β=0.6 β=0.7 β=0.8 β=0.9
+> ACC@1 59.02 59.05 59.14 59.23 59.27 59.26 59.38 59.50 59.52
+> Table D.2: Effects of the moving average factor βin Eqn. 12. We report the continual adaptation results on ImageNet-C (5k,level 5) with 2 forward passes.
+> λ=0.1 λ=0.2 λ=0.3 λ=0.4 λ=0.5 λ=0.6 λ=0.7 λ=0.8 λ=0.9 ACC@1 59.31 59.30 59.35 59.52 59.50 59.34 59.30 59.27 59.16 Table D.3: Effects of trade-off parameter λin Eqn. 15. We report the continual adaptation results on ImageNet-C (5k,level 5) with 2 forward passes.
+
+each method adapting to each corruption under the same time budget. The accuracy corresponding to the time points listed in the table is the average value across 15 corruptions under the current time budget. As evident from Table C.1 and Figure 1, FOZO achieves higher accuracy, consistently outperforming the state-of-the-art forward-only propaga-tion methods ZOA and FOA across all different time bud-gets. This indicates that our dynamic perturbation method can accelerate the convergence speed, achieving higher ac-curacy in a shorter amount of time. 
+
+# D. More Ablation Studies 
+
+To evaluate FOZO’s sensitivity to key hyperparameters, we conducted further ablation studies. We first investigated the effect of the decay factor α in Eqn. 12 (see Table 1). The results indicate that as α decreases, the perturbation scale decays faster, which affects FOZO’s exploration capability during the early stages of adaptation. Next, we analyzed the impact of the moving average factor β in Eqn. 12 (see Table 2), finding that when β is significantly small, the per-formance degrades, attributed to the generation of biased objectives. Finally, we examined the influence of the trade-off parameter λ in Eqn. 15 (see Table 3), and ultimately selected λ=0.4 to achieve optimal performance. 
+
+# E. More Experiment: Mixed Shifts 
+
+To further evaluate the robustness of FOZO under more di-verse experimental settings, we introduce the mixed shifts scenario. This setup simulates a highly dynamic and un-predictable real-world scenario where the test data stream consists of samples from multiple, randomly interleaved do-main shifts. Similar to the ’Continual Adaptation’ setup, we utilize the ImageNet-C (5k) dataset for this scenario. 0 500 1000 1500 2000 Time budget for Mixed Shifts (s) 
+
+> 56
+> 58
+> 60 Average ACC@1 (%)
+> FOZO FOA ZOA
+> Figure E.1. Mixed shift: Performance comparison on ImageNet-C (5K, level 5).
+
+This means that the data stream is composed of 5,000 randomly sampled images from various corruption types within ImageNet-C, presented in an unsorted, mixed fash-ion. This evaluates the method’s robustness and agility in handling simultaneous and unannounced distribution changes with limited data per domain, reflecting a more re-alistic and challenging online adaptation environment. Figure E.1 compares the performance of FOZO, ZOA, and FOA on ImageNet-C (5K, level 5) under the challeng-ing mixed shift scenario. All three methods show increasing accuracy with a larger time budget, indicating successful adaptation. Crucially, FOZO consistently outperforms the state-of-the-art forward-only prompt tuning method FOA throughout the process and surpasses ZOA’s final accu-racy. These results demonstrate FOZO’s enhanced robust-ness and superior adaptation capability in highly dynamic mixed shift environments. 5

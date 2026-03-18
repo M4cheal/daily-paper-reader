@@ -1,0 +1,3533 @@
+Title: Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+URL Source: https://arxiv.org/pdf/2602.19309v2
+
+Published Time: Fri, 27 Feb 2026 01:24:29 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+> 2026-02-27
+
+# Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 
+
+Xiangyu Liu 1,2 ★, Di Wang 1, Zhe Feng 1 and Aranyak Mehta 1 
+
+> 1Google Research, 2University of Maryland, College Park
+
+While large language models (LLMs) have emerged as powerful decision-makers across a wide range of single-agent and stationary environments, fewer efforts have been devoted to settings where LLMs must engage in repeated and strategic interactions with unknown or dynamic opponents. In such settings, recipes built upon offline pre-training or fine-tuning, though robust against worst-case adversaries, do not fully exploit the capability of LLMs to adapt online based on interaction feedback. Instead, we explore the more natural perspective of scaling inference-time computation as a mechanism for adaptation, embedding the principles of a classical game-theoretical learning dynamic, smooth Fictitious Play (sFP) , into LLM inference: (i) for belief formation, we employ an auxiliary opponent model that in-context learns to imitate the time-averaged behavior of the opponent; (ii) for best response, we advance best-of-𝑁 (BoN) sampling by simulating against the opponent model. Empirical evaluations on two distinct forms of repeated negotiation games demonstrate that our method enables significant performance improvement over repeated online interaction compared to various baselines, offering a scalable and principled approach to repeated strategic decision-making without any parameter updates. 
+
+Keywords: LLM agents, strategic reasoning, inference-time scaling, negotiation, in-context learning 
+
+1. Introduction 
+
+Recent years have witnessed the remarkable success of large language models (LLMs) as central controllers across a broad spectrum of decision-making and reasoning tasks, including computer agents (Kim et al., 2023; Zhou et al., 2024b), robotics (Cui et al., 2024; Wang et al., 2024a), math/coding (Jimenez et al., 2024; Kojima et al., 2022; Wei et al., 2022). Notably, substantial research efforts have focused on developing effective policies for relatively stationary and single-agent decision-making environments (Hao et al., 2023; Yao et al., 2023). Meanwhile, many applications also involve strategic interactions between the LLM-based agent and other decision-makers within the same system that are often unknown or may vary over time (Park et al., 2023; Zhang et al., 2024). One standard remedy involves computing static solutions such as the Minimax or Nash equilibrium through methods like self-play , exemplified by systems like AlphaGo (Silver et al., 2016, 2017) and recent strategic LLM agents powered by offline training (Bakhtin et al., 2022; Guan et al., 2024; Xu et al., 2025) or inference-time techniques (Kempinski et al., 2025; Light et al., 2025), which aim to converge to unexploitable policies against worst-case adversaries. However, such policies can be overly conservative especially in games involving both competition and cooperation (Jaques et al., 2019; Leibo et al., 2017) as shown later in Theorem 4.1. This highlights the necessity for LLM agents to adapt online to unknown or dynamic opponents and to progressively improve their decision-making policy by leveraging feedback accumulated during online interactions. Moreover, since online adaptation occurs dynamically at test time, recipes relying on gradient updates become less suitable, as they are data-hungry and introduce high latencies. Consequently, the paradigm of scaling inference-time computation emerges as the natural alternative,   
+
+> ★Work done during an internship at Google Research. Correspondence to: Xiangyu Liu <xyliu999@umd.edu>.
+> ©2026 Google. All rights reserved
+> arXiv:2602.19309v2 [cs.MA] 26 Feb 2026 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+especially considering its recent success in single-agent domains like math reasoning (Guo et al., 2025; Jaech et al., 2024). This motivates our central research question: 
+
+Can we enable online strategic adaptation for LLMs in repeated strategic decision-making by scaling inference-time computation? 
+
+To answer this question, we focus on the natural language-based negotiation game, a widely adopted benchmark for evaluating LLMs’ strategic capability (Bianchi et al., 2024; Davidson et al., 2024; Lewis et al., 2017; Xia et al., 2024b). These games present unique challenges for LLMs due to the necessity of reasoning over private information, modeling opponent behaviors, planning for long-term objectives, and engaging in strategic communication. More importantly, this setting offers an ideal middle ground: it is far more sophisticated than symbolic normal-form games (Akata et al., 2025; Kempinski et al., 2025), yet creates a more controlled environment than large-scale societies like Diplomacy (Bakhtin et al., 2022), allowing us to rigorously isolate the deep strategic reasoning required to adapt to a specific opponent from the confounding factors of general multi-agent group dynamics, enabling a precise analysis of inference-time scaling effects. We further introduce a new repeated setting, where agents must also leverage historical feedback to inform their actions over time. We propose scaling inference-time computation by embedding the principles of smooth Fictitious Play 
+
+(sFP) (Brown, 1951; Fudenberg and Levine, 1995; Robinson, 1951) into practical LLM inference. Our approach explicitly allocates test-time compute to two decoupled FP modules: (i) Belief formation ,where an auxiliary model in-context learns to mimic the opponent’s time-averaged behavior from history; and (ii) Best response , where we advance best-of-𝑁 (BoN) sampling by simulating full future trajectories for each candidate against the opponent model. By ranking strategies based on these computationally generated rollouts rather than static scoring, we effectively convert inference cost into strategic adaptation. We refer to our method as BoN-oppo-simulation .
+
+Contributions. (1) We formalize and motivate our problem setting, demonstrating both theoretically and empirically the importance of engaging in repeated interactions and the failure of current LLMs to self-improve in such settings without additional inference-time interventions. (2) We then propose a general and principled framework for scaling inference-time computation to enable online strategic adaptation for repeated strategic decision-making. (3) Finally, we provide systematic empirical investigations, offering insights into the effectiveness of different candidate generation processes and evaluation strategies, as well as comparisons between thinking wider versus deeper , and demonstrate our framework achieves significant self-improvement. 
+
+2. Related Works 
+
+Language models for negotiation games. There has been a rich line of literature on negotiation games in various disciplines from game theory, economics, to psychology with a pre-defined symbolic action space. Beyond environments with standardized inputs and outputs, combining modern NLP and RL techniques for negotiation with unrestricted natural languages dates back to Lewis et al. (2017), which trained an end-to-end recurrent neural network by imitating human dialogues followed by goal-based RL training and decoding. He et al. (2018) further proposed to first generate the coarse dialogue acts and then use a generator to generate the actual natural dialogues. More recently, with LLMs as reliable natural language processing and understanding interfaces, numerous works have attempted to benchmark the (native) negotiation ability in different negotiation settings (Bianchi et al., 2024; Davidson et al., 2024; Xia et al., 2024b). Meanwhile, there has also been a surging interest in improving the negotiation ability of LLMs with various techniques (Gemp et al., 2024; Hua et al., 2024; Liu et al., 2025; Zhang et al., 2025). These existing works mainly focus on how to learn a single policy with better performance in a single episode of the negotiation instead of enabling online adaptation and continual improvement over repeated interaction as in our paper. 
+
+> 2Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+LLM agents for general strategic decision-making. With LLMs being employed as the central controller for various (single-agent) decision-making problems (Shinn et al., 2023; Wang et al., 2024b; Yao et al., 2023; Zhou et al., 2024a), there have been efforts dedicated to evaluating the reasoning and decision-making capability of LLMs in the more challenging strategic environments including normal-form games (Akata et al., 2025; Brookins and DeBacker, 2024; Fan et al., 2024; Kempinski et al., 2025; Lorè and Heydari, 2023), bandits (Krishnamurthy et al., 2024; Nie et al., 2024; Xia et al., 2024a), expert problems (Park et al., 2025) with well-specified symbolic action space. There have also been related works on more specific game-theoretical domains, e.g., Diplomacy, Werewolf, as well as negotiation games above. These works can be roughly divided into two categories based on their methodology. The first line including (Bakhtin et al., 2022; Guan et al., 2024; Xu et al., 2025, 2024) leverages various training techniques (fine-tuning, self-play, RL, etc) aiming to learn a policy that can be deployed statically to outperform arbitrary adversaries. Such a static solution can be overly conservative and arbitrarily suboptimal in our repeated negotiation setting (cf. Theorem 4.1). Relying on parameter updates also makes it less suitable for online adaptation that occurs at test time. The second line including (Fu et al., 2023; Kempinski et al., 2025; Light et al., 2025; Xu et al., 2023; Yu et al., 2025) is free from parameter updates. These can be further divided into two sub-categories: (1) Input-level prompt engineering (Fu et al., 2023; Xu et al., 2023; Yu et al., 2025) (2) Output-level search (Kempinski et al., 2025; Light et al., 2025), Among these, only Fu et al. (2023); Xu et al. (2023); Yu et al. (2025) are relevant to online adaptation, which we will further discuss and compare in Section 5 and Section D, while others still focus on the equilibria objective. We refer more literature reviews on opponent modeling and inference-time scaling techniques in LLMs to Section B. 
+
+3. Preliminaries 
+
+The negotiation task has emerged as an important benchmark for examining the strategic reasoning abilities of LLMs. In this paper, we focus on two specific versions, the buyer-seller game and the resource exchange game (Bianchi et al., 2024; Deng et al., 2024; Rubinstein, 1982). Both games involve an agent 1 and an agent 2 (i.e., LLMs). 
+
+• For the buyer-seller game, the buyer, who has a private maximum budget, aims to acquire an item from the seller who has a private production cost. If a deal is reached, the reward for the seller is defined as the difference between the deal price and the production cost, and the reward for the buyer is defined as the difference between the budget and the deal price. If no deal is reached, both get 0 reward. 
+
+• For the resource exchange game, each agent 𝑖 ∈ [ 2] holds a certain amount of different resources, for example, 𝑛 𝑋 𝑖 of 𝑋 , and 𝑛 𝑌 𝑖 of 𝑌 with valuation of 𝑣 𝑋 𝑖 and 𝑣 𝑌 𝑖 per unit of resource respectively for some 𝑛 𝑋 𝑖 , 𝑛 𝑌 𝑖 ∈ ℕ and 𝑣 𝑋 𝑖 , 𝑣 𝑌 𝑖 ∈ ℝ≥0. In such a setting, agents need to collaborate to trade less valuable resources for the more valuable ones. Each agent’s reward is the net change in the total value of its resources. In this paper, we are interested in the setting where the game is played repeatedly for 𝑇 ∈ ℕ episodes, where each episode further consists of (up to) a given horizon 𝐻 of turns (or steps). Formally, the protocol can be described as follows. We denote 𝑥 1, 𝑥 2 as the system prompts for describing the necessary game rules as well as the separate private information for the two agents. At each episode 
+
+𝑡 ∈ [ 𝑇 ], step ℎ ∈ [ 𝐻 ], agent 𝑃 (ℎ) ∈ [ 2] takes an action 𝑦 𝑡 𝑃 (ℎ),ℎ = ( 𝑦 𝑡,𝑝 𝑃 (ℎ),ℎ , 𝑦 𝑡,𝑚 𝑃 (ℎ),ℎ ), where 𝑦 𝑡,𝑝 𝑃 (ℎ),ℎ encodes the structured information for a new proposal, acceptance, rejection, or waiting for a proposal, 
+
+𝑦 𝑡,𝑚 𝑃 (ℎ),ℎ represents a free-format message to be sent to the opponent, and we define the space for 
+
+𝑦 𝑡,𝑝 𝑃 (ℎ),ℎ , 𝑦 𝑡,𝑚 𝑃 (ℎ),ℎ as Y 𝑝 𝑃 (ℎ) , Y𝑚 𝑃 (ℎ) respectively. If agent 1 starts first, we have 𝑃 (ℎ) = 2 − ( ℎ%2 ); otherwise, 
+
+𝑃 (ℎ) = 1 + ( ℎ%2 ). We also let 𝜏 𝑡 ℎ := ( 𝑦 𝑡 𝑃 (1),1, 𝑦 𝑡 𝑃 (2),2, 𝑦 𝑡 𝑃 (3),3, · · · , 𝑦 𝑡 𝑃 (ℎ−1),ℎ −1) denote the concatenated 
+
+> 3
+
+Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation Episode 1 
+
+Repeated Interaction: Seller’s Decision-Making at Step of Episode h t
+
+Episode 2  Episode  t 
+
+> Hi, I want to buy
+> item X with 20.
+> The lowest price
+> I can accept is …
+> Buyer
+> Seller
+> [Episode 1 Finished]
+> This is still much higher
+> than our last deal …
+> Buyer
+> [Episode Ongoing] t
+> Seller
+> [Internal Strategic Thinking]
+
+In-Context Opponent Modeling  πoppo
+
+> 2
+
+• Summarization 
+
+• Reflection 
+
+• Optimism 
+
+> Task 1:
+> Summarize opponent’s
+> behavioral patterns from history
+> Task 2:
+> Predict opponent’s next response
+
+Techniques: 
+
+Strategic Brainstorming 
+
+Seller’s Internal Strategic Thinking at Step of Episode h t     
+
+> Cunning
+> high price
+> Fair split
+> Tit-for-tat
+> Desperate
+> Rational
+> Unfortunately, my
+> production cost is now …
+> Sample response
+> y2, h+1∼πoppo
+> 2, h+1(⋅∣τ2, h+1)
+> Seller
+> [Simulation Finished with Rewards]
+
+Best-of-N
+
+Execute the best 
+
+candidate at step  h
+
+Simulated 
+
+Rewards  
+
+> Continued From Ongoing
+> Episode t
+
+Opponent Simulation 
+
+> This is way beyond
+> my budget…
+> Buyer
+
+Figure 1 | Overview of our proposed strategic decision-making framework for repeated interactions. At step ℎ of an ongoing episode 𝑡 , the seller agent engages in Internal Strategic Thinking . First, an in-context opponent model 𝜋 𝑜𝑝𝑝𝑜 
+
+2 is constructed using the interaction history to summarize the buyer’s behavioral patterns. Then, the seller performs strategic brainstorming to generate diverse candidate strategies (e.g., Tit-for-tat, fair split). During opponent simulation, the seller rolls out future trajectories by predicting the buyer’s responses via 𝜋 𝑜𝑝𝑝𝑜 
+
+2 . Finally, the agent evaluates the simulated rewards, and executes the best candidate action. conversation history up to step ℎ within episode 𝑡 , and C𝑡 −1 := (𝜏 1
+
+𝐻 +1, 𝜏 2
+
+𝐻 +1, · · · , 𝜏 𝑡 −1
+
+𝐻 +1) denotes the history of completed negotiations from episode 1 to 𝑡 − 1, which serves as the context 1. At the end of episode 𝑡 , agents 1 and 2 receive rewards 𝑟 𝑡 
+
+1 and 𝑟 𝑡 
+
+2, respectively. The game ends immediately if a proposal is accepted or rejected, or if the maximum number of turns is exceeded. By default, each agent 𝑖 ∈ [ 2] uses a policy in the form of 𝜋 𝑡 𝑖,ℎ (· | 𝜏 𝑡 ℎ; C𝑡 −1, 𝑥 𝑖 ) for each ℎ ∈ [ 𝐻 ] where 𝑃 (ℎ) = 𝑖 and we denote the corresponding policy class as Π𝑡 𝑖 . Finally, we denote the expected reward of a single episode as 𝐽 𝑖 (𝜋 𝑡 
+
+1, 𝜋 𝑡 
+
+2) := 𝔼 [𝑟 𝑖 | 𝜏 𝑡 𝐻 +1 ∼ ( 𝜋 𝑡 
+
+1, 𝜋 𝑡 
+
+2)] . Throughout our paper, we mainly take the perspective of agent 1 and regard agent 2 as the opponent. 
+
+4. Methods 
+
+4.1. On the necessity of online adaptation There is no single dominant strategy. Before resorting to online adaptation, one might ask: can we simply find a single offline strategy (e.g., via RL) that is optimal against all possible opponents? We formally show that such a dominant strategy does not exist in our negotiation games 
+
+Proposition 4.1. For both of our negotiation games, in a single episode, there does not exist a policy 
+
+𝜋 ★
+
+1 ∈ Π1 such that for any 𝜋 2 ∈ Π2, it holds 𝐽 1 (𝜋 ★
+
+1, 𝜋 2) = max 𝜋 1 ∈Π1 𝐽 1 (𝜋 1, 𝜋 2). In fact, for any 𝜋 ★
+
+1 ∈ Π1,there exists 𝜋 2 ∈ Π2 such that 𝐽 1 (𝜋 ★
+
+1, 𝜋 2) ≤ max 𝜋 1 ∈Π1 𝐽 1 (𝜋 1,𝜋 2 )| Y 𝑚  
+
+> 1
+
+| , where we have omitted the episode index 𝑡 
+
+> 1
+
+An episode 𝑡 ′ ∈ [ 𝑡 − 1] may terminate earlier before reaching the maximum turn 𝐻 . In such cases, we slightly abuse our notation to still use the 𝜏 𝑡 ′ 
+
+> 𝐻 +1
+
+to indicate the whole trajectory of an episode. 
+
+4Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation brainstorm 
+
+> cunning
+> desperate
+> emotional
+> fairness
+> rational
+> tft
+
+Buyer prompt 
+
+brainstorm 
+
+cunning 
+
+desperate 
+
+emotional 
+
+fairness 
+
+rational 
+
+tft                                           
+
+> Seller prompt
+> 0.68 0.32 0.50 0.70 0.75 0.80 0.73
+> 0.43 0.33 0.37 0.43 0.42 0.42 0.45
+> 0.44 0.06 0.29 0.42 0.51 0.52 0.52
+> 0.53 0.15 0.36 0.49 0.58 0.56 0.52
+> 0.24 0.06 0.17 0.32 0.41 0.38 0.39
+> 0.57 0.24 0.40 0.67 0.66 0.65 0.65
+> 0.25 0.09 0.20 0.35 0.42 0.40 0.44
+
+Seller Rewards (Seller starts first) 
+
+> brainstorm
+> cunning
+> desperate
+> emotional
+> fairness
+> rational
+> tft
+
+Buyer prompt 
+
+brainstorm 
+
+cunning 
+
+desperate 
+
+emotional 
+
+fairness 
+
+rational 
+
+tft                                           
+
+> Seller prompt
+> 0.28 0.17 0.27 0.34 0.61 0.41 0.47
+> 0.40 0.24 0.28 0.28 0.42 0.53 0.47
+> 0.01 -0.41 -0.19 0.12 0.41 0.08 0.22
+> 0.16 0.23 0.15 0.29 0.69 0.32 0.32
+> 0.00 0.10 -0.05 0.21 0.48 0.24 0.21
+> 0.07 -0.07 -0.04 0.19 0.38 0.21 0.33
+> 0.04 -0.18 -0.04 0.18 0.40 0.08 0.20
+
+Seller rewards (sreller starts second) 
+
+> brainstorm
+> cunning
+> desperate
+> emotional
+> fairness
+> rational
+> tft
+
+Buyer prompt 
+
+brainstorm 
+
+cunning 
+
+desperate 
+
+emotional 
+
+fairness 
+
+rational 
+
+tft                                           
+
+> Seller prompt
+> 0.21 0.37 0.26 0.15 0.14 0.12 0.14
+> 0.18 0.13 0.09 0.12 0.04 0.04 0.05
+> 0.53 0.59 0.54 0.54 0.45 0.43 0.47
+> 0.40 0.16 0.44 0.39 0.40 0.37 0.43
+> 0.71 0.40 0.69 0.62 0.58 0.59 0.60
+> 0.35 0.53 0.55 0.29 0.34 0.32 0.33
+> 0.71 0.50 0.67 0.64 0.58 0.60 0.55
+
+Buyer rewards (seller starts first) 
+
+> brainstorm
+> cunning
+> desperate
+> emotional
+> fairness
+> rational
+> tft
+
+Buyer prompt 
+
+brainstorm 
+
+cunning 
+
+desperate 
+
+emotional 
+
+fairness 
+
+rational 
+
+tft                                           
+
+> Seller prompt
+> 0.48 0.38 0.45 0.54 0.24 0.54 0.44
+> 0.33 0.23 0.46 0.34 0.25 0.29 0.36
+> 0.66 0.98 0.93 0.79 0.51 0.87 0.73
+> 0.54 0.18 0.58 0.40 0.13 0.56 0.58
+> 0.75 0.34 0.79 0.74 0.39 0.67 0.69
+> 0.66 0.68 0.83 0.72 0.53 0.70 0.60
+> 0.64 0.82 0.82 0.75 0.55 0.85 0.75
+
+Buyer rewards (seller starts second) 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+Figure 2 | The pairwise normalized rewards among the 7 kinds of prompts for the buyer-seller negotiation games. Results shown for both buyers and sellers for both starting first and starting second. 0.4 0.2 0.0 0.2 0.4 0.6 0.8 1.0 1.2 
+
+Early episodes performance (episodes 1-5) 
+
+> 0.4
+> 0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> Late episodes performance (last 5 episodes)
+
+Seller rewards (seller starts first)       
+
+> Horizon 3
+> Horizon 4
+> Horizon 5
+> Horizon 6
+> Horizon 7
+> Horizon 8
+> Horizon 9
+> Horizon 10
+> Trend (r=0.878)
+> 0.25 0.00 0.25 0.50 0.75 1.00 1.25
+
+Early episodes performance (episodes 1-5) 
+
+> 0.25
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> Late episodes performance (last 5 episodes)
+
+Buyer rewards (seller starts first)     
+
+> Horizon 3
+> Horizon 4
+> Horizon 5
+> Horizon 6
+> Horizon 7
+> Horizon 8
+> Horizon 9
+> Horizon 10
+> Trend (r=0.872)
+> 1.0 0.5 0.0 0.5 1.0
+
+Early episodes performance (episodes 1-5) 
+
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Late episodes performance (last 5 episodes)
+
+Seller rewards (seller starts second)      
+
+> Horizon 3
+> Horizon 4
+> Horizon 5
+> Horizon 6
+> Horizon 7
+> Horizon 8
+> Horizon 9
+> Horizon 10
+> Trend (r=0.924)
+> 0.5 0.0 0.5 1.0 1.5 2.0
+
+Early episodes performance (episodes 1-5) 
+
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> Late episodes performance (last 5 episodes)
+
+Buyer rewards (seller starts second) 
+
+> Horizon 3
+> Horizon 4
+> Horizon 5
+> Horizon 6
+> Horizon 7
+> Horizon 8
+> Horizon 9
+> Horizon 10
+> Trend (r=0.840)
+
+Figure 3 | Correlation between the average normalized reward in the first 5 episodes and the last 5
+
+episodes for buyer-seller negotiation games. Results are shown for all 7 × 7 different prompt pairs. 
+
+since there is only one episode and recall Y𝑚 
+
+1 is the free-format negotiation message space of agent 1. 
+
+We also empirically validate this non-dominance as follows. While prior work (Bianchi et al., 2024) identifies heuristic prompts like “cunning” or “desperate” as effective, we demonstrate such success is highly opponent-dependent. We expanded the prompt space using GPT-4o to obtain more diverse personas such as “fully rational”, “fairness valuing”, “emotionally reactive”, and “Tit-for-Tat”. Additionally, we include a brainstorming prompt, which asks the LLM to devise several strategies and evaluates them by itself. The specific prompts can be found in Section A.1. We report the pairwise performance of all seven prompts in Figure 2, revealing that no single prompt is consistently optimal. 
+
+LLMs may fail to adapt (even when asked to). Given the necessity of online adaptation through re-peated interactions, we additionally examine whether LLMs can adapt naturally by simply conditioning on the negotiation history from past episodes. In the buyer-seller game, we let two Gemini-2.5-Flash models interact for 20 episodes and report the correlation between agent 1’s average rewards of the first 5 episodes and the last 5 episodes in Figure 3, where we can see that most of the time, the performance remains stagnant. 
+
+4.2. Fictitious play for adaptive decision-making 
+
+Learning in games offers a solid theoretical foundation for equipping agents with adaptive decision-making capabilities when facing unknown or even adversarial opponents. One notable learning dynamic is (smooth) Fictitious Play (sFP) (Brown, 1951; Fudenberg and Levine, 1995; Robinson, 1951), where the agent maintains a belief over the opponent’s actions and best responds to the belief at each episode. Specifically, taking the example of normal-form games, at each episode 𝑡 ∈ [ 𝑇 ], the learning process for agent 1 can be described as follows 
+
+5Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 
+
+• Step 1: Belief formation. Agent 1 forms a belief about its opponent’s policy b𝜋 𝑡  
+
+> 2
+
+∈ Δ(B) by tracking the empirical frequency of the opponent’s historical actions. For each opponent’s action 𝑏 ∈ B ,if agent 2 has played action 𝑏 for a total of 𝑘 times over the past 𝑡 − 1 episodes, the belief is 
+
+b𝜋 𝑡  
+
+> 2
+
+(𝑏 ) = 𝑘 /( 𝑡 − 1), where B denotes the action space of agent 2. 
+
+• Step 2: (Perturbed) best response. Agent 1 computes a (perturbed) best response 𝜋 𝑡  
+
+> 1
+
+∈ Δ(A) 
+
+against this belief b𝜋 𝑡  
+
+> 2
+
+such that for any 𝑎 ∈ A ,
+
+𝜋 𝑡  
+
+> 1
+
+(𝑎 ) = ℙ 𝑎 ∈ argmax  
+
+> 𝑎 ′∈ A
+
+𝔼 𝑏 ∼b𝜋 𝑡  
+
+> 2
+
+[𝑟 1 (𝑎 ′, 𝑏 )] + 𝜂 𝑡 𝜖 (𝑎 ′),
+
+where A and 𝑟 1 ∈ [ 0, 1] denote the action space and reward function of agent 1. The perturbation term 𝜖 ∈ ℝ| A | is sampled from some given noise distribution 𝑃 noise and 𝜂 𝑡 ∈ ℝ+. Notably, it introduces randomness to agent 1’s policy, preventing it from being exploited by the opponents, and is the key to achieving strong adaptive decision-making ability in the form of being no-regret .
+
+Proposition 4.2. Define the (external) regret as Regret (𝑇 ) = max 𝜋 1 ∈Δ ( A ) 
+
+Í𝑇 𝑡 =1 𝑉 1 (𝜋 1, 𝜋 𝑡 
+
+> 2
+
+) − 𝑉 1 (𝜋 𝑡 
+
+> 1
+
+, 𝜋 𝑡 
+
+> 2
+
+),where we denote 𝑉 1 (𝜋 1, 𝜋 2) := 𝔼 𝑎 ∼𝜋 1,𝑏 ∼𝜋 2 𝑟 1 (𝑎, 𝑏 ) for any 𝜋 1 ∈ Δ(A) , 𝜋 2 ∈ Δ(B) . Suppose the perturbation is drawn from a standard Gaussian distribution. Then if 𝜂 𝑡 = Θ(1/√𝑡 ), it holds that 𝔼 [Regret (𝑇 )] =
+
+O( √𝑇 ) for any unknown policies 𝜋 1: 𝑇  
+
+> 2
+
+played by the opponent. Remark 4.3 (Connections to online adaptation) . Such guarantees are made possible by the equivalence between the sFP and the well-known online learning algorithm, follow-the-perturbed-leader (FTPL) (Kalai and Vempala, 2005), where the noise distribution can also be the Laplace distribution, Gumbel distribution, etc. (Abernethy et al., 2014). It implies that when 𝑇 becomes sufficiently large, the average performance of the agent 1 is comparable to that of the best policy in hindsight. In particular, when the opponent is stationary, as 𝑇 increases, the average performance of the agent 1 gradually approaches the optimum. While this dynamic is elegant for normal-form games, implementing it directly in LLMs faces two fundamental computational barriers: (i) Exponentially large natural language action space implies exact historical actions rarely repeat, making frequency-based belief formation impossible; (ii) The exact arg max is intractable to compute over natural languages. In the following, we will discuss how to approximate these two steps by scaling inference-time computation. 
+
+4.3. Step 1: in-context opponent modeling 
+
+Translating Step 1 to the language domain can be done by maintaining the time-averaged oppo-nent’s policy given the historic context. Specifically, an ideal solution to address the intractabil-ity of exponentially large natural language space would be leveraging the inductive bias of a pre-trained language model 𝜋 𝜃 by fine-tuning it towards mimicking the opponent’s behavior given the historical contexts C𝑡 −1 = (𝜏 1
+
+> 𝐻 +1
+
+, 𝜏 2
+
+> 𝐻 +1
+
+, · · · , 𝜏 𝑡 −1
+
+> 𝐻 +1
+
+) at each episode 𝑡 ∈ [𝑇 ] using the objective of 
+
+arg max 𝜃 
+
+Í𝑡 −1
+
+> 𝑡 ′=1
+
+Íℎ:𝑃 (ℎ)=2 log 𝜋 𝜃 ( 𝑦 𝑡 ′ 
+
+> 2,ℎ
+
+| 𝜏 𝑡 ′ 
+
+> ℎ
+
+).However, repeated fine-tuning is data-hungry and incurs prohibitive overheads, making it less suitable for real-time online adaptation. Consequently, we propose to leverage an off-the-shelf LLM 
+
+𝜋 oppo  
+
+> 2
+
+to in-context learn to imitate the behavior of the opponent using historical interactions C𝑡 −1.Specifically, at each episode 𝑡 ∈ [ 𝑇 ] and step ℎ ∈ [ 𝐻 ], where 𝑃 (ℎ) = 2, the opponent model 𝜋 oppo  
+
+> 2
+
+takes the input of historical interactions C𝑡 −1, the current partial trajectory 𝜏 𝑡 ℎ−1 as well as the additional prompt 𝑝 that instructs 𝜋 oppo  
+
+> 2
+
+to role-play the actual opponent to predict its behavior at this time step. This instruction prompt 𝑝 incorporates two key designs: (i) Strategic summarization: 𝜋 oppo 
+
+> 2
+
+is required to first explicitly reflect on the contexts C𝑡 −1 and summarize the high-level strategic behavioral patterns of the actual opponent; (ii) Optimism: We embed the principle of optimism in face of uncertainty (OFU), a principled exploration mechanism from online RL. Specifically, when 
+
+> 6Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+𝜋 oppo  
+
+> 2
+
+is uncertain about how the actual opponent would have responded at the current step, it is biased to predict outcomes that favor agent 1. We refer the reader to Section A for the specific prompts. Finally, we remark that Step 1 of sFP (and our corresponding opponent modeling approach) maintains only the time-averaged behavior of the opponent, effectively treating the opponent as if it were stationary . However, this does not hinder the learner’s ability of online adaptation when the opponent follows a time-varying policy sequence, as established in Proposition 4.2. 
+
+4.4. Step 2: BoN with opponent simulation 
+
+Implementing Step 2 requires solving the intractable maximization problem over the natural language space. This is further complicated by the multi-turn nature of negotiation, where intermediate reward signals are missing. To address these computational hurdles, given the base LLM 𝜋 base  
+
+> 1
+
+, at each decision point of agent 1, 𝜏 ℎ, where 𝑃 (ℎ) = 1, we first sample 𝑁 candidate actions D1,ℎ := { 𝑦 11,ℎ , · · · , 𝑦 𝑁  
+
+> 1,ℎ
+
+} from 
+
+𝜋 base  
+
+> 1
+
+. Different from the vanilla version of BoN which typically samples candidates i.i.d., we propose to first generate 𝑁 strategic proposals and then devise separate actions based on each proposal. We refer to this structured method as strategic brainstorming. Intuitively, this structured process ensures broader exploration of the strategy space. Crucially, during generation at episode 𝑡 ∈ [ 𝑇 ] and each step 
+
+ℎ ∈ [ 𝐻 ], 𝜋 base  
+
+> 1
+
+maintains not only (partial) history of the current episode, but also the history from episode 1 to 𝑡 − 1. We explicitly allocate tokens to summarize and reflect on the history and then make corresponding decisions. Such summarization (Krishnamurthy et al., 2024) and reflection (Shinn et al., 2023) techniques have been shown to be necessary for enabling feedback-driven learning. Now we evaluate each 𝑦 𝑘  
+
+> 1,ℎ
+
+for 𝑘 ∈ [ 𝑁 ] as follows. Due to the lack of an immediate reward signal, we propose to first follow 𝑦 𝑘  
+
+> 1,ℎ
+
+at the current time step ℎ, and simulate the entire future trajectory by following agent 1’s base policy 𝜋 base  
+
+> 1
+
+together with the opponent model 𝜋 oppo  
+
+> 2
+
+to obtain the reward b𝑟 𝑘 
+
+> 1
+
+for agent 1. Then the algorithm picks the best candidate action 𝑦 𝑘 ★ 
+
+> 1,ℎ
+
+with 𝑘 ★ ∈ argmax 𝑘 ∈ [ 𝑁 ] b𝑟 𝑘  
+
+> 1
+
+and the decision-making process proceeds to the next time step. Finally, since both the candidate generation and opponent simulation involve inherent stochasticity, we empirically find that there is no need to further perturb the simulated reward as in Step 2 of Section 4.2. To theoretically validate that better opponent model translates to more reliable evaluations and superior policy, we analyze the error propagation as follows. 
+
+Theorem 4.4. Fix a given episode 𝑡 ∈ [ 𝑇 ] with given initial prompts 𝑥 1, 𝑥 2, historical context C𝑡 −1,opponent policy 𝜋 𝑡  
+
+> 2
+
+∈ Π𝑡 
+
+> 2
+
+, as well as the opponent model 𝜋 oppo  
+
+> 2
+
+. For any step ℎ ∈ [ 𝐻 ] with 𝑃 (ℎ) = 2,we define the opponent error as 𝑑 𝑇𝑉 
+
+
+
+𝜋 𝑡  
+
+> 2,ℎ
+
+(· | 𝜏 𝑡 ℎ; C𝑡 −1, 𝑥 2), 𝜋 oppo  
+
+> 2,ℎ
+
+(· | 𝜏 𝑡 ℎ; C𝑡 −1)
+
+
+
+≤ 𝜖 ℎ for any decision point 
+
+𝜏 𝑡 ℎ ∈ T 𝑡 ℎ . Then it holds for any policy 𝜋 𝑡  
+
+> 1
+
+∈ Π𝑡 
+
+> 1
+
+, step ℎ ∈ [ 𝐻 ] with 𝑃 (ℎ) = 1, and 𝜏 𝑡 ℎ ∈ T 𝑡 ℎ : 
+
+> 𝑉 𝜋 𝑡
+> 1,𝜋 oppo
+> 2
+> 1,ℎ
+
+(𝜏 𝑡 ℎ) − 𝑉 𝜋 𝑡  
+
+> 1,𝜋 𝑡
+> 2
+> 1,ℎ
+
+(𝜏 𝑡 ℎ) ≤  
+
+> ⌊ ( 𝐻 −ℎ−1)/ 2⌋
+
+∑︁ 
+
+> 𝑑 =0
+> 𝜖 ℎ+2𝑑 +1,
+
+where 𝑑 𝑇𝑉 denotes the total variation distance and the value functions are defined as 𝑉 𝜋 𝑡  
+
+> 1,𝜋 oppo
+> 2
+> 1,ℎ
+
+(𝜏 𝑡 ℎ) :=
+
+𝔼 𝜋 𝑡 
+
+> 1,𝜋 oppo
+> 2
+
+𝑟 1 | 𝜏 𝑡 ℎ
+
+, 𝑉 𝜋 𝑡  
+
+> 1,𝜋 𝑡
+> 2
+> 1,ℎ
+
+(𝜏 𝑡 ℎ) := 𝔼 𝜋 𝑡 
+
+> 1,𝜋 𝑡
+> 2
+
+𝑟 1 | 𝜏 𝑡 ℎ
+
+, and we assume the reward is properly normalized into range [0, 1]. Furthermore, let b𝜋 𝑡  
+
+> 1
+
+∈ arg max 𝜋 𝑡   
+
+> 1∈Π𝑡 𝑖
+
+𝐽 1 (𝜋 𝑡 
+
+> 1
+
+, 𝜋 oppo  
+
+> 2
+
+) be the optimal policy against the opponent model. It holds that 𝐽 1 (b𝜋 𝑡 
+
+> 1
+
+, 𝜋 𝑡 
+
+> 2
+
+) ≥ max 𝜋 𝑡   
+
+> 1∈Π𝑡
+> 1
+
+𝐽 1 (𝜋 𝑡 
+
+> 1
+
+, 𝜋 𝑡 
+
+> 2
+
+) − Íℎ∈ [ 𝐻 ]:𝑃 (ℎ)=2 𝜖 ℎ.
+
+This demonstrates that the evaluation errors and the optimality gap only scales linearly w.r.t. the model errors at each time step in our setting. 
+
+> 7Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+A viewpoint of inference-time RL and extensions to higher-order BoN. In principle, our frame-work creates a feedback loop equivalent to one iteration of the classical Policy Iteration (PI) al-gorithm, utilizing only inference-time computation. For each decision point 𝜏 ℎ, where 𝑃 (ℎ) = 1
+
+and candidate 𝑦 𝑘 
+
+> 1,ℎ
+
+, the simulation step functions as policy evaluation, where the simulated reward 
+
+b𝑟 𝑘 is in fact approximating 𝑄 𝜋 base  
+
+> 1,𝜋 oppo
+> 2
+> 1,ℎ
+
+
+
+𝜏 ℎ, 𝑦 𝑘 
+
+> 1,ℎ
+
+
+
+:= 𝔼 𝜋 base  
+
+> 1,𝜋 oppo
+> 2
+
+𝑟 1 | 𝜏 ℎ, 𝑦 1,ℎ 
+
+. Subsequently, the rank-ing step constitutes policy improvement, where the new BoN policy chooses the optimal action as 
+
+𝜋 BoN  
+
+> 1
+
+(𝜏 ℎ) := argmax 𝑦 1,ℎ ∈ D 1,ℎ 𝑄 𝜋 base  
+
+> 1,𝜋 oppo
+> 2
+> 1,ℎ
+
+ 𝜏 ℎ, 𝑦 1,ℎ 
+
+, constructing an improved policy 𝜋 BoN  
+
+> 1
+
+from the weaker base policy 𝜋 base  
+
+> 1
+
+. This perspective reveals a new axis for scaling inference compute, distinct from increasing sample size 𝑁 or utilizing an auxiliary opponent model for simulation: one can repeatedly 
+
+sharpen the base policy by 𝜋 (𝑙 )
+
+> 1
+> BoN-oppo-simulation
+
+←−−−−−−−−−−−−−−−− 𝜋 (𝑙 −1) 
+
+> 1
+
+for 𝑙 = 1, 2, · · · , where 𝜋 01 := 𝜋 base  
+
+> 1
+
+. By the guarantee of PI, this will finally converge to the best response against the 𝜋 oppo  
+
+> 2
+
+but without updating the parameters of 𝜋 base  
+
+> 1
+
+. We remark that recursively applying this operator is also conceptually similar to Monte-Carlo Tree-Search (MCTS). Finally, due to the exponential growth of inference-time cost in this iterative process, we primarily experiment with 𝑙 = 1, and examine larger values of 𝑙 in specific settings later on. Finally, for an overview of our framework, we refer to Figure 1 and Algorithm 1. 
+
+4.5. Can our framework be implemented in just one LLM query? 
+
+It is in fact intriguing to ask whether our multi-component framework above can be integrated into just a single but potentially much longer LLM inference query? To understand this, we design a specialized prompt to teach the base LLM to reason by combining all components of our framework (cf. the prompt template to Section A.5). At each time step, it will brainstorm 𝑁 high-level strategies, devise concrete actions, simulate what would happen if it follows each candidate, and finally returns the simulated rewards to pick the best candidate. Note the key difference compared with our framework above is that the long simulation traces now happen purely in the LLM’s native thinking/CoT. We call this BoN with CoT simulation . This not only serves as an interesting baseline but also helps us understand whether the default thinking ability of large reasoning models adopted by training heavily on inherently single-agent tasks like math and coding suffices for strategic reasoning. 
+
+5. Experimental Results 
+
+Experimental setups. We let our algorithm or baseline methods operate as one agent powered by an LLM to compete with the opponent also powered by an LLM. As noted by Bianchi et al. (2024); Xia et al. (2024b), in such negotiation games, both the role (seller vs. buyer) and the turn (which agent starts first) have significant influences on the final outcomes. Therefore, for the buyer-seller game, we let our algorithm play both roles and always start second (the unfavorable turn). For the resource exchange game, we let the agent powered by our algorithm to start first (the unfavorable turn). For specifications of negotiation environments, we mainly follow (Bianchi et al., 2024): we set the seller’s production cost as 43 , buyer’s budget as 63 2. For the resource exchange game, we set 
+
+𝑛 𝑋  
+
+> 1
+
+= 𝑛 𝑌  
+
+> 2
+
+= 25 , 𝑛 𝑌  
+
+> 1
+
+= 𝑛 𝑋  
+
+> 2
+
+= 5, 𝑣 𝑋  
+
+> 1
+
+= 𝑣 𝑌  
+
+> 2
+
+= 0.5, 𝑣 𝑌  
+
+> 1
+
+= 𝑣 𝑋  
+
+> 2
+
+= 2.5. The default horizon 𝐻 of one episode is 10 .We compare against a comprehensive suite of methods that also require no parameter updates :
+
+(i) Standard inference: Baseline (zero-shot), Baseline w. Thinking . (ii) Inference-time scaling: 
+
+BoN-eval (BoN with an evaluation model), BoN-simulation (cf. Section 4.5), and BoN-oppo (iid) ,where candidates are sampled without structured generation. (iii) External adaptive methods (cf.      
+
+> 2This slightly different from Bianchi et al. (2024), where the cost and budget are set to 40 and 60 . We find that numbers that are not multiples of 5make the problem more challenging.
+> 8
+
+Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 5 10 15 20 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> Average reward
+
+Horizon 7 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+> Average reward
+
+Horizon 8 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+> Average reward
+
+Horizon 9 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> Average reward
+
+Horizon 10 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+(a) Buyer’s average rewards (normalized by 20 ) in games with different horizons. 5 10 15 20 
+
+Episode 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+> Average reward
+
+Horizon 7 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 
+
+> Average reward
+
+Horizon 8 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 
+
+> Average reward
+
+Horizon 9 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 
+
+> Average reward
+
+Horizon 10 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+(b) Results for the resource exchange game. 
+
+Figure 4 | Comparison of our method (red line) with 5 baselines introduced in Section 5. 5 10 15 20 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> Average reward
+
+Horizon 7 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Average reward
+
+Horizon 8 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Average reward
+
+Horizon 9 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Average reward
+
+Horizon 10 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+(a) Buyer’s average rewards (normalized by the difference between buyer’s maximum willingness to pay and seller’s production cost) where the seller’s production cost is re-sampled at the beginning of each episode. 5 10 15 20 
+
+Episode 
+
+0.0 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+> Average reward
+
+Horizon 7 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.00 
+
+0.05 
+
+0.10 
+
+0.15 
+
+0.20 
+
+0.25 
+
+> Average reward
+
+Horizon 8 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.0 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+> Average reward
+
+Horizon 9 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.0 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+> Average reward
+
+Horizon 10 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+(b) Buyer’s average rewards (normalized by 20 ) when competing against the seller also adopting our approach. 
+
+Figure 5 | Comparison of buyer’s performance under two seller behavior settings. 
+
+Section D for more introductions): Approaches from (Fu et al., 2023) (AI Feedback), (Xu et al., 2023) (experience reflection), and (Yu et al., 2025) (private information prediction). Our method is denoted by the shorthand BoN-oppo . Unless otherwise stated, we set 𝑁 = 5. For the opponent model or evaluation model, we use the same base LLM as the acting agent, with one exception: when both 
+
+9Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 
+
+Model Method Buyer-seller game Resource exchange game Buyer Seller Starts first Starts second Claude 
+
+Baseline w. thinking +2.02 ± 1.39 -1.47 ± 2.05 +27.45 ± 6.18 -0.71 ± 1.16 BoN-eval +0.68 ± 1.56 +2.06 ± 1.75 +20.69 ± 7.19 +1.56 ± 0.40 BoN-simulation +0.04 ± 2.05 +1.36 ± 1.54 +16.76 ± 6.78 -11.15 ± 6.05 BoN-oppo (iid) -1.16 ± 0.98 +2.78 ± 1.67 +28.00 ± 6.01 +0.19 ± 0.56 
+
+BoN-oppo +3.02 ± 1.51 +2.80 ± 2.06 +30.65 ± 6.34 +1.92 ± 0.68 Qwen 
+
+Baseline w. thinking -0.42 ± 0.94 +11.18 ± 2.00 -7.17 ± 5.15 +16.89 ± 4.80 BoN-eval +4.06 ± 1.62 +18.10 ± 1.97 -0.05 ± 5.94 +24.66 ± 2.85 BoN-simulation +2.58 ± 1.65 +11.12 ± 2.01 -4.54 ± 5.91 +9.17 ± 5.33 BoN-oppo (iid) +1.60 ± 1.49 +11.62 ± 1.93 +1.95 ± 7.59 +26.14 ± 1.16 
+
+BoN-oppo +10.04 ± 2.03 +18.54 ± 2.46 +8.95 ± 6.23 +29.65 ± 0.33 Llama 
+
+Baseline w. thinking — — — —BoN-eval -1.82 ± 1.88 +10.64 ± 2.44 -3.84 ± 6.41 +9.55 ± 5.88 BoN-simulation +0.30 ± 2.47 +5.28 ± 3.11 -16.26 ± 5.10 +10.34 ± 4.96 
+
+BoN-oppo (iid) -1.78 ± 1.62 -1.28 ± 2.44 +5.95 ± 4.57 +7.92 ± 5.62 
+
+BoN-oppo +4.80 ± 1.68 +14.74 ± 3.13 +13.27 ± 4.84 +6.08 ± 5.83 
+
+Table 1 | Performance boost of different inference-time methods over Baseline for three additional models. Results for our method ( BoN-oppo ) are shaded. Since Llama models do not have a thinking mode, we do not report the performance of Baseline w. thinking. 0 5 10 15          
+
+> Episode
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> Semantic Diversity
+> Horizon 7
+> Brainstorm
+> IID
+> 0510 15
+> Episode
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> 0.100
+> 0.125
+> Semantic Diversity
+> Horizon 8
+> Brainstorm
+> IID
+> 0510 15
+> Episode
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> 0.100
+> 0.125
+> Semantic Diversity
+> Horizon 9
+> Brainstorm
+> IID
+> 0510 15
+> Episode
+> 0.00
+> 0.05
+> 0.10
+> Semantic Diversity
+> Horizon 10
+> Brainstorm
+> IID
+
+Figure 6 | Semantic diversity of buyer’s candidate messages, where the semantic diversity is calculated as the one minus of the average pairwise cosine similarity between the embeddings of candidate responses generated by the LLM. 0 5 10 15 
+
+> Episode
+> 0.2
+> 0.4
+> 0.6
+> Average Reward
+
+AI feedback    
+
+> Ours
+> Opponent
+> 0510 15
+> Episode
+> 0.2
+> 0.4
+> 0.6
+> Average Reward
+
+Selective experience reflection    
+
+> Ours
+> Opponent
+> 0510 15
+> Episode
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Average Reward
+
+Private informatio prediction 
+
+> Ours
+> Opponent
+
+Figure 7 | Normalized rewards of our approach competing against three kinds of strongly adaptive opponents powered by different kinds of learning techniques, using AI feedback, using selective experience reflection, and using private information prediction. 
+
+10 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 
+
+the acting agent and opponent are powered by Gemini-2.5-Flash, we instead use Gemini-2.5-Flash-Lite for opponent modeling to avoid self-modeling bias. All results are averaged over 10 random runs. 
+
+Scaling inference compute enables robust adaptation across diverse opponent dynamics. All opponents in our setting are inherently dynamic, with a base model powered by Gemini-2.5-Flash, maintaining full negotiation history and evolving their behavior across episodes based on contexts. We evaluate performance across a spectrum of opponent sophistication. (1) Performance against general-purpose dynamic agents. We first evaluate against standard LLM agents that adapt naturally via context accumulation. Figure 4a and Figure 4b illustrate the learning curves, where our method achieves the most significant and consistent performance gains compared to baselines. We also validate this across diverse model families (Claude-Sonnet-4, Qwen3, Llama-3.3) in Table 1, demonstrating that allocating compute to explicit opponent simulation unlocks strategic capabilities that other methods may fail to elicit. Notably, BoN-simulation often stands as the second best, while and Baseline w. Thinking can even underperform the naive baseline, revealing that simply increasing “thinking time” is insufficient for strategic reasoning. (2) Performance against specialized adaptive agents. 
+
+To push the limits of adaptation, we compete against opponents powered by state-of-the-art methods (Fu et al., 2023; Xu et al., 2023; Yu et al., 2025). As reported in Figure 7, our approach consistently outperforms these methods. This confirms that our method by scaling computation on the output-level (together with necessary input-level prompting techniques introduced before) yields superior adaptation compared to relying solely on input-level prompting. (3) Robustness to environmental stochasticity. We also introduce non-stationarity into the environment itself by randomizing the opponent’s private constraints (budget/cost) at every episode. As shown in Figure 5a, our method maintains robust performance, proving it adapts to the opponent’s behavioral policy rather than merely memorizing static values. (4) Opponent architecture generalization. We further evaluate generalization by varying the opponent’s backbone LLM beyond Gemini, reporting the results in Table 3. (5) Social welfare evaluation. For the resource exchange game involving more cooperation than competition, another important metric is social welfare, i.e., the sum of both agents’ value of their respective resources after exchange. Figure 17 compares the social welfare achieved by pairs of baseline and BoN agents. We find that the highest social welfare is achieved when both agents rely on our method, suggesting that inference-time scaling can promote more efficient equilibrium outcomes. We refer the reader to Section F for example outputs of our agents. 
+
+Mechanism analysis We here provide detailed analysis on two important algorithmic ideas of our framework. (i) Opponent modeling: To evaluate whether the opponent model can provide more and more accurate simulation through the accumulation of the negotiation history, we compare the best candidate ranked by the simulation results from the opponent model and the actual oracle opponent. The accuracy of different methods is reported in Figure 11, Figure 12, where the opponent model does provide increasingly more accurate simulation outcomes. (ii) Strategic brainstorming: Apart from the opponent model, another major factor that affects the performance of BoN algorithms is the diversity of the candidates. One innovation of our algorithm comes from the structured generation process of brainstorming. We report semantic diversity of the candidate messages generated via strategic brainstorming and i.i.d. sampling in Figure 6 and Figure 16. We also report the standard deviation of the proposed numerical price among the candidates in Figure 13, Figure 14, where we can see that strategic brainstorming generates more diverse candidates. 
+
+Efficiency analysis. Regarding latency, a key advantage of our framework is that the generation and simulation can be fully parallelized, minimizing wall-clock latency overhead regardless of sample size 𝑁 . Regarding computation costs, we report the trade-off between token usage and performance gains for different 𝑁 in Table 2, where we can see scaling more inference-time computation brings higher rewards with even relatively small 𝑁 .
+
+> 11 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+Acknowledgement 
+
+The authors thank Jeff Jiang and Kaiqing Zhang for helpful discussions on this project, and Chenghao Deng and Guanchao Ding for their assistance in designing Figure 1. 
+
+References 
+
+J. Abernethy, C. Lee, A. Sinha, and A. Tewari. Online linear optimization via smoothing. In Conference on learning theory , pages 807–823. PMLR, 2014. E. Akata, L. Schulz, J. Coda-Forno, S. J. Oh, M. Bethge, and E. Schulz. Playing repeated games with large language models. Nature Human Behaviour , pages 1–11, 2025. S. V. Albrecht and P. Stone. Autonomous agents modelling other agents: A comprehensive survey and open problems. Artificial Intelligence , 258:66–95, 2018. A. Bakhtin, N. Brown, E. Dinan, G. Farina, C. Flaherty, D. Fried, A. Goff, J. Gray, H. Hu, et al. Human-level play in the game of diplomacy by combining language models with strategic reasoning. Science ,378(6624):1067–1074, 2022. F. Bianchi, P. J. Chia, M. Yuksekgonul, J. Tagliabue, D. Jurafsky, and J. Zou. How well can llms negotiate? negotiationarena platform and analysis. In International Conference on Machine Learning ,pages 3935–3951. PMLR, 2024. P. Brookins and J. M. DeBacker. Playing games with gpt: What can we learn about a large language model from canonical strategic games. Economics Bulletin , 44(1):25–37, 2024. B. Brown, J. Juravsky, R. Ehrlich, R. Clark, Q. V. Le, C. Ré, and A. Mirhoseini. Large language monkeys: Scaling inference compute with repeated sampling. arXiv preprint arXiv:2407.21787 , 2024. G. W. Brown. Iterative solution of games by fictitious play. Act. Anal. Prod Allocation , 13(1):374, 1951. C. Cui, Y. Ma, X. Cao, W. Ye, Y. Zhou, K. Liang, J. Chen, J. Lu, Z. Yang, K.-D. Liao, et al. A survey on multimodal large language models for autonomous driving. In Proceedings of the IEEE/CVF winter conference on applications of computer vision , pages 958–979, 2024. T. R. Davidson, V. Veselovsky, M. Kosinski, and R. West. Evaluating language model agency through negotiations. In The Twelfth International Conference on Learning Representations , 2024. URL 
+
+https://openreview.net/forum?id=3ZqKxMHcAg .Y. Deng, V. Mirrokni, R. P. Leme, H. Zhang, and S. Zuo. Llms at the bargaining table. In Agentic Markets Workshop at ICML , volume 2024, 2024. C. Fan, J. Chen, Y. Jin, and H. He. Can large language models serve as rational players in game theory? a systematic analysis. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, pages 17960–17967, 2024. J. Foerster, R. Y. Chen, M. Al-Shedivat, S. Whiteson, P. Abbeel, and I. Mordatch. Learning with opponent-learning awareness. In Proceedings of the 17th International Conference on Autonomous Agents and MultiAgent Systems , pages 122–130, 2018. Y. Fu, H. Peng, T. Khot, and M. Lapata. Improving language model negotiation with self-play and in-context learning from ai feedback. arXiv preprint arXiv:2305.10142 , 2023. 
+
+> 12 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+D. Fudenberg and D. K. Levine. Consistency and cautious fictitious play. Journal of Economic Dynamics and Control , 19(5-7):1065–1089, 1995. I. Gemp, Y. Bachrach, M. Lanctot, R. Patel, V. Dasagi, L. Marris, G. Piliouras, S. Liu, and K. Tuyls. States as strings as strategies: Steering language models with game-theoretic solvers. arXiv preprint arXiv:2402.01704 , 2024. Google DeepMind. Gemini 2.5 pro, 2025. URL https://deepmind.google/models/gemini/ pro/ . Section Gemini 2.5 Deep Think describes the use of parallel thinking techniques. Z. Guan, X. Kong, F. Zhong, and Y. Wang. Richelieu: Self-evolving llm-based agents for ai diplomacy. 
+
+Advances in Neural Information Processing Systems , 37:123471–123497, 2024. D. Guo, D. Yang, H. Zhang, J. Song, R. Zhang, R. Xu, Q. Zhu, S. Ma, P. Wang, X. Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. S. Hao, Y. Gu, H. Ma, J. Hong, Z. Wang, D. Wang, and Z. Hu. Reasoning with language model is planning with world model. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 8154–8173, 2023. H. He, J. Boyd-Graber, K. Kwok, and H. Daumé III. Opponent modeling in deep reinforcement learning. In International conference on machine learning , pages 1804–1813. PMLR, 2016. H. He, D. Chen, A. Balakrishnan, and P. Liang. Decoupling strategy and generation in negotiation dialogues. arXiv preprint arXiv:1808.09637 , 2018. W. Hua, O. Liu, L. Li, A. Amayuelas, J. Chen, L. Jiang, M. Jin, L. Fan, F. Sun, W. Wang, et al. Game-theoretic llm: Agent workflow for negotiation games. arXiv preprint arXiv:2411.05990 , 2024. A. Jaech, A. Kalai, A. Lerer, A. Richardson, A. El-Kishky, A. Low, A. Helyar, A. Madry, A. Beutel, A. Carney, et al. Openai o1 system card. arXiv preprint arXiv:2412.16720 , 2024. N. Jaques, A. Lazaridou, E. Hughes, C. Gulcehre, P. Ortega, D. Strouse, J. Z. Leibo, and N. De Freitas. Social influence as intrinsic motivation for multi-agent deep reinforcement learning. In International conference on machine learning , pages 3040–3049. PMLR, 2019. C. E. Jimenez, J. Yang, A. Wettig, S. Yao, K. Pei, O. Press, and K. R. Narasimhan. SWE-bench: Can language models resolve real-world github issues? In The Twelfth International Conference on Learning Representations , 2024. URL https://openreview.net/forum?id=VTF8yNQM66 .A. Kalai and S. Vempala. Efficient algorithms for online decision problems. Journal of Computer and System Sciences , 71(3):291–307, 2005. B. Kempinski, I. Gemp, K. Larson, M. Lanctot, Y. Bachrach, and T. Kachman. Game of thoughts: Iterative reasoning in game-theoretic domains with large language models. 2025. G. Kim, P. Baldi, and S. McAleer. Language models can solve computer tasks. Advances in Neural Information Processing Systems , 36:39648–39677, 2023. T. Kojima, S. S. Gu, M. Reid, Y. Matsuo, and Y. Iwasawa. Large language models are zero-shot reasoners. Advances in neural information processing systems , 35:22199–22213, 2022. A. Krishnamurthy, K. Harris, D. J. Foster, C. Zhang, and A. Slivkins. Can large language models explore in-context? Advances in Neural Information Processing Systems , 37:120124–120158, 2024. 
+
+> 13 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+J. Z. Leibo, V. Zambaldi, M. Lanctot, J. Marecki, and T. Graepel. Multi-agent reinforcement learning in sequential social dilemmas. In Proceedings of the 16th Conference on Autonomous Agents and MultiAgent Systems , pages 464–473, 2017. A. Letcher, J. Foerster, D. Balduzzi, T. Rocktaschel, and S. Whiteson. Stable opponent shaping in differentiable games. In 2019 International Conference on Learning Representations . OpenReview, 2019. M. Lewis, D. Yarats, Y. Dauphin, D. Parikh, and D. Batra. Deal or no deal? end-to-end learning of negotiation dialogues. In Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing , pages 2443–2453, 2017. J. Light, M. Cai, W. Chen, G. Wang, X. Chen, W. Cheng, Y. Yue, and Z. Hu. Strategist: Self-improvement of llm decision making via bi-level tree search. In The Thirteenth International Conference on Learning Representations , 2025. X. Liu, K. Wang, Y. Li, Y. Wu, W. Ma, A. Kong, F. Huang, J. Jiao, and J. Zhang. EPO: Explicit policy optimization for strategic reasoning in LLMs via reinforcement learning. In W. Che, J. Nabende, E. Shutova, and M. T. Pilehvar, editors, Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 15371–15396, Vienna, Austria, July 2025. Association for Computational Linguistics. ISBN 979-8-89176-251-0. doi: 10.18653/v1/ 2025.acl-long.747. URL https://aclanthology.org/2025.acl-long.747/ .N. Lorè and B. Heydari. Strategic behavior of large language models: Game structure vs. contextual framing. arXiv preprint arXiv:2309.05898 , 2023. C. Lu, T. Willi, C. A. S. De Witt, and J. Foerster. Model-free opponent shaping. In International Conference on Machine Learning , pages 14398–14411. PMLR, 2022. N. Muennighoff, Z. Yang, W. Shi, X. L. Li, L. Fei-Fei, H. Hajishirzi, L. Zettlemoyer, P. Liang, E. Candès, and T. B. Hashimoto. s1: Simple test-time scaling. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 20286–20332, 2025. S. Nashed and S. Zilberstein. A survey of opponent modeling in adversarial domains. Journal of Artificial Intelligence Research , 73:277–327, 2022. A. Nie, Y. Su, B. Chang, J. N. Lee, E. H. Chi, Q. V. Le, and M. Chen. Evolve: Evaluating and optimizing llms for exploration. arXiv preprint arXiv:2410.06238 , 2024. G. Papoudakis, F. Christianos, and S. Albrecht. Agent modelling under partial observability for deep reinforcement learning. Advances in Neural Information Processing Systems , 34:19210–19222, 2021. C. Park, X. Liu, A. E. Ozdaglar, and K. Zhang. Do LLM agents have regret? a case study in online learning and games. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview.net/forum?id=qn9tBYQHGi .J. S. Park, J. O’Brien, C. J. Cai, M. R. Morris, P. Liang, and M. S. Bernstein. Generative agents: Interactive simulacra of human behavior. In Proceedings of the 36th annual acm symposium on user interface software and technology , pages 1–22, 2023. R. Raileanu, E. Denton, A. Szlam, and R. Fergus. Modeling others using oneself in multi-agent reinforcement learning. In International conference on machine learning , pages 4257–4266. PMLR, 2018. J. Robinson. An iterative method of solving a game. Annals of mathematics , 54(2):296–301, 1951. 
+
+> 14 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+A. Rubinstein. Perfect equilibrium in a bargaining model. Econometrica: Journal of the Econometric Society , pages 97–109, 1982. C. Shaib, J. Barrow, J. Sun, A. F. Siu, B. C. Wallace, and A. Nenkova. Standardizing the measurement of text diversity: A tool and a comparative analysis of scores. arXiv preprint arXiv:2403.00553 ,2024. N. Shinn, F. Cassano, A. Gopinath, K. Narasimhan, and S. Yao. Reflexion: Language agents with verbal reinforcement learning. Advances in Neural Information Processing Systems , 36:8634–8652, 2023. D. Silver, A. Huang, C. J. Maddison, A. Guez, L. Sifre, G. Van Den Driessche, J. Schrittwieser, I. Antonoglou, V. Panneershelvam, M. Lanctot, et al. Mastering the game of Go with deep neural networks and tree search. Nature , 529(7587):484–489, 2016. D. Silver, J. Schrittwieser, K. Simonyan, I. Antonoglou, A. Huang, A. Guez, T. Hubert, L. Baker, M. Lai, A. Bolton, et al. Mastering the game of Go without human knowledge. Nature , 550(7676):354–359, 2017. C. Snell, J. Lee, K. Xu, and A. Kumar. Scaling llm test-time compute optimally can be more effective than scaling model parameters. arXiv preprint arXiv:2408.03314 , 2024. G. Wang, Y. Xie, Y. Jiang, A. Mandlekar, C. Xiao, Y. Zhu, L. Fan, and A. Anandkumar. Voyager: An open-ended embodied agent with large language models. Transactions on Machine Learning Research , 2024a. ISSN 2835-8856. URL https://openreview.net/forum?id=ehfRiF0R3a .L. Wang, C. Ma, X. Feng, Z. Zhang, H. Yang, J. Zhang, Z. Chen, J. Tang, X. Chen, Y. Lin, et al. A survey on large language model based autonomous agents. Frontiers of Computer Science , 18(6):186345, 2024b. J. Wei, X. Wang, D. Schuurmans, M. Bosma, F. Xia, E. Chi, Q. V. Le, D. Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. Advances in neural information processing systems , 35:24824–24837, 2022. J. Weil, J. Czech, T. Meuser, and K. Kersting. Know your enemy: Investigating monte-carlo tree search with opponent models in pommerman. arXiv preprint arXiv:2305.13206 , 2023. S. Welleck, A. Bertsch, M. Finlayson, H. Schoelkopf, A. Xie, G. Neubig, I. Kulikov, and Z. Har-chaoui. From decoding to meta-generation: Inference-time algorithms for large language models. Transactions on Machine Learning Research , 2024. ISSN 2835-8856. URL https: //openreview.net/forum?id=eskQMcIbMS . Survey Certification. xAI. Grok 4, July 2025. URL https://x.ai/news/grok-4 . Mentions parallel test-time compute, i.e., parallel thinking. F. Xia, H. Liu, Y. Yue, and T. Li. Beyond numeric awards: In-context dueling bandits with llm agents. 
+
+arXiv preprint arXiv:2407.01887 , 2024a. T. Xia, Z. He, T. Ren, Y. Miao, Z. Zhang, Y. Yang, and R. Wang. Measuring bargaining abilities of llms: A benchmark and a buyer-enhancement method. In Findings of the Association for Computational Linguistics ACL 2024 , pages 3579–3602, 2024b. K. Xu, J. Chai, S. Li, Y. Fu, Y. Zhu, and D. Zhao. DipLLM: Fine-tuning LLM for strategic decision-making in diplomacy. In Forty-second International Conference on Machine Learning , 2025. URL 
+
+https://openreview.net/forum?id=hfPaOxDWfI .
+
+> 15 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+Y. Xu, S. Wang, P. Li, F. Luo, X. Wang, W. Liu, and Y. Liu. Exploring large language models for communication games: An empirical study on werewolf. arXiv preprint arXiv:2309.04658 , 2023. Z. Xu, C. Yu, F. Fang, Y. Wang, and Y. Wu. Language agents with reinforcement learning for strategic play in the werewolf game. In International Conference on Machine Learning , pages 55434–55464. PMLR, 2024. S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, and Y. Cao. React: Synergizing reasoning and acting in language models. In International Conference on Learning Representations (ICLR) , 2023. X. Yu, J. Jiang, W. Zhang, H. Jiang, and Z. Lu. Model-based opponent modeling. Advances in Neural Information Processing Systems , 35:28208–28221, 2022. X. Yu, W. Zhang, and Z. Lu. Llm-based explicit models of opponents for multi-agent games. In 
+
+Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 892–911, 2025. Y. Zhang, S. Mao, T. Ge, X. Wang, Y. Xia, W. Wu, T. Song, M. Lan, and F. Wei. LLM as a mastermind: A survey of strategic reasoning with large language models. In First Conference on Language Modeling ,2024. URL https://openreview.net/forum?id=iMqJsQ4evS .Y. Zhang, S. Mao, T. Ge, X. Wang, Y. Xia, M. Lan, and F. Wei. K-level reasoning: Establishing higher order beliefs in large language models for strategic reasoning. In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 7212–7234, 2025. A. Zhou, K. Yan, M. Shlapentokh-Rothman, H. Wang, and Y.-X. Wang. Language agent tree search unifies reasoning, acting, and planning in language models. In International Conference on Machine Learning , pages 62138–62160. PMLR, 2024a. S. Zhou, F. F. Xu, H. Zhu, X. Zhou, R. Lo, A. Sridhar, X. Cheng, T. Ou, Y. Bisk, D. Fried, U. Alon, and G. Neubig. Webarena: A realistic web environment for building autonomous agents. In The Twelfth International Conference on Learning Representations , 2024b. URL https://openreview.net/ forum?id=oKn9c6ytLx .
+
+> 16 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+A. Prompts 
+
+A.1. System prompts for configuring the social and strategic behaviors of LLMs Brainstorming prompt 
+
+You should brainstorm and explicitly enumerate 5 high-level negotiation strategies or tactics, and you must follow the strict format: [(1). Strategy 1: xxx , yyy ; (2). Strategy 2: xxx , yyy ; ...], where xxx is the strategy name and yyy is the strategy explanation. You must brainstorm at every iteration/turn. After listing the strategies, carefully decide which one is most effective for achieving the highest reward, given your past interactions with your opponent. Justify your choice clearly. 
+
+Then, carefully and strategically generate the message that you will send to the other player, based on the selected strategy. Make sure your reasoning process explains the entire brainstorming and selection process in detail. 
+
+Your reward is calculated as: 
+
+[{{rules_of_games}}] 
+
+In any episode where no deal is made, your reward is 0 (which is still better than accepting a negative payoff). Always aim to maximize your reward. In the last line of your reasoning, you must declare your chosen strategy using this exact format: 
+
+<strategy declaration> I have chosen Strategy x: yyy </strategy declaration> 
+
+Cunning prompt 
+
+You are cunning and sly in your plan to sell for more ZUP. Humiliate your opponent as much as possible. Insult them. 
+
+Desperate prompt 
+
+You must fake being desperate. Supplicate and beg to sell for more ZUP. 
+
+Rational prompt 
+
+You are a fully rational strategic decision-maker caring only utility maximization. Your reward is calculated as the deal price minus production cost. In one episode, if no deals are made, your reward is calculated as 0 (still better than a negative one). 
+
+Tit-for-tat prompt 
+
+You should use the tit-for-tat strategy. If your opponent is cooperating with you, you should also cooperate. If your opponent is not cooperating with you, you shouldn’t either. 
+
+> 17 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+Fairness prompt 
+
+You care deeply about fairness. If the opponent offers something unfair, you will reject it even at your own cost. You may scold them or refuse to deal unless the offer is improved. If they show fairness, reward them. 
+
+Emotional prompt 
+
+You are emotionally reactive. If insulted or lowballed, get angry and retaliate. If treated kindly, respond warmly. Your emotions drive your negotiation choices. 
+
+A.2. Prompts for summarization, reflection, and self-improvement 
+
+At the beginning of each episode, we summarize what happened in all the historical episodes and ask the LLM agents to reflect and try to (self-)improve their decision-making policy. Note that we try to keep the prompts as general as possible instead of hand-crafting certain specialized prompts for the negotiation problems to better enable their self-improving ability (e.g., one could have prompted the seller to try to increase the selling price by a constant number at each episode until reaching a hard threshold of the buyer.) 
+
+Reminder prompt for each episode beginning 
+
+Now Episode {{current_episode}}/{{num_episodes}} begins. Please start a new episode of negotiation from scratch. Here are summarized results from all previous episodes: The historical deal prices from each episode sequentially: 
+
+[{{previous_deals_prices_strings}}] 
+
+The reward you received from each episode sequentially: 
+
+[{{previous_rewards_strings}}] 
+
+Remember, at every step of decision making, you should first summarize and then reflect on the negotiations from previous episodes. Through the reflection, you should aim to self-improve your own decision-making across episodes. 
+
+A.3. System prompt for configuring the opponent model 
+
+For the opponent model, as we mentioned in Section 4.3, the opponent aims to play the role of agent 2 to provide authentic simulation for agent 1. It will first understand the game rule and then reason over the history to summarize the behavior patterns of agent 2. 
+
+Prompt for configuring the opponent model 
+
+{{game_rule_description}} 
+
+Now you should have understood the game rule for both agents very well. You are helping {{agent 1}} to negotiate. Specifically, you are trying to play the role of 
+
+{{agent 2}} .
+
+> 18 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+I will give you the existing negotiation history from both agents, and you should respond as if you are {{agent 2}} , to provide authentic simulation for {{agent 1}} .Remember: your response should follow the rule of {{agent 2}} .Here is the existing negotiation history: 
+
+[{{nego_history}}] 
+
+At each time step, please first explain and think about what you have learned about the role you are trying to play, given all the negotiation history. In other words, you should reason step by step about how to provide authentic simulation before actually providing the simulated responses. Start your first line with: 
+
+<simulation_thoughts> xxx </simulation_thoughts> 
+
+where in xxx you should summarize the behavior patterns of {{agent 2}} from negotia-tion history to provide a strictly authentic simulation that is consistent with the history. When you are uncertain how to simulate, be optimistic and assume the best outcome for {{agent 1}} .
+
+A.4. System prompt for configuring the evaluation model 
+
+For the evaluation model to properly evaluate all the candidate responses, apart from informing it of the game rules and history, we provide the following instructions. 
+
+Instruction for the evaluation model 
+
+YOUR TASK: 
+
+You will be given multiple response options to choose from at the current negotiation turn. You will need to rely on the following negotiation history: 
+
+{{nego_history}} 
+
+You have the following optional responses for {{agent_name}} to use at this iteration: 
+
+{{response_list}} .Please evaluate which option will help {{agent_name}} obtain the best negotiation outcome. Reason step by step explicitly according to the existing negotiation history. Finally, return the best option at the last line of your response in the form [x] , where x = 1 ,or 2, or 3, etc. 
+
+> 19 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+A.5. System prompt for configuring the simulation model 
+
+As an interesting baseline, we examine whether the LLM agent is able to simulate the entire negotiation trajectory in just one response in contrast to the multi-turn simulation in Algorithm 1. To instruct the model to self-simulate the possible complete trajectories in one response, we use the following prompt. 
+
+Instruction for self-simulation 
+
+You are given a list of candidate responses. You need to simulate the entire future negotiation process until the current episode ends by imagining what would happen in every future iteration for both players. The simulation process needs to be authentic in the sense that it can properly simulate the opponent’s responses in the future. Before simulation, you should explicitly reason how to authentically simulate the opponent’s responses based on all the historical information. Format your simulation reasoning as follows: 
+
+[Simulating candidate message 1: - Iteration i: Myself: <candidate message 1> - Iteration i+1: Opponent: <response> - Iteration i+2: Myself: <a new message you choose freely> - Iteration i+3: Opponent: <response> - ... - Iteration n: <deal accepted / no deal / exceeds maximum iterations> Simulating message 2: - Iteration i: Myself: <candidate message 2> - Iteration i+1: Opponent: <response> - Iteration i+2: Myself: <a new message you choose freely> - ... - Iteration m: <deal accepted / no deal / exceeds maximum iterations> ... (repeat for all candidate messages) ]
+
+Both the messages and responses must be written as if they are actual, concrete dialogue lines spoken in a real negotiation. In other words, you must play the role of both players to generate natural, in-character responses - not summaries or descriptions. Each simulation must be fully completed - never stop midway. Simulate until the outcome is resolved for all 5 strategies. Here is the list of candidate responses: {{concatenated_candidates}} 
+
+After simulation, you must return a list representing the rewards for each candidate message in the last line by strictly following this format: 
+
+> 20 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+<reward list> [reward1, reward2, ...] </reward list> 
+
+B. Additional Related Works 
+
+Opponent modeling in multi-agent RL. Opponent modeling is a key technical component of our framework. Such techniques of opponent modeling have been an important ingredient of many successful (multi-agent) RL algorithms (He et al., 2016; Papoudakis et al., 2021; Raileanu et al., 2018; Weil et al., 2023; Yu et al., 2022), which introduce an auxiliary task of predicting the behavior of other agents from past interactions apart from the standard RL objective to address the infamous issues of non-stationarity. We refer to Albrecht and Stone (2018); Nashed and Zilberstein (2022) for a more comprehensive literature review. There is also another line of work explicitly accounting for the opponent for better stability and convergence of multi-agent learning dynamics (Foerster et al., 2018; Letcher et al., 2019; Lu et al., 2022). Unlike those methods which train an RL agent from scratch, we aim to develop a framework tailored for LLM strategic reasoning and decision-making using only inference-time computation. 
+
+Inference-time techniques for LLM reasoning. The success of OpenAI o1, Deepseek R1 has proven the effectiveness of the promising paradigm for LLMs reasoning by scaling the inference-time computation through prolonged thinking process (Muennighoff et al., 2025; Snell et al., 2024; Welleck et al., 2024). Apart from increasing a single thought trace, another effective way of scaling inference-time computation is by generating multiple candidates and choosing the best one, known as Best-of-𝑁 sampling or parallel thinking (Google DeepMind, 2025; xAI, 2025). However, how to enable the ability of strategic reasoning and self-improvement in the repeated and strategic agentic tasks through the powerful inference-time scaling techniques is less understood. 
+
+C. Deferred Proofs 
+
+C.1. Proof of Proposition 4.1 
+
+Proof. We start with the proof where the agent 1 takes the first turn. For any 𝜋 ★ 
+
+> 1
+
+∈ Π1, we define the negotiation message that has the lowest probability as b𝑦 𝑚  
+
+> 1,1
+
+∈ argmin 𝑦 𝑚  
+
+> 1,1∈ Y 𝑚
+> 1
+
+Í𝑦 𝑝    
+
+> 1,1∈ Y 𝑝
+> 1
+
+𝜋 ★ 
+
+> 1
+
+( 𝑦 𝑝 
+
+> 1,1
+
+, 𝑦 𝑚  
+
+> 1,1
+
+| 𝑥 1),where there is no history yet since it is the first turn. Now we construct an opponent policy 𝜋 2 that behaves as follows at the second step: if agent 2 receives the negotiation message 𝑦 𝑚  
+
+> 1,1
+
+= b𝑦 𝑚  
+
+> 1,1
+
+and 
+
+𝑦 𝑝  
+
+> 1,1
+
+representing a proposal from the agent 1 that yields a non-negative reward for agent 2, it will immediately accept and ends the game. Otherwise, it will reject the proposal and end the game also. Now we define 𝑟 max  
+
+> 1
+
+as the maximum reward agent 1 can get subject to the constraint that agent 2’s reward is non-negative. Such a value exists and can be computed as follows for each our of negotiation game. 
+
+• For the buyer-seller game, we have 𝑟 max  
+
+> 1
+
+= 𝑏 − 𝑝 , where 𝑏 represents the buyer’s maximum budget and 𝑝 represents the seller’s production cost. 
+
+> 21 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+• For the resource exchange game, it is equivalent to solving the following program 
+
+𝑟 max  
+
+> 1
+
+= max    
+
+> Δ𝑋 ∈ℤ,Δ𝑌 ∈ℤ
+
+𝑣 𝑋  
+
+> 1
+
+· Δ𝑋 + 𝑣 𝑌  
+
+> 1
+
+· Δ𝑌 
+
+s.t. 𝑣 𝑋  
+
+> 2
+
+· Δ𝑋 + 𝑣 𝑌  
+
+> 2
+
+· Δ𝑌 ≤ 0
+
+Δ𝑋 ∈ [− 𝑛 𝑋  
+
+> 1
+
+, 𝑛 𝑋  
+
+> 2
+
+]
+
+Δ𝑌 ∈ [− 𝑛 𝑌 
+
+> 1
+
+, 𝑛 𝑌 
+
+> 2
+
+].
+
+We denote the optimal solution as Δ★𝑋 , Δ★𝑌 .Therefore, by the construction of 𝜋 2, it holds that 
+
+𝑉 1 (𝜋 ★
+
+> 1
+
+, 𝜋 2) ≤ 𝑟 max  
+
+> 1
+
+· ℙ( 𝑦 𝑚  
+
+> 1,1
+
+= b𝑦 𝑚 
+
+> 1,1
+
+) ≤ 𝑟 max 
+
+> 1
+
+|Y 𝑚  
+
+> 1
+
+| .
+
+Now we can construct the best response policy 𝜋 † 
+
+> 1
+
+against 𝜋 2 by letting 𝜋 † 
+
+> 1
+
+choose (b𝑦 𝑝 
+
+> 1,1
+
+, b𝑦 𝑚 
+
+> 1,1
+
+) determin-istically. b𝑦 𝑝  
+
+> 1,1
+
+simply chooses the proposal that maximizes agent 1’s reward subject to the constraint that agent 2’s reward is non-negative. Specifically, 
+
+• For the buyer-seller game, we set b𝑦 𝑝  
+
+> 1
+
+as the proposal of selling the product with price 𝑏 if agent 1 acts as the seller; otherwise, as the proposal of buying the product with price 𝑝 if agent 1 acts as the buyer. 
+
+• For the resource exchange game, we set b𝑦 𝑝  
+
+> 1
+
+as the proposal of getting Δ★𝑋 of 𝑋 and Δ★𝑌 of 𝑌 from agent 2. Note that if Δ★𝑋 (Δ★𝑌 ) is negative, this means agent 1 gives −Δ★𝑋 (−Δ★𝑌 ) of 𝑋 (𝑌 ) to agent 2. By the construction of 𝜋 † 
+
+> 1
+
+and 𝜋 2, agent 2 will accept the proposal from the agent 1, yielding a reward of 𝑟 max  
+
+> 1
+
+for the agent 1. Formally, we have 
+
+max  
+
+> 𝜋 1∈Π1
+
+𝑉 1 (𝜋 1, 𝜋 2) = 𝑉 1 (𝜋 †
+
+> 1
+
+, 𝜋 2) = 𝑟 max  
+
+> 1
+
+.
+
+This thus concludes that 𝑉 1 (𝜋 ★
+
+> 1
+
+, 𝜋 2) ≤ max 𝜋 1 ∈Π1 𝑉 1 (𝜋 1,𝜋 2 )| Y 𝑚   
+
+> 1|
+
+.
+
+For the case where agent 2 takes the first turn, for any given 𝜋 ★ 
+
+> 1
+
+∈ Π1, we construct the policy 
+
+𝜋 2 similarly. At the first turn, agent 2 will deterministically choose ( 𝑦 𝑝 
+
+> 2,1
+
+, 𝑦 𝑚 
+
+> 2,1
+
+), where 𝑦 𝑝  
+
+> 2,1
+
+denotes waiting for a proposal, and 𝑦 𝑚  
+
+> 2,1
+
+denotes an empty string. Now we construct the policy 𝜋 2 at ℎ = 3 by mimicking the construction of 𝜋 2 at ℎ = 2 for the case above where the agent 1 takes the first turn. It is again straightforward to verify that 𝑉 1 (𝜋 ★
+
+> 1
+
+, 𝜋 2) ≤ max 𝜋 1 ∈Π1 𝑉 1 (𝜋 1,𝜋 2 )| Y 𝑚   
+
+> 1|
+
+, thus concluding our proof. □
+
+C.2. Proof of Proposition 4.2 
+
+Proof. We denote the action sequence played by the agent 2 as 𝑏 1: 𝑇 . For each 𝑡 ∈ [ 𝑇 ], we denote the reward vector 𝑓 𝑡 := 𝑟 1 (· , 𝑏 𝑡 ) ∈ ℝ| A | . By the definition of 𝜋 𝑡 
+
+> 1
+
+, for each 𝑎 ∈ A , we have 
+
+𝜋 𝑡  
+
+> 1
+
+(𝑎 ) = ℙ
+
+
+
+𝑎 ∈ argmax  
+
+> 𝑎 ′∈ A
+
+𝔼 𝑏 ∼b𝜋 𝑡  
+
+> 2
+
+[𝑟 1 (𝑎 ′, 𝑏 )] + 𝜂 𝑡 𝜖 (𝑎 ′)
+
+
+
+= ℙ 𝑎 ∈ argmax  
+
+> 𝑎 ′∈ A
+
+Í𝑡 −1 
+
+> 𝑡 ′=1
+
+𝑓 𝑡 (𝑎 ′)
+
+𝑡 − 1 + 𝜂 𝑡 𝜖 (𝑎 ′)
+
+!
+
+= ℙ 𝑎 ∈ argmax  
+
+> 𝑎 ′∈ A
+> 𝑡 −1
+
+∑︁ 
+
+> 𝑡 ′=1
+
+𝑓 𝑡 (𝑎 ′) + ( 𝑡 − 1)𝜂 𝑡 𝜖 (𝑎 ′)
+
+!
+
+.
+
+> 22
+
+Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 
+
+By Theorem 8 of (Abernethy et al., 2014), we have 
+
+max  
+
+> 𝜋 1
+
+∈Δ ( A ) 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡
+
+=1
+
+ ⟨𝜋 1, 𝑓 𝑡 ⟩ − ⟨ 𝜋 𝑡 
+
+1, 𝑓 𝑡 ⟩ ≤√︁ 2 log |A| (𝑇 − 1)𝜂 𝑇 +
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡
+
+=1
+
+∥ 𝑓 𝑡 ∥2
+
+∞
+
+(𝑡 − 1)𝜂 𝑡 
+
+!
+
+.
+
+Now by plugging in the choice of 𝜂 𝑡 = Θ(1/√𝑡 ), we conclude for any policy 𝜋 1 ∈ Δ(A) 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡
+
+=1
+
+ ⟨𝜋 1, 𝑓 𝑡 ⟩ − ⟨ 𝜋 𝑡 
+
+1, 𝑓 𝑡 ⟩ ≤ O( √︁ 𝑇 log |A|) .
+
+By taking expectations w.r.t. the random action sequences 𝑏 1: 𝑇 and noting that 𝔼 𝑏 𝑡 ∼𝜋 𝑡  
+
+> 2
+
+[⟨ 𝜋 1, 𝑓 𝑡 ⟩] =
+
+𝑉 1 (𝜋 1, 𝜋 𝑡 
+
+2), 𝔼 𝑏 𝑡 ∼𝜋 𝑡  
+
+> 2
+
+[⟨ 𝜋 𝑡 
+
+1, 𝑓 𝑡 ⟩] = 𝑉 1 (𝜋 𝑡 
+
+1, 𝜋 𝑡 
+
+2) for each 𝑡 ∈ [ 𝑇 ], we conclude that 
+
+𝔼 [Regret (𝑇 )] ≤ O( √︁ 𝑇 log |A|) .
+
+□
+
+C.3. Proof of Theorem 4.4 
+
+Proof. We consider the case where agent 1 starts the first, i.e., 𝑃 (1) = 1. The case where agent 2
+
+starts the first can be proved similarly. We will prove by a backward induction on the time step ℎ.We firstly prove the base case. We denote ℎexit ∈ [ 𝐻 ] the last time step agent 1 takes the action. If 
+
+𝐻 is an odd number, we have ℎexit = 𝐻 . In this case, we have for any 𝜏 𝑡 𝐻 
+
+𝑉 𝜋 𝑡 
+
+> 1,𝜋 oppo
+> 2
+
+1,𝐻 (𝜏 𝑡 𝐻 ) = 𝔼 𝑦 𝑡  
+
+> 1,𝐻
+
+∼𝜋 𝑡  
+
+> 1,𝐻
+
+(· | 𝜏 𝑡 𝐻 ;C𝑡 −1,𝑥 1 )
+
+h
+
+𝑟 1 (𝜏 𝑡 𝐻 , 𝑦 𝑡 
+
+1,𝐻 )
+
+i
+
+= 𝑉 𝜋 𝑡 
+
+> 1,𝜋 𝑡
+> 2
+
+1,𝐻 (𝜏 𝑡 𝐻 ).
+
+Therefore, it holds that 
+
+𝑉 𝜋 𝑡 
+
+> 1,𝜋 oppo
+> 2
+
+1,𝐻 (𝜏 𝑡 𝐻 ) − 𝑉 𝜋 𝑡 
+
+> 1,𝜋 𝑡
+> 2
+
+1,𝐻 (𝜏 𝑡 𝐻 ) = 0
+
+Meanwhile, if 𝐻 is an even number, we have ℎexit = 𝐻 − 1. In this case, we have for any 𝜏 𝑡 𝐻 −1
+
+𝑉 𝜋 𝑡 
+
+> 1,𝜋 oppo
+> 2
+
+1,𝐻 −1 (𝜏 𝑡 𝐻 −1) − 𝑉 𝜋 𝑡 
+
+> 1,𝜋 𝑡
+> 2
+
+1,𝐻 −1 (𝜏 𝑡 𝐻 −1)
+
+= 𝔼 𝑦 𝑡  
+
+> 1,𝐻 −1
+
+∼𝜋 𝑡   
+
+> 1,𝐻 −1
+
+(· | 𝜏 𝑡 𝐻 −1;C𝑡 −1,𝑥 1 ) 𝔼 𝑦 𝑡  
+
+> 2,𝐻
+
+∼𝜋 oppo  
+
+> 2,𝐻
+
+(· | ( 𝜏 𝑡 𝐻 −1,𝑦 𝑡   
+
+> 1,𝐻 −1
+
+);C𝑡 −1 )
+
+h
+
+𝑟 1 (𝜏 𝑡 𝐻 −1, 𝑦 𝑡 
+
+1,𝐻 −1, 𝑦 𝑡 
+
+2,𝐻 )
+
+i
+
+− 𝔼 𝑦 𝑡  
+
+> 1,𝐻 −1
+
+∼𝜋 𝑡   
+
+> 1,𝐻 −1
+
+(· | 𝜏 𝑡 𝐻 −1;C𝑡 −1,𝑥 1 ) 𝔼 𝑦 𝑡  
+
+> 2,𝐻
+
+∼𝜋 𝑡  
+
+> 2,𝐻
+
+(· | ( 𝜏 𝑡 𝐻 −1,𝑦 𝑡   
+
+> 1,𝐻 −1
+
+);C𝑡 −1,𝑥 2 )
+
+h
+
+𝑟 1 (𝜏 𝑡 𝐻 −1, 𝑦 𝑡 
+
+1,𝐻 −1, 𝑦 𝑡 
+
+2,𝐻 )
+
+i
+
+≤ max  
+
+> 𝑦 𝑡
+> 1,𝐻 −1
+
+𝑑 𝑇𝑉 
+
+
+
+𝜋 𝑡 
+
+2,𝐻 (· | ( 𝜏 𝑡 𝐻 −1, 𝑦 𝑡 
+
+1,𝐻 −1); C𝑡 −1, 𝑥 2), 𝜋 oppo 
+
+2,𝐻 (· | ( 𝜏 𝑡 𝐻 −1, 𝑦 𝑡 
+
+1,𝐻 −1); C𝑡 −1)
+
+
+
+≤ 𝜖 𝐻 ,
+
+where the last step is by the definition of 𝜖 𝐻 .Now we prove the case where ℎ < ℎ exit with 𝑃 (ℎ) = 1. Note that for any 𝜏 𝑡 ℎ, by Bellman equation, 
+
+23 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 
+
+we have 
+
+𝑉 𝜋 𝑡  
+
+> 1,𝜋 oppo
+> 2
+> 1,ℎ
+
+(𝜏 𝑡 ℎ) − 𝑉 𝜋 𝑡  
+
+> 1,𝜋 𝑡
+> 2
+> 1,ℎ
+
+(𝜏 𝑡 ℎ)
+
+= 𝔼 𝑦 𝑡     
+
+> 1,ℎ ∼𝜋 𝑡
+> 1,ℎ (· | 𝜏 𝑡 ℎ;C𝑡 −1,𝑥 1)
+
+𝔼 𝑦 𝑡    
+
+> 2,ℎ +1∼𝜋 oppo
+> 2,ℎ +1(· | ( 𝜏 𝑡 ℎ,𝑦 𝑡
+> 1,ℎ );C𝑡 −1)
+
+
+
+𝑉 𝜋 𝑡  
+
+> 1,𝜋 oppo
+> 2
+> 1,ℎ +2
+
+(𝜏 𝑡 ℎ, 𝑦 𝑡 
+
+> 1,ℎ
+
+, 𝑦 𝑡 
+
+> 2,ℎ +1
+
+)
+
+
+
+− 𝔼 𝑦 𝑡     
+
+> 1,ℎ ∼𝜋 𝑡
+> 1,ℎ (· | 𝜏 𝑡 ℎ;C𝑡 −1,𝑥 1)
+
+𝔼 𝑦 𝑡    
+
+> 2,ℎ +1∼𝜋 𝑡
+> 2,ℎ +1(· | ( 𝜏 𝑡 ℎ,𝑦 𝑡
+> 1,ℎ );C𝑡 −1,𝑥 2)
+
+h
+
+𝑉 𝜋 𝑡  
+
+> 1,𝜋 𝑡
+> 2
+> 1,ℎ +2
+
+(𝜏 𝑡 ℎ, 𝑦 𝑡 
+
+> 1,ℎ
+
+, 𝑦 𝑡 
+
+> 2,ℎ +1
+
+)
+
+i
+
+≤ 𝔼 𝑦 𝑡     
+
+> 1,ℎ ∼𝜋 𝑡
+> 1,ℎ (· | 𝜏 𝑡 ℎ;C𝑡 −1,𝑥 1)
+
+𝔼 𝑦 𝑡    
+
+> 2,ℎ +1∼𝜋 oppo
+> 2,ℎ +1(· | ( 𝜏 𝑡 ℎ,𝑦 𝑡
+> 1,ℎ );C𝑡 −1)
+
+h
+
+𝑉 𝜋 𝑡  
+
+> 1,𝜋 𝑡
+> 2
+> 1,ℎ +2
+
+(𝜏 𝑡 ℎ, 𝑦 𝑡 
+
+> 1,ℎ
+
+, 𝑦 𝑡 
+
+> 2,ℎ +1
+
+)
+
+i
+
+− 𝔼 𝑦 𝑡     
+
+> 1,ℎ ∼𝜋 𝑡
+> 1,ℎ (· | 𝜏 𝑡 ℎ;C𝑡 −1,𝑥 1)
+
+𝔼 𝑦 𝑡    
+
+> 2,ℎ +1∼𝜋 𝑡
+> 2,ℎ +1(· | ( 𝜏 𝑡 ℎ,𝑦 𝑡
+> 1,ℎ );C𝑡 −1,𝑥 2)
+
+h
+
+𝑉 𝜋 𝑡  
+
+> 1,𝜋 𝑡
+> 2
+> 1,ℎ +2
+
+(𝜏 𝑡 ℎ, 𝑦 𝑡 
+
+> 1,ℎ
+
+, 𝑦 𝑡 
+
+> 2,ℎ +1
+
+)
+
+i
+
++ ( 𝜖 ℎ+3 + 𝜖 ℎ+5 + · · · ) ≤ max 
+
+> 𝑦 𝑡
+> 1,ℎ
+
+𝑑 𝑇𝑉 
+
+
+
+𝜋 oppo  
+
+> 2,ℎ +1
+
+(· | ( 𝜏 𝑡 ℎ, 𝑦 𝑡 
+
+> 1,ℎ
+
+); C𝑡 −1), 𝜋 𝑡  
+
+> 2,ℎ +1
+
+(· | ( 𝜏 𝑡 ℎ, 𝑦 𝑡 
+
+> 1,ℎ
+
+); C𝑡 −1, 𝑥 2)
+
+
+
++ ( 𝜖 ℎ+3 + 𝜖 ℎ+5 + · · · ) ≤ 𝜖 ℎ+1 + 𝜖 ℎ+3 + · · · ,
+
+where we use the inductive hypothesis in the first inequality. Finally, by noting that 
+
+𝐽 1 (𝜋 11, 𝜋 oppo  
+
+> 2
+
+) = 𝑉 𝜋 11,𝜋 oppo  
+
+> 2
+> 1,1
+
+(𝜏 ℎ
+
+> 1
+
+),𝐽 1 (𝜋 𝑡 
+
+> 1
+
+, 𝜋 𝑡 
+
+> 2
+
+) = 𝑉 𝜋 11,𝜋 𝑡  
+
+> 2
+> 1,1
+
+(𝜏 ℎ
+
+> 1
+
+),
+
+we proved the near optimality of the policy b𝜋 𝑡  
+
+> 1
+
+by the non-expansiveness of the max operator. □
+
+D. Discussions and Implementations of Additional Baselines 
+
+Here we provide a detailed discussion on the three additional approaches from Fu et al. (2023), Xu et al. (2023), as well as Yu et al. (2025) considered in Section 5. 
+
+• For Fu et al. (2023): It introduces an additional critic at the beginning of each episode. The critic maintains all history and provides three (high-level) suggestions/feedbacks on how to improve the rewards in the next episode. Since the experimental setting resembles us, we can directly reuse its prompt in our implementations. 
+
+• For Xu et al. (2023): The primary goal of Xu et al. (2023) is to handle the issues of long contexts due to history accumulation in Werewolf games. Thanks to the recent advances of LLMs, long contexts are no longer significant issues in our experiments. The core idea of Xu et al. (2023) is to retrieve one negative experience and several good experiences from the history. Then such experiences together with a short suggestion are fed to the acting agent at each decision-making step. We call this approach selective experience reflection. Therefore, we mirror such implementation in our negotiation games and rank the decision in the entire negotiation history at each time step according to a score, which combines the final reward signal of that episode and a score from a critic. 
+
+• For Yu et al. (2025) : It introduces an opponent model to predict the private information (specifically, player’s role), in the WITU game. Then such private information is also fed into the acting agent for better decision-making. To mirror such implementation, we let the opponent model predict the private information in our setting, i.e., production cost of the seller/budget of the buyer. Note that the opponent model in (Yu et al., 2025) is not used for simulation. 
+
+> 24 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation
+
+Algorithm 1 BoN-Opponent-Simulation (from the perspective of agent 1)  
+
+> 1:
+
+Input: 𝜋 base  
+
+> 1
+
+,𝜋 oppo  
+
+> 2
+
+, 𝑥 1, 𝑁 , 𝑇 , 𝐻  
+
+> 2:
+
+for 𝑡 ∈ [ 𝑇 ] do  
+
+> 3:
+
+for ℎ ∈ [ 𝐻 ] do  
+
+> 4:
+
+if 𝑃 (ℎ) = 1 then  
+
+> 5:
+
+for 𝑘 ∈ [ 𝑁 ] do  
+
+> 6:
+
+Sample action 𝑦 𝑡,𝑘  
+
+> 1,ℎ
+
+∼ 𝜋 base  
+
+> 1
+
+(· | 𝜏 𝑡 ℎ; C𝑡 −1, 𝑥 1) 
+
+> 7:
+
+Simulate the episodes by first taking action 𝑦 𝑡,𝑘  
+
+> 1,ℎ
+
+and then following (𝜋 base  
+
+> 1
+
+, 𝜋 oppo  
+
+> 2
+
+)
+
+towards the end of the episode  
+
+> 8:
+
+Denote b𝑟 𝑘  
+
+> 1
+
+as the empirical average of the reward from the simulated trajectories  
+
+> 9:
+
+end for  
+
+> 10:
+
+𝑘 ★ ← argmax 𝑘 ∈ [ 𝑁 ] b𝑟 𝑘  
+
+> 1
+> 11:
+
+Take the action 𝑦 𝑡,𝑘 ★ 
+
+> 1,ℎ
+> 12:
+
+Update the partial trajectory 𝜏 𝑡 ℎ+1 ← ( 𝜏 𝑡 ℎ, 𝑦 𝑡,𝑘 ★ 
+
+> 1,ℎ
+
+) 
+
+> 13:
+
+else  
+
+> 14:
+
+Observe the opponent action 𝑦 𝑡  
+
+> 2,ℎ
+> 15:
+
+Update the partial trajectory 𝜏 𝑡 ℎ+1 ← ( 𝜏 𝑡 ℎ, 𝑦 𝑡 
+
+> 2,ℎ
+
+) 
+
+> 16:
+
+end if  
+
+> 17:
+
+end for  
+
+> 18:
+
+Update the context C𝑡 ← (C 𝑡 −1, 𝜏 𝑡 𝐻 +1) 
+
+> 19:
+
+end for 
+
+Finally, we remark the fundamental technical difference between our work and these related works: all the three works focus on how to provide better contexts/input prompts for the acting agent, while the output of acting agent is kept native . In contrast, we study how to sharpen the output distribution most effectively, while necessary prompt engineering is also required but perpendicular to our major focus. 
+
+E. Detailed Description of Our Framework 
+
+In Algorithm 1, we describe the decision-making process using the perspective of the agent 1 for total 𝑇 episodes. At each episode 𝑡 ∈ [ 𝑇 ], each time step ℎ ∈ [ 𝐻 ], if it is agent 2’s turn, i.e. 𝑃 (ℎ) = 2,agent 1 will observe the action 𝑦 𝑡  
+
+> 2,ℎ
+
+from the opponent and update the partial trajectory. Otherwise, it will implement our BoN framework as in Section 4. Finally, we refer a graphical illustration of our framework to Figure 1. 
+
+F. Example Outputs of Our Agents 
+
+We refer the example outputs of our agents to the anonymous link https://github.com/llmnegotiationsubmission/llmnegotiationsubmission. 
+
+G. Additional Experimental Results 
+
+> 25
+
+Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> Average reward
+
+Horizon 7 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> Average reward
+
+Horizon 8 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> Average reward
+
+Horizon 9 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> Average reward
+
+Horizon 10 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+Figure 8 | Seller’s average rewards (normalized by 20 ) in games with different horizons. 5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+1.2 
+
+> Average reward
+
+Horizon 7 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+1.2 
+
+> Average reward
+
+Horizon 8 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+1.2 
+
+> Average reward
+
+Horizon 9 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+1.2 
+
+> Average reward
+
+Horizon 10 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+Figure 9 | Seller’s average rewards (normalized by the difference between the buyer’s maximum willingness to pay and seller’s production cost) in games where the buyer’s maximum willingness to pay is uniformly sampled at the beginning of each episode. 5 10 15 20 
+
+Episode 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+> Average reward
+
+Horizon 7 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+> Average reward
+
+Horizon 8 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+> Average reward
+
+Horizon 9 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+BoN-simulation 
+
+5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+> Average reward
+
+Horizon 10 
+
+Baseline 
+
+Baseline w. thinking 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-oppo (iid) 
+
+Figure 10 | Seller’s average rewards (normalized by 20 ) in games when competing against the buyer also adopting algorithm. 5 10 15 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Prediction accuracy
+
+Horizon 7 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-simulation 
+
+5 10 15 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Prediction accuracy
+
+Horizon 8 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-simulation 
+
+5 10 15 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Prediction accuracy
+
+Horizon 9 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-simulation 
+
+5 10 15 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Prediction accuracy
+
+Horizon 10 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-simulation 
+
+Figure 11 | Buyer’s accuracy of selecting the best candidate. 
+
+26 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 5 10 15 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Prediction accuracy
+
+Horizon 7 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-simulation 
+
+5 10 15 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Prediction accuracy
+
+Horizon 8 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-simulation 
+
+5 10 15 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Prediction accuracy
+
+Horizon 9 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-simulation 
+
+5 10 15 
+
+Episode 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Prediction accuracy
+
+Horizon 10 
+
+BoN-eval 
+
+BoN-oppo 
+
+BoN-simulation 
+
+Figure 12 | Seller’s accuracy of selecting the best candidate. 5 10 15 
+
+Episode 
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+> Proposal Std
+
+Horizon 7 
+
+Brainstorm 
+
+IID 
+
+5 10 15 
+
+Episode 
+
+0.0 
+
+0.5 
+
+1.0 
+
+1.5 
+
+2.0 
+
+2.5 
+
+> Proposal Std
+
+Horizon 8 
+
+Brainstorm 
+
+IID 
+
+5 10 15 
+
+Episode 
+
+0
+
+1
+
+2
+
+3
+
+4
+
+> Proposal Std
+
+Horizon 9 
+
+Brainstorm 
+
+IID 
+
+5 10 15 
+
+Episode 
+
+0
+
+1
+
+2
+
+3
+
+> Proposal Std
+
+Horizon 10 
+
+Brainstorm 
+
+IID 
+
+Figure 13 | Buyer’s proposal standard deviation. 5 10 15 
+
+Episode 
+
+0.0 
+
+0.5 
+
+1.0 
+
+1.5 
+
+2.0 
+
+2.5 
+
+3.0 
+
+> Proposal Std
+
+Horizon 7 
+
+Brainstorm 
+
+IID 
+
+5 10 15 
+
+Episode 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+> Proposal Std
+
+Horizon 8 
+
+Brainstorm 
+
+IID 
+
+5 10 15 
+
+Episode 
+
+0
+
+1
+
+2
+
+3
+
+4
+
+> Proposal Std
+
+Horizon 9 
+
+Brainstorm 
+
+IID 
+
+5 10 15 
+
+Episode 
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+> Proposal Std
+
+Horizon 10 
+
+Brainstorm 
+
+IID 
+
+Figure 14 | Seller’s proposal standard deviation. 5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+> Average reward
+
+Horizon 9 
+
+Baseline 
+
+Baseline w. Thinking 
+
+N=2 
+
+N=3 
+
+N=4 
+
+N=5 5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> Average reward
+
+Horizon 10 
+
+Baseline 
+
+Baseline w. Thinking 
+
+N=2 
+
+N=3 
+
+N=4 
+
+N=5 5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Average reward
+
+Horizon 9 
+
+Baseline 
+
+Baseline w. Thinking 
+
+L1 
+
+L2 
+
+L3 5 10 15 20 
+
+Episode 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Average reward
+
+Horizon 10 
+
+Baseline 
+
+Baseline w. Thinking 
+
+L1 
+
+L2 
+
+L3 
+
+Figure 15 | Results for scaling the number of candidates and higher-order BoN in the buyer-seller negotiation games. 
+
+27 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 0 5 10 15 
+
+> Episode
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 1 - Self-BLEU
+
+Horizon 7    
+
+> Brainstorm
+> IID
+> 0510 15
+> Episode
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 1 - Self-BLEU
+
+Horizon 8    
+
+> Brainstorm
+> IID
+> 0510 15
+> Episode
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 1 - Self-BLEU
+
+Horizon 9    
+
+> Brainstorm
+> IID
+> 0510 15
+> Episode
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 1 - Self-BLEU
+
+Horizon 10 
+
+> Brainstorm
+> IID
+
+Figure 16 | Diversity of buyer’s candidate messages measured by 1 − Self _BLEU (Shaib et al., 2024). BoN-eval BoN-oppo BoN-oppo (iid) BoN-simulation   
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> Social Welfare  74.2 76.9
+> 65.4 62.0
+> 65.3
+> 89.7
+> 85.5
+> 68.2
+> BoN agent v.s. regular agent
+> BoN agent v.s. BoN agent
+
+Figure 17 | Results on social welfare, where the red line the social welfare when the baseline regular agent interacts with the baseline regular agent 
+
+Model Metric Baseline N=2 N=4 N=6 N=8 N=10 Gemini Reward — +4.27 ± 3.87 +12.13 ± 5.86 +12.93 ± 3.46 +11.60 ± 3.13 +12.73 ± 5.43 Token usage 14.583 17.187 18.084 19.050 19.258 19.432 
+
+Claude Reward — +3.07 ± 5.80 +4.73 ± 4.89 +3.67 ± 3.92 +5.33 ± 5.76 +6.47 ± 5.33 Token usage 15.078 17.429 18.813 19.262 19.656 19.762 
+
+Qwen Reward — +3.62 ± 6.27 +10.67 ± 8.68 +11.47 ± 1.58 +12.80 ± 5.93 +10.07 ± 8.00 Token usage 15.079 17.375 18.275 18.591 19.125 19.588 
+
+Llama Reward — +1.93 ± 6.79 +8.82 ± 5.90 +13.33 ± 6.13 +14.10 ± 6.14 +14.60 ± 8.89 Token usage 14.911 16.746 17.375 18.167 18.375 18.577 
+
+Table 2 | Average performance boost over 20 repeated runs and the log 2 number of tokens for different BoN configurations. We remark that reporting the log scale of the tokens is a standard practice for inference-time scaling methods, e.g., (Brown et al., 2024; Muennighoff et al., 2025). 
+
+28 Scaling Inference-Time Computation via Opponent Simulation: Enabling Online Strategic Adaptation in Repeated Negotiation 
+
+Model Method Buyer Seller Gemini against Claude 
+
+Baseline w. thinking +0.63 ± 0.60 +0.80 ± 3.75 BoN-eval +1.03 ± 1.83 -0.50 ± 2.44 BoN-simulation +5.53 ± 3.45 +1.03 ± 4.39 BoN-oppo (iid) +3.23 ± 3.99 -0.10 ± 4.29 
+
+BoN-oppo +6.94 ± 2.96 +4.86 ± 2.43 Gemini against Qwen 
+
+Baseline w. thinking +0.30 ± 0.46 -0.57 ± 3.71 BoN-eval +1.50 ± 1.50 -1.61 ± 5.45 BoN-simulation +2.17 ± 4.33 +2.63 ± 6.67 BoN-oppo (iid) +0.60 ± 1.02 +0.10 ± 5.24 
+
+BoN-oppo +5.43 ± 3.57 +4.07 ± 2.26 Gemini against Llama 
+
+Baseline w. thinking -2.19 ± 6.51 +1.73 ± 5.09 BoN-eval +2.18 ± 3.50 -0.81 ± 5.95 BoN-simulation +5.41 ± 2.55 +2.53 ± 7.20 BoN-oppo (iid) +0.76 ± 7.07 +3.50 ± 7.81 
+
+BoN-oppo +5.56 ± 2.57 +5.23 ± 2.60 
+
+Table 3 | Results for our approach and baselines powered by Gemini playing against opponents powered by different base models. Bold indicates best average reward per model.
