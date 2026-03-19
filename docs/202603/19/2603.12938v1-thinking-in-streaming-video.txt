@@ -1,0 +1,599 @@
+Title: Thinking in Streaming Video
+
+URL Source: https://arxiv.org/pdf/2603.12938v1
+
+Published Time: Mon, 16 Mar 2026 00:56:40 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# Thinking in Streaming Video 
+
+Zikang Liu 1,2⋆, Longteng Guo 1⋆, Handong Li 1,2⋆, Ru Zhen 3, Xingjian He 1,Ruyi Ji 1, Xiaoming Ren 3, Yanhao Zhang 3, Haonan Lu 3, and Jing Liu 1,2⋆⋆  
+
+> 1
+
+Institute of Automation, Chinese Academy of Sciences  
+
+> 2
+
+School of Artificial Intelligence, University of Chinese Academy of Sciences  
+
+> 3
+
+OPPO AI Center, OPPO Inc. 
+
+{liuzikang2023}@ia.ac.cn, {longteng.guo,jliu}@nlpr.ia.ac.cn 
+
+Abstract. Real-time understanding of continuous video streams is es-sential for interactive assistants and multimodal agents operating in dy-namic environments. However, most existing video reasoning approaches follow a batch paradigm that defers reasoning until the full video con-text is observed, resulting in high latency and growing computational cost that are incompatible with streaming scenarios. In this paper, we introduce ThinkStream , a framework for streaming video reasoning based on a Watch–Think–Speak paradigm that enables models to incrementally update their understanding as new video observations ar-rive. At each step, the model performs a short reasoning update and de-cides whether sufficient evidence has accumulated to produce a response. To support long-horizon streaming, we propose Reasoning-Compressed Streaming Memory (RCSM), which treats intermediate reasoning traces as compact semantic memory that replaces outdated visual tokens while preserving essential context. We further train the model using a Stream-ing Reinforcement Learning with Verifiable Rewards scheme that aligns incremental reasoning and response timing with the requirements of streaming interaction. Experiments on multiple streaming video bench-marks show that ThinkStream significantly outperforms existing online video models while maintaining low latency and memory usage. Code, models and data will be released at https://github.com/johncaged/ ThinkStream 
+
+Keywords: Streaming Video · Incremental Reasoning · Memory 
+
+## 1 Introduction 
+
+Real-time understanding of continuous video streams is a core capability for interactive assistants and multimodal agents [28, 34, 35]. Unlike offline video question answering [1, 2, 15, 46], streaming scenarios impose several fundamental constraints: (i) strict causality , where reasoning must rely only on observations available up to the current moment; (ii) low computation and memory usage , re-quiring inference latency and resource usage to remain stable even as the stream  
+
+> ⋆
+
+Equal contribution.  
+
+> ⋆⋆
+
+Corresponding author. 
+
+> arXiv:2603.12938v1 [cs.CV] 13 Mar 2026
+
+2 Z. Liu et al. User Query: Where did I put the 
+
+> chopping board?
+
+…
+
+> Incoming
+> Video
+> Stream
+
+𝑉                                                       
+
+> Thinking
+> Stream
+> (Incremental
+> Resoning )
+> <response>You just put
+> the board near the sink
+> <think >:Video starts .
+> First -person view of a
+> kitchen .Person in green
+> shirt stands before a
+> white stove …
+> </think>
+> <silent>
+> <think >:…sink .They
+> appear to be preparing
+> to clean or organize the
+> kitchen tools after the
+> meal …
+> </think>
+> <think >:The cook is
+> handling the board near
+> the sink .He then turns
+> around and picks up a
+> new …
+> </think>
+> <think >:The video
+> captures the transition
+> from active cooking to
+> cleanup in akitchen
+> setting …
+> </think>
+> <silent> <silent>
+> (Person stands at stove )(Handles board near sink )(Moves toward sink )(Starts cleaning up )
+
+𝑣 ! 𝑣 " 𝑣 # 𝑣 $
+
+> Speak
+> Stream
+
+Fig. 1: Illustration of the Streaming Watch–Think–Speak paradigm. As video chunks arrive sequentially, the model continuously updates its understanding through incremental reasoning steps ( <think> ). Each update integrates newly observed evidence with accumulated context. Based on this evolving interpretation, the model decides whether sufficient evidence has been gathered to produce a response ( <response> ) or whether it should remain silent ( <silent> ) and continue observing the stream. 
+
+grows indefinitely; and (iii) timely interaction , which demands that the system maintain an up-to-date interpretation of the evolving scene to respond or act when necessary. Such constraints commonly arise in environments where visual events unfold continuously, including real-time assistants observing user activities, monitor-ing systems detecting emerging events, and embodied agents interacting with dynamic physical environments. However, most existing video reasoning paradigms remain fundamentally 
+
+batch : the model first consumes a long video context and only then performs multi-step reasoning to produce an answer [9, 33]. This design introduces unac-ceptable latency and weakens the connection between reasoning steps and the evidence that triggered them. Increasing the depth or length of Chain-of-Thought (CoT) reasoning partially mitigates this issue, but long-form decoding further inflates latency and compute, making it incompatible with continuous streams. In dynamic environments, human cognition often resembles thinking while ob-serving : people form provisional interpretations from local evidence, refine them as new signals arrive, and act once sufficient confidence has been accumulated. This observation motivates an incremental perspective on streaming video un-derstanding, where reasoning evolves alongside the incoming stream rather than being deferred until the full context is observed. In this paper, we propose a Streaming Watch–Think–Speak paradigm for video understanding. At each step, the model observes a newly arrived video chunk and performs a short reasoning update that integrates the new evidence with previously accumulated context. Based on this evolving understanding, the model determines whether the available evidence is sufficient to produce a response, or whether it should remain silent and continue observing the stream Thinking in Streaming Video 3
+
+until more information arrives. As illustrated in Fig. 1, the model produces a structured output consisting of (i) a reasoning segment enclosed in a <think> 
+
+block and (ii) an interaction action that either emits a response ( <response> )or indicates that the model remains silent ( <silent> ) and continues observing the stream. Building on this paradigm, we introduce ThinkStream , a framework that enables reasoning-capable multimodal models to operate over long-horizon video streams under low computational resources. The central challenge is to preserve coherent understanding without allowing the visual context, and thus the KV cache, to grow rapidly. To address this, we propose Reasoning-Compressed Streaming Memory (RCSM) , which treats intermediate reasoning traces as compact semantic memory. As the stream evolves, outdated visual tokens are evicted while the corresponding reasoning states are retained as long-term semantic anchors, preserving essential historical context while keeping inference cost stable. To train models that produce such reasoning updates, we introduce a Stream-ing Reinforcement Learning with Verifiable Rewards (RLVR) frame-work tailored to Watch–Think–Speak. We design simple rule-based rewards that are automatically verifiable and reflect the requirements of streaming interac-tion, encouraging the model to generate structured reasoning traces, respond only when sufficient evidence has accumulated, and maintain answer correctness throughout the stream. Finally, we support large-scale RLVR training and inference with an efficient streaming rollout backend that enables high-throughput inference with dynamic context updates. We also construct a large-scale dataset featuring time-grounded reasoning traces for cold-start supervision and a carefully formatted subset for RLVR training. Extensive experiments validate the effectiveness of our approach. On dedi-cated streaming video benchmarks, ThinkStream achieves substantially stronger performance than existing online video models, with even a compact 3B-scale model outperforming significantly larger baselines. Meanwhile, our framework maintains low latency and memory usage over long video streams, enabling real-time inference while preserving strong performance on standard offline video benchmarks. Our contributions are summarized as follows: 
+
+– We propose a Streaming Watch–Think–Speak paradigm that formulates streaming video understanding as an incremental reasoning and interaction process, enabling models to continuously update their interpretation while deciding when to respond. 
+
+– We introduce ThinkStream , a unified framework for long-horizon stream-ing video reasoning, together with Reasoning-Compressed Streaming Mem-ory (RCSM) that treats reasoning traces as compact semantic memory to replace evicted visual tokens while keeping inference cost much lower. 4 Z. Liu et al. 
+
+– We develop a Streaming Reinforcement Learning with RLVR train-ing scheme that aligns incremental reasoning and response timing through automatically verifiable reward signals. 
+
+– We support scalable training and deployment through an efficient streaming inference backend and construct a large-scale dataset with time-grounded reasoning traces. Our code, models, and datasets will be released to facilitate future research on streaming video reasoning. 
+
+## 2 Related Work 
+
+2.1 Streaming Video Understanding 
+
+Transitioning to streaming video for real-time interaction, early frameworks (e.g., VideoLLM-online [3]) rely on direct perception-response cycles lacking interme-diate reasoning. To manage massive visual token influxes, subsequent meth-ods introduced specialized memory architectures [16,42, 47], KV cache compres-sion [23,38,43] or KV cache sparsification/pruning [4,35]. However, their memory mechanisms remain purely visual, devoid of semantic compression and explicit logical deduction. Furthermore, addressing the proactive output timing ("when to speak") challenge, existing approaches (e.g., EgoSpeak [14], StreamMind [7]) heavily depend on dedicated classification heads or external event triggers. Con-versely, our framework eschews external classifiers; by integrating a generative reasoning phase, the model autonomously determines whether to remain silent or respond, seamlessly unifying perception, reasoning, and reaction into a single generative process. 
+
+2.2 Reasoning in Multimodal Large Language Models 
+
+While integrating Chain-of-Thought and Reinforcement Learning has signifi-cantly advanced LLMs [36, 37], video-domain adaptations [5, 25, 26, 30, 31] re-main confined to offline batch-processing, incompatible with real-time stream-ing constraints. Conversely, strictly text-based streaming reasoning frameworks like StreamingThinker [27] are ill-equipped for the concurrent think-and-respond demands and dense visual token bottlenecks of continuous video. Recognizing that reasoning advancements are fundamentally driven by RL, we introduce the first streaming RL approach to tackle these multimodal complexities. Fur-thermore, existing offline compression methods (e.g., LightThinker [44]) merely reduce cache size without leveraging reasoning as active memory. In contrast, our work explicitly repurposes CoT trajectories as compressed semantic memory. By aggressively evicting dense visual tokens while preserving reasoning chains, we propose a mechanism that simultaneously scales reasoning capabilities and bounds KV cache growth for continuous video streaming. 
+
+## 3 Streaming Watch–Think–Speak Paradigm 
+
+Human perception in continuous environments rarely proceeds as a purely re-active process. As new observations arrive, people constantly form provisional Thinking in Streaming Video 5Video Large Language Model          
+
+> ……
+> t
+> (a) Streaming Watch -Think -Speak & RLVR
+> User Instruction :What did Ido at the
+> beginning?
+> Think …
+> <silent>
+> Think …
+> <response>…
+> Think …
+> <silent>
+> G rollouts
+> Calculate Reward
+> Policy Update
+
+ℛ = ℛ𝒻ℴ𝓇𝓂𝒶𝓉 + ℛ𝓉𝒾𝓂ℯ + ℛ𝒶𝒸𝒸        
+
+> (b) Reasoning -Compressed Streaming Memory
+> Attention Mask System Token
+> Dense Video Token
+> Thinking/Response Toke n
+> Evicted Video Tokens
+> Eager Prefill
+> (Variable
+> Tokens)
+> Decode Kernel
+> (CUDA Graph
+> Replay)
+> Evict Kernel
+> (CUDA Graph
+> Replay)
+> (c) Streaming Inference
+> Chunk -by -Chunk Streaming Loop
+> Ragged
+> Input
+> In -Place Memory Shift
+
+Fig. 2: Overview of the ThinkStream framework. (a) Streaming Watch-Think-Speak Paradigm & RLVR: The model undergoes streaming rollouts and policy updates driven by format, latency, and accuracy rewards. (b) Reasoning-Compressed Streaming Mem-ory: Outdated dense video tokens are dynamically evicted from the KV cache, while highly compressed reasoning and response tokens are retained as long-term semantic anchors. (c) Streaming Inference: A custom backend utilizes Eager Prefill for variable tokens and replayable CUDA Graphs for both the Decode and Evict Kernels, enabling an efficient chunk-by-chunk streaming loop with in-place memory shifting. 
+
+interpretations, refine them with additional evidence, and occasionally act when the accumulated understanding becomes sufficiently reliable. This process in-terleaves perception and reasoning: local observations trigger short reasoning updates, and these incremental updates gradually consolidate into a coherent global interpretation of the scene. 
+
+3.1 Paradigm Design 
+
+Inspired by this cognitive pattern, we formulate streaming video understanding as a Watch–Think–Speak loop. Instead of separating perception and reasoning into two independent stages, the model performs incremental reasoning alongside the incoming stream. Each newly observed video segment triggers a short rea-soning update that integrates the latest evidence with previously accumulated understanding. Over time, these updates progressively transform local percep-tual signals into a structured interpretation of the evolving scene. Within this paradigm, reasoning operates as a lightweight but continuous pro-cess. Upon observing a new video chunk, the model may (1) summarize newly observed events, (2) update hypotheses about ongoing activities or (3) refine 6 Z. Liu et al. 
+
+causal or temporal relations inferred earlier. These reasoning steps are inten-tionally short and localized, ensuring that they can be generated within strict latency constraints while still allowing the model to maintain a coherent internal narrative of the stream. Following each reasoning update, the model determines whether to respond to the user. When sufficient evidence has accumulated, the model produces an explicit answer; otherwise it remains silent and continues observing the stream. 
+
+3.2 Formal Definition 
+
+Let the incoming video stream be represented as a sequence of temporal chunks 
+
+V = {v1, v 2, . . . , v t, . . . },where vt denotes the video segment observed at step t.Let I denote the user instruction or dialogue context. The model maintains a historical state Ht−1 summarizing the accumulated context from previous steps. Operationally, each streaming step produces a structured output consisting of a reasoning segment followed by an interaction decision. The output format is defined as ⟨think ⟩ rt ⟨/think ⟩ at. Here rt denotes the reasoning tokens generated at step t, and at represents the action taken by the model. The action either produces a response or explicitly indicates that the model remains silent. Formally, given the incoming chunk vt, the generation process follows 
+
+p(rt, a t | H t−1, v t, I) = 
+
+> |rt⊕at|
+
+Y
+
+> i=1
+
+πθ
+
+ yi | y<i , Ht−1, v t, I, (1) where πθ denotes the policy model and ⊕ represents sequence concatenation. The action space is restricted to two possibilities: 
+
+at ∈ ⟨silent ⟩, ⟨response ⟩ ⊕ ct , (2) where ct denotes the generated response content. Emitting ⟨silent ⟩ indicates that the model continues observing the stream without responding, while emitting 
+
+⟨response ⟩ signals that the model has accumulated sufficient evidence to produce an answer. This formulation allows reasoning to unfold incrementally along the temporal stream. Each reasoning segment rt updates the model’s internal understanding based solely on observations available up to time t, ensuring strict streaming causality. Meanwhile, the speaking decision at transforms the evolving reasoning state into an interaction policy that determines when the model should respond and when it should continue watching. 
+
+## 4 ThinkStream 
+
+Building upon our Watch-Think-Speak loop, we introduce ThinkStream , a unified framework that enables reasoning-capable multimodal models to operate under the strict computational constraints of continuous video streams. The Thinking in Streaming Video 7
+
+central challenge lies in reconciling two competing requirements: maintaining coherent long-horizon understanding over the video stream while preserving real-time inference efficiency. 
+
+4.1 Reasoning-Compressed Streaming Memory 
+
+Continuous video streams naturally produce a large number of visual tokens. If all tokens are retained in the KV cache, both memory usage and attention com-plexity grow monotonically with time, eventually rendering real-time inference infeasible. However, not all past visual observations are equally important. Early visual details can often be replaced by higher-level semantic summaries once the model has formed a stable interpretation of the scene. Motivated by this observation, we introduce Reasoning-Compressed Stream-ing Memory ( RCSM ). The core idea of RCSM is to treat reasoning tokens as compressed semantic representations of earlier visual observations. Instead of storing the entire history of dense visual tokens, the model gradually replaces outdated visual features with the reasoning traces generated during the stream-ing reasoning process. 
+
+Reasoning-as-Compression State. In the Watch-Think-Speak paradigm, each reasoning segment rt reflects the model’s interpretation of the newly ob-served video chunk vt conditioned on prior context. These reasoning tokens en-code semantic abstractions such as events, temporal relations, and causal hy-potheses derived from the raw visual input. We therefore interpret the reasoning state as a compression operator that transforms dense perceptual evidence into compact symbolic representations. Formally, let KV (·) denote the cached key-value representations of tokens. In-stead of preserving all visual tokens {v1, . . . , v t}, the model maintains a mixed memory state consisting of recent visual tokens and accumulated reasoning to-kens. The memory state at step t is defined as 
+
+Mt = Concat 
+
+
+
+{KV (vτ )}tτ =max(1 ,t −W +1) , {KV (rτ ⊕ aτ )}tτ =1 
+
+
+
+, (3) where W denotes the size of the visual sliding window. In this design, reasoning tokens act as long-term semantic anchors that preserve the essential interpre-tation of earlier observations. When the stream length exceeds the window W ,the earliest visual tokens are evicted from the cache. Let vt−W denote the oldest visual chunk within the window. When a new chunk vt+1 arrives, the tokens cor-responding to vt−W are removed from the KV cache. This design establishes a natural transition from dense perceptual memory to compressed semantic mem-ory as the stream evolves. Specifically, the number of retained visual tokens is upper-bounded by the window size, while reasoning tokens grow at a much slower rate due to their compact representation. Consequently, the effective context length remains sta-ble even for long video streams. This property allows ThinkStream to sustain 8 Z. Liu et al. 
+
+real-time inference over continuous video input while preserving the semantic information required for long-horizon reasoning. 
+
+4.2 Streaming-Context RLVR Training 
+
+RCSM specifies what state is retained under streaming constraints; the remain-ing question is how to train the model to produce reasoning traces that are simultaneously useful for solving the current query and informative enough to serve as compressed long-term memory once dense visual tokens are evicted. To this end, we adopt a Streaming Reinforcement Learning with Verifiable Rewards (RLVR) setup tailored to the Watch-Think-Speak loop. 
+
+Streaming Rollout with Partial Reasoning. Let the video stream be rep-resented as a sequence of chunks V = {v1, v 2, . . . } with user instruction I. At each step t, the policy observes the current chunk vt alongside the accumulated streaming history Ht−1 to produce an output tuple ot = ( rt, a t).The streaming history, maintained via the RCSM memory mechanism in Sec. 4.1, is denoted as: 
+
+Ht−1 = {(vτ , r τ , a τ )}t−1  
+
+> τ=1
+
+(4) Since the model only has access to the temporal prefix V≤t at any given moment, the joint probability of the streaming rollout trajectory factorizes step-by-step as follows: 
+
+πθ (o1: T |V 1: T , I) = 
+
+> T
+
+Y
+
+> t=1
+
+πθ (rt, a t|H t−1, v t, I) (5) 
+
+RL Optimization. We adopt Group Relative Policy Optimization (GRPO) for model training. We sample G trajectories {o(1) 1: T , . . . , o (G)1: T } for each streaming instance, and optimize the policy using the standard clipped objective with KL regularization:            
+
+> J(θ) = E
+> "
+> 1
+> G
+> GX
+> i=1
+> min
+> 
+> ρi(θ) ˆAi,clip (ρi(θ),1−ϵ, 1 + ϵ) ˆAi
+> 
+> −βD KL (πθ∥πref )
+> #
+> .(6)
+
+Reward Design. The reward function provides the essential training signal to align the policy with the Watch-Think-Speak loop under stringent stream-ing constraints. To this end, we formulate a rule-based reward system com-prising three integral components: an accuracy reward, a format reward, and a time reward. The accuracy reward (Racc ) assigns positive credit to responses that successfully match the ground-truth answer. To facilitate reliable auto-mated verification, our RLVR samples are meticulously constructed utilizing deterministic formats, including multiple-choice, binary (Yes/No), and counting queries. Concurrently, the format reward (Rf ormat ) enforces strict adherence to the structured interaction protocol mandated by the loop, yielding a positive Thinking in Streaming Video 9
+
+value strictly when the generated output conforms to the prescribed structural constraints, and zero otherwise. Additionally, because streaming interactions necessitate temporally appro-priate responses, we introduce a time reward (Rtime ). This component quanti-fies the temporal discrepancy between the model’s response step tresp and the ground-truth step tgt . We apply a linear decay within a predefined tolerance window w, formulated as Rtime = max(0 , 1 − | tresp − tgt |/w ). This mechanism effectively penalizes both premature inferences and excessive latency. Ultimately, the total reward is computed as the linear summation of these three components: 
+
+R = Rf ormat + Rtime + Racc . (7) Collectively, this composite reward structure rigorously incentivizes the model to generate well-structured reasoning, actuate responses at optimal temporal junctures, and maintain factual fidelity throughout the duration of the streaming interaction. 
+
+4.3 High-Efficiency Streaming Inference 
+
+The online rollout phase of RLVR requires high-throughput streaming inference, where the model repeatedly performs chunk-level decoding while dynamically updating the KV cache. In particular, the RCSM memory mechanism requires pruning stale visual tokens during decoding, which demands explicit control over KV cache manipulation. Existing frameworks are not well suited for this setting. Native transformers 
+
+implementations allow manual KV cache operations but suffer from significant kernel launch overhead, while optimized engines such as vLLM and SGLang achieve high decoding throughput but provide limited support for customized KV cache updates required by RCSM. To address this limitation, we design a streaming inference backend based on 
+
+CUDA Graphs , which is illustrated in Fig. 2(c). The execution pipeline consists of two stages: (1) Prefill Phase: Executed in eager mode to process newly ar-rived visual tokens and update the KV cache. (2) Decode-and-Prune Phase: 
+
+Captured as a CUDA graph that performs token decoding together with KV cache pruning in replayable execution graphs. More implementation details can be found in the Appendix. 
+
+## 5 ThinkStream Dataset 
+
+To train the model for real-time streaming reasoning and interaction, we con-struct a large-scale, high-quality dataset featuring time-grounded CoT and ver-ifiable question-answering pairs. Our data generation pipeline consists of three sequential stages. 10 Z. Liu et al. 
+
+Video Segmentation and Dense Captioning. We employ PySceneDetect to segment continuous videos into coherent temporal scenes. We then utilize Qwen3-VL-235B-A22B-Instruct [1] to densely caption each segment, yielding a sequence of timestamped semantic descriptions that serve as the foundational factual grounding for all subsequent generation phases. 
+
+Diverse Instruction Synthesis. We construct highly diverse instruction data by exploring three key scenario dimensions: interaction modes ( Real-time Dia-logue , Event Trigger , Continuous Output ), temporal scopes ( Past , Current , Fu-ture ), and seven fine-grained content semantics (including entity attributes , ac-tion semantics , spatial relationships , causal reasoning , procedural states , global scenes , and optical character recognition ). By computing the Cartesian product of these dimensions and filtering for practical validity, we derive 39 meaning-ful scenario combinations. Guided by these filtered combinations, we synthesize diverse question-answering pairs that span multiple formats, specifically open-ended, multiple-choice, binary (Yes/No), and counting questions. 
+
+Time-Grounded CoT Generation. Leveraging the timestamped captions and the generated instruction pairs, we simulate the internal reasoning traces to synthesize a dense, continuous, and strictly time-grounded CoT. This ensures that every thought and response is causally constrained to its specific timestamp, effectively acting as an uninterrupted stream of consciousness .Through this unified pipeline, we ultimately construct 110K Cold Start in-stances paired with detailed reasoning traces, alongside 9K RLVR instances strictly formatted for verifiable reward optimization. Comprehensive details re-garding the video source, dataset distributions and prompt templates are pro-vided in the Appendix. 
+
+## 6 Experiments 
+
+To evaluate the effectiveness of the proposed ThinkStream framework, we con-duct extensive experiments across streaming and offline video benchmarks. We also provide detailed ablation studies and efficiency profiling to validate our architectural designs and the real-time capabilities of our custom streaming in-ference engine. 
+
+Implementation Details. We initialize our framework based on the Qwen2.5-VL-3B [2] model. During the Cold Start phase, we train the model with a batch size of 64 and a learning rate of 1 × 10 −5. In the subsequent Reinforcement Learning (RL) phase, we employ a batch size of 8, a GRPO group size of 8, and a learning rate of 2 × 10 −7. The AdamW [20] optimizer is utilized across all training stages. For video processing, frames are sampled at a rate of 2 FPS and encoded using native dynamic resolution. All training experiments are conducted on a single node equipped with 8 NVIDIA H20 GPUs. Thinking in Streaming Video 11 
+
+Table 1: Performance comparison of ThinkStream and existing open-source offline and online models on the OVO-Bench streaming video benchmark. ThinkStream-3B achieves a strong average score, significantly surpassing its base model and competing online models.                                                                                                                                                       
+
+> Model Real-Time Visual Perception Backward Tracing Avg.
+> OCR ACR ATR STU FPD OJR Avg. EPM ASI HLD Avg.
+> Open-source Offline Models
+> LLaVA-Video-7B [46] 69.13 58.72 68.83 49.44 74.26 59.78 63.52 56.23 57.43 7.53 40.4 51.96 Qwen2-VL-7B [29] 60.4 50.46 56.03 47.19 66.34 55.43 55.98 47.81 35.48 56.08 46.46 51.22 LongVU-7B [24] 53.69 53.21 62.93 47.75 68.32 59.78 57.61 40.74 59.46 4.84 35.01 46.31 Qwen2.5-VL-3B [2] 76.51 44.03 67.24 42.13 68.31 61.96 60.03 50.50 53.38 22.04 41.98 51.00 Qwen2.5-VL-7B [2] 67.79 55.05 67.24 42.13 66.34 60.87 59.90 51.52 58.78 23.66 44.65 52.28 Qwen2.5-VL-32B [2] 77.18 58.72 68.10 50.56 74.26 57.61 64.40 58.59 62.84 29.57 50.33 57.37
+> Open-source Online Models
+> Flash-VStream-7B [42] 24.16 29.36 28.45 33.71 25.74 28.8 28.37 39.06 37.16 5.91 27.38 27.88 VideoLLM-online-8B [3] 8.05 23.85 12.07 14.04 45.54 21.2 20.79 22.22 18.8 12.18 17.73 19.26 Dispider-7B [22] 57.72 49.54 62.07 44.94 61.39 51.63 54.55 48.48 55.41 4.3 36.06 45.31 StreamForest-7B [41] 68.46 53.21 71.55 47.75 65.35 60.87 61.20 58.92 64.86 32.26 52.02 56.61 Streamo-3B [34] 78.52 52.29 67.24 44.38 55.45 71.20 61.51 51.18 57.43 16.67 41.76 51.64
+> ThinkStream-3B (Ours) 85.23 64.22 69.82 49.43 69.31 64.13 67.03 53.87 59.46 43.55 52.30 59.66
+
+6.1 Main Results 
+
+Streaming Video Benchmarks. We comprehensively evaluate ThinkStream on specialized streaming video benchmarks [18, 21]. As shown in Tab. 1 and Tab. 2, our models consistently outperform existing models. Specifically, in Tab. 1, ThinkStream-3B achieves an overall average score of 59.66, significantly surpassing both its base model Qwen2.5-VL-3B (51.00) and competing open-source online models such as Streamo-3B (51.64) on OVO-Bench. Furthermore, on the StreamingBench Real-Time detailed in Tab. 2, ThinkStream-3B attains an average score of 75.00. This not only vastly exceeds other open-source on-line MLLMs like Dispider-7B (67.63) but also demonstrates highly competitive performance against proprietary models such as GPT-4o (73.28). The results demonstrate that ThinkStream achieves strong performance on streaming video tasks, showing the effectiveness of our Watch-Think-Speak loop. 
+
+Offline Video Benchmarks. To ensure the general ability of our streaming-optimized architecture, we also evaluate on standard offline video benchmarks [10, 32]. Despite aggressively evicting visual tokens, ThinkStream-3B achieves highly competitive performance as demonstrated in Tab. 3. Specifically, our model achieves a score of 61.9 on VideoMME and 56.4 on Long VideoBench. With an overall average score of 59.4 across the evaluated metrics, ThinkStream-3B significantly outperforms its base model Qwen2.5-VL-3B (with a 54.4 average). This proves that our ThinkStream effectively preserves understanding capabili-ties on offline video tasks. 12 Z. Liu et al. 
+
+Table 2: Performance comparison of various MLLMs on the StreamingBench Real-Time benchmark. ThinkStream-3B demonstrates highly competitive performance against proprietary models such as GPT-4o and vastly exceeds other open-source on-line MLLMs.                                                                                                                                                               
+
+> Model OP CR CS ATP EU TR PR SU ACP CT Avg.
+> Human 89.47 92.00 93.60 91.47 95.65 92.52 88.00 88.75 89.74 91.30 91.46
+> Proprietary MLLMs
+> Gemini 1.5 pro [11] 79.02 80.47 83.54 79.67 80.00 84.74 77.78 64.23 71.95 48.70 75.69 GPT-4o [13] 77.11 80.47 83.91 76.47 70.19 83.80 66.67 62.19 69.12 49.22 73.28 Claude 3.5 Sonnet 73.33 80.47 84.09 82.02 75.39 79.53 61.11 61.79 69.32 43.09 72.44
+> Open-source Offline MLLMs
+> VILA-1.5-8B [17] 53.68 49.22 70.98 56.86 53.42 53.89 54.63 48.78 50.14 17.62 52.32 LongVA-7B [45] 70.03 63.28 61.20 70.92 62.73 59.50 61.11 53.66 54.67 34.72 59.96 LLaVA-NeXT-Video-32B [19] 78.20 70.31 73.82 76.80 63.35 69.78 57.41 56.10 64.31 38.86 66.96 Qwen2.5-VL-3B [2] 67.21 68.75 75.39 79.17 72.96 72.27 71.30 61.38 71.59 26.06 67.96 Qwen2.5-VL-7B [2] 77.93 76.56 78.55 80.86 76.73 76.95 80.56 65.45 65.72 52.85 73.31 Qwen2.5-VL-32B [2] 76.29 79.69 78.55 83.50 76.10 79.44 80.56 61.38 68.27 59.07 74.27
+> Open-source Online MLLMs
+> Flash-VStream-7B [42] 25.89 43.57 24.91 23.87 27.33 13.08 18.52 25.20 23.87 48.70 23.23 VideoLLM-online-8B [3] 39.07 40.06 34.49 31.05 45.96 32.40 31.48 34.16 42.49 27.89 35.99 Dispider-7B [22] 74.92 75.53 74.10 73.08 74.44 59.92 76.14 62.91 62.16 45.80 67.63
+> ThinkStream-3B (Ours) 83.74 70.31 76.03 82.69 76.73 78.19 76.85 70.73 74.43 45.21 75.00
+
+6.2 Ablation Study 
+
+Reasoning Token Budget. We ablate the maximum reasoning token budget allocated per second of video. As illustrated in Tab. 4, increasing the reasoning token budget up to 20 tokens per second yields substantial performance improve-ments, as the model gains sufficient capacity for logical deduction. Specifically, scaling the budget from 0 to 20 tokens significantly improves the OVO-Backward score from 41.8 to 52.3. However, allocating beyond 20 tokens per second results in marginal performance gains (the OVO-Backward score only reaches 52.6 at 30 tokens) while inflating computational overhead and decoding latency, which jumps from 380 ms at 20 tokens to 505 ms at 30 tokens. Thus, 20 tokens per second strikes the optimal balance between reasoning capacity and efficiency. 
+
+Video KV Cache Window Size. We investigate the impact of the dense vi-sual token retention window, which is shown in Tab. 5. Setting the window size to 20 seconds achieves the best performance, peaking at 75.0 on StreamingBench Real-Time and 52.3 on OVO-Backward. By contrast, narrower windows such as 5s and 10s result in lower OVO-Backward scores of 46.7 and 50.1, respectively, whereas expanding the window to 30s slightly degrades the OVO-Backward per-formance to 51.6. This confirms the validity of our assumption that short-term, high-resolution visual context combined with long-term semantic reasoning to-kens is sufficient for continuous video understanding. Thinking in Streaming Video 13 
+
+Table 3: Model performance comparison on standard offline video benchmarks, in-cluding VideoMME and Long VideoBench. Despite aggressively evicting visual tokens, ThinkStream-3B achieves highly competitive performance, demonstrating that it effec-tively preserves understanding capabilities on offline tasks.                                 
+
+> Model OVO Real-Time OVO Backward VideoMME LongVideoBench Avg.
+> Flash-VStream-7B 28.4 27.4 61.2 --VideoLLM-online-8B 20.8 17.7 26.9 --Dispider-7B 54.6 36.1 57.2 --Streamo-3B 61.5 41.8 61.8 56.2 55.3 Qwen2.5-VL-3B 60.0 41.9 61.5 54.2 54.4 ThinkStream-3B (Ours) 67.0 ( ↑7.0) 52.3 ( ↑10.4) 61.9 ( ↑0.8) 56.4 ( ↑1.8) 59.4 ( ↑5.0)
+
+Table 4: Ablation on Reasoning Token Budget. Allocating 20 tokens per second strikes the optimal balance between rea-soning capacity and efficiency.                 
+
+> #Token Streaming. OVO-BW Latency (ms) ↓
+> 069.6 41.8 130
+> 570.2 46.9 193 10 72.3 49.7 255 20 75.0 52.3 380 30 75.0 52.6 505
+
+Table 5: Ablation on Visual KV Cache Window Size. Setting the window size to 20 seconds achieves the best trade-off be-tween accuracy and efficiency.             
+
+> Window Streaming. OVO-RT OVO-BW
+> 5s 73.9 65.2 46.7 10s 74.5 66.3 50.1 20s 75.0 67.0 52.3
+> 30s 74.9 66.8 51.6
+
+Stream Memory Representation and RLVR Optimization. To validate the necessity of our RLVR pipeline and the specific memory representation, we compare several variants: (1) no memory, (2) discrete caption tokens as memory, (3) Cold-start CoT memory, and (4) our RLVR-optimized CoT memory. As is shown in Tab. 6, initializing the model with constructed cold-start CoT data yields a significant gain, improving the average score from 56.9 (no memory) to 60.5. Interestingly, utilizing discrete caption tokens actually diminishes the overall capability, dropping the average score to 48.7. Finally, ost-training the model with RLVR further boosts average performance by 4.3 points (reaching 64.8), demonstrating that reasoning tokens learn to act as a far superior, highly compressed long-term memory compared to naive discrete captions. 
+
+6.3 Efficiency and Real-Time Analysis 
+
+A core contribution of our work is ensuring that the Streaming Watch-Think-Speak paradigm strictly adheres to real-time constraints. We profile our CUDA Graph-based Streaming Inference Engine against standard eager transformers implementations. As shown in Fig. 3, our custom engine achieves a massive speedup in token decoding across various batch sizes compared to the Qwen2.5-VL-3B model. For instance, at a batch size of 1, our engine delivers 154.07 tokens/s compared to the baseline’s 30.06 tokens/s, representing a more than 5 × speedup. Furthermore, 14 Z. Liu et al. 
+
+Table 6: Ablation on Stream Memory Representation and RLVR Optimization. Post-training with RLVR demonstrates that reasoning tokens act as a highly compressed long-term memory representation. 
+
+Memory Variant Streaming. OVO-BW OVO-RT Avg. 
+
+Qwen2.5-VL-3B 68.9 41.9 60.0 56.9 Discrete caption as memory 59.0 36.9 50.1 48.7 No memory 69.6 41.8 59.2 56.9 Cold-start CoT memory 70.6 47.6 63.3 60.5 RLVR-optimized CoT memory 75.0 52.3 67.0 64.8 2.78x 
+
+Fig. 3: Token decoding speed compari-son across different batch sizes. The cus-tom CUDA Graph-based streaming infer-ence engine achieves a massive speedup compared to the standard Qwen2.5-VL-3B baseline, maintaining high throughput while preserving flexible KV cache con-trol. 4.0x 
+
+Fig. 4: Real-time latency scaling with processed video length. ThinkStream suc-cessfully bounds the end-to-end inference latency below the 0.5s real-time thresh-old (required for 2 FPS inputs) as the video context grows, whereas the baseline model scales poorly and consistently vio-lates the threshold. 
+
+at a batch size of 8, our decoding speed scales efficiently to 766.87 tokens/s, significantly outperforming the baseline’s 276.10 tokens/s. This confirms that our custom backend maintains high throughput while preserving the flexible, manual KV cache control required for our eviction strategy. Crucially, as illustrated in Fig. 4, our framework successfully bounds latency as the processed video length increases. While the baseline model’s latency scales poorly and consistently violates the real-time threshold—fluctuating between 1.0s and 1.4s per second of video—our combination of algorithmic KV cache eviction and engineering optimizations ensures that the end-to-end inference latency remains flat. It consistently stays below the 0.5s real-time threshold required for 2 FPS inputs. The total processing delay remains bounded, proving that our approach can be deployed efficiently in streaming video environments. Thinking in Streaming Video 15 
+
+## 7 Conclusion 
+
+We study streaming video reasoning, where models must continuously interpret incoming observations under strict latency and memory constraints. We intro-duce the Watch–Think–Speak paradigm and propose ThinkStream, a framework that enables incremental reasoning over long video streams. Through Reasoning-Compressed Streaming Memory (RCSM) and streaming reinforcement learn-ing with verifiable rewards, our approach maintains bounded memory usage while preserving coherent long-horizon understanding. Experiments show that ThinkStream achieves strong performance on streaming video benchmarks with low latency while retaining competitive capability on standard offline video tasks. 
+
+## References 
+
+1. Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., et al.: Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 (2025) 2. Bai, S., Chen, K., Liu, X., Wang, J., Ge, W., Song, S., Dang, K., Wang, P., Wang, S., Tang, J., Zhong, H., Zhu, Y., Yang, M., Li, Z., Wan, J., Wang, P., Ding, W., Fu, Z., Xu, Y., Ye, J., Zhang, X., Xie, T., Cheng, Z., Zhang, H., Yang, Z., Xu, H., Lin, J.: Qwen2.5-vl technical report. arXiv preprint arXiv:2502.13923 (2025) 3. Chen, J., Lv, Z., Wu, S., Lin, K.Q., Song, C., Gao, D., Liu, J.W., Gao, Z., Mao, D., Shou, M.Z.: Videollm-online: Online video large language model for streaming video. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 18407–18418 (2024) 4. Chen, Y., Bai, X., Wang, Z., Bai, C., Dai, Y., Lu, M., Zhang, S.: Streamkv: Stream-ing video question-answering with segment-based kv cache retrieval and compres-sion. arXiv preprint arXiv:2511.07278 (2025) 5. Chen, Y., Huang, W., Shi, B., Hu, Q., Ye, H., Zhu, L., Liu, Z., Molchanov, P., Kautz, J., QI, X., et al.: Scaling rl to long videos. In: The Thirty-ninth Annual Conference on Neural Information Processing Systems 6. Dao, T.: Flashattention-2: Faster attention with better parallelism and work par-titioning. arXiv preprint arXiv:2307.08691 (2023) 7. Ding, X., Wu, H., Yang, Y., Jiang, S., Zhang, Q., Bai, D., Chen, Z., Cao, T.: Streammind: Unlocking full frame rate streaming video dialogue through event-gated cognition. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 13448–13459 (2025) 8. Dong, J., Feng, B., Guessous, D., Liang, Y., He, H.: Flex attention: A programming model for generating optimized attention kernels. arXiv preprint arXiv:2412.05496 
+
+2(3), 4 (2024) 9. Feng, K., Gong, K., Li, B., Guo, Z., Wang, Y., Peng, T., Wu, J., Zhang, X., Wang, B., Yue, X.: Video-r1: Reinforcing video reasoning in mllms. arXiv preprint arXiv:2503.21776 (2025) 10. Fu, C., Dai, Y., Luo, Y., Li, L., Ren, S., Zhang, R., Wang, Z., Zhou, C., Shen, Y., Zhang, M., et al.: Video-mme: The first-ever comprehensive evaluation benchmark of multi-modal llms in video analysis. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 24108–24118 (2025) 11. Gemini, G.T.: 1.5: unlocking multimodal understanding across millions of tokens of context. arXiv preprint arXiv:2403.05530 (2024) 16 Z. Liu et al. 12. Hsu, P.L., Dai, Y., Kothapalli, V., Song, Q., Tang, S., Zhu, S., Shimizu, S., Sahni, S., Ning, H., Chen, Y.: Liger kernel: Efficient triton kernels for llm training. arXiv preprint arXiv:2410.10989 (2024) 13. Hurst, A., Lerer, A., Goucher, A.P., Perelman, A., Ramesh, A., Clark, A., Os-trow, A., Welihinda, A., Hayes, A., Radford, A., et al.: Gpt-4o system card. arXiv preprint arXiv:2410.21276 (2024) 14. Kim, J., Kim, M.S., Chung, J., Cho, J., Kim, J., Kim, S., Sim, G., Yu, Y.: Egospeak: learning when to speak for egocentric conversational agents in the wild. In: Findings of the Association for Computational Linguistics: NAACL 2025. pp. 2990–3005 (2025) 15. Li, H., Zhang, Y., Guo, L., Yue, X., Liu, J.: Breaking the encoder barrier for seam-less video-language understanding. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 23167–23176 (2025) 16. Li, W., Hu, B., Shao, R., Shen, L., Nie, L.: Lion-fs: Fast & slow video-language thinker as online video assistant. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 3240–3251 (2025) 17. Lin, J., Yin, H., Ping, W., Molchanov, P., Shoeybi, M., Han, S.: Vila: On pre-training for visual language models. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 26689–26699 (2024) 18. Lin, J., Fang, Z., Chen, C., Wan, Z., Luo, F., Li, P., Liu, Y., Sun, M.: Stream-ingbench: Assessing the gap for mllms to achieve streaming video understanding. arXiv preprint arXiv:2411.03628 (2024) 19. Liu, H., Li, C., Li, Y., Li, B., Zhang, Y., Shen, S., Lee, Y.J.: Llavanext: Improved reasoning, ocr, and world knowledge (2024) 20. Loshchilov, I., Hutter, F.: Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 (2017) 21. Niu, J., Li, Y., Miao, Z., Ge, C., Zhou, Y., He, Q., Dong, X., Duan, H., Ding, S., Qian, R., et al.: Ovo-bench: How far is your video-llms from real-world online video understanding? In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 18902–18913 (2025) 22. Qian, R., Ding, S., Dong, X., Zhang, P., Zang, Y., Cao, Y., Lin, D., Wang, J.: Dispider: Enabling video llms with active real-time interaction via disentangled perception, decision, and reaction. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 24045–24055 (2025) 23. Qian, R., Dong, X., Zhang, P., Zang, Y., Ding, S., Lin, D., Wang, J.: Streaming long video understanding with large language models. Advances in Neural Information Processing Systems 37 , 119336–119360 (2024) 24. Shen, X., Xiong, Y., Zhao, C., Wu, L., Chen, J., Zhu, C., Liu, Z., Xiao, F., Varadarajan, B., Bordes, F., et al.: Longvu: Spatiotemporal adaptive compression for long video-language understanding. arXiv preprint arXiv:2410.17434 (2024) 25. Tang, C., Han, Z., Sun, H., Zhou, S., Zhang, X., Wei, X., Yuan, Y., Xu, J., Sun, H.: Tspo: Temporal sampling policy optimization for long-form video language understanding. arXiv preprint arXiv:2508.04369 (2025) 26. Tian, S., Wang, R., Guo, H., Wu, P., Dong, Y., Wang, X., Yang, J., Zhang, H., Zhu, H., Liu, Z.: Ego-r1: Chain-of-tool-thought for ultra-long egocentric video reasoning. arXiv preprint arXiv:2506.13654 (2025) 27. Tong, J., Fan, Y., Zhao, A., Ma, Y., Shen, X.: Streamingthinker: Large language models can think while reading. arXiv preprint arXiv:2510.17238 (2025) 28. Wang, H., Feng, B., Lai, Z., Xu, M., Li, S., Ge, W., Dehghan, A., Cao, M., Huang, P.: Streambridge: Turning your offline video large language model into a proactive streaming assistant. arXiv preprint arXiv:2505.05467 (2025) Thinking in Streaming Video 17 29. Wang, P., Bai, S., Tan, S., Wang, S., Fan, Z., Bai, J., Chen, K., Liu, X., Wang, J., Ge, W., et al.: Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution. arXiv preprint arXiv:2409.12191 (2024) 30. Wang, S., Jin, J., Wang, X., Song, L., Fu, R., Wang, H., Ge, Z., Lu, Y., Cheng, X.: Video-thinker: Sparking" thinking with videos" via reinforcement learning. arXiv preprint arXiv:2510.23473 (2025) 31. Wang, Z., Yoon, J., Yu, S., Islam, M.M., Bertasius, G., Bansal, M.: Video-rts: Rethinking reinforcement learning and test-time scaling for efficient and enhanced video reasoning. In: Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing. pp. 28114–28128 (2025) 32. Wu, H., Li, D., Chen, B., Li, J.: Longvideobench: A benchmark for long-context interleaved video-language understanding. Advances in Neural Information Pro-cessing Systems 37 , 28828–28857 (2024) 33. Wu, T., Yang, L., Zhan, G., Zhang, Y., Liao, Y., Li, J., Fu, D., Zhang, L., Wang, L.: Tempr1: Improving temporal understanding of mllms via temporal-aware multi-task reinforcement learning. arXiv preprint arXiv:2512.03963 (2025) 34. Xia, J., Chen, P., Zhang, M., Sun, X., Zhou, K.: Streaming video instruction tuning. arXiv preprint arXiv:2512.21334 (2025) 35. Xu, R., Xiao, G., Chen, Y., He, L., Peng, K., Lu, Y., Han, S.: Streamingvlm: Real-time understanding for infinite video streams. arXiv preprint arXiv:2510.09608 (2025) 36. Yang, A., Li, A., Yang, B., Zhang, B., Hui, B., Zheng, B., Yu, B., Gao, C., Huang, C., Lv, C., et al.: Qwen3 technical report. arXiv preprint arXiv:2505.09388 (2025) 37. Yang, A., Yang, B., Zhang, B., Hui, B., Zheng, B., Yu, B., Li, C., Liu, D., Huang, F., Wei, H., Lin, H., Yang, J., Tu, J., Zhang, J., Yang, J., Yang, J., Zhou, J., Lin, J., Dang, K., Lu, K., Bao, K., Yang, K., Yu, L., Li, M., Xue, M., Zhang, P., Zhu, Q., Men, R., Lin, R., Li, T., Xia, T., Ren, X., Ren, X., Fan, Y., Su, Y., Zhang, Y., Wan, Y., Liu, Y., Cui, Z., Zhang, Z., Qiu, Z.: Qwen2.5 technical report. arXiv preprint arXiv:2412.15115 (2024) 38. Yang, Y., Zhao, Z., Shukla, S.N., Singh, A., Mishra, S.K., Zhang, L., Ren, M.: Streammem: Query-agnostic kv cache memory for streaming video understanding. arXiv preprint arXiv:2508.15717 (2025) 39. Ye, Z., Chen, L., Lai, R., Lin, W., Zhang, Y., Wang, S., Chen, T., Kasikci, B., Grover, V., Krishnamurthy, A., et al.: Flashinfer: Efficient and customizable at-tention engine for llm inference serving. Proceedings of Machine Learning and Systems 7 (2025) 40. Yuan, L., Wang, J., Sun, H., Zhang, Y., Lin, Y.: Tarsier2: Advancing large vision-language models from detailed video description to comprehensive video under-standing. arXiv preprint arXiv:2501.07888 (2025) 41. Zeng, X., Qiu, K., Zhang, Q., Li, X., Wang, J., Li, J., Yan, Z., Tian, K., Tian, M., Zhao, X., et al.: Streamforest: Efficient online video understanding with persistent event memory. arXiv preprint arXiv:2509.24871 (2025) 42. Zhang, H., Wang, Y., Tang, Y., Liu, Y., Feng, J., Jin, X.: Flash-vstream: Efficient real-time understanding for long video streams. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 21059–21069 (2025) 43. Zhang, H., Yang, S., Fu, J., Ng, S.K., Qiu, X.: Hermes: Kv cache as hi-erarchical memory for efficient streaming video understanding. arXiv preprint arXiv:2601.14724 (2026) 44. Zhang, J., Zhu, Y., Sun, M., Luo, Y., Qiao, S., Du, L., Zheng, D., Chen, H., Zhang, N.: Lightthinker: Thinking step-by-step compression. In: Proceedings of 18 Z. Liu et al. the 2025 Conference on Empirical Methods in Natural Language Processing. pp. 13318–13339 (2025) 45. Zhang, P., Zhang, K., Li, B., Zeng, G., Yang, J., Zhang, Y., Wang, Z., Tan, H., Li, C., Liu, Z.: Long context transfer from language to vision. arXiv preprint arXiv:2406.16852 (2024) 46. Zhang, Y., Wu, J., Li, W., Li, B., Ma, Z., Liu, Z., Li, C.: Llava-video: Video instruction tuning with synthetic data. arXiv preprint arXiv:2410.02713 (2024) 47. Zhao, Z., Wang, K., Li, S., Qian, R., Lin, W., Liu, H.: Cogstream: Context-guided streaming video question answering. arXiv preprint arXiv:2506.10516 (2025) Thinking in Streaming Video 19 
+
+## A More Implementation Details 
+
+A.1 Streaming Inference 
+
+As illustrated in Algorithm 1, recording both decoding and pruning operations into static CUDA graphs eliminates per-step kernel launch overhead while pre-serving explicit control over KV cache manipulation. This design enables flexible KV cache updates required by RCSM while achieving decoding throughput com-parable to optimized inference engines, making it suitable for high-throughput RL rollouts and real-time streaming deployment. 
+
+Algorithm 1 Streaming Inference with CUDA Graph KV Cache Eviction 
+
+Require: Video stream V, Instruction I, Window size W , Max new tokens N
+
+1: Initialize KV _Cache ← ∅ , Active_Chunks ← 0
+
+2: Graph capture DecodeKernel and EvictKernel 
+
+3: for each video chunk vt ∈ V do 
+
+4: if Active_Chunks ≥ W then 
+
+5: {In-place memory shift via captured CUDA Graph} 6: ReplayGraph (EvictKernel , target_starts, source_ends) 7: Active_Chunks ← Active_Chunks − 1
+
+8: end if 
+
+9: {Eager execution for variable-length visual tokens} 10: logits, KV _Cache ← Prefill (KV _Cache, v t, I)
+
+11: for step = 1 to N do 
+
+12: {Zero-overhead decode via captured CUDA Graph} 13: logits, KV _Cache ← ReplayGraph (DecodeKernel , token step −1)
+
+14: {Accelerated sampling via FlashInfer} 15: token step ← Sample (logits )
+
+16: if token step ∈ {⟨ |im_end| ⟩} then 
+
+17: break 
+
+18: end if 
+
+19: end for 
+
+20: Active_Chunks ← Active_Chunks + 1 
+
+21: end for 
+
+To further optimize memory access and compute efficiency, our attention mechanism employs a static KV cache and integrates the flash attn with kvcache interface [6]. Additionally, during the autoregressive generation phase, we leverage top_k_top_p_sampling_from_logits operator in FlashInfer [39] to accelerate the sampling process, thereby significantly minimizing the latency of token selection. 
+
+A.2 Training 
+
+we utilize FlexAttention [8] to implement RCSM during the training phase. This allows us to flexibly define and customize the attention masks without incur-ring prohibitive computational overhead. Furthermore, we incorporate the Liger 20 Z. Liu et al. 
+
+Kernel [12] to accelerate the training process and reduce peak GPU memory consumption, enabling more efficient training over extended video sequences. 
+
+## B Dataset Information 
+
+Video Sources. To construct our highly diverse dataset, we sampled high-quality video subsets from the widely used LLaVA-Video-178K [46] and Tarsier2-Recap-585K [40] datasets. These subsets provide a rich foundation of dynamic visual content, ensuring robust training for streaming video understanding. 
+
+Diverse Instruction Synthesis Details. As introduced in the main text, we synthesize instruction data by computing the Cartesian product of three key sce-nario dimensions to derive 39 meaningful combinations. The specific definitions and scope of these dimensions are detailed below: 
+
+– Interaction Modes: This dimension defines the fundamental mechanism of how the user queries the streaming assistant. 
+
+• Real-time Dialogue: The user asks real-time or retrospective questions where the question and answer share the exact same timestamp. Formats include open-ended, multiple choice, binary, and counting questions. 
+
+• Event Trigger: The user sets a monitoring or predictive rule significantly in advance. The assistant must remain silent for a long duration until a specific event occurs or a prediction condition is met, at which point it triggers an alert. 
+
+• Continuous Output: The user requests a continuous stream of updates. The assistant generates multiple consecutive messages to dynamically describe ongoing changes, actions, or events as they unfold over time. 
+
+– Temporal Scopes: This dimension specifies the time frame the instruction targets relative to the current timestamp. 
+
+• Past: Retrospective queries requiring the assistant to recall details about events that occurred in the distant past, relying heavily on long-term memory retrieval. 
+
+• Current: Real-time queries focusing on the immediate present context regarding elements currently visible in the video stream. 
+
+• Future: Predictive queries asking for future forecasts or guidance on next steps concerning what is likely to happen based on current visual evi-dence. 
+
+– Content Semantics: We comprehensively cover seven fine-grained visual and logical dimensions to ensure thorough video understanding: 
+
+• Entity & Attribute Perception: Recognizing objects and their detailed visual attributes (e.g., color, shape, type). 
+
+• Action & Activity Semantics: Identifying specific actions, behaviors, or ongoing activities. 
+
+• Spatial & Geometric Relationships: Understanding spatial positions, dis-tances, or geometric arrangements of objects. Thinking in Streaming Video 21 
+
+• Causal & Logical Reasoning: Deducing the underlying causes, reasons, or logical implications of observed events. 
+
+• Procedural State & Evolution: Tracking the progress, steps, or current state of a structured procedure. 
+
+• Global Scene & Context: Recognizing the overall environment, location type, weather, or scene atmosphere. 
+
+• Optical Character Recognition (OCR): Extracting text content, signage, or characters visible on the screen. 
+
+Dataset Statistics and Analysis. Fig. 5 illustrates the statistical distribu-tion of our constructed ThinkStream dataset. As shown in the figure, our dataset exhibits a rich diversity across hierarchical compositions—encompassing various interaction modes, temporal scopes, and fine-grained content semantics—as well as a robust distribution of thinking token lengths. This comprehensive variety ensures that the model is exposed to a wide range of streaming video under-standing scenarios during training. Past Current   
+
+> Future
+> Real-time
+> Dialogue
+> Real-time
+> Dialogue
+> Event
+> Trigger
+> Conti.
+> Output
+> Real-time
+> Dialogue
+> Event
+> Trigger
+> Perception
+> Action
+> Spatial
+> Causal
+> State
+> Scene
+> OCR
+> Perception
+> Action
+> Spatial
+> Causal
+> State
+> Scene
+> OCR
+> Perception
+> Action
+> Spatial Causal
+> State
+> Scene
+> OCR
+> Perception
+> Action
+> Spatial
+> Causal
+> State
+> Scene
+> OCR
+> Perception
+> Action
+> Spatial
+> Causal
+> State
+> Scene
+> Perception
+> Action
+> Spatial Causal
+> State
+> Scene
+
+(a) Data Distribution 0-100 100-200 200-300 300-500 500+   
+
+> Thinking Token Count Ranges
+> 0
+> 10,000
+> 20,000
+> 30,000
+> 40,000
+> 50,000
+> Frequency
+> 1,148
+> 1.0%
+> 33,419
+> 30.1%
+> 46,536
+> 42.0% 22,649
+> 20.4%
+> 7,122
+> 6.4%
+
+(b) Thinking Token Length 
+
+Fig. 5: Statistics of our ThinkStream Dataset. We show (a) the hierarchical composition of data and (b) the distribution of thinking process lengths. 
+
+## C More Results 
+
+To further demonstrate the scalability and effectiveness of our proposed ap-proach, we trained our model based on the Qwen2.5-VL-7B [2] architecture, denoted as ThinkStream-7B. As shown in Tab. 7, ThinkStream-7B achieves sig-nificant performance improvements over the base Qwen2.5-VL-7B model across multiple dimensions on the OVO-Bench streaming video benchmark. Specifically, in the OCR evaluation, ThinkStream-7B attains an impressive score of 87.92, outperforming the base model’s 67.79 by over 20 points. In terms 22 Z. Liu et al. 
+
+of Real-Time Visual Perception, our model improves the average score from 59.90 to 69.12. Furthermore, ThinkStream-7B demonstrates enhanced capabil-ity in long-term memory retrieval, boosting the average score of Backward Trac-ing from 52.28 to 60.68. These substantial gains indicate that integrating our streaming framework into stronger base models yields consistent and robust en-hancements for streaming video understanding. 
+
+Table 7: Performance comparison of ThinkStream and existing open-source offline and online models on the OVO-Bench streaming video benchmark.                                                                                                                                                                    
+
+> Model Real-Time Visual Perception Backward Tracing Avg.
+> OCR ACR ATR STU FPD OJR Avg. EPM ASI HLD Avg.
+> Open-source Offline Models
+> LLaVA-Video-7B [46] 69.13 58.72 68.83 49.44 74.26 59.78 63.52 56.23 57.43 7.53 40.4 51.96 Qwen2-VL-7B [29] 60.4 50.46 56.03 47.19 66.34 55.43 55.98 47.81 35.48 56.08 46.46 51.22 LongVU-7B [24] 53.69 53.21 62.93 47.75 68.32 59.78 57.61 40.74 59.46 4.84 35.01 46.31 Qwen2.5-VL-3B [2] 76.51 44.03 67.24 42.13 68.31 61.96 60.03 50.50 53.38 22.04 41.98 51.00 Qwen2.5-VL-7B [2] 67.79 55.05 67.24 42.13 66.34 60.87 59.90 51.52 58.78 23.66 44.65 52.28 Qwen2.5-VL-32B [2] 77.18 58.72 68.10 50.56 74.26 57.61 64.40 58.59 62.84 29.57 50.33 57.37
+> Open-source Online Models
+> Flash-VStream-7B [42] 24.16 29.36 28.45 33.71 25.74 28.8 28.37 39.06 37.16 5.91 27.38 27.88 VideoLLM-online-8B [3] 8.05 23.85 12.07 14.04 45.54 21.2 20.79 22.22 18.8 12.18 17.73 19.26 Dispider-7B [22] 57.72 49.54 62.07 44.94 61.39 51.63 54.55 48.48 55.41 4.3 36.06 45.31 Streamo-3B [34] 78.52 52.29 67.24 44.38 55.45 71.20 61.51 51.18 57.43 16.67 41.76 51.64 StreamForest-7B [41] 68.46 53.21 71.55 47.75 65.35 60.87 61.20 58.92 64.86 32.26 52.02 56.61
+> ThinkStream-3B (Ours) 85.23 64.22 69.82 49.43 69.31 64.13 67.03 53.87 59.46 43.55 52.30 59.66
+> ThinkStream-7B (Ours) 87.92 59.63 75.00 53.93 70.30 67.93 69.12 51.17 64.19 66.67 60.68 64.90
+
+## D Qualitative Analysis 
+
+Fig. 6 illustrates the Watch-Think-Speak paradigm across two scenarios. First, a user sets an event trigger for the text “EXIT.” The model leverages an incremen-tal reasoning trace ( <think> ), correctly outputting <silent> during irrelevant scenes until the target appears, prompting a <response> . Second, a real-time query asks for the current time, which the model instantly identifies from vi-sual evidence to deliver an accurate answer. These examples demonstrate the framework’s ability to seamlessly unify perception and reasoning, autonomously deciding when to observe silently and when to interact without relying on exter-nal classifiers. 
+
+## E Prompt Used 
+
+For the synthesis of ThinkStream instruction data, we design a specialized prompt that strictly relies on provided video segment descriptions. The complete prompt for the instruction data generation is presented as follows: Thinking in Streaming Video 23 User Query: Please tell me when the text EXIT appears in the video .         
+
+> Think: Isee. The video starts with a clean white background. Two logos appear: CBDG …
+> <silent >
+> Think: The scene shifts to a landscape with trees. A …
+> <silent >
+> Think: The sign reads 'NORTH SHORE WINTER CLUB'. This sets the location context for
+> the event.
+> <silent >
+> Think: The sign ‘EXIT’ appears. I have to notify the user.
+> <response>The sign ‘EXIT’ appears in the hallway.
+> User Query: What time is it now?
+> Think: User asks what time is it, and I see it’s 12:56 from the board.
+> <response>It’s 12:56 now.
+
+Fig. 6: Qualitative Example 
+
+System: You are an expert in creating training data for Video-LLMs, specifically focusing on Streaming Video Q&A. Your task is to generate a JSON dialogue history strictly based on the provided descriptions and configurations. Follow these strict requirements: 1. Content Constraints: Base all dialogue exclusively on the provided video descriptions. Do not hallucinate details (actions, objects, text) not explicitly present. 2. Message Quantity: The generated dialogue history must contain exactly ONE User message. 3. Timing & Length Constraints: Every single Assistant message should be under 20 words. If multiple Assistant messages are generated, the time gap between consecutive Assistant messages should be at least 3.0 seconds (does NOT apply between a User and an Assistant message). The Assistant’s first response must occur after the User’s trigger. 4. Chronology: Timestamps must be floats (in seconds) strictly within segment boundaries and in chronological order. 5. Relative Temporal References: Strictly avoid using absolute timestamps (e.g., ’at 3.5 seconds’) in the dialogue content. Use relative temporal markers based on events or actions (e.g., ’When the car turns left...’). 6. Strict Compliance: You must strictly follow all requirements defined in the Scenario Configuration and Response Format Configuration. 24 Z. Liu et al. 
+
+User: 
+
+INPUT DATA: Video Segment Descriptions: {input_data} Scenario Configuration: {scenario_description} Response Format Configuration: {format_instruction} STRICT OUTPUT FORMAT: Return a single JSON list containing the dialogue history (return [] if no valid dialogue can be generated): 
+
+[ {"role": "user", "content": "<generated_query>", "timestamp": <float_seconds>} ] 
+
+To generate the internal reasoning trace of the model during real-time pro-cessing, we employ a Chain-of-Thought (CoT) data synthesis prompt. The de-tailed prompt for the CoT annotation task is shown below: 
+
+System: You are a data synthesis engine for a Real-Time Streaming Multi-modal AI. Your task is to generate an "Internal Stream of Consciousness" (Chain-of-Thought) based on video captions and user-assistant dialogue. Follow these strict requirements: 1. Temporal Causality (No Future Peeking): A thought at timestamp 
+
+T_think can ONLY reference captions or user messages where timestamp 
+
+≤ T_think . You strictly cannot mention events or user questions that hap-pen after the thought’s timestamp. 2. Timing & Density: The minimum gap between consecutive thoughts should be at least 2.0 seconds. Even when the user hasn’t asked a question, continuously output "think" content. The generated CoT should extend to 
+
+min(last_conversation_timestamp + 10s, last_caption_end_time) .3. User Query Response: When a user asks a question at timestamp T_user ,you MUST generate a thought at exactly the same timestamp T_user that directly addresses the user’s question, then resume continuous thinking. 4. Length: Every single "think" content should be no more than 50 words. 
+
+User: 
+
+INPUT CONTEXT: Time-Grounded Captions: {captions} User-Assistant Conversation: {conversation} STRICT OUTPUT FORMAT: Return ONLY a valid JSON list of objects in ascending order of timestamp: 
+
+[ {"think": "<think_content>", "timestamp": <float_seconds>} ]

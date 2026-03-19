@@ -1,0 +1,1759 @@
+Title: Tracking the Discriminative Axis: Dual Prototypes for Test-Time OOD Detection Under Covariate Shift
+
+URL Source: https://arxiv.org/pdf/2603.15213v2
+
+Published Time: Wed, 18 Mar 2026 00:48:11 GMT
+
+Number of Pages: 38
+
+Markdown Content:
+## Tracking the Discriminative Axis: Dual Prototypes for Test-Time OOD Detection Under Covariate Shift 
+
+Wooseok Lee ∗, Jin Mo Yang ∗, Saewoong Bahk, and Hyung-Sin Kim 
+
+Seoul National University, Seoul, Korea 
+
+andylws@snu.ac.kr , jmyang@netlab.snu.ac.kr , sbahk@snu.ac.kr ,
+
+hyungkim@snu.ac.kr 
+
+Abstract. For reliable deployment of deep-learning systems, out-of-distribution (OOD) detection is indispensable. In the real world, where test-time inputs often arrive as streaming mixtures of in-distribution (ID) and OOD samples under evolving covariate shifts, OOD samples are domain-constrained and bounded by the environment, and both ID and OOD are jointly affected by the same covariate factors. Existing methods typically assume a stationary ID distribution, but this assumption breaks down in such settings, leading to severe performance degradation. We empirically discover that, even under covariate shift, covariate-shifted ID (csID) and OOD (csOOD) samples remain separable along a discriminative axis in feature space. Building on this observation, we propose DART , a test-time, online OOD detection method that dynamically tracks dual prototypes—one for ID and the other for OOD—to recover the drifting discriminative axis, augmented with multi-layer fusion and flip correction for robustness. Extensive experiments on a wide range of challenging benchmarks, where all datasets are subjected to 15 common corruption types at severity level 5, demonstrate that our method significantly improves performance, yielding 15.32 percentage points (pp) AUROC gain and 49.15 pp FPR@95TPR reduction on ImageNet-C vs. Textures-C compared to established baselines. These results highlight the potential of the test-time discriminative axis tracking for dependable OOD detection in dynamically changing environments. 
+
+Keywords: OOD Detection · Covariate Shift · Online Test-time Method 
+
+1 Introduction 
+
+Deep neural networks (DNNs) achieve remarkable performance across applications such as image classification, object detection, medical imaging, autonomous driving, and speech recognition [1]. These successes stem from large-scale datasets, high-performance hardware, and innovative model architectures [10, 17, 28, 48], motivating deployment in real-world systems.  
+
+> ∗
+
+Equal contribution. 
+
+> arXiv:2603.15213v2 [cs.CV] 17 Mar 2026
+
+2 Wooseok Lee et al. 0.75 0.80 0.85 0.90 0.95 1.00   
+
+> Clean
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Covariate Shifted
+> CoRP
+> MSP
+> ODIN SCALE
+> ASH
+> RTL
+> MDS++
+> RMDS
+> RMDS++
+> Ours
+> Oracle
+> Train dist. informed
+> Yes No
+
+Fig. 1: AUROC comparison on both covariate shifted and clean ImageNet-based benchmark. Existing meth-ods suffer under covariate shift, with train distribution–informed ap-proaches dropping to around 0.5. In contrast, the oracle axis achieves con-sistently high performance regardless of shift, and our method effectively dis-covers this axis, attaining near-oracle results. 
+
+In practice, however, deployed mod-els inevitably encounter test inputs that deviate from their training distributions. One form is semantic shift , where mod-els face unknown semantics—commonly termed out-of-distribution (OOD) samples. Substantial progress has been made on OOD detection: existing methods typi-cally assume either abstract characteris-tics [20, 32, 53] or data-specific characteris-tics [29, 45] of in-distribution (ID) data to distinguish ID from OOD. A second form is 
+
+covariate shift , where data appears under new conditions such as changes in weather, illumination, or sensor noise [12, 34]. Most OOD methods implicitly assume stationary ID distributions as reference to separate ID and OOD, however, as shown in Fig. 1, in practice they struggle under covariate shifts [55, 57, 58] because shifting covariates alter the space geometry that their decision rules rely on. We study test-time OOD detection under covariate shift in a realistic 
+
+streaming mixture setting: test-time inputs arrive in mini-batches as mixtures of ID and OOD samples, and both are simultaneously exposed to the same evolving covariate shifts (e.g ., a change in weather). We denote these as covariate-shifted ID (csID) and covariate-shifted OOD (csOOD) . Within each mini-batch— as illustrated in Fig. 2—spatial and temporal coherence arises from the task environment, so OOD samples are domain-constrained rather than arbitrary. For instance, in autonomous driving, encountering an unseen vehicle type is plausible OOD, whereas suddenly observing medical or satellite images is essentially impossible. Moreover, spatio-temporally correlated csID and csOOD undergo the 
+
+same covariate shift, so their distributions co-evolve during deployment. In our setting, the test stream is unlabeled, the backbone is frozen, no training data are accessed at test time, and the algorithm maintains a small, bounded state. In this practical scenario, we empirically observe a key insight that enables our approach. Across diverse datasets and shifts, we consistently observe: (i) 
+
+local coherence —within short windows, csOOD samples organize into coherent groupings in feature space; and (ii) a recoverable linear axis —csID and csOOD remain approximately linearly separable along a dominant discriminative direction that drifts as covariates evolve. As shown in Fig. 1 with annotation “Oracle”, computing our method’s OOD score with the optimal discriminative axis yields very high AUROC, demonstrating that separability in this direction can lead to strong detection performance. These observations suggest focusing on tracking 
+
+the separation direction online rather than relying on a fixed, training-time score. Tracking the Discriminative Axis 3Unbounded   
+
+> OOD Space
+> ID
+> (a) Traditional
+> ID -OOD Assumption
+> (b) Real -world
+> ID -OOD data encounters
+> Bounded OOD Joint Covariate Shift
+> ID
+> OOD Covariate Shift Observation boundary
+> ID
+> OOD
+> ID
+> OOD
+
+Fig. 2: Comparison of traditional and real-world ID-OOD assumptions. (a) Traditional OOD detection assumes ID data (blue circle) exists within an unbounded OOD space (gray background). (b) In real-world scenarios, OOD data is bounded by physical and environmental constraints (observation boundary, top-left inset), limiting the space where OOD samples can occur. Furthermore, covariate shifts such as weather conditions can simultaneously affect both ID and OOD distributions (dashed regions), causing them to shift jointly in feature space. 
+
+We propose Discriminative Axis Real-time Tracker ( DART ), a test-time ,
+
+online OOD detection method that continuously tracks a discriminative axis 
+
+using a class-agnostic ID prototype and an OOD prototype per feature layer . At each step, incoming test samples update the prototypes via lightweight, stable rules, yielding the vector connecting them as the discriminative axis. Each sample is then scored by its relative position to this axis, yielding a detector aligned with the evolving feature space. To address the fact that covariate shifts affect DNN layers differently [19, 61], DART employs multi-layer score fusion to stabilize detection across heterogeneous, unpredictable shifts. The method requires only forward passes, no model weight update, no label, and no access to training data at test time, which suits privacy-sensitive or on-device deployments where retraining is infeasible. For robustness, prototypes are initialized conservatively and updated with safeguards to prevent collapse. Across challenging benchmarks, DART consistently delivers substantial gains over prior approaches. For example, on the ImageNet benchmark, DART achieves at least 9.04 percentage points (pp) higher AUROC under covariate shift and 5.10 pp AUROC improvement on the clean setting, as shown in Fig. 1, while attaining 40.15 pp and 19.06 pp FPR@95TPR reduction on the covariate shifted and clean datasets, respectively. Notably, the performance of DART comes close to that of the Oracle, highlighting the effectiveness of our approach. Our contributions can be summarized as below: 
+
+– We formalize test-time OOD detection under covariate shift in a streaming mixture setting, distinguishing csID from csOOD and articulating realistic constraints (data stream, frozen backbone, small memory). 
+
+– We introduce DART , which tracks dual prototypes online to recover the drifting discriminative axis and fuses multi-layer scores for robustness to layer-specific covariate effects. 4 Wooseok Lee et al. 
+
+– We provide measurements and visualizations showing coherent csOOD group-ings and approximately linear csID–csOOD separation within short windows. 
+
+– We demonstrate consistent gains over strong post-hoc baselines on joint-shift suites, with large improvements in AUROC and FPR@95. 
+
+2 Related Work 
+
+2.1 Out-of-Distribution (OOD) Detection: Training-Driven vs. Post-hoc 
+
+Research on OOD detection can be broadly categorized into training-driven and post-hoc approaches. 
+
+Training-driven approaches modify training to enhance OOD separability, 
+
+e.g ., Outlier Exposure (OE) with auxiliary outliers [21,64,68] and N +1 classifiers that add an “unknown” class [5,7,43]. While effective, they require additional data or altered objectives and may misalign with deployment OODs, with potential side effects on ID accuracy. Some methods [25, 59] update model parameters at test time via backpropagation, which introduces latency and can compromise ID accuracy under non-stationary streams. 
+
+Post-hoc approaches operate on a frozen classifier without retraining and have gained widespread adoption due to their ease of use and compatibility with pretrained models. Categories include: output-based scoring [18, 20, 32], distance-based methods [29, 35, 39, 42, 45], feature-based approaches [11, 31, 44, 50, 53, 66], and gradient-based methods [4, 24]. Furthermore, training distribution-informed 
+
+methods ( e.g ., Mahalanobis, ViM and KNN) assume access to training statistics 
+
+(feature means, covariances, principal subspaces)—assumptions that can become invalid under test-time covariate drift and are often infeasible when training data are unavailable. In contrast, our method is post-hoc and relies solely on the unlabeled test stream, without training statistics. 
+
+Post-hoc, test-time adaptive approaches are an emerging line of work which adjust OOD detection rules using test-time batches/streams without weight updates. RTL [14] uncovers a linear trend between OOD scores and features and fits a batch-level discriminator; OODD [60] maintains an online dynamic OOD dictionary to accumulate representative OOD features. These approaches are closer in spirit to our online setting but typically operate without explicitly addressing the time-varying covariate shift. DART differs by tracking the dis-criminative axis with dual prototypes (ID/OOD) per layer online across a stream; we maintain persistent, memory-light state that adapts smoothly to drift. Our goal is OOD detection under covariate drift in streaming mixtures; conventional test-time adaptation (TTA) methods that target closed-set robustness and/or adapt model weights [37, 49] are orthogonal to this objective and not our focus. 
+
+2.2 Covariate Shift and Joint-Shift Evaluation Covariate corruptions. Covariate shift—changes in input distributions with fixed labels—is commonly studied with corruption suites such as ImageNet-C [19], Tracking the Discriminative Axis 5
+
+which introduce noise, blur, weather, and other factors. Recent datasets emphasize natural sources of shift from environment and sensor variation [2, 3, 26]. 
+
+Joint semantic and covariate shift. Full-spectrum OOD [58] evaluates se-mantic OOD while allowing covariate variation; OpenOOD unifies large-scale OOD evaluation and includes joint-shift settings [56, 65]. Dataset design such as NINCO [6] reduces ID contamination for clearer semantic separation. Our setting follows this trajectory but explicitly considers streaming mixtures where spatio-temporally correlated csID and csOOD experience the same evolving covariates .
+
+DART is designed to adapt online in such scenarios via dual prototypes and multi-layer score fusion, without requiring training data prior or weight updates. 
+
+3 Method 
+
+In this section, we introduce our method DART for online test-time OOD detection under covariate shift. We begin by revisiting a key motivation behind our approach: the empirical emergence of discriminative axis in pre-trained feature spaces. We then describe how the prototypes that define this axis are iteratively refined with incoming test batches. Finally, we explain why multi-layer fusion is essential to maintain robustness across unpredictable types of covariate shift. 
+
+3.1 Formulation Setup 
+
+We define  DI and  DO as the dataset for ID and OOD, observed by the OOD detection system. Then, let  Bt = {xt, 1, xt, 2, . . . , xt,N } denote an input batch received at test time, where each sample  xt,i  may belong to one of two categories under covariate shift: covariate-shifted in-distribution (csID) or covariate-shifted out-of-distribution (csOOD). We denote the subset of csID samples as BI 
+
+> t
+
+and the csOOD samples as BO 
+
+> t
+
+, such that Bt = BI 
+
+> t
+
+∪ B O 
+
+> t
+
+.Model is composed of multiple layers, and we extract intermediate feature from several of them. Let fl(·) denote the feature mapping at layer l, where 
+
+l ∈ L = {1, 2, . . . , L }. For a given input x, we obtain a set of multi-layer features 
+
+{z(1) , z(2) , . . . , z(L)}, where z(l) = fl(x) represents the feature at layer l. Thus, for a csID sample xI 
+
+> t
+
+∈ B I 
+
+> t
+
+and a csOOD sample xO 
+
+> t
+
+∈ B O 
+
+> t
+
+, their multi-layer feature sets are ZI 
+
+> t
+
+= {z(1) ,I 
+
+> t
+
+, . . . , z(L),I 
+
+> t
+
+} and ZO 
+
+> t
+
+= {z(1) ,O 
+
+> t
+
+, . . . , z(L),O 
+
+> t
+
+}, respectively. 
+
+3.2 Existence of the Discriminative Axis in Feature Space 
+
+Prior works [44, 53] have reported that ID and OOD samples exhibit distinct activation patterns in the feature space. In a similar spirit, we systematically examine unit-level activations from a distributional perspective. Specifically, we collect unit-wise activation distributions across ID and OOD samples and compare them. Our analysis reveals that there exists certain units where distributions of ID and OOD samples diverge substantially, as evidenced by a large Jensen–Shannon divergence (JSD) in Fig. 3. Visualization via violin plots further demonstrates that ID and OOD activations can be sharply distinguished within those units. 6 Wooseok Lee et al. Divergence  
+
+> Unit index
+> JS Divergence per Unit
+> Activation value  Units Activation Distribution
+> ID OOD
+
+Fig. 3: Unit-wise activation analysis. The left panel shows the JSD between ID and OOD activations, with arrows marking units of large divergence. The right panel visualizes the activation distributions of these units, where ID (blue) and OOD (red) are clearly separable. clean gaussian_noise fog      
+
+> (a) CIFAR-100 vs. LSUN clean brightness motion_blur (b) ImageNet vs. iNaturalist
+
+Fig. 4: Distribution of ID (blue dots) and OOD (red dots) samples at features space projected with the oracle discriminative axis as the horizontal axis 
+
+Building upon this insight, we leverage these distributional differences to con-struct a unified discriminative direction. We compute prototype representations by averaging features across all ID samples and all OOD samples respectively, yielding two representative points in the feature space 1: pI and pO:
+
+pI = 1
+
+|D I|
+
+X
+
+> x∈D I
+
+f (x), pO = 1
+
+|D O|
+
+X
+
+> x∈D O
+
+f (x). (1) Then, we define the vector connecting prototypes as the discriminative axis :
+
+axis oracle  
+
+> disc
+
+= pI − pO. This averaging implicitly weights units by their ID–OOD mean gap, emphasizing discriminative units with large mean difference and divergence while suppressing non-discriminative units. Figure 4 shows distinct ID/OOD clusters under projection onto this axis, regardless of the presence or type of covariate shift, supporting the existence of a discriminative axis. Despite its existence, finding the discriminative axis at test time in practice is another challenge. Since the nature of OOD is inherently unknown before test-time, it is not feasible to predefine such a discriminative axis in advance. This motivates the need to adaptively identify the optimal axis during test-time. To this end, we propose a method that progressively identifies two prototypes —one for ID samples and the other for OOD samples—whose connecting direction defines a discriminative axis that adapts to the evolving data stream.  
+
+> 1
+
+While separability analysis may be conducted for each of the selected feature layers, but for clarity, we omit the layer index from the notation in this section. Tracking the Discriminative Axis 7
+
+3.3 Batch-wise Prototype Refinement: Tracking the Discriminative Axis 
+
+To craft and update the discriminative axis in an online manner, we refine prototypes through iterative pseudo-labeling and prototype updating. Refer to Appendix for the detailed algorithm. Our method initializes and dynamically updates layer-specific prototypes for csID and csOOD based on current test batch features. Since true ID/OOD labels are unavailable during test-time, we rely on pseudo-labeling to distinguish between csID and csOOD samples. We employ Otsu algorithm [38] to automatically determine optimal thresholds by maximizing the between-class variance , providing a principled way to separate samples based on their score distributions. 
+
+Dual-Prototype Initialization. For the initial batch, we use naive baseline score, Maximum Softmax Probability (MSP) as our reference score. We assign pseudo-labels using MSP with the Otsu-determined threshold, then compute initial prototypes as the mean feature vectors of their respective pseudo-labeled groups, i.e . ¯pI1 = 1
+
+> |S I1|
+
+P
+
+> i∈S I1
+
+f (x1,i ), ¯pO1 = 1 
+
+> |S O1|
+
+P
+
+> i∈S O1
+
+f (x1,i ).
+
+Dual-Prototype Tracking. For subsequent batches, we repeat the following steps to obtain a more refined OOD score that leverages the built prototypes. We 
+
+(i) compute Euclidean distances between each sample from current batch and the dual prototypes from the previous timestep, then (ii) calculate a Relative Distance Score (RDS) that reflects each sample’s position relative to both prototypes: 
+
+RDS (xt,i ) = 1 − ∥zt,i − ¯pI
+
+> t−1
+
+∥2
+
+∥zt,i − ¯pI
+
+> t−1
+
+∥2 + ∥zt,i − ¯pO
+
+> t−1
+
+∥2
+
+, (2) where  zt,i  denotes the feature of  i-th sample in the batch  t. The RDS formulation is inherently scale-invariant, making it robust to variations in feature magnitudes across different layers and models. Next, using Otsu algorithm, we (iii) determine a threshold to assign pseudo-labels based on this RDS score. We (iv) apply Tukey’s outlier filtering [46] to exclude samples that lie too far from their assigned prototypes, and then (v) compute new ˆpID  
+
+> t
+
+and ˆpOOD  
+
+> t
+
+as the mean feature of the remaining pseudo-labeled groups. Tukey-based filtering improves prototype reliability by excluding unreliable samples from the mean computation. Finally, we (vi) refine prototypes using exponential moving average to maintain stability: 
+
+¯pI 
+
+> t
+
+= α ¯pI 
+
+> t−1
+
++ (1 − α) ˆ pI
+
+> t
+
+, ¯pO 
+
+> t
+
+= α ¯pO 
+
+> t−1
+
++ (1 − α) ˆ pO 
+
+> t
+
+. (3) This iterative process enables prototypes to progressively converge toward the true underlying distributions and identify a near-optimal discriminative axis. 
+
+Flip Correction. Due to DART ’s pseudo-labeling approach, incorrectly initialized prototypes can lead to catastrophic misplacement, with prototypes potentially drifting toward opposite sides of their desirable locations. To address this, every k-th batches, we perform a “flip” detection mechanism that iden-tifies prototype misalignments and automatically swaps them when necessary. We detect flips by comparing current prototypes with an auxiliary MSP-based 8 Wooseok Lee et al. Low-level            
+
+> Batch 1 Batch 2 Batch 3
+> Mid-level High-level
+> (a) RDS under Gaussian noise Low-level
+> Batch 1 Batch 2 Batch 3
+> Mid-level High-level (b) RDS under defocus blur Low-level
+> Batch 1 Batch 2 Batch 3
+> Mid-level High-level (c) RDS under jpeg comp.
+
+Fig. 5: Layer-wise RDS distributions across three covariate shift types. Each plot shows the RDS distribution of csID (blue curve , CIFAR-100) and csOOD (red curve , LSUN) samples at different network depths (low, mid, high-level) through three sequential batches. The visualizations reveal how different corruption types affect feature separability at specific network layers; under Gaussian noise, separability degrades in high-level layers, whereas under defocus blur, it degrades in low-level layers. 
+
+prototype, i.e . ˆpI 
+
+> t, M
+
+and ˆpO
+
+> t, M
+
+. A flip occurs when the csID prototype is signifi-cantly farther from the MSP-based reference than the csOOD prototype, while simultaneously showing lower cosine similarity. Formally, we swap prototypes if 
+
+∥¯pI 
+
+> t
+
+− ˆpI
+
+> t, M
+
+∥2 > 2∥¯pO 
+
+> t
+
+− ˆpI
+
+> t, M
+
+∥2 and cos  ¯pI
+
+> t
+
+, ˆpI
+
+> t, M
+
+ < cos  ¯pO 
+
+> t
+
+, ˆpI
+
+> t, M
+
+ . (4) We use a weighted comparison (factor of 2) to impose a strict condition preventing unintended flip detections, and a value we found works well across all datasets. 
+
+3.4 Multi-Layer Score Fusion 
+
+To enhance discriminative axis identification, we extend our approach to multi-layer features. Low-level features capture local patterns like textures and edges, while high-level features encode semantic concepts [16]. However, covariate shifts can selectively disrupt different levels of visual information [19, 61]—blur cor-ruptions primarily affect low-level features, while elastic transformations impair higher-level representations. As a result, different layers exhibit varying degrees of ID/OOD discriminability depending on the shift type, as illustrated in Fig. 5. Since the nature of covariate shift is typically unknown beforehand , leveraging information from all feature levels through multi-layer fusion is essential for robust OOD detection. As the prototypes are updated for each batch, we compute the  RDS l for each selected layer  l. To obtain the final OOD score for each sample  xt,i  in the batch, we fuse the RDS values from the selected layers  L by taking their average ,formally given by  RDS final (xt,i ) = 1
+
+> |L|
+
+P 
+
+> l∈L
+
+RDS l(xt,i ). Using the fused OOD score  RDS final (xt,i ), we make the final OOD prediction. Tracking the Discriminative Axis 9
+
+Table 1: OOD detection performance with CIFAR-100-C and ImageNet-C csID. Results are the average of all 15 corruptions. (Best: bolded , Second-best: underlined) 
+
+ImageNet-C 
+
+Method Training set prior ImageNet-O-C Places-C SUN-C iNaturalist-C Textures-C Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 85.01 62.18 74.41 73.10 73.64 73.65 53.91 82.27 70.88 72.85 71.57 72.81 Energy NO 82.68 63.65 70.13 77.66 69.70 78.79 59.45 82.48 62.58 78.16 68.91 76.13 Max logit NO 83.69 63.51 71.00 76.64 70.11 77.59 53.19 83.76 65.85 76.85 68.77 75.67 GradNorm NO 85.09 58.28 68.15 78.13 64.77 81.23 49.29 85.45 51.70 84.11 63.80 77.44 ViM YES 91.28 54.02 98.75 25.72 99.14 23.46 99.41 18.87 97.90 29.31 97.30 30.28 KNN YES 92.60 53.73 98.17 30.68 98.23 29.94 98.69 24.10 90.21 50.39 95.58 37.77 MDS single YES 92.67 50.34 99.11 21.17 99.40 18.89 99.68 14.49 98.29 26.37 97.83 26.25 MDS ensemble YES 85.89 58.76 98.08 27.51 98.23 26.49 98.31 21.40 81.15 47.73 92.33 36.38 ODIN NO 86.67 59.91 57.03 83.67 54.88 84.53 44.03 88.03 53.95 83.93 59.31 80.01 ReAct YES 90.46 54.69 89.30 66.71 88.96 68.19 92.42 64.03 86.26 66.59 89.48 64.04 SCALE NO 82.06 65.18 67.20 79.03 65.58 80.33 48.40 85.75 60.80 80.03 64.81 78.06 ASH NO 82.45 63.90 69.82 77.91 69.26 79.08 58.88 82.76 62.00 78.55 68.48 76.44 RTL NO 83.70 65.26 65.44 79.96 64.27 80.32 41.39 87.69 64.08 78.36 63.78 78.32 NNGuide YES 88.94 56.31 81.97 69.88 81.05 73.03 74.75 76.53 58.93 79.60 77.13 71.07 CoRP YES 93.02 52.30 95.18 46.32 95.22 46.33 95.99 43.54 93.05 51.72 94.49 48.04 MDS++ YES 82.39 64.35 90.03 52.53 90.68 52.72 64.23 71.61 66.93 68.57 78.85 61.96 RMDS YES 92.91 58.76 96.74 48.73 97.50 47.40 95.35 53.60 96.64 44.86 95.83 50.69 RMDS++ YES 94.61 57.05 96.02 52.76 96.38 51.52 93.87 64.11 95.33 52.20 95.24 55.53 
+
+DART NO 68.87 66.63 8.70 92.96 8.08 93.03 7.60 93.18 2.55 99.43 19.16 89.05 CIFAR-100-C 
+
+Method Training set prior SVHN-C Places365-C LSUN-C iSUN-C Textures-C Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 91.48 58.40 87.30 64.23 86.85 64.49 88.40 62.74 91.91 58.24 89.19 61.62 Energy NO 93.13 60.53 84.74 66.56 84.04 68.57 87.14 64.79 90.20 61.10 87.85 64.31 Max logit NO 92.73 60.58 85.04 66.43 84.43 68.24 87.15 64.74 90.74 60.78 88.02 64.15 GradNorm NO 96.07 47.75 92.56 52.99 94.89 45.14 94.79 45.32 84.59 62.52 92.58 50.74 ViM YES 77.24 72.64 90.23 59.74 86.41 64.41 87.65 62.40 93.15 55.11 86.94 62.86 KNN YES 88.45 66.38 85.63 63.99 83.87 70.22 87.06 65.25 90.83 60.93 87.17 65.35 MDS single YES 89.04 61.64 91.30 57.42 84.94 65.60 86.68 62.82 95.16 48.58 89.42 59.21 MDS ensemble YES 63.57 79.33 92.49 48.49 73.78 60.77 73.95 58.87 75.16 57.51 75.79 60.99 ODIN NO 79.07 70.05 88.23 63.54 89.96 59.13 90.48 59.18 77.69 70.79 85.09 64.54 ReAct YES 95.08 55.32 88.78 62.51 86.39 67.46 88.07 64.76 91.90 60.40 90.04 62.09 SCALE NO 88.88 66.46 85.55 66.91 86.30 65.89 88.06 64.21 81.14 70.69 85.99 66.83 ASH NO 92.05 62.73 85.42 66.48 85.24 67.78 87.99 64.30 87.66 64.61 87.67 65.18 RTL NO 89.27 58.60 84.59 64.62 83.65 66.99 86.90 63.60 89.30 57.65 86.74 62.29 NNGuide YES 91.11 62.78 88.78 63.45 91.30 58.64 91.96 57.62 77.91 68.69 88.21 62.24 CoRP YES 64.51 80.52 89.98 60.28 92.56 59.80 91.30 59.91 55.25 81.49 78.72 68.40 MDS++ YES 95.15 62.58 87.40 64.87 87.25 66.75 89.85 62.90 95.16 59.59 90.96 63.34 RMDS YES 88.78 64.07 86.67 64.65 79.57 71.82 82.68 67.91 94.23 55.06 86.39 64.70 RMDS++ YES 91.52 65.51 85.70 65.59 82.73 70.26 86.08 66.38 93.78 58.41 87.96 65.23 
+
+DART NO 48.60 79.82 68.66 68.00 44.14 80.29 50.76 79.75 51.48 80.60 52.73 77.69 
+
+4 Experiments 
+
+4.1 Experimental Setup Evaluation Details. Although DART is designed to adaptively handle chal-lenging covariate shifts, we evaluate on both clean and covariate-shifted datasets as the shift may be weak or absent in real-world scenarios. We use CIFAR-100 [27] and ImageNet [10] as ID datasets. For CIFAR-100, we use SVHN [36], Places365 [67], LSUN [62], iSUN [54], and Textures [8] as OOD sets. For ImageNet, we use ImageNet-O [23], Places [67], SUN [52], iNaturalist [47], and Textures. To simulate covariate shift, we apply 15 common corruption types [19] at severity level 5 to both ID and OOD datasets, resulting in pairs such as CIFAR-100-C vs. SVHN-C. In our main evaluations, each test-time batch contains an equal number of ID/OOD samples, and we report results under varying ID/OOD ratios in Appendix. For CIFAR-100-based benchmarks, we use WideResNet-40-2 [63] pre-trained with AugMix [22] on CIFAR-100, which is available from RobustBench [9]. 10 Wooseok Lee et al. 
+
+For ImageNet-based benchmarks, we use the pre-trained RegNetY-16GF [41] available from PyTorch. In addition, we also evaluate with Transformer-based models on CIFAR-100, all of which are fine-tuned with CIFAR-100. Results with pre-trained ResNet-50 [17] on ImageNet are also provided in Appendix. 
+
+Baseline Methods. MSP [20], Max Logit [18], Energy [32], ODIN [31], Grad-Norm [24], SCALE [53], ASH [11], and RTL [14], like DART , do not require any precomputed statistics or storage from the training data, whereas KNN [45], ViM [50], ReAct [44], NNGuide [39], CoRP [15], MDS [29] and its variants [35,42] do. As MDS has been implemented in prior work using either single-layer or multi-layer, we compare against both variants. 
+
+4.2 Main OOD Detection Results Results on Covariate Shifted Dataset. As DART is designed to adapt to test-time covariate shift, it demonstrates its full potential in the covariate-shifted setting. As shown in Tab. 1, on ImageNet-C benchmark, DART achieves the best performance on every OOD dataset and both evaluation metrics, with an average FPR@95TPR (FPR95) reduction of 40.15 pp and average AUROC gain of 9.04 pp compared to the second-best ( i.e ., ODIN). On CIFAR-100-C, DART again achieves the best performance: an average FPR95 reduction of 23.06 pp relative to MDS and an AUROC gain of 9.29 pp upon CoRP. These results highlight the robustness and adaptability of DART in the face of test-time covariate shift. An important observation is that methods using prior information from training set tend to perform similarly to, or even worse 
+
+Table 2: OOD detection performance without covariate shift. All results are reported as the mean over all five OOD datasets for each ID set. (Best: bolded ,Second-best: underlined)                                                                                      
+
+> Method ImageNet CIFAR-100 FPR95 ↓AUROC ↑FPR95 ↓AUROC ↑
+> MSP 44.64 86.94 80.37 75.29 Energy 38.25 85.52 79.95 76.79 Max logit 37.05 86.43 79.91 77.06 GradNorm 80.50 57.26 94.92 43.62 ViM 56.58 87.60 71.94 75.61 KNN 84.79 75.87 71.48 81.16 MDS single 79.19 80.57 80.01 69.98 MDS ensemble 55.30 86.86 45.94 86.36 ODIN 60.84 81.86 81.11 69.50 ReAct 86.40 70.67 79.45 76.09 SCALE 35.01 87.02 76.60 77.53 ASH 37.77 85.67 80.44 76.76 RTL 42.30 84.24 64.11 80.76 NNGuide 70.60 70.05 87.55 66.29 CoRP 49.03 90.17 65.54 81.05 MDS++ 41.87 90.48 85.96 75.52 RMDS 46.28 91.03 67.90 82.51 RMDS++ 56.01 89.73 73.91 81.57
+> DART 15.95 96.13 33.12 89.78
+
+than, baselines that do not use such pri-ors. This suggests that the prior informa-tion which is typically beneficial for OOD detection on clean datasets may become misaligned with test-time distributions un-der covariate shift, leading to degraded performance. 
+
+Results on Clean Dataset. Table 2 reports the OOD detection performance on the clean CIFAR-100 and ImageNet benchmark. Although DART mainly tar-gets covariate-shifted environments, it con-sistently outperforms all baselines on the clean benchmarks, achieving the lowest average FPR95 and the highest average AUROC. DART reduces FPR95 by 19.06 pp compared to SCALE on ImageNet and 
+
+12.72 pp relative to MDS on CIFAR-100, while improving AUROC by 5.10 pp over Tracking the Discriminative Axis 11 
+
+Table 3: OOD detection performance comparison with ViT-Tiny and Swin-T architec-tures. All results are reported as the mean over all five OOD datasets. For covariate shifted datasets, results are the average of all 15 corruptions with severity level 5. (Best: 
+
+bolded , Second-best: underlined) Method Training set prior Covariate shifted Clean ViT-Tiny Swin-T ViT-Tiny Swin-T FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑                                                                                                                                                                           
+
+> MSP NO 89.56 57.03 85.24 63.39 70.36 79.79 60.16 84.31 Energy NO 87.01 61.20 80.30 68.35 58.77 84.83 41.06 89.80 Max Logit NO 87.58 60.65 81.90 67.73 60.27 84.54 42.11 89.52 GradNorm NO 89.54 58.42 78.77 71.44 78.33 75.24 71.63 74.53 ViM YES 89.49 58.75 96.94 45.76 58.27 85.06 93.00 66.26 KNN YES 90.15 56.81 84.25 64.91 67.35 79.58 45.93 88.51 MDS single YES 97.22 32.40 98.76 33.09 96.38 35.57 98.67 41.11 MDS ensemble YES 61.73 65.95 98.60 33.75 29.18 88.40 98.42 45.53 ODIN NO 87.53 60.52 84.88 63.63 80.25 71.22 91.20 63.65 ReAct YES 85.94 62.01 76.76 71.14 56.86 81.79 41.78 89.51 SCALE NO 88.84 58.99 76.68 71.57 61.75 83.66 44.84 88.50 ASH NO 92.00 56.00 76.95 71.39 81.17 74.00 50.03 86.97 RTL NO 84.42 58.69 83.71 63.62 40.20 87.75 50.90 84.23 NNGuide YES 86.49 61.17 76.53 73.38 60.30 83.43 38.04 91.06 CoRP YES 88.31 59.85 86.17 63.65 67.28 82.43 50.37 88.53 MDS++ YES 79.15 66.25 76.01 69.80 46.70 87.12 35.28 91.54
+> RMDS YES 82.63 63.56 91.33 58.14 47.98 86.93 54.00 87.65 RMDS++ YES 81.30 64.05 88.13 61.81 48.11 86.71 47.01 88.90
+> DART NO 44.28 68.60 38.90 81.28 20.58 94.31 31.86 88.03
+
+RMDS and 3.42 pp against MDS, respectively. These results suggest that ID and OOD samples are well-separated in the feature space and that the ID and OOD prototypes are finely adjusted by DART toward optimal axis for discrimi-nation. Notably, baselines that leverage prior information from training set tend to outperform those not relying on such information. DART defies this trend, performing the best without any prior information. 
+
+Results with Transformer Architectures. We also evaluate with transformer-based architectures [48], specifically ViT-Tiny [13, 51] and Swin-T [33], to verify robustness across different model architectures. As shown in Tab. 3, DART out-performs all baselines, yielding FPR95 drop of 17.45 pp (covariate-shifted) and 8.6 pp (clean) against the second-best method ( i.e ., MDS) with ViT-Tiny. Similarly, for Swin-T, DART reduces FPR95 by 37.11 pp (covariate-shifted) and 
+
+3.42 pp (clean) relative to MDS++. This proves the superiority of DART and the emergence of discriminative axis regardless of the model architecture. 
+
+4.3 Cross-domain Evaluation Results 
+
+In the previous experiments, each test stream contains a single OOD dataset and a single type of covariate shift. We further evaluate DART in more challenging regimes with multiple OOD datasets and multiple covariate shifts. All cross-domain evaluations use ImageNet as the ID and ResNet-50 as the backbone. 
+
+Mixed OOD. We believe our bounded OOD setting reflects realistic deployment scenarios where OOD inputs tend to concentrate within a limited semantic space 12 Wooseok Lee et al. 
+
+Table 4: Mixed OOD evaluation Method ImageNet-O + Places Places + SUN SUN + Textures FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑                                                              
+
+> MSP 48.43 83.70 48.65 84.26 43.65 85.52 Energy 51.56 78.42 44.24 82.57 38.31 85.65 Max Logit 48.14 80.20 42.85 83.49 37.29 86.24 GradNorm 86.49 43.25 77.26 57.44 67.54 66.80 ODIN 62.28 79.44 66.10 76.78 60.37 80.13 SCALE 47.62 80.09 40.36 84.39 33.92 87.81 RTL 46.82 81.46 44.77 82.94 40.64 83.98 DART 19.23 94.45 25.96 91.15 18.65 94.80 Avg. 79.64
+> Avg. 95.49
+> ImageNet -OPlaces
+> (a) ImageNet-O →Places Avg. 93.51
+> Avg. 80.94
+> Places SUN (b) Places →SUN Avg. 94.81
+> Avg. 83.97
+> SUN Textures (c) SUN →Textures
+
+Fig. 6: Continual OOD evaluation: AUROC vs. batch 
+
+due to observation boundaries. However, to further show robustness beyond this assumption , we conducted additional experiments where two different OOD sources are mixed simultaneously. At each batch, OOD samples are drawn from two diverse sources rather than a single dataset. In Tab. 4, DART remains best even under mixed OOD, indicating that our OOD prototype successfully finds the discriminative axis even when OOD samples span multiple semantic categories. We observe performance degradation only in an extreme case where all five OOD sets are mixed. However, we believe such extreme mixing rarely occurs in practice, and our assumption holds within realistic deployment boundaries. 
+
+Continual OOD. We also consider a continual-OOD stream where the OOD source changes abruptly across temporal segments while the ID stream remains fixed. Since this setting is designed to evaluate online adaptation capability, we only include methods that adapt online. Results in Fig. 6 show that DART remains stable across segments, with only modest fluctuations at switch points, indicating that our prototype-based tracking can re-estimate the relevant axis over time. 
+
+Mixed Covariate Shift. We further test streams where each batch contains data from multiple covariate shifts, considering mixtures of two shifts and mixture of all 15 shifts. As shown in Tab. 5, DART consistently surpasses all baselines under mixed shifts, remaining best even in the extreme mixture-of-15 setting. Tracking the Discriminative Axis 13 
+
+Table 5: Mixed covariate shift evaluation Method Clean + Gauss. Gauss. + Snow Snow + JPEG All 15 corruptions FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑                                                                              
+
+> MSP 82.63 67.43 85.01 62.49 83.07 68.22 86.64 62.71 Energy 72.01 76.77 83.91 69.82 89.72 66.83 86.27 63.02 Max Logit 77.19 73.34 85.40 67.10 85.73 68.66 86.46 63.67 GradNorm 54.72 83.51 65.33 81.94 72.16 79.49 69.55 77.45 ODIN 66.85 77.72 45.20 83.46 12.08 97.39 25.45 92.16 SCALE 66.99 78.21 80.27 71.68 79.15 73.94 78.20 71.19 RTL 79.84 67.73 81.92 65.32 79.86 71.65 81.27 65.63 DART 22.04 93.93 0.85 99.62 0.79 99.72 19.68 92.70 Avg. 96.15
+> Avg. 75.57
+> Clean Gauss.
+> (a) Clean →Gauss. Avg. 99.75
+> Avg. 70.10
+> Gauss. Snow (b) Gauss. →Snow Avg. 99.69
+> Avg. 73.90
+> Snow JPEG (c) Snow →JPEG
+
+Fig. 7: Continual covariate shift evaluation: AUROC vs. batch 
+
+Continual Covariate Shift. Finally, we evaluate continual covariate shift where the corruption type evolves over time while samples within each segment remain temporally correlated. As in the continual OOD setting, we only include online methods. In Fig. 7, DART maintains strong performance after corruption change. 
+
+4.4 Ablation Studies Progression of Axis-Alignment. Figure 8 demonstrates the online convergence capability of DART in discovering the oracle discriminative axis. The stars denote the global ID/OOD centroids, whose connecting line is the oracle axis, while the triangles denote batch-wise ID/OOD prototypes estimated by DART , whose connecting line is the online axis. The cosine similarity between two axes increases across batches, demonstrating DART ’s ability to navigate the high-dimensional feature space and progressively align with the true discriminative direction. 
+
+Impact of Multi-layer Fusion. Figure 9a compares full DART against its single-layer variants on CIFAR-100 vs. LSUN, demonstrating the impact of multi-layer fusion. While DART achieves the highest average performance, the key advantage lies in stability . Single-layer variants occasionally outperform DART in specific settings ( e.g ., Block3 on clean data, Block1 under Gaussian noise) but exhibit catastrophic failures under other corruptions due to varying covariate-shift impacts across layers. Therefore, DART ’s multi-layer ensemble provides robustness under diverse covariate shifts. 14 Wooseok Lee et al. Batch 1 
+
+> Cos. Sim.: 0.264
+> ID
+> OOD
+> Oracle Axis
+> DART Axis
+> Batch 2
+> Cos. Sim.: 0.467
+> Batch 3
+> Cos. Sim.: 0.684
+> Batch 4
+> Cos. Sim.: 0.836
+> Batch 5
+> Cos. Sim.: 0.926
+> Batch 6
+> Cos. Sim.: 0.962
+
+Fig. 8: Progression of axis alignment at CIFAR-100-C vs. LSUN-C under impulse noise Methods  
+
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> AUROC  0.6561
+> 0.7974 0.7965
+> 0.6092
+> 0.8196
+> DART
+> Block1
+> Block2
+> Block3
+> FC
+
+Average AUROC 0 20 40 60 80 100 
+
+Batch  
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+Clean 0 20 40 60 80 100 
+
+Batch  
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+Gaussian Noise 0 20 40 60 80 100 
+
+Batch  
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+Defocus Blur 
+
+(a) Impact of Multi-layer Feature Utilization 0 20 40 60 80 100 
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+> DART
+> DART-NoFlip
+
+Original 0 20 40 60 80 100 
+
+Batch  
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+Gaussian Noise 0 20 40 60 80 100 
+
+Batch  
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+Shot noise 0 20 40 60 80 100 
+
+Batch  
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+JPEG comp. 
+
+(b) Impact of Flip Correction across different corruption types. 
+
+Fig. 9: Impact of DART ’s individual components 
+
+Impact of Flip Correction. Figure 9b demonstrates the critical role of DART ’s flip correction. We compare DART with DART -NoFlip (without flip correction) on CIFAR-100 vs. iSUN for original and corrupted datasets. While both perform identically on original data and under Gaussian noise, Shot noise reveals a drastic difference. Standard DART recovers via prototype flip and performs robustly, while DART -NoFlip suffers catastrophic degradation of detection capability due to reversed prototypes under Shot noise. The flip correction detects and rectifies these inversions by ensuring consistent prototype proximity. Similar effects with JPEG compression further validate the effectiveness. 
+
+5 Conclusion 
+
+In this work, we addressed the realistic challenge of OOD detection under test-time covariate shift, a scenario where existing methods often collapse. Our analysis revealed the consistent existence of a discriminative axis along which covariate-shifted ID and OOD samples remain separable. Building on this insight, we proposed DART , which dynamically tracks prototypes to recover the evolving discriminative axis with multi-layer fusion. Extensive experiments across diverse Tracking the Discriminative Axis 15 
+
+datasets and architectures confirmed its superiority over strong baselines, under-scoring the promise of prototype-based axis tracking as a practical solution for reliable OOD detection in real-world environments. 
+
+Limitations and Future Works. While DART demonstrates strong perfor-mance, several avenues remain for improvement. The reliance on MSP-based initialization may impact performance when initial pseudo-labeling quality is poor, suggesting a need for more robust initialization strategies. Additionally, extending DART beyond vision tasks to other modalities presents an opportunity to validate the universality of discriminative axis tracking across different data representations. 
+
+References 
+
+1. Alam, M., Samad, M.D., Vidyaratne, L., Glandon, A., Iftekharuddin, K.M.: Survey on deep neural networks in speech and vision systems. Neurocomputing 417 , 302–321 (2020) 2. Baek, E., Han, S.h., Gong, T., Kim, H.S.: Adaptive camera sensor for vision models. In: The Thirteenth International Conference on Learning Representations (2025) 3. Baek, E., Park, K., Kim, J., Kim, H.S.: Unexplored faces of robustness and out-of-distribution: Covariate shifts in environment and sensor domains. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 22294–22303 (2024) 4. Behpour, S., Doan, T.L., Li, X., He, W., Gou, L., Ren, L.: Gradorth: A simple yet efficient out-of-distribution detection with orthogonal projection of gradients. Advances in Neural Information Processing Systems 36 , 38206–38230 (2023) 5. Bendale, A., Boult, T.E.: Towards open set deep networks. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 1563–1572 (2016) 6. Bitterwolf, J., Müller, M., Hein, M.: In or out? fixing imagenet out-of-distribution detection evaluation. In: International Conference on Machine Learning. pp. 2471– 2506. PMLR (2023) 7. Chen, G., Peng, P., Wang, X., Tian, Y.: Adversarial reciprocal points learning for open set recognition. IEEE Transactions on Pattern Analysis and Machine Intelligence 44 (11), 8065–8081 (2021) 8. Cimpoi, M., Maji, S., Kokkinos, I., Mohamed, S., Vedaldi, A.: Describing textures in the wild. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 3606–3613 (2014) 9. Croce, F., Andriushchenko, M., Sehwag, V., Debenedetti, E., Flammarion, N., Chiang, M., Mittal, P., Hein, M.: Robustbench: a standardized adversarial robustness benchmark. arXiv preprint arXiv:2010.09670 (2020) 10. Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L.: Imagenet: A large-scale hierarchical image database. In: 2009 IEEE conference on computer vision and pattern recognition. pp. 248–255. Ieee (2009) 11. Djurisic, A., Bozanic, N., Ashok, A., Liu, R.: Extremely simple activation shaping for out-of-distribution detection. arXiv preprint arXiv:2209.09858 (2022) 12. Dockès, J., Varoquaux, G., Poline, J.B.: Preventing dataset shift from breaking machine-learning biomarkers. GigaScience 10 (9), giab055 (2021) 13. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., Houlsby, N.: 16 Wooseok Lee et al. An image is worth 16x16 words: Transformers for image recognition at scale. In: International Conference on Learning Representations (2021) 14. Fan, K., Liu, T., Qiu, X., Wang, Y., Huai, L., Shangguan, Z., Gou, S., Liu, F., Fu, Y., Fu, Y., et al.: Test-time linear out-of-distribution detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 23752–23761 (2024) 15. Fang, K., Tao, Q., Lv, K., He, M., Huang, X., Yang, J.: Kernel pca for out-of-distribution detection. Advances in Neural Information Processing Systems 37 ,134317–134344 (2024) 16. Guo, Y., Liu, Y., Oerlemans, A., Lao, S., Wu, S., Lew, M.S.: Deep learning for visual understanding: A review. Neurocomputing 187 , 27–48 (2016) 17. He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 770–778 (2016) 18. Hendrycks, D., Basart, S., Mazeika, M., Zou, A., Kwon, J., Mostajabi, M., Stein-hardt, J., Song, D.: Scaling out-of-distribution detection for real-world settings. arXiv preprint arXiv:1911.11132 (2019) 19. Hendrycks, D., Dietterich, T.: Benchmarking neural network robustness to common corruptions and perturbations. arXiv preprint arXiv:1903.12261 (2019) 20. Hendrycks, D., Gimpel, K.: A baseline for detecting misclassified and out-of-distribution examples in neural networks. arXiv preprint arXiv:1610.02136 (2016) 21. Hendrycks, D., Mazeika, M., Dietterich, T.: Deep anomaly detection with outlier exposure. arXiv preprint arXiv:1812.04606 (2018) 22. Hendrycks, D., Mu, N., Cubuk, E.D., Zoph, B., Gilmer, J., Lakshminarayanan, B.: Augmix: A simple data processing method to improve robustness and uncertainty. arXiv preprint arXiv:1912.02781 (2019) 23. Hendrycks, D., Zhao, K., Basart, S., Steinhardt, J., Song, D.: Natural adversarial examples. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 15262–15271 (2021) 24. Huang, R., Geng, A., Li, Y.: On the importance of gradients for detecting distribu-tional shifts in the wild. Advances in Neural Information Processing Systems 34 ,677–689 (2021) 25. Katz-Samuels, J., Nakhleh, J.B., Nowak, R., Li, Y.: Training ood detectors in their natural habitats. In: International Conference on Machine Learning. pp. 10848–10865. PMLR (2022) 26. Kim, J.y., Baek, E., Kim, H.S.: Imagenet-ses: A first systematic study of sensor-environment simulation anchored by real recaptures. In: Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision. pp. 1117– 1126 (2026) 27. Krizhevsky, A., Hinton, G., et al.: Learning multiple layers of features from tiny images (2009) 28. Krizhevsky, A., Sutskever, I., Hinton, G.E.: Imagenet classification with deep convolutional neural networks. Advances in neural information processing systems 
+
+25 (2012) 29. Lee, K., Lee, K., Lee, H., Shin, J.: A simple unified framework for detecting out-of-distribution samples and adversarial attacks. Advances in neural information processing systems 31 (2018) 30. Liang, S., Li, Y., Srikant, R.: Enhancing the reliability of out-of-distribution image detection in neural networks. In: International Conference on Learning Representa-tions (2018), https://openreview.net/forum?id=H1VGkIxRZ Tracking the Discriminative Axis 17 31. Liang, S., Li, Y., Srikant, R.: Enhancing the reliability of out-of-distribution image detection in neural networks. arXiv preprint arXiv:1706.02690 (2017) 32. Liu, W., Wang, X., Owens, J., Li, Y.: Energy-based out-of-distribution detection. Advances in neural information processing systems 33 , 21464–21475 (2020) 33. Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., Lin, S., Guo, B.: Swin transformer: Hierarchical vision transformer using shifted windows. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 10012–10022 (2021) 34. Moreno-Torres, J.G., Raeder, T., Alaiz-Rodríguez, R., Chawla, N.V., Herrera, F.: A unifying view on dataset shift in classification. Pattern recognition 45 (1), 521–530 (2012) 35. Mueller, M., Hein, M.: Mahalanobis++: Improving ood detection via feature normalization. arXiv preprint arXiv:2505.18032 (2025) 36. Netzer, Y., Wang, T., Coates, A., Bissacco, A., Wu, B., Ng, A.Y., et al.: Reading digits in natural images with unsupervised feature learning. In: NIPS workshop on deep learning and unsupervised feature learning. vol. 2011, p. 4. Granada (2011) 37. Niu, S., Wu, J., Zhang, Y., Wen, Z., Chen, Y., Zhao, P., Tan, M.: Towards stable test-time adaptation in dynamic wild world. arXiv preprint arXiv:2302.12400 (2023) 38. Otsu, N., et al.: A threshold selection method from gray-level histograms. Auto-matica 11 (285-296), 23–27 (1975) 39. Park, J., Jung, Y.G., Teoh, A.B.J.: Nearest neighbor guidance for out-of-distribution detection. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 1686–1695 (2023) 40. Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., et al.: Pytorch: An imperative style, high-performance deep learning library. Advances in neural information processing systems 32 (2019) 41. Radosavovic, I., Kosaraju, R.P., Girshick, R., He, K., Dollár, P.: Designing network design spaces. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 10428–10436 (2020) 42. Ren, J., Fort, S., Liu, J., Roy, A.G., Padhy, S., Lakshminarayanan, B.: A simple fix to mahalanobis distance for improving near-ood detection. arXiv preprint arXiv:2106.09022 (2021) 43. Shu, L., Xu, H., Liu, B.: Doc: Deep open classification of text documents. arXiv preprint arXiv:1709.08716 (2017) 44. Sun, Y., Guo, C., Li, Y.: React: Out-of-distribution detection with rectified activa-tions. Advances in neural information processing systems 34 , 144–157 (2021) 45. Sun, Y., Ming, Y., Zhu, X., Li, Y.: Out-of-distribution detection with deep nearest neighbors. In: International Conference on Machine Learning. pp. 20827–20840. PMLR (2022) 46. Tukey, J.W., et al.: Exploratory data analysis, vol. 2. Springer (1977) 47. Van Horn, G., Mac Aodha, O., Song, Y., Cui, Y., Sun, C., Shepard, A., Adam, H., Perona, P., Belongie, S.: The inaturalist species classification and detection dataset. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 8769–8778 (2018) 48. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, Ł., Polosukhin, I.: Attention is all you need. Advances in neural information processing systems 30 (2017) 49. Wang, D., Shelhamer, E., Liu, S., Olshausen, B., Darrell, T.: Tent: Fully test-time adaptation by entropy minimization. arXiv preprint arXiv:2006.10726 (2020) 18 Wooseok Lee et al. 50. Wang, H., Li, Z., Feng, L., Zhang, W.: Vim: Out-of-distribution with virtual-logit matching. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 4921–4930 (2022) 51. Winkawaks: vit-tiny-patch16-224. https : / / huggingface . co / WinKawaks / vit -tiny-patch16-224 (2023) 52. Xiao, J., Hays, J., Ehinger, K.A., Oliva, A., Torralba, A.: Sun database: Large-scale scene recognition from abbey to zoo. In: 2010 IEEE computer society conference on computer vision and pattern recognition. pp. 3485–3492. IEEE (2010) 53. Xu, K., Chen, R., Franchi, G., Yao, A.: Scaling for training time and post-hoc out-of-distribution detection enhancement. arXiv preprint arXiv:2310.00227 (2023) 54. Xu, P., Ehinger, K.A., Zhang, Y., Finkelstein, A., Kulkarni, S.R., Xiao, J.: Turk-ergaze: Crowdsourcing saliency with webcam based eye tracking. arXiv preprint arXiv:1504.06755 (2015) 55. Yang, J., Wang, H., Feng, L., Yan, X., Zheng, H., Zhang, W., Liu, Z.: Seman-tically coherent out-of-distribution detection. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 8301–8309 (2021) 56. Yang, J., Wang, P., Zou, D., Zhou, Z., Ding, K., Peng, W., Wang, H., Chen, G., Li, B., Sun, Y., et al.: Openood: Benchmarking generalized out-of-distribution detection. Advances in Neural Information Processing Systems 35 , 32598–32611 (2022) 57. Yang, J., Zhou, K., Li, Y., Liu, Z.: Generalized out-of-distribution detection: A survey. International Journal of Computer Vision 132 (12), 5635–5662 (2024) 58. Yang, J., Zhou, K., Liu, Z.: Full-spectrum out-of-distribution detection. International Journal of Computer Vision 131 (10), 2607–2622 (2023) 59. Yang, P., Liang, J., Cao, J., He, R.: Auto: Adaptive outlier optimization for online test-time ood detection. arXiv preprint arXiv:2303.12267 (2023) 60. Yang, Y., Zhu, L., Sun, Z., Liu, H., Gu, Q., Ye, N.: Oodd: Test-time out-of-distribution detection with dynamic dictionary. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 30630–30639 (2025) 61. Yin, D., Gontijo Lopes, R., Shlens, J., Cubuk, E.D., Gilmer, J.: A fourier perspective on model robustness in computer vision. Advances in Neural Information Processing Systems 32 (2019) 62. Yu, F., Seff, A., Zhang, Y., Song, S., Funkhouser, T., Xiao, J.: Lsun: Construction of a large-scale image dataset using deep learning with humans in the loop. arXiv preprint arXiv:1506.03365 (2015) 63. Zagoruyko, S., Komodakis, N.: Wide residual networks. arXiv preprint arXiv:1605.07146 (2016) 64. Zhang, J., Inkawhich, N., Linderman, R., Chen, Y., Li, H.: Mixture outlier exposure: Towards out-of-distribution detection in fine-grained environments. In: Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision. pp. 5531–5540 (2023) 65. Zhang, J., Yang, J., Wang, P., Wang, H., Lin, Y., Zhang, H., Sun, Y., Du, X., Li, Y., Liu, Z., et al.: Openood v1. 5: Enhanced benchmark for out-of-distribution detection. arXiv preprint arXiv:2306.09301 (2023) 66. Zhang, J., Fu, Q., Chen, X., Du, L., Li, Z., Wang, G., Han, S., Zhang, D., et al.: Out-of-distribution detection based on in-distribution data patterns memorization with modern hopfield energy. In: The Eleventh International Conference on Learning Representations (2022) 67. Zhou, B., Lapedriza, A., Khosla, A., Oliva, A., Torralba, A.: Places: A 10 million image database for scene recognition. IEEE transactions on pattern analysis and machine intelligence 40 (6), 1452–1464 (2017) Tracking the Discriminative Axis 19 68. Zhu, J., Geng, Y., Yao, J., Liu, T., Niu, G., Sugiyama, M., Han, B.: Diversified outlier exposure for out-of-distribution detection via informative extrapolation. Advances in Neural Information Processing Systems 36 , 22702–22734 (2023) 20 Wooseok Lee et al. 
+
+# Appendix 
+
+A Experimental details 
+
+A.1 Datasets details CIFAR-100 CIFAR-100 [27] consists of 60,000 color images of size 32 × 32 
+
+across 100 object classes, with 600 images per class. The dataset is divided into 50,000 training and 10,000 test samples. It includes diverse categories such as animals, vehicles, and everyday objects, and is commonly used for evaluating fine-grained image classification and representation learning. In our experiments, we use CIFAR-100 as the in-distribution dataset. 
+
+SVHN The Street View House Numbers (SVHN) dataset [36] contains real-world digit images collected from Google Street View. It consists of over 600,000 images, each containing a single digit cropped from house number signs, with a resolution of 32 × 32 . The dataset includes 10 classes (digits 0–9) and is known for its relatively low intra-class variability and high image quality. We use SVHN as an out-of-distribution dataset in our evaluation. 
+
+LSUN The Large-scale Scene UNderstanding (LSUN) dataset [62] contains millions of high-resolution images across various indoor and outdoor scene cate-gories such as classroom, church, and bridge. In OOD detection benchmarks, a subset of LSUN is often used by resizing images to 32 × 32 resolution to match CIFAR-style inputs. In our experiments, we use the resized LSUN images as out-of-distribution samples. 
+
+iSUN The iSUN dataset [54] consists of natural scene images collected for saliency prediction, containing various indoor and outdoor environments. It includes around 6,000 images, which are typically resized to 32 × 32 for compatibility with CIFAR-based architectures. Due to its scene-centric content, iSUN is commonly used as an out-of-distribution dataset in image classification tasks. We follow prior works and use the resized version of iSUN for OOD evaluation. 
+
+Textures The Textures dataset [8], also known as the Describable Textures Dataset (DTD), contains 5,640 texture images spanning 47 categories such as striped, dotted, and cracked. The images are collected "in the wild" and exhibit a wide range of fine-grained, low-level patterns. Its low semantic content and high texture diversity make it a challenging out-of-distribution benchmark. 
+
+ImageNet ImageNet-1K dataset [10] contains 1.28M training images and 50K validation images across 1,000 object categories. Tracking the Discriminative Axis 21 
+
+ImageNet-O ImageNet-O [23] is a curated out-of-distribution dataset containing 2,000 natural images that are semantically distinct from the 1,000 classes in ImageNet-1k. The images were collected to naturally lie outside the ImageNet taxonomy while maintaining comparable visual complexity. This dataset serves as a challenging benchmark for evaluating semantic OOD detection. 
+
+SUN The SUN dataset [52] is a large-scale scene understanding benchmark containing over 130,000 images across a wide variety of indoor and outdoor environments. It covers hundreds of semantic scene categories such as kitchen, mountain, and library. The diversity and scene-centric nature of SUN make it a strong candidate for out-of-distribution evaluation. 
+
+iNaturalist The iNaturalist dataset [47] contains high-resolution images of fine-grained natural categories such as plants, insects, birds, and mammals, collected from citizen science platforms. Due to its distinct domain and taxonomic diversity, iNaturalist is widely used as an out-of-distribution benchmark in vision tasks. Its semantic gap from object-centric datasets makes it a challenging OOD evaluation setting. 
+
+Common corruptions To evaluate robustness under covariate shift, we use a set of common image corruptions introduced by Hendrycks and Dietterich [19]. This benchmark includes 15 corruption types, grouped into noise (e.g., Gaussian noise, shot noise), blur (e.g., defocus, motion blur), weather (e.g., snow, fog), and digital distortions (e.g., JPEG compression, pixelation). We apply these corruptions to both in-distribution and out-of-distribution test samples to simulate realistic distribution shifts. Each corruption is applied at severity level 5, following the standard protocol used in prior robustness benchmarks. 
+
+A.2 Baselines details 
+
+We introduce the baselines compared with DART and specify the hyperparameter used for implementation. The hyperparameter settings mainly follow the settings from the original paper. 
+
+MSP Maximum Softmax Probability [20] uses the highest softmax output value as the confidence score, assuming in-distribution samples yield higher confidence. We extract this directly from the classifier’s final layer. 
+
+Energy Energy-based detection [32] computes E(x) = − log P 
+
+> i
+
+exp (fi(x)) from network logits, with lower values indicating in-distribution samples. T = 1 .0 is used for temperature scaling. 22 Wooseok Lee et al. 
+
+Max logit This method [18] uses the maximum pre-softmax logit value as the score, avoiding the normalization effect of softmax that may mask useful signals in relative logit magnitudes. 
+
+GradNorm GradNorm [24] measures the gradient magnitude of the loss with respect to the penultimate layer features. OOD samples tend to produce larger gradient norms. We use a temperature of 1.0 for all experiments. 
+
+ViM Virtual logit Matching [50] projects features into a null space and creates a virtual logit to enhance separation between ID and OOD samples. We set the dimension of the null space to 1000 for feature dimensions ≥ 1500, to 512 for feature dimensions ≥ 768, and to half the size of the feature dimensions otherwise. 
+
+KNN K-nearest neighbors [45] measures the distance to k-nearest neighbors in feature space, with OOD samples typically farther from ID samples. We use L2 normalization for features and set k=50 for CIFAR-based experiments and k=200 for ImageNet-based experiments. 
+
+Mahalanobis distance We implement both single-layer and ensemble versions of this method [29]. The single-layer version models class-conditional feature dis-tributions using Gaussian distributions and measures the distance to the nearest class distribution, using the penultimate layer features. The ensemble version com-bines layer-wise scores from multiple network layers using pre-computed weights. These weights are learned by utilizing FGSM-perturbed inputs (magnitude 0.001) as synthetic OOD data and applying logistic regression (regularization strength C=1.0, max iterations=1000) to determine the contribution of each layer’s feature. We extract features for each layer or block depending on the model architecture. 
+
+ODIN ODIN [30] enhances OOD detection by applying input perturbations with temperature scaling to create a larger gap between ID and OOD confidence scores. FGSM epsilon values are set as 0.002 for both CIFAR-100 and ImageNet. 
+
+ReAct ReAct [44] truncates abnormally high hidden activations at test time, reducing model overconfidence on OOD data while preserving ID performance, thereby improving the separability between ID and OOD sample. 
+
+SCALE SCALE [53] is a post-hoc OOD detection method that applies activation scaling to penultimate features, thereby enlarging the separation between ID and OOD energy scores. 
+
+ASH ASH [11] prunes a large portion of late-layer activations (e.g., by top-K percentile) and either leaves the remaining values(ASH-P), binarizes them(ASH-B), or rescales them(ASH-S), then propagates the simplified representation through the network for scoring. We use ASH-P for performance comparison. Tracking the Discriminative Axis 23 
+
+RTL RTL [14] fits a linear regression between OOD scores and network features at test time, calibrating base detector outputs to improve detection performance through test-time adaptation. 
+
+NNGuide NNGuide [39] leverages k-nearest neighbor distances in the feature space, scaled by the model’s confidence scores, to guide OOD detection by measuring how similar a test sample is to training samples while accounting for prediction confidence. 
+
+CoRP CoRP [15] applies cosine normalization followed by Random Fourier Features approximation of a Gaussian kernel, then computes PCA reconstruction errors for OOD detection. 
+
+MDS++ MDS++ [35] enhances the standard Mahalanobis Distance Score by applying L2 normalization to feature representations before computing class-conditional statistics, thereby improving the geometric separation between ID and OOD samples in the normalized feature space. 
+
+RMDS RMDS (Relative Mahalanobis Distance Score) [42] computes relative Mahalanobis distances by comparing class-conditional scores against global back-ground scores, effectively measuring how much a sample deviates from both class-specific and overall data distributions. 
+
+RMDS++ RMDS++ [35] extends RMDS by incorporating L2 feature normal-ization before computing relative Mahalanobis distances, combining the benefits of normalized feature spaces with relative distance measurements to achieve more robust OOD detection. 
+
+A.3 Evaluation model details 
+
+For CIFAR-100-based benchmark, we use the pre-trained WideResNet [63] with 40 layers and widen factor of 2 pretrained with AugMix [22] on clean CIFAR-100. The pretrained weights for this model is available from RobustBench [9]. For ImageNet-based benchmark, we use the pre-trained RegNetY-16GF [17] with the PyTorch checkpoint [40], which is trained on ImageNet and widely used for OOD detection task. For evaluation on transformer-based architectures, we train two models: ViT-Tiny and Swin-Tiny. Both models are initialized with ImageNet-pretrained weights provided by HuggingFace model hub. We then fine-tune the model weights and classifier on the CIFAR-100 dataset. Training continues until each model reaches its target accuracy threshold (80% for ViT-Tiny and 85% for Swin-Tiny), after which early stopping is applied. 24 Wooseok Lee et al. 
+
+A.4 Evaluation details 
+
+For evaluation, we construct each test-time batch to contain 100 in-distribution (ID) samples and 100 out-of-distribution (OOD) samples, resulting in a fixed batch size of 200. We sample a total of 100 such test batches for each experimental setting. For each batch, we compute the AUROC and FPR@95TPR metrics, and report the final performance by averaging the values across all batches. 
+
+A.5 Compute resources 
+
+All experiments were conducted using NVIDIA RTX 3090 and RTX 4090 GPUs. 
+
+B Method details 
+
+B.1 Otsu algorithm 
+
+To automatically determine a threshold that separates two distributions (e.g., ID and OOD) based on their scalar scores, we adopt Otsu algorithm [38]. Originally proposed for image binarization, Otsu algorithm selects the threshold that mini-mizes the intra-class variance (or equivalently maximizes the inter-class variance) when partitioning a set of scalar values into two groups. Given a histogram of score values, the algorithm exhaustively searches for the threshold τ that minimizes the weighted sum of within-class variances: 
+
+σ2
+
+> within
+
+(τ ) = ω0(τ )σ20 (τ ) + ω1(τ )σ21 (τ ), (5) where ω0(τ ) and ω1(τ ) are the probabilities of the two classes separated by threshold τ , and σ20 (τ ), σ21 (τ ) are the corresponding class variances. This approach allows for an adaptive and data-driven determination of the decision threshold, without requiring access to ground-truth labels or distributional assumptions. In our method, Otsu algorithm is applied to the distribution of OOD scores computed over each test-time batch. This enables unsupervised, on-the-fly thresh-old selection for distinguishing ID and OOD samples, and plays a critical role in decision-making process during inference. 
+
+B.2 Tukey’s method 
+
+To ensure robust prototype estimation, we apply outlier filtering prior to ag-gregating the feature representations of test samples. Specifically, we adopt Tukey’s method, a non-parametric technique for identifying outliers based on the interquartile range (IQR) [46]. Given a set of distance values (e.g., Euclidean distances between features and their assigned prototype), we first compute the lower quartile ( Q1) and upper quartile ( Q3). The interquartile range is then defined as: 
+
+IQR = Q3 − Q1. (6) Tracking the Discriminative Axis 25 
+
+A sample is identified as a potential outlier if its score x satisfies: 
+
+x > Q 3 + 1 .5 · IQR . (7) We use Tukey’s method with an IQR factor of 1.5 throughout our experiments. This filtering step is applied independently to the distance scores within each test-time batch, effectively removing extreme values that may otherwise distort the prototype update. 
+
+B.3 Layer selection for DART 
+
+While it is possible to utilize the output of all intermediate layers for multi-layer aggregation, doing so incurs additional computational overhead. To reduce this overhead while still capturing hierarchical representations, we select a subset of representative layers at coarse block granularity, as specified in Table 6. 
+
+Table 6: Included layers list for DART      
+
+> Model architecture Included layers list WideResNet-40-2 block1, block2, block3, fc
+> RegNetY-16GF
+> stem, trunk output {block1.block1-0, block1.block1-1, block2.block2-0 - block2.block2-3, block3.block3-0 - block3.block3-10, block4.block4-0}, fc
+> ViT-Tiny vit.encoder.layer{0 - 11}, classifier
+> Swin-T swin.encoder.layers{0.blocks.0, 0.blocks.1, 1.blocks.0, 1.blocks.1 2.blocks.0 - 2.blocks.5, 3.blocks.0, 3.blocks.1}, classifier
+> ResNet-50 layer1, layer2, layer3, layer4, fc
+
+26 Wooseok Lee et al. 
+
+B.4 Algorithm of DART 
+
+Algorithm 1 DART 
+
+Require: Pre-trained model f , layers L = {1, . . . , L }, EMA coefficient α
+
+1: Initialization using the first batch B1:
+
+2: Let o = ( o1, . . . , o C ) be the logit vector 3: Compute MSP: MSP 1,i = max c exp( oc)  
+
+> PCj=1 exp( oj)
+
+4: Apply Otsu threshold τ1 on MSP scores for pseudo-labeling: 
+
+ˆyi =
+
+(
+
+ID if MSP 1,i ≥ τ1
+
+OOD otherwise 5: Partition features into BID  
+
+> 1
+
+and BOOD  
+
+> 1
+
+based on ˆyi
+
+6: for each layer l ∈ L do 
+
+7: Initialize prototypes: 
+
+¯p(l),ID 1 = 1 
+
+> |B ID 1|
+
+P
+
+> x1,i ∈B ID 1
+
+fl(x1,i ), ¯p(l),OOD 1 = 1 
+
+> |B OOD 1|
+
+P
+
+> x1,i ∈B OOD 1
+
+fl(x1,i )
+
+8: end for 
+
+9: for each batch Bt do 
+
+10: for each layer l ∈ L do 
+
+11: if t mod n = 0 then 
+
+12: Apply flip correction if prototypes are misaligned. Refer to Section 3.3 in main paper for details. 13: end if 
+
+14: Extract features: z(l) 
+
+> t,i
+
+= fl(xt,i ), xt,i ∈ B t
+
+15: Compute RDS: RDS (l) 
+
+> i
+
+= 1 − ∥z(l)      
+
+> i−¯pID, (l)
+> t−1∥∥z(l)
+> i−¯pID, (l)
+> t−1∥+∥z(l)
+> i−¯pOOD, (l)
+> t−1∥
+
+16: Apply Otsu threshold τt on RDS scores for pseudo-labeling: 
+
+ˆyi =
+
+(
+
+ID if RDS (l) 
+
+> i
+
+≥ τt
+
+OOD otherwise 17: Partition features into BID t and BOOD t based on ˆyi
+
+18: Apply Tukey’s method for outlier filtering: Let si = ∥z(l) 
+
+> t,i
+
+− pproto ∥2, where pproto is the corresponding prototype Filter out z(l) 
+
+> t,i
+
+if si > Q 3 + k · IQR 
+
+19: Compute new centers: 
+
+ˆp(l),ID  
+
+> t
+
+= 1 
+
+> |B ID
+> t|
+
+P 
+
+> xt,i ∈B ID
+> t
+
+fl(xt,i ), ˆp(l),OOD  
+
+> t
+
+= 1 
+
+> |B OOD
+> t|
+
+P 
+
+> xt,i ∈B OOD
+> t
+
+fl(xt,i )
+
+20: Update prototypes with EMA: 
+
+¯pID, (l) 
+
+> t
+
+= α· ¯pID, (l) 
+
+> t
+
++(1 −α)· ˆpID, (l) 
+
+> t−1
+
+, ¯pOOD, (l) 
+
+> t
+
+= α· ¯pOOD, (l) 
+
+> t
+
++(1 −α)· ˆpOOD, (l)
+
+> t−1
+
+21: end for 
+
+22: RDS multi (xi) = 1
+
+> L
+
+PLl=1 RDS (l)
+
+> i
+
+23: end for 
+
+C Full Results 
+
+Here we show the full results for all OOD datasets which was abbreviated as average in the main manuscript due to space limits. Tracking the Discriminative Axis 27 
+
+C.1 Full CIFAR-100 Results with WideResNet on Clean Dataset 
+
+Table 7: OOD detection performance comparison with CIFAR-100 ID and the corre-sponding OODs. FPR@95TPR (%) is lower the better and AUROC (%) is higher the better. (Best: bolded , Second-best: underlined) 
+
+Clean 
+
+Method Training dist. informed SVHN Places365 LSUN iSUN Textures Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 79.32 77.27 80.37 74.99 78.39 76.91 81.23 74.56 82.55 72.70 80.37 75.29 Energy NO 80.32 78.74 78.47 75.69 78.39 78.68 83.42 74.53 79.17 76.31 79.95 76.79 Max logit NO 79.85 79.11 78.63 76.01 77.87 78.92 82.49 75.00 79.69 76.25 79.71 77.06 GradNorm NO 96.80 44.47 94.81 51.36 98.22 32.12 98.48 30.97 86.31 59.18 94.92 43.62 ViM YES 54.18 85.44 86.74 64.33 66.48 81.52 66.82 80.95 85.47 65.83 71.94 75.61 KNN YES 63.34 86.06 80.09 73.38 66.57 84.85 72.86 80.60 74.54 80.89 71.48 81.16 Mahalanobis single YES 77.75 75.58 90.94 59.26 69.56 80.02 70.64 78.54 91.15 56.50 80.01 69.98 Mahalanobis ensemble YES 62.92 88.78 93.41 61.12 13.12 97.34 16.44 96.55 43.79 87.99 45.94 86.36 ODIN NO 64.15 80.96 84.30 69.48 90.32 63.24 91.03 61.21 75.75 72.60 81.11 69.50 ReAct YES 87.25 70.36 79.97 75.71 73.91 80.58 75.75 78.48 80.39 75.32 79.45 76.09 SCALE NO 74.38 81.36 78.47 75.55 80.91 75.14 83.88 72.60 65.34 82.98 76.60 77.53 ASH NO 79.20 79.65 79.96 75.11 81.64 77.12 85.45 73.20 75.96 78.72 80.44 76.76 RTL NO 50.15 87.42 73.23 75.59 58.46 85.01 68.38 80.67 70.33 75.12 64.11 80.76 NNGuide YES 86.85 71.34 87.71 67.73 94.66 59.74 95.50 57.33 73.01 75.32 87.55 66.29 CoRP YES 43.43 91.59 86.30 68.31 82.53 77.18 80.56 77.13 34.89 91.04 65.54 81.16 MDS++ YES 83.59 81.25 85.42 70.98 84.16 77.33 86.64 73.88 90.00 74.15 85.96 75.52 RMDS YES 68.73 85.23 77.53 77.11 52.64 88.28 57.46 85.64 83.13 76.29 67.90 82.51 RMDS++ YES 74.20 84.57 76.79 77.67 65.24 85.70 71.02 82.49 82.29 77.44 73.91 82.51 
+
+DART NO 9.64 97.67 70.00 75.12 30.24 91.49 14.79 96.62 40.91 88.02 33.12 89.78 
+
+C.2 Full ImageNet Results with RegNet on Clean Dataset 
+
+Table 8: OOD detection performance comparison with ImageNet ID and the corre-sponding OODs. FPR@95TPR (%) is lower the better and AUROC (%) is higher the better. (Best: , Second-best: underlined) 
+
+Clean 
+
+Method Training dist. informed IN-O Places SUN iNaturalist Textures Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 52.87 83.02 54.76 84.30 52.16 84.92 20.33 95.25 43.08 87.23 44.64 86.94 Energy NO 57.59 76.17 48.11 81.05 41.17 85.04 8.68 97.49 35.69 87.87 38.25 85.52 Max logit NO 52.30 78.42 47.22 82.29 41.65 85.60 9.50 97.43 34.57 88.39 37.05 86.43 GradNorm NO 93.95 34.15 87.71 52.32 79.27 62.51 74.90 63.44 66.67 73.87 80.50 57.26 ViM YES 30.21 93.82 71.37 82.93 72.21 83.42 50.70 90.12 58.42 87.70 56.58 87.60 KNN YES 69.58 85.71 97.60 69.55 96.05 71.65 99.40 66.69 61.32 85.77 84.79 75.87 Mahalanobis single YES 48.14 90.43 87.04 76.70 90.16 76.11 88.65 78.79 81.98 80.81 79.19 80.57 Mahalanobis ensemble YES 8.69 97.82 78.62 81.37 77.80 82.59 88.75 77.80 22.62 94.71 55.30 86.86 ODIN NO 60.40 82.05 71.28 76.69 68.97 77.47 47.64 88.78 55.90 84.33 60.84 81.86 ReAct YES 97.32 53.19 90.93 65.47 85.13 72.83 74.11 85.74 84.53 76.10 86.40 70.67 SCALE NO 52.97 77.70 45.51 82.83 37.89 86.79 8.72 97.46 29.96 90.30 35.01 87.02 ASH NO 57.04 76.29 47.82 81.17 40.78 85.21 8.43 98.01 34.80 88.15 37.77 85.67 RTL NO 52.60 79.13 49.71 83.58 48.01 82.53 21.53 90.75 39.67 85.22 42.30 84.24 NNGuide YES 87.68 49.90 85.03 61.03 76.69 68.44 49.44 87.67 54.18 83.23 70.60 70.05 CoRP YES 42.37 93.23 68.17 83.92 62.14 86.35 33.19 94.68 39.27 92.67 49.03 90.17 MDS++ YES 34.49 94.26 73.19 81.07 65.30 84.69 9.86 98.01 26.49 94.37 41.87 90.48 RMDS YES 41.02 92.19 63.46 87.29 61.54 88.84 9.41 97.54 55.96 89.27 46.28 91.03 RMDS++ YES 57.33 90.42 73.07 85.76 70.16 87.53 17.70 96.44 61.79 88.50 56.01 89.73 
+
+DART NO 0.59 99.82 14.41 96.31 36.14 90.86 20.71 95.28 7.90 98.36 15.95 96.13 28 Wooseok Lee et al. 
+
+C.3 Full CIFAR-100 Results with ViT-Tiny 
+
+Table 9: OOD detection performance comparison with ViT-Tiny. We evaluate with CIFAR-100 ID, CIFAR-100-C csID and the corresponding OODs. (Best: bolded ,Second-best: underlined) 
+
+Covariate Shifted 
+
+Method Training dist. informed SVHN-C Places365-C LSUN-C iSUN-C Textures-C Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 88.32 54.65 89.98 57.41 89.13 60.20 90.96 57.75 89.39 55.15 89.56 57.03 Energy NO 83.57 60.42 88.13 60.19 87.47 63.71 89.33 60.96 86.57 60.73 87.01 61.20 Max logit NO 84.66 59.74 88.59 59.76 87.74 63.31 89.76 60.53 87.17 59.93 87.58 60.65 GradNorm NO 89.95 62.39 89.89 56.74 92.07 54.39 92.37 53.47 83.40 65.13 89.54 58.42 ViM YES 86.98 58.01 91.24 57.30 88.56 62.26 90.90 58.85 89.78 57.33 89.49 58.75 KNN YES 90.16 56.65 90.34 54.45 90.01 60.53 92.23 55.79 87.99 56.64 90.15 56.81 Mahalanobis single YES 97.65 32.82 96.87 34.13 96.77 33.42 97.27 31.31 97.54 30.30 97.22 32.40 Mahalanobis ensemble YES 37.91 90.30 94.09 45.50 61.56 61.16 61.78 61.13 53.29 71.68 61.73 65.95 ODIN NO 85.29 61.87 88.93 58.27 89.56 58.57 89.54 59.06 84.33 64.82 87.53 60.52 ReAct YES 82.37 60.08 87.19 61.31 85.39 65.80 87.74 62.86 86.99 59.98 85.94 62.01 SCALE NO 84.84 59.26 89.66 58.25 90.05 60.75 91.51 57.95 88.16 58.76 88.84 58.99 ASH NO 92.41 58.90 91.56 55.26 93.51 52.40 93.88 51.33 88.62 62.12 92.00 56.00 RTL NO 80.17 59.38 86.96 57.54 83.75 62.21 88.03 56.60 83.18 57.72 84.42 58.69 NNGuide YES 86.45 59.03 87.05 59.69 86.04 64.58 88.36 61.35 84.53 61.21 86.49 61.17 CoRP YES 88.45 59.62 89.92 56.64 87.28 63.92 89.22 59.97 86.69 59.10 88.31 59.85 MDS++ YES 77.22 67.31 83.05 61.79 78.16 68.41 80.03 65.75 72.31 68.01 78.15 66.25 RMDS YES 76.29 65.91 87.26 60.66 84.90 65.54 87.27 61.98 77.44 63.73 82.63 63.56 RMDS++ YES 75.35 65.59 86.15 61.22 83.89 66.16 86.10 62.95 75.02 64.35 81.30 64.05 
+
+DART NO 36.44 71.92 67.29 57.33 25.08 80.93 31.67 75.50 60.90 57.30 44.28 68.60 Clean 
+
+Method Training dist. informed SVHN Places365 LSUN iSUN Textures Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 62.06 82.50 78.47 74.69 70.48 81.33 74.85 78.79 65.92 81.63 70.36 79.79 Energy NO 41.79 89.13 73.81 77.71 61.09 86.02 66.13 83.60 51.04 87.68 58.77 84.83 Max logit NO 44.96 88.65 74.40 77.59 61.78 85.80 67.05 83.33 53.15 87.33 60.27 84.54 GradNorm NO 70.09 81.30 83.25 69.27 85.99 72.71 87.16 70.48 65.14 82.44 78.33 75.24 ViM YES 47.34 88.18 71.80 78.03 57.30 87.18 63.52 84.49 51.37 87.41 58.27 85.06 KNN YES 60.23 83.70 79.73 69.78 65.70 83.28 72.82 77.93 58.29 83.19 67.35 79.58 Mahalanobis single YES 97.62 31.26 94.24 47.56 96.96 31.19 97.67 27.57 95.40 40.26 96.38 35.57 Mahalanobis ensemble YES 13.93 97.14 94.58 55.26 3.03 99.06 3.93 98.93 30.44 91.63 29.18 88.40 ODIN NO 75.65 75.47 87.48 64.34 84.41 68.70 83.64 69.79 70.07 77.78 80.25 71.22 ReAct YES 40.18 89.58 72.80 78.53 57.23 68.84 62.69 84.64 51.40 87.38 56.86 81.79 SCALE NO 44.17 88.43 73.71 77.68 67.15 83.85 71.51 81.28 52.19 87.07 61.75 83.66 ASH NO 77.25 79.20 83.45 69.11 86.72 71.52 88.41 69.02 70.01 81.14 81.17 74.00 RTL NO 26.70 89.94 67.55 77.48 27.65 93.41 39.20 89.62 39.88 88.30 40.20 87.75 NNGuide YES 47.09 87.22 76.40 74.95 60.59 85.51 66.31 82.58 51.10 86.91 60.30 83.43 CoRP YES 61.85 85.00 80.76 73.19 64.51 85.81 68.88 82.48 60.42 85.68 67.28 82.43 MDS++ YES 39.14 88.84 66.54 78.57 42.39 90.18 48.78 87.41 36.66 90.59 46.70 87.12 RMDS YES 36.21 89.32 62.15 80.43 47.61 88.92 55.13 85.97 38.81 90.00 47.98 86.93 RMDS++ YES 36.30 89.09 62.64 80.08 48.16 88.67 55.21 85.72 38.26 89.98 48.11 86.71 
+
+DART NO 3.24 99.23 62.77 81.73 0.85 99.80 1.04 99.74 35.00 91.04 20.58 94.31 Tracking the Discriminative Axis 29 
+
+C.4 Full CIFAR-100 Results with Swin-Tiny 
+
+Table 10: OOD detection performance comparison with Swin-Tiny. We evaluate with CIFAR-100 ID, CIFAR-100-C csID and the corresponding OODs. (Best: bolded ,Second-best: underlined) 
+
+Covariate Shifted 
+
+Method Training dist. informed SVHN-C Places365-C LSUN-C iSUN-C Textures-C Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 87.48 58.92 87.20 63.29 82.95 67.03 85.14 64.75 84.33 62.97 85.42 63.39 Energy NO 81.88 67.29 86.20 64.20 78.30 71.63 81.65 68.08 73.47 70.53 80.30 68.35 Max logit NO 83.72 66.10 86.30 64.38 79.40 71.16 82.44 67.79 77.63 69.22 81.90 67.73 GradNorm NO 82.38 68.38 89.90 62.00 80.76 72.92 79.68 73.52 61.12 80.40 78.77 71.44 ViM YES 95.84 51.26 94.98 50.17 97.60 46.77 98.04 43.00 98.22 37.61 96.94 45.76 KNN YES 82.69 68.02 87.62 60.94 82.50 67.52 85.40 62.77 83.06 65.31 84.25 64.91 Mahalanobis single YES 98.23 38.79 97.74 41.80 99.32 32.79 99.36 30.22 99.13 21.86 98.76 33.09 Mahalanobis ensemble YES 97.17 44.72 97.94 39.09 99.35 31.32 99.38 29.27 99.14 24.34 98.60 33.75 ODIN NO 80.78 66.20 89.74 59.86 91.86 58.65 91.08 59.38 70.96 74.06 84.88 63.63 ReAct YES 78.42 69.44 85.84 65.20 76.79 73.35 78.67 71.44 64.09 76.25 76.76 71.14 SCALE NO 79.13 69.57 86.21 65.09 76.71 73.93 78.22 72.28 63.15 76.96 76.68 71.57 ASH NO 78.65 70.33 87.57 63.95 77.48 73.87 78.64 72.06 62.42 76.76 76.95 71.39 RTL NO 86.72 57.38 86.72 62.68 79.41 69.61 83.11 65.84 82.61 62.58 83.71 63.62 NNGuide YES 78.56 72.74 84.64 67.62 73.65 76.11 76.30 73.44 69.52 76.99 76.53 73.38 CoRP YES 84.83 67.05 89.32 59.20 85.16 65.79 86.98 61.99 84.56 64.22 86.17 63.65 MDS++ YES 72.36 75.29 88.15 60.55 78.41 69.66 79.70 66.70 61.44 76.79 76.01 69.80 RMDS YES 91.82 59.47 91.80 56.76 89.66 61.30 91.74 57.40 91.61 55.75 91.33 58.14 RMDS++ YES 89.90 63.59 90.80 58.82 85.84 64.50 88.39 60.72 85.74 61.41 88.13 61.81 
+
+DART NO 44.90 70.99 57.62 75.48 14.28 95.53 24.97 87.74 52.74 76.66 38.90 81.28 Clean 
+
+Method Training dist. informed SVHN Places365 LSUN iSUN Textures Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 59.06 86.09 69.83 79.17 58.09 85.76 62.11 83.42 51.72 87.13 60.16 84.31 Energy NO 35.88 91.83 58.64 83.16 38.61 91.40 44.35 88.95 27.80 93.67 41.06 89.80 Max logit NO 37.54 91.54 58.73 83.04 39.41 91.10 45.02 88.66 29.86 93.28 42.11 89.52 GradNorm NO 85.31 61.74 83.37 67.78 70.06 80.46 68.41 80.33 51.02 82.32 71.63 74.53 ViM YES 83.71 80.08 93.84 62.22 96.72 63.50 97.19 59.52 93.54 65.96 93.00 66.26 KNN YES 31.60 93.26 66.75 80.31 46.95 89.67 53.14 86.22 31.23 93.09 45.93 88.51 Mahalanobis single YES 97.07 59.75 98.46 43.08 99.67 35.81 99.72 33.62 98.43 33.27 98.67 41.11 Mahalanobis ensemble YES 96.51 64.83 98.40 43.33 99.57 38.31 99.65 36.58 97.99 44.61 98.42 45.53 ODIN NO 89.89 67.25 95.52 59.39 97.62 57.25 97.04 57.87 75.93 76.50 91.20 63.65 ReAct YES 42.84 90.56 58.78 82.17 38.80 91.42 42.60 89.57 25.89 93.83 41.78 89.51 SCALE NO 49.51 87.94 62.13 81.02 40.86 91.00 44.03 89.32 27.67 93.21 44.84 88.50 ASH NO 54.51 85.90 67.96 79.09 46.42 89.69 48.93 88.02 32.31 92.14 50.03 86.97 RTL NO 43.25 87.35 70.99 74.76 44.41 87.35 51.83 84.40 44.03 87.30 50.90 84.23 NNGuide YES 37.51 91.82 56.58 84.28 33.61 93.04 38.34 91.40 24.15 94.75 38.04 91.06 CoRP YES 41.14 92.32 68.66 80.55 50.94 89.81 55.48 87.22 35.63 92.77 50.37 88.53 MDS++ YES 30.97 93.67 56.68 83.95 33.31 92.98 39.00 90.82 16.43 96.28 35.28 91.54 
+
+RMDS YES 52.84 89.57 64.26 82.37 52.70 88.97 59.42 86.09 40.78 91.23 54.00 87.65 RMDS++ YES 47.14 90.76 58.64 83.56 44.55 90.16 50.92 87.55 33.78 92.48 47.01 88.90 
+
+DART NO 7.27 97.88 77.97 64.13 6.31 98.52 6.68 98.49 61.06 81.14 31.86 88.03 30 Wooseok Lee et al. 
+
+C.5 Full ImageNet Results with ResNet-50 
+
+Table 11: OOD detection performance comparison with ResNet-50 on ImageNet-based benchmark. Results on covariated shifted dataset are the average of all 15 corruptions with severity level 5. (Best: bolded , Second-best: underlined) 
+
+Covariate Shifted 
+
+Method Training dist. informed ImageNet-O-C Places-C SUN-C iNaturalist-C Textures-C Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 86.14 55.60 86.79 63.17 84.84 65.27 77.89 69.62 88.52 54.85 84.84 61.70 Energy NO 82.16 58.92 89.03 61.29 87.91 63.58 86.44 64.52 88.05 55.85 86.72 60.83 Max logit NO 83.88 57.81 87.57 63.00 85.79 65.42 81.49 68.07 88.02 55.87 85.35 62.03 GradNorm NO 76.86 64.58 70.84 77.06 65.23 80.51 51.36 85.62 67.11 74.14 66.28 76.38 ViM YES 95.64 38.92 99.50 17.64 99.65 14.90 99.94 8.60 96.94 25.14 98.33 21.04 KNN YES 83.81 63.63 90.93 55.23 91.12 56.45 95.20 45.36 61.31 73.33 84.47 58.80 MDS single YES 95.14 38.80 99.52 18.75 99.67 15.95 99.93 9.60 96.20 27.69 98.09 22.16 MDS ensemble YES 79.71 62.76 92.44 42.67 92.17 41.57 94.26 33.49 64.44 62.83 84.60 48.66 ODIN NO 76.69 68.04 25.14 92.96 22.70 93.69 27.84 92.22 38.11 85.81 38.10 86.54 ReAct YES 82.24 59.09 84.47 67.56 82.92 69.76 80.76 70.72 84.85 59.33 83.05 65.29 SCALE NO 79.10 63.07 79.87 70.76 76.10 74.05 63.83 79.72 75.88 68.39 74.96 71.20 ASH NO 80.51 61.30 87.83 63.20 86.48 65.88 82.64 68.22 84.77 60.05 84.45 63.73 RTL NO 82.27 57.85 76.94 71.71 73.29 74.47 64.06 78.47 81.14 59.14 75.54 68.33 NNGuide YES 73.91 67.80 68.11 77.74 62.29 81.42 50.54 85.43 57.13 78.16 62.40 78.11 CoRP YES 75.89 73.38 75.07 73.16 71.42 76.37 67.32 78.15 44.54 86.27 66.85 77.47 MDS++ YES 63.76 77.47 81.50 66.32 79.47 69.03 66.54 77.67 36.03 88.92 65.46 75.88 RMDS YES 90.38 50.24 95.39 44.28 95.88 42.31 96.52 45.83 85.80 50.46 92.79 46.62 RMDS++ YES 77.40 64.63 86.31 58.47 85.77 58.86 78.16 68.26 61.45 73.34 77.82 64.71 
+
+DART NO 73.52 58.78 2.46 99.34 1.06 99.59 1.18 99.61 23.75 79.75 20.39 87.41 Clean 
+
+Method Training dist. informed ImageNet-O Places SUN iNaturalist Textures Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+MSP NO 64.81 75.42 56.33 85.09 53.18 85.97 36.95 91.68 53.73 83.95 53.00 84.42 Energy NO 55.18 82.01 42.09 89.64 34.38 91.54 25.30 94.38 33.96 90.49 38.18 89.61 Max logit NO 55.09 81.85 42.79 78.62 35.50 91.39 23.88 95.05 35.07 90.28 38.47 87.44 GradNorm NO 55.97 78.38 47.85 87.45 42.19 88.60 24.01 94.34 42.17 86.85 42.44 87.12 ViM YES 56.20 77.62 42.62 86.49 31.60 90.55 21.81 94.30 33.31 89.08 37.11 87.61 KNN YES 11.09 97.01 72.62 83.16 72.49 84.40 82.54 79.21 16.31 96.53 51.01 88.06 MDS single YES 11.10 95.67 54.71 87.07 45.46 90.53 78.67 76.90 19.89 94.97 41.97 89.03 MDS ensemble YES 30.76 88.27 95.87 62.81 95.47 62.19 97.37 50.94 49.44 86.03 73.78 70.05 ODIN NO 18.70 94.49 94.09 64.38 93.09 64.67 96.72 51.10 29.60 91.41 66.44 73.21 ReAct YES 16.84 95.44 36.62 89.54 34.89 89.80 38.99 88.92 35.50 88.30 32.57 90.40 SCALE NO 50.55 84.83 37.29 91.44 30.29 93.06 17.02 96.40 31.67 92.22 33.36 91.59 ASH NO 42.77 87.82 32.37 92.47 24.55 94.22 10.87 97.60 19.80 94.77 26.07 93.38 RTL NO 56.98 75.34 42.41 86.56 36.48 87.81 23.85 91.29 38.71 85.14 39.69 85.23 NNGuide YES 38.59 88.32 28.59 93.10 20.02 95.18 17.82 96.20 21.11 94.17 25.23 93.39 CoRP YES 30.01 89.25 64.00 84.28 55.98 87.82 83.16 73.97 23.66 94.53 51.36 85.97 MDS++ YES 14.92 97.16 61.42 84.92 49.94 88.97 33.84 93.72 1.69 99.49 32.36 92.85 RMDS YES 61.88 88.56 87.73 79.15 88.16 80.24 65.98 90.30 51.95 88.58 71.14 84.97 RMDS++ YES 56.42 86.76 75.65 82.07 73.61 83.96 36.83 93.50 29.65 91.97 54.43 87.65 
+
+DART NO 0.60 99.83 33.90 89.31 15.90 95.77 14.29 96.46 23.68 94.78 17.67 95.23 Tracking the Discriminative Axis 31 
+
+D Theoretical Analysis 
+
+We analyze why the discriminative axis d = μID − μOOD is an effective OOD detector and why its norm is large. Throughout, ˆz(x) ∈ RK denotes the post-BN feature vector with K channels, and BN normalizes each channel k by frozen ID statistics: ˆZk(x) = γk (Zk (x)−μID ,k )
+
+√σ2ID ,k +ϵ + βk. Since ϵ ≈ 10 −5, the post-BN ID variance satisfies v2ID ,k ≜ Var x∼PID [ ˆZk(x)] = γ2  
+
+> kσ2ID ,k
+> σ2ID ,k +ϵ
+
+≈ γ2 
+
+> k
+
+.
+
+D.1 Separation Bound for the Discriminative Axis 
+
+Consider the centered projection score ˜s(x) = d⊤( ˆz(x) − μOOD ). The projected class means are 
+
+E[˜ s | ID] = ∥d∥2, E[˜ s | OOD] = 0 , (8) giving an exact mean gap of ∥d∥2. The projected variance is Var [ ˜s | C] = 
+
+d⊤ΣC d. We assume that the within-class variance remains controlled along the discriminative direction: 
+
+Assumption A1 (bounded directional variance). There exists a constant κ > 0
+
+such that 
+
+d⊤ΣC d ≤ κ∥d∥2, C ∈ { ID , OOD }. (9) This condition constrains only the variance along the single direction d, without imposing structure on the full covariance matrix. A sufficient condition is bounded operator norm: ∥ΣC ∥op ≤ κ implies A1 immediately. Using the midpoint threshold τ = ∥d∥2/2, Chebyshev’s inequality yields 
+
+P (˜ s < τ | ID) ≤ 4 κ
+
+∥d∥2 , (10) because the ID mean is ∥d∥2, and similarly 
+
+P (˜ s ≥ τ | OOD) ≤ 4 κ
+
+∥d∥2 , (11) because the OOD mean is 0. Therefore, the overlap decreases as O(1 /∥d∥2):larger norm of the discriminative axis directly improves separation between ID and OOD along the projected score. 
+
+Fisher optimality of the discriminative axis. Let SW = ΣID + ΣOOD be the within-class scatter matrix. The SNR of the projection along d equals the Fisher criterion: SNR = ∥d∥4/(d⊤SW d) = J(d). In general, the Fisher-optimal direction is w∗ ∝ S−1 
+
+> W
+
+d, which need not align with d. However, when the within-class scatter is approximately diagonal with comparable entries — i.e. SW ≈ 2γ2I —the inverse acts as a uniform rescaling and S−1 
+
+> W
+
+d ∝ d, so the discriminative axis coincides with the Fisher-optimal direction. 32 Wooseok Lee et al. 
+
+D.2 Why the Discriminative Axis Norm Is Large 
+
+The k-th component of d in post-BN space decomposes as 
+
+dk = γk
+
+q
+
+σ2ID ,k + ϵ
+
+ E[Zk | ID] − E[Zk | OOD] | {z }
+
+> ∆k
+
+= λk ∆k, (12) where λk = γk/
+
+q
+
+σ2ID ,k + ϵ is the BN scaling factor and ∆k is the pre-BN mean shift. The axis norm is ∥d∥2 = PKk=1 λ2 
+
+> k
+
+∆2
+
+> k
+
+.Any λk > 1 means BN amplifies the pre-BN mean shift in channel k, and the key observation is that this amplification compounds across K channels : even ¯λ
+
+modestly above 1 can yield ∥d∥2 ≫ 4κ when K is large. In the final BN layer of a pretrained ResNet-50 ( K=2048 ), the measured scaling factors have mean ¯λ ≈ 23 .3 with a coefficient of variation of 5.7% , placing the bound deep in the non-trivial regime: moderate per-channel shifts accumulate across 2048 channels into a large ∥d∥2, directly tightening the bound in Eq. (10). 
+
+E Effect of EMA  α
+
+We employ an exponential moving average (EMA) to update the prototype, where the smoothing coefficient  α is treated as an only hyperparameter of DART .To examine the sensitivity of our method to this hyperparameter, we conduct an ablation study on the CIFAR-100-C vs. SVHN-C and ImageNet-C vs. iNaturalist-C benchmark, and report the results as AUROC(%) in Table 12. Results in Table 12 demonstrates that our method is robust to the choice of the EMA coefficient  α.                        
+
+> Table 12: The effect of EMA αon the performance of DART
+> α0.5 0.6 0.7 0.8 0.9 std. CIFAR-100-C vs. SVHN-C 78.79 78.68 78.84 78.58 78.11 ±0.29 ImageNet-C vs. iNaturalist-C 93.18 93.18 93.18 93.18 93.19 ±0.00
+
+F Impact of Flip Correction 
+
+To quantitatively assess the impact of flip correction, we compare with a variant that does not perform flip correction, DART-NoFlip, using CIFAR-100-C as the csID dataset. As shown in Table 13, flip correction improves the performance of our method. Tracking the Discriminative Axis 33 
+
+Table 13: Performance comparison between DART -NoFlip and DART 
+
+Method SVHN-C Places365-C LSUN-C iSUN-C Textures-C Average FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑ FPR95  ↓ AUROC  ↑
+
+DART -NoFlip 51.14 71.84 70.14 66.08 44.17 80.15 52.30 78.58 55.37 75.01 54.62 74.33 
+
+DART 48.60 79.82 68.66 68.00 44.14 80.29 50.76 79.75 51.48 80.60 52.73 77.69 
+
+To further illustrate the effect on performance over time, we additionally analyze CIFAR-100-C vs Textures-C on a per-corruption basis. Figure 10 vi-sualizes the detection performance over time (per-batch AUROC) before and after applying flip correction. For several corruptions—glass blur, snow, fog, and contrast—we observe that once flip correction is triggered, the dual prototype axis is realigned toward the oracle discriminative direction, leading to an abrupt jump and sustained improvement in performance. For shot noise, flip correction occurs early in the stream at the 20-th batch, after which the subsequent batches exhibit much more stable and higher performance compared to DART -NoFlip. 0 20 40 60 80 100 
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+gaussian_noise      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+shot_noise      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+impulse_noise      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+defocus_blur      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+glass_blur      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+motion_blur      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+zoom_blur      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+snow      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+frost      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+fog      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+brightness      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+contrast      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+elastic_transform      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+pixelate      
+
+> 020 40 60 80 100
+
+Batch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> AUROC
+
+jpeg_compression 
+
+DART DART-NoFlip 
+
+Fig. 10: Impact of Flip Correction over time (CIFAR-100-C vs. Textures-C) 
+
+G Impact of Multi-layer Fusion 
+
+We extend Figure 9a to report, for all 15 corruption types, the AUROC of each single-layer variant (Block1, Block2, Block3, FC) and compare them against full 34 Wooseok Lee et al. 
+
+DART with multi-layer fusion, using CIFAR-100-C as csID and Textures-C as csOOD. See Figure 11 for all results. This extended analysis reveals that the best-performing layer is highly shift-dependent: under noise-type corruptions such as Gaussian or impulse noise, deeper layers suffer larger degradation, whereas under corruptions such as motion blur and brightness, earlier layers are more severely affected and later layers remain relatively more informative. As a result, relying on any single fixed layer for OOD detection is brittle when the covariate shift type is unknown a priori. In contrast, the fused DART score achieves both the highest mean performance and the most stable behavior: averaged over all corruption types, DART not only outperforms every single-layer variant, but also exhibits substantially smaller variation than the strongest single-layer baseline (Block3), with standard deviation 0.1661 versus 0.2582 for Block3. These results quantitatively support our claim that multi-layer fusion is crucial for robust OOD detection under unpredictable covariate shift. block1                 
+
+> block2
+> block3 fc
+> DART
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> AUROC
+> Gaussian Noise
+> block1
+> block2
+> block3 fc
+> DART
+> 0.82
+> 0.84
+> 0.86
+> 0.88
+> 0.90
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> Shot Noise
+> block1
+> block2
+> block3 fc
+> DART
+> 0.970
+> 0.975
+> 0.980
+> 0.985
+> 0.990
+> 0.995
+> 1.000 Impulse Noise
+> block1
+> block2
+> block3 fc
+> DART
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> Defocus Blur
+> block1
+> block2
+> block3 fc
+> DART
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Glass Blur
+> block1
+> block2
+> block3 fc
+> DART
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> AUROC
+> Motion Blur
+> block1
+> block2
+> block3 fc
+> DART
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> Zoom Blur
+> block1
+> block2
+> block3 fc
+> DART
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Snow
+> block1
+> block2
+> block3 fc
+> DART
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> Frost
+> block1
+> block2
+> block3 fc
+> DART
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> Fog
+> block1
+> block2
+> block3 fc
+> DART
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> AUROC
+> Brightness
+> block1
+> block2
+> block3 fc
+> DART
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> Contrast
+> block1
+> block2
+> block3 fc
+> DART
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> Elastic Transform
+> block1
+> block2
+> block3 fc
+> DART
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> Pixelate
+> block1
+> block2
+> block3 fc
+> DART
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> Jpeg Compression
+> block1
+> block2
+> block3
+> fc
+> DART
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> AUROC
+> Overall Average Performance
+
+Fig. 11: Impact of Multi-layer Fusion (CIFAR-100-C vs. Textures-C) 
+
+H Sensitivity to the ID/OOD Ratio 
+
+Table 14 shows that DART remains robust across a broad range of batch com-positions, achieving consistently strong performance when the ID proportion is between 0.2 and 0.8. We use ResNet-50 with ImageNet as ID and iNaturalist as OOD. This highlights an important strength of our method: it does not rely on a narrowly tuned ID/OOD mixture and generalizes well under moderate batch imbalance. Nevertheless, we observe a performance drop in more extreme cases, such as when the ID proportion reaches 0.9. Because DART leverages the internal Tracking the Discriminative Axis 35 
+
+geometry of each batch, a sufficient number of both ID and OOD samples is generally needed to stably initialize and preserve the discriminative axis. When OOD samples become overly scarce, the estimated axis can become less reliable and more sensitive.                             
+
+> Table 14: The sensitivity to the ID proportion
+> ∥B I
+> t∥/∥B t∥0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 FPR95 32.31 20.15 16.12 15.50 14.29 12.14 12.45 23.02 68.57 AUROC 84.67 94.81 96.33 96.05 96.46 97.04 96.80 93.88 70.31
+
+Importantly, this issue can be mitigated through axis stabilization strategy which combines balanced initialization with adaptive and conservative axis up-dates. To verify this, we conduct an additional experiment in Tab. 15, where the discriminative axis is initialized using five balanced batches and then updated with a large EMA coefficient α = 0 .95 . Under this setting, the performance degradation is substantially reduced even in highly imbalanced regimes that can occur in practice when OOD samples are particularly scarce, including ID proportions of 0.9, 0.95, and 0.99. These results suggest that the performance drop of DART under extreme imbalance is largely associated with instability in axis estimation, which can be effectively controlled with proper initialization and conservative updates. A promising direction for future work is to adapt the EMA coefficient to the batch composition, rather than using a fixed value, in order to further improve axis stability under severe imbalance.           
+
+> Table 15: The sensitivity to the ID proportion with axis stabilization strategy
+> ∥B I
+> t∥/∥B t∥0.9 0.95 0.99 FPR95 14.00 16.96 30.18 AUROC 96.21 95.34 89.20
+
+I System overhead 
+
+We measure wall-clock inference time for all methods on the same device, after the backbone forward pass, and only for the OOD-score computation (Figure 12). Concretely, we report the total time required to process 100 mini-batches of size 200 (20k test samples in total), using RegNetY-16GF. Under this protocol, DART falls into the group of fast methods: it is markedly faster than recent baselines 36 Wooseok Lee et al. 
+
+such as RTL, NNGuide, and MDS-based variants, which require regression fitting, KNN-style searches, or repeated Mahalanobis evaluations. 0 100 200 300 400 500 600 
+
+Inference Time 
+
+CoRP 
+
+MD Ensemble 
+
+RMDS 
+
+MDS+ 
+
+MD Single 
+
+RMDS++ 
+
+RTL 
+
+NNGuide 
+
+ODIN 
+
+GradNorm 
+
+DART 
+
+ReAct 
+
+KNN 
+
+ViM 
+
+SCALE 
+
+ASH 
+
+Energy 
+
+MSP 
+
+Max Logit 
+
+> Method
+
+502.0326 s 
+
+442.5094 s 
+
+105.3443 s 
+
+105.2096 s 
+
+100.2153 s 
+
+99.6316 s 
+
+33.4909 s 
+
+24.7207 s 
+
+13.9184 s 
+
+5.3143 s 
+
+1.8922 s 
+
+1.8253 s 
+
+1.7440 s 
+
+1.1002 s 
+
+0.2303 s 
+
+0.0843 s 
+
+0.0085 s 
+
+0.0032 s 
+
+0.0005 s 
+
+Inference Time by Method 
+
+Fig. 12: Inference time 
+
+J Visualization of ROC curves 
+
+We visualize the ROC curves of our method and the baselines across several evaluation settings. As shown in Figure 13, DART achieves lower FPR in this high-TPR region even when overall AUROC is comparable to baselines. Since real-world deployment requires maintaining high ID acceptance while minimizing false alarms, FPR@95TPR better captures the performance that matters in practice. 0.0 0.2 0.4 0.6 0.8 1.0 
+
+> False Positive Rate
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> True Positive Rate
+
+ROC Curves for All OOD Detection Methods 
+
+> MSP (AUROC=0.5996)
+> Energy (AUROC=0.6591)
+> ReAct (AUROC=0.6238)
+> RTL (AUROC=0.6296)
+> DART (AUROC=0.6850)
+
+(a) Glass blur 0.0 0.2 0.4 0.6 0.8 1.0 
+
+> False Positive Rate
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> True Positive Rate
+
+ROC Curves for All OOD Detection Methods  
+
+> MSP (AUROC=0.5867)
+> Energy (AUROC=0.5512)
+> ReAct (AUROC=0.6174)
+> RTL (AUROC=0.6528)
+> DART (AUROC=0.6907)
+
+(b) Pixelate 
+
+Fig. 13: ROC curves for CIFAR-100 vs. LSUN under different corruptions Tracking the Discriminative Axis 37 
+
+K Extended RDS distribution visualizations 
+
+In the main paper, we present representative visualizations of RDS distributions for a subset of corruption types, to illustrate how ID and OOD samples are separated across different feature levels. These visualizations support our ob-servation that the most discriminative layer can vary depending on the type of corruption. For completeness, we provide the full set of visualizations covering all 15 corruption types in this appendix. 
+
+K.1 RDS distribution visualizations Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5 
+
+> Mid-level High-level
+
+(a) RDS under gaussian noise Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5  
+
+> Mid-level High-level
+
+(b) RDS under shot noise Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5 
+
+> Mid-level High-level
+
+(c) RDS under impulse noise Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5  
+
+> Mid-level High-level
+
+(d) RDS under defocus blur Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5 
+
+> Mid-level High-level
+
+(e) RDS under glass blur Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5  
+
+> Mid-level High-level
+
+(f ) RDS under motion blur Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5 
+
+> Mid-level High-level
+
+(g) RDS under zoom blur Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5  
+
+> Mid-level High-level
+
+(h) RDS under snow 38 Wooseok Lee et al. Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5 
+
+> Mid-level High-level
+
+(i) RDS under frost Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5  
+
+> Mid-level High-level
+
+(j) RDS under fog Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5 
+
+> Mid-level High-level
+
+(k) RDS under brightness Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5  
+
+> Mid-level High-level
+
+(l) RDS under contrast Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5 
+
+> Mid-level High-level
+
+(m) RDS under elastic transform Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5  
+
+> Mid-level High-level
+
+(n) RDS under pixelate Low-level 
+
+Batch 1 Batch 2 Batch 3 Batch 4 Batch 5 
+
+> Mid-level High-level
+
+(o) RDS under jpeg compression 
+
+Fig. 14: Full corruptions visualizations for RDS distributions. Each plot shows at different network depths (low, mid, high-level) through five sequential batches. The visualizations reveal how different corruption types affect RDS separability at specific network layers.
