@@ -6,73 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-19
-- 运行时间：2026-03-19 20:37:01 UTC
+- 最新运行日期：2026-03-20
+- 运行时间：2026-03-20 19:41:06 UTC
 - 运行状态：成功
 - 本次总论文数：17
 - 精读区：6
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 17 篇 AI 论文，见证 Test-Time Training (TTT) 在空间智能与精准医疗领域的双重突破。
-重点关注 Spatial-TTT 实现的流式视觉进化，以及 DINOv3 在颈动脉测量中展现的测试时校准能力。
-建议开发者深入探索流式视频推理与 VLA 统一评估框架，把握实时多模态交互的下一波技术红利。
-- 详情：[/202603/19/README](/202603/19/README)
+今日精选 17 篇前沿论文，重点聚焦 VLA 机器人模型与大语言模型的自适应优化技术。
+推荐关注无需训练的 ProbeFlow 动作生成方案，以及通过 Token 级路由实现 LLM 推理端对齐的 TARo 框架。
+建议开发者深入研究“自适应（Adaptive）”机制在提升模型推理效率与跨域泛化中的实战价值。
+- 详情：[/202603/20/README](/202603/20/README)
 
 ### 精读区论文标签
-1. [Spatial-TTT: Streaming Visual-based Spatial Intelligence with Test-Time Training](/202603/19/2603.12255v1-spatial-ttt-streaming-visual-based-spatial-intelligence-with-test-time-training)  
+1. [ProbeFlow: Training-Free Adaptive Flow Matching for Vision-Language-Action Models](/202603/20/2603.17850v1-probeflow-training-free-adaptive-flow-matching-for-vision-language-action-models)  
    标签：评分：9.0/10、query:tta
-   evidence：针对流式视觉观测和空间智能的测试时训练
-2. [DINOv3 with Test-Time Calibration for Automated Carotid Intima-Media Thickness Measurement on CUBS v1](/202603/19/2603.13382v1-dinov3-with-test-time-calibration-for-automated-carotid-intima-media-thickness-measurement-on-cubs-v1)  
+   evidence：视觉语言动作模型的免训练自适应推理
+2. [TARo: Token-level Adaptive Routing for LLM Test-time Alignment](/202603/20/2603.18411v1-taro-token-level-adaptive-routing-for-llm-test-time-alignment)  
    标签：评分：9.0/10、query:tta
-   evidence：在测试时间优化流水线中利用DINOv3
-3. [GradMem: Learning to Write Context into Memory with Test-Time Gradient Descent](/202603/19/2603.13875v1-gradmem-learning-to-write-context-into-memory-with-test-time-gradient-descent)  
-   标签：评分：9.0/10、query:tta
-   evidence：大语言模型的单样本测试时间优化
-4. [Tracking the Discriminative Axis: Dual Prototypes for Test-Time OOD Detection Under Covariate Shift](/202603/19/2603.15213v2-tracking-the-discriminative-axis-dual-prototypes-for-test-time-ood-detection-under-covariate-shift)  
-   标签：评分：9.0/10、query:tta
-   evidence：流式协变量偏移下的测试时离群检测
-5. [Generative Control as Optimization: Time Unconditional Flow Matching for Adaptive and Robust Robotic Control](/202603/19/2603.17834v1-generative-control-as-optimization-time-unconditional-flow-matching-for-adaptive-and-robust-robotic-control)  
-   标签：评分：9.0/10、query:tta
-   evidence：机器人控制的自适应测试时推理
-6. [DynVLA: Learning World Dynamics for Action Reasoning in Autonomous Driving](/202603/19/2603.11041v1-dynvla-learning-world-dynamics-for-action-reasoning-in-autonomous-driving)  
+   evidence：通过自适应路由实现LLM推理的测试时间对齐
+3. [Insight-V++: Towards Advanced Long-Chain Visual Reasoning with Multimodal Large Language Models](/202603/20/2603.18118v1-insight-v-towards-advanced-long-chain-visual-reasoning-with-multimodal-large-language-models)  
    标签：评分：8.0/10、query:tta
-   evidence：VLA模型学习世界动力学进行推理
+   evidence：多模态大模型的扩展测试时间推理
+4. [Adaptive Decoding via Test-Time Policy Learning for Self-Improving Generation](/202603/20/2603.18428v1-adaptive-decoding-via-test-time-policy-learning-for-self-improving-generation)  
+   标签：评分：8.0/10、query:tta
+   evidence：测试时策略学习以调整采样参数
+5. [UT-ACA: Uncertainty-Triggered Adaptive Context Allocation for Long-Context Inference](/202603/20/2603.18446v1-ut-aca-uncertainty-triggered-adaptive-context-allocation-for-long-context-inference)  
+   标签：评分：8.0/10、query:tta
+   evidence：自适应上下文分配的推理时间框架
+6. [AcceRL: A Distributed Asynchronous Reinforcement Learning and World Model Framework for Vision-Language-Action Models](/202603/20/2603.18464v1-accerl-a-distributed-asynchronous-reinforcement-learning-and-world-model-framework-for-vision-language-action-models)  
+   标签：评分：8.0/10、query:tta
+   evidence：用于VLA模型的世界模型框架
 
 ### 速读区论文标签
-1. [Think While Watching: Online Streaming Segment-Level Memory for Multi-Turn Video Reasoning in Multimodal Large Language Models](/202603/19/2603.11896v1-think-while-watching-online-streaming-segment-level-memory-for-multi-turn-video-reasoning-in-multimodal-large-language-models)  
+1. [FILT3R: Latent State Adaptive Kalman Filter for Streaming 3D Reconstruction](/202603/20/2603.18493v1-filt3r-latent-state-adaptive-kalman-filter-for-streaming-3d-reconstruction)  
    标签：评分：8.0/10、query:tta
-   evidence：多模态大语言模型的在线流式视频推理
-2. [Thinking in Streaming Video](/202603/19/2603.12938v1-thinking-in-streaming-video)  
+   evidence：流式数据更新的潜状态自适应滤波
+2. [Learning to Self-Evolve](/202603/20/2603.18620v1-learning-to-self-evolve)  
    标签：评分：8.0/10、query:tta
-   evidence：针对流式视频观测的增量推理更新
-3. [vla-eval: A Unified Evaluation Harness for Vision-Language-Action Models](/202603/19/2603.13966v1-vla-eval-a-unified-evaluation-harness-for-vision-language-action-models)  
+   evidence：训练LLM在测试时改进上下文
+3. [ProCal: Probability Calibration for Neighborhood-Guided Source-Free Domain Adaptation](/202603/20/2603.18764v1-procal-probability-calibration-for-neighborhood-guided-source-free-domain-adaptation)  
    标签：评分：8.0/10、query:tta
-   evidence：VLA模型推理的统一评估工具
-4. [Zoom to Essence: Trainless GUI Grounding by Inferring upon Interface Elements](/202603/19/2603.14448v1-zoom-to-essence-trainless-gui-grounding-by-inferring-upon-interface-elements)  
-   标签：评分：8.0/10、query:tta
-   evidence：通过多模态大模型的推理缩放实现免训练GUI定位
-5. [Integrated Online Monitoring and Adaption of Process Model Predictive Controllers](/202603/19/2603.12187v1-integrated-online-monitoring-and-adaption-of-process-model-predictive-controllers)  
+   evidence：无需源数据的领域自适应及在线概率校准
+4. [Governing Evolving Memory in LLM Agents: Risks, Mechanisms, and the Stability and Safety Governed Memory (SSGM) Framework](/202603/20/2603.11768v1-governing-evolving-memory-in-llm-agents-risks-mechanisms-and-the-stability-and-safety-governed-memory-ssgm-framework)  
    标签：评分：7.0/10、query:tta
-   evidence：预测模型的在线自适应以防止性能下降
-6. [COAD: Constant-Time Planning for Continuous Goal Manipulation with Compressed Library and Online Adaptation](/202603/19/2603.12488v1-coad-constant-time-planning-for-continuous-goal-manipulation-with-compressed-library-and-online-adaptation)  
+   evidence：持续自适应与终身多模态学习
+5. [Locally Linear Continual Learning for Time Series based on VC-Theoretical Generalization Bounds](/202603/20/2603.13674v1-locally-linear-continual-learning-for-time-series-based-on-vc-theoretical-generalization-bounds)  
    标签：评分：7.0/10、query:tta
-   evidence：连续任务空间中机器人操作的在线自适应
-7. [Language-Guided Token Compression with Reinforcement Learning in Large Vision-Language Models](/202603/19/2603.13394v1-language-guided-token-compression-with-reinforcement-learning-in-large-vision-language-models)  
+   evidence：基于VC理论泛化误差界的持续学习
+6. [Improving Visual Reasoning with Iterative Evidence Refinement](/202603/20/2603.14117v1-improving-visual-reasoning-with-iterative-evidence-refinement)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态推理中的自适应Token剪枝轨迹
-8. [WAT: Online Video Understanding Needs Watching Before Thinking](/202603/19/2603.13412v1-wat-online-video-understanding-needs-watching-before-thinking)  
+   evidence：VLM推理阶段的视觉推理优化
+7. [All-day Multi-scenes Lifelong Vision-and-Language Navigation with Tucker Adaptation](/202603/20/2603.14276v1-all-day-multi-scenes-lifelong-vision-and-language-navigation-with-tucker-adaptation)  
    标签：评分：7.0/10、query:tta
-   evidence：流式场景下的在线视频推理
-9. [Continual Learning with Vision-Language Models via Semantic-Geometry Preservation](/202603/19/2603.12055v1-continual-learning-with-vision-language-models-via-semantic-geometry-preservation)  
+   evidence：跨场景视觉语言导航的自适应技术
+8. [Fine-tuning MLLMs Without Forgetting Is Easier Than You Think](/202603/20/2603.14493v1-fine-tuning-mllms-without-forgetting-is-easier-than-you-think)  
+   标签：评分：7.0/10、query:tta
+   evidence：减轻多模态大模型在视觉问答中的遗忘问题
+9. [DecoVLN: Decoupling Observation, Reasoning, and Correction for Vision-and-Language Navigation](/202603/20/2603.13133v1-decovln-decoupling-observation-reasoning-and-correction-for-vision-and-language-navigation)  
    标签：评分：6.0/10、query:tta
-   evidence：视觉语言模型的持续学习与自适应
-10. [MemRoPE: Training-Free Infinite Video Generation via Evolving Memory Tokens](/202603/19/2603.12513v1-memrope-training-free-infinite-video-generation-via-evolving-memory-tokens)  
+   evidence：导航中流式感知的自适应优化机制
+10. [Unlearning-based sliding window for continual learning under concept drift](/202603/20/2603.14484v1-unlearning-based-sliding-window-for-continual-learning-under-concept-drift)  
    标签：评分：6.0/10、query:tta
-   evidence：实时帧流的在线记忆令牌演化
-11. [Adaptive Vision-Language Model Routing for Computer Use Agents](/202603/19/2603.12823v1-adaptive-vision-language-model-routing-for-computer-use-agents)  
+   evidence：非平稳流数据的持续学习与自适应
+11. [ASAP: Attention-Shift-Aware Pruning for Efficient LVLM Inference](/202603/20/2603.14549v1-asap-attention-shift-aware-pruning-for-efficient-lvlm-inference)  
    标签：评分：6.0/10、query:tta
-   evidence：基于动作难度和置信度的视觉语言模型自适应路由
+   evidence：用于高效LVLM推理的免训练剪枝
 
 
 <div class="dpr-home-promo-card">
