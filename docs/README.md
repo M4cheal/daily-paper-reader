@@ -6,73 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-20
-- 运行时间：2026-03-20 19:41:06 UTC
+- 最新运行日期：2026-03-21
+- 运行时间：2026-03-21 19:35:10 UTC
 - 运行状态：成功
 - 本次总论文数：17
 - 精读区：6
 - 速读区：11
 
 ### 今日简报（AI）
-今日精选 17 篇前沿论文，重点聚焦 VLA 机器人模型与大语言模型的自适应优化技术。
-推荐关注无需训练的 ProbeFlow 动作生成方案，以及通过 Token 级路由实现 LLM 推理端对齐的 TARo 框架。
-建议开发者深入研究“自适应（Adaptive）”机制在提升模型推理效率与跨域泛化中的实战价值。
-- 详情：[/202603/20/README](/202603/20/README)
+今日精选 17 篇前沿论文，重点攻克多模态大模型（VLM）的并行上下文学习与具身智能（VLA）的记忆增强。
+推荐关注 9.0 分力作提出的并行 ICL 框架，以及通过双层循环查询赋予机器人模型长效记忆的新范式。
+建议深入了解多模态模型如何通过结构化 LoRA 与生物启发表征，实现更高效的任务感知与视频推理。
+- 详情：[/202603/21/README](/202603/21/README)
 
 ### 精读区论文标签
-1. [ProbeFlow: Training-Free Adaptive Flow Matching for Vision-Language-Action Models](/202603/20/2603.17850v1-probeflow-training-free-adaptive-flow-matching-for-vision-language-action-models)  
+1. [Parallel In-context Learning for Large Vision Language Models](/202603/21/2603.16092v1-parallel-in-context-learning-for-large-vision-language-models)  
    标签：评分：9.0/10、query:tta
-   evidence：视觉语言动作模型的免训练自适应推理
-2. [TARo: Token-level Adaptive Routing for LLM Test-time Alignment](/202603/20/2603.18411v1-taro-token-level-adaptive-routing-for-llm-test-time-alignment)  
-   标签：评分：9.0/10、query:tta
-   evidence：通过自适应路由实现LLM推理的测试时间对齐
-3. [Insight-V++: Towards Advanced Long-Chain Visual Reasoning with Multimodal Large Language Models](/202603/20/2603.18118v1-insight-v-towards-advanced-long-chain-visual-reasoning-with-multimodal-large-language-models)  
+   evidence：推理时通过上下文学习使大型视觉语言模型实现自适应
+2. [ReMem-VLA: Empowering Vision-Language-Action Model with Memory via Dual-Level Recurrent Queries](/202603/21/2603.12942v1-remem-vla-empowering-vision-language-action-model-with-memory-via-dual-level-recurrent-queries)  
    标签：评分：8.0/10、query:tta
-   evidence：多模态大模型的扩展测试时间推理
-4. [Adaptive Decoding via Test-Time Policy Learning for Self-Improving Generation](/202603/20/2603.18428v1-adaptive-decoding-via-test-time-policy-learning-for-self-improving-generation)  
+   evidence：视觉-语言-动作模型的循环记忆查询
+3. [Open World MRI Reconstruction with Bias-Calibrated Adaptation](/202603/21/2603.13466v1-open-world-mri-reconstruction-with-bias-calibrated-adaptation)  
    标签：评分：8.0/10、query:tta
-   evidence：测试时策略学习以调整采样参数
-5. [UT-ACA: Uncertainty-Triggered Adaptive Context Allocation for Long-Context Inference](/202603/20/2603.18446v1-ut-aca-uncertainty-triggered-adaptive-context-allocation-for-long-context-inference)  
+   evidence：针对开放世界MRI的偏差校准自适应
+4. [Two Birds, One Projection: Harmonizing Safety and Utility in LVLMs via Inference-time Feature Projection](/202603/21/2603.14825v1-two-birds-one-projection-harmonizing-safety-and-utility-in-lvlms-via-inference-time-feature-projection)  
    标签：评分：8.0/10、query:tta
-   evidence：自适应上下文分配的推理时间框架
-6. [AcceRL: A Distributed Asynchronous Reinforcement Learning and World Model Framework for Vision-Language-Action Models](/202603/20/2603.18464v1-accerl-a-distributed-asynchronous-reinforcement-learning-and-world-model-framework-for-vision-language-action-models)  
+   evidence：大型视觉语言模型的推理阶段特征投影
+5. [SARE: Sample-wise Adaptive Reasoning for Training-free Fine-grained Visual Recognition](/202603/21/2603.17729v1-sare-sample-wise-adaptive-reasoning-for-training-free-fine-grained-visual-recognition)  
    标签：评分：8.0/10、query:tta
-   evidence：用于VLA模型的世界模型框架
+   evidence：针对免训练多模态识别的样本级自适应推理
+6. [EVA: Aligning Video World Models with Executable Robot Actions via Inverse Dynamics Rewards](/202603/21/2603.17808v1-eva-aligning-video-world-models-with-executable-robot-actions-via-inverse-dynamics-rewards)  
+   标签：评分：8.0/10、query:tta
+   evidence：机器人视频世界模型的推理时缓解技术
 
 ### 速读区论文标签
-1. [FILT3R: Latent State Adaptive Kalman Filter for Streaming 3D Reconstruction](/202603/20/2603.18493v1-filt3r-latent-state-adaptive-kalman-filter-for-streaming-3d-reconstruction)  
-   标签：评分：8.0/10、query:tta
-   evidence：流式数据更新的潜状态自适应滤波
-2. [Learning to Self-Evolve](/202603/20/2603.18620v1-learning-to-self-evolve)  
-   标签：评分：8.0/10、query:tta
-   evidence：训练LLM在测试时改进上下文
-3. [ProCal: Probability Calibration for Neighborhood-Guided Source-Free Domain Adaptation](/202603/20/2603.18764v1-procal-probability-calibration-for-neighborhood-guided-source-free-domain-adaptation)  
-   标签：评分：8.0/10、query:tta
-   evidence：无需源数据的领域自适应及在线概率校准
-4. [Governing Evolving Memory in LLM Agents: Risks, Mechanisms, and the Stability and Safety Governed Memory (SSGM) Framework](/202603/20/2603.11768v1-governing-evolving-memory-in-llm-agents-risks-mechanisms-and-the-stability-and-safety-governed-memory-ssgm-framework)  
+1. [Not All Directions Matter: Toward Structured and Task-Aware Low-Rank Adaptation](/202603/21/2603.14228v1-not-all-directions-matter-toward-structured-and-task-aware-low-rank-adaptation)  
    标签：评分：7.0/10、query:tta
-   evidence：持续自适应与终身多模态学习
-5. [Locally Linear Continual Learning for Time Series based on VC-Theoretical Generalization Bounds](/202603/20/2603.13674v1-locally-linear-continual-learning-for-time-series-based-on-vc-theoretical-generalization-bounds)  
+   evidence：针对机器学习模型的任务感知低秩自适应技术
+2. [VisionCoach: Reinforcing Grounded Video Reasoning via Visual-Perception Prompting](/202603/21/2603.14659v1-visioncoach-reinforcing-grounded-video-reasoning-via-visual-perception-prompting)  
    标签：评分：7.0/10、query:tta
-   evidence：基于VC理论泛化误差界的持续学习
-6. [Improving Visual Reasoning with Iterative Evidence Refinement](/202603/20/2603.14117v1-improving-visual-reasoning-with-iterative-evidence-refinement)  
+   evidence：视频推理的输入自适应框架
+3. [LLMind: Bio-inspired Training-free Adaptive Visual Representations for Vision-Language Models](/202603/21/2603.14882v1-llmind-bio-inspired-training-free-adaptive-visual-representations-for-vision-language-models)  
    标签：评分：7.0/10、query:tta
-   evidence：VLM推理阶段的视觉推理优化
-7. [All-day Multi-scenes Lifelong Vision-and-Language Navigation with Tucker Adaptation](/202603/20/2603.14276v1-all-day-multi-scenes-lifelong-vision-and-language-navigation-with-tucker-adaptation)  
+   evidence：针对视觉语言模型的免训练自适应视觉表示
+4. [Intelligent Control of Differential Drive Robots Subject to Unmodeled Dynamics with EKF-based State Estimation](/202603/21/2603.14940v1-intelligent-control-of-differential-drive-robots-subject-to-unmodeled-dynamics-with-ekf-based-state-estimation)  
    标签：评分：7.0/10、query:tta
-   evidence：跨场景视觉语言导航的自适应技术
-8. [Fine-tuning MLLMs Without Forgetting Is Easier Than You Think](/202603/20/2603.14493v1-fine-tuning-mllms-without-forgetting-is-easier-than-you-think)  
+   evidence：动态环境下神经网络的在线自适应方案
+5. [Point-Identification of a Robust Predictor Under Latent Shift with Imperfect Proxies](/202603/21/2603.15158v1-point-identification-of-a-robust-predictor-under-latent-shift-with-imperfect-proxies)  
    标签：评分：7.0/10、query:tta
-   evidence：减轻多模态大模型在视觉问答中的遗忘问题
-9. [DecoVLN: Decoupling Observation, Reasoning, and Correction for Vision-and-Language Navigation](/202603/20/2603.13133v1-decovln-decoupling-observation-reasoning-and-correction-for-vision-and-language-navigation)  
+   evidence：潜在偏移下领域自适应的理论分析
+6. [Massive Redundancy in Gradient Transport Enables Sparse Online Learning](/202603/21/2603.15195v1-massive-redundancy-in-gradient-transport-enables-sparse-online-learning)  
+   标签：评分：7.0/10、query:tta
+   evidence：循环动力学的稀疏在线学习
+7. [Structure-Dependent Regret and Constraint Violation Bounds for Online Convex Optimization with Time-Varying Constraints](/202603/21/2603.14319v1-structure-dependent-regret-and-constraint-violation-bounds-for-online-convex-optimization-with-time-varying-constraints)  
    标签：评分：6.0/10、query:tta
-   evidence：导航中流式感知的自适应优化机制
-10. [Unlearning-based sliding window for continual learning under concept drift](/202603/20/2603.14484v1-unlearning-based-sliding-window-for-continual-learning-under-concept-drift)  
+   evidence：时变约束下在线优化的理论分析
+8. [Edit2Interp: Adapting Image Foundation Models from Spatial Editing to Video Frame Interpolation with Few-Shot Learning](/202603/21/2603.15003v1-edit2interp-adapting-image-foundation-models-from-spatial-editing-to-video-frame-interpolation-with-few-shot-learning)  
    标签：评分：6.0/10、query:tta
-   evidence：非平稳流数据的持续学习与自适应
-11. [ASAP: Attention-Shift-Aware Pruning for Efficient LVLM Inference](/202603/20/2603.14549v1-asap-attention-shift-aware-pruning-for-efficient-lvlm-inference)  
+   evidence：图像基础模型针对新任务的极简适配
+9. [Recurrent Reasoning with Vision-Language Models for Estimating Long-Horizon Embodied Task Progress](/202603/21/2603.17312v1-recurrent-reasoning-with-vision-language-models-for-estimating-long-horizon-embodied-task-progress)  
    标签：评分：6.0/10、query:tta
-   evidence：用于高效LVLM推理的免训练剪枝
+   evidence：视觉语言模型在具身任务进度中的循环推理
+10. [HORNet: Task-Guided Frame Selection for Video Question Answering with Vision-Language Models](/202603/21/2603.18850v1-hornet-task-guided-frame-selection-for-video-question-answering-with-vision-language-models)  
+   标签：评分：6.0/10、query:tta
+   evidence：视频问答的帧选择策略
+11. [DriftGuard: Mitigating Asynchronous Data Drift in Federated Learning](/202603/21/2603.18872v1-driftguard-mitigating-asynchronous-data-drift-in-federated-learning)  
+   标签：评分：6.0/10、query:tta
+   evidence：在实际部署中适应异步数据漂移
 
 
 <div class="dpr-home-promo-card">
