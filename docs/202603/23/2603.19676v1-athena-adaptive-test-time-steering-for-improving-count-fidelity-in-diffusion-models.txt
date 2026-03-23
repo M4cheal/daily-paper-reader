@@ -1,0 +1,657 @@
+Title: ATHENA: Adaptive Test-Time Steering for Improving Count Fidelity in Diffusion Models
+
+URL Source: https://arxiv.org/pdf/2603.19676v1
+
+Published Time: Mon, 23 Mar 2026 00:33:22 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# ATHENA: A DAPTIVE TEST -T IME STEERING FOR 
+
+# IMPROVING COUNT FIDELITY IN DIFFUSION MODELS 
+
+Mohammad Shahab Sepehri ∗ Asal Mehradfar ∗ Berk Tinaz Salman Avestimehr Mahdi Soltanolkotabi 
+
+Department of Electrical and Computer Engineering University of Southern California, Los Angeles, CA, USA 
+
+{sepehri, mehradfa, tinaz, avestime, soltanol}@usc.edu 
+
+## ABSTRACT 
+
+Text-to-image diffusion models achieve high visual fidelity but surprisingly exhibit systematic failures in numerical control when prompts specify explicit object counts. To address this limitation, we introduce ATHENA, a model-agnostic, test-time adaptive steering framework that improves object count fidelity without modifying model architectures or requiring retraining. ATHENA leverages intermediate representations during sampling to estimate object counts and applies count-aware noise corrections early in the denoising process, steering the generation trajectory before structural errors become difficult to revise. We present three progressively more advanced variants of ATHENA that trade additional computation for improved numerical accuracy, ranging from static prompt-based steering to dynamically adjusted count-aware control. Experiments on established benchmarks and a new visually and semantically complex dataset show that ATHENA consistently improves count fidelity, particularly at higher target counts, while maintaining favorable accuracy– runtime trade-offs across multiple diffusion backbones. Our code and data are publicly available at 
+
+https://github.com/MShahabSepehri/ATHENA .
+
+## 1 Introduction 
+
+Text-to-image (T2I) diffusion models have gained huge popularity and become the dominant paradigm for high-quality image generation, driven by their ability to synthesize images from natural language prompts with strong visual realism, semantic alignment, and compositional expressiveness [29]. Despite their advances in generating high-quality images with fine details, diffusion models continue to exhibit systematic failures in numerical control when prompts specify explicit object counts. This limitation is particularly striking given the remarkable generative capabilities of modern diffusion models, which can synthesize complex scenes with rich semantics and fine-grained details. Even for visually simple and well-defined categories, prompts such as “a photo of eight cows in a field” or “ten apples on a table” often produce images with missing instances, duplicated objects, or ambiguous merges that obscure instance boundaries. While prompt sensitivity can influence generation outcomes and has motivated prompt optimization strategies [ 8], such interventions remain insufficient for reliably enforcing quantitative constraints [ 28 ]. As illustrated in Figure 1, these counting errors persist across multiple state-of-the-art T2I generative models, indicating a general limitation rather than a model-specific shortcoming. Accurate object counting is important beyond visual plausibility. Downstream applications such as synthetic data gener-ation for object detection and segmentation [ 25 , 35 ] and simulation environments for robotics and embodied agents [ 24 ]rely on faithful instance-level control. In these settings, counting errors can propagate to subsequent perception or decision-making stages, undermining the reliability of diffusion-based generators when used as components within larger systems. From a modeling perspective, object counting poses a natural challenge for diffusion-based generation. Diffusion models rely on a continuous denoising process without explicitly representing discrete object instances or enforcing global numerical constraints [ 11 , 10 ]. Early stochastic decisions in the sampling trajectory largely determine object 
+
+> ∗
+
+Equal contribution. 
+
+> arXiv:2603.19676v1 [cs.CV] 20 Mar 2026
+
+Figure 1: Count fidelity failures in T2I generative models. Despite explicit numerical specifications in the prompts, generated images frequently contain incorrect object counts across multiple generative backbones, even for simple objects and scenes, highlighting a persistent limitation in numerical control. multiplicity and spatial layout, while later steps primarily refine local appearance [ 19 , 34 , 23 , 9, 26 ]. As a result, counting errors are difficult to correct once they emerge, as object count is tightly entangled with occlusion, spatial arrangement, and semantic diversity [ 16 ]. These characteristics motivate intervention mechanisms that act before global structural decisions become effectively irreversible. Several recent works have explored mechanisms for improving counting fidelity in diffusion models, including guidance-based and iterative refinement approaches [ 2, 37 ]. While these methods can improve counting accuracy under controlled settings, they often rely on model-specific assumptions or lack adaptive mechanisms to correct errors once the sampling trajectory deviates from the target count. As a result, achieving reliable and efficient count control that generalizes across diffusion backbones and realistic prompt distributions remains an open challenge. In this work, we introduce ATHENA (Adaptive Trajectory Harmonization via Early Numerical Assessment), a test-time 
+
+adaptive steering framework for improving object count fidelity in T2I diffusion models. ATHENA estimates object count from intermediate representations and uses this signal to adaptively modify the sampling trajectory via count-aware noise correction. By intervening early in the denoising process, the method enables corrective control before key structural layouts are formed [ 13 , 5 ]. ATHENA is model-agnostic, requires no architectural modifications or retraining, and can be applied across diverse diffusion backbones. We instantiate ATHENA through a progression of steering strategies that isolate the role of adaptivity in count control. ATHENA-Static applies a fixed steering signal, ATHENA-Feedback introduces conditional, count-aware steering based on intermediate estimates, and ATHENA-Adaptive, our primary method, further adjusts steering strength online in response to persistent count errors. We evaluate these variants on three datasets: the CoCoCount benchmark [ 2], a balanced extension spanning target counts from two to ten (CoCoCount-E), and a newly constructed challenging dataset (ATHENA dataset). Across datasets and diffusion backbones, our adaptive test-time steering improves count fidelity while maintaining favorable accuracy–runtime trade-offs. 
+
+Contributions. Our main contributions are as follows: • We propose ATHENA, a model-agnostic steering framework for improving object-count fidelity in T2I diffusion models that requires no architectural changes or retraining. ATHENA can be applied to arbitrary T2I models via simple forward-pass interventions and yields immediate improvements in numerical fidelity. • We introduce the ATHENA dataset, a new evaluation benchmark that complements existing counting datasets by targeting challenging object categories (e.g., accordion) and compositional prompt structures with relational constraints (e.g., next to a river) and object-level distractions (e.g., with a person). • Through extensive experiments on three datasets, we demonstrate that ATHENA improves the numerical accuracy of the base diffusion models by up to 22% and outperforms baselines, while reducing memory usage by approximately 4× and achieving up to 2.5× faster image generation relative to the baselines. 
+
+## 2 Related Work 
+
+Prior work on numerical control in T2I diffusion models has identified object counting as a persistent challenge when prompts specify explicit cardinalities [ 36 , 8 ]. Make It Count [2] improves counting by training an auxiliary layout-modification model that leverages SDXL-specific internal features to detect counting discrepancies and adjust object layouts, but its reliance on additional training and model-specific internals limits generality and lightweight test-time deployment. In contrast, CountCluster [ 16 ] enforces quantity control by encouraging early cross-attention activations to form a fixed number of spatial clusters matching the target object count, implicitly assuming uncluttered scenes with well-separated instances and degrading in the presence of overlap or complex background structure. 2Several methods regulate object counts by introducing gradient-based guidance or optimization during diffusion sampling. Counting Guidance [12 ] enforces target counts via classifier guidance, using gradients from a trained counting network at each denoising step, which increases inference cost and can disrupt global structure when large corrections are applied. Similarly, YOLO-Count [ 38 ] applies classifier-style gradient guidance based on dense cardinality predictions from a specialized counting model, but requires additional training and does not adaptively respond to persistent count errors during sampling. In contrast, Detection-Driven Object Count Optimization [ 37 ] corrects count errors through iterative test-time optimization using feedback from an external object detector, but relies on repeated evaluation and late-stage refinement, leading to slower inference and limited effectiveness once early structural decisions are fixed. Training-free and pipeline-based alternatives have also been explored to address counting errors without modifying diffusion models. CountDiffusion [20 ] modifies attention maps based on external count estimates from intermediate generations, but relies on task-specific auxiliary counters rather than adaptive steering. Beyond diffusion-level intervention, decomposition- or agent-based pipelines generate objects sequentially or via sub-task planning (e.g., 
+
+MuLan [ 18 ]), but introduce computational overhead and deviate from standard diffusion sampling, limiting scalability and practical deployment. More broadly, guidance and steering techniques have been widely studied in diffusion models to improve conditional alignment. Attention-based interventions manipulate cross-attention to enhance semantic or spatial consistency [9, 3], while reward-based approaches refine image–text alignment using external signals [ 1]. However, these methods primarily target semantic fidelity or attribute binding and do not enforce discrete global constraints such as exact object counts, particularly at higher cardinalities where early stochastic decisions dominate. External perception models, such as object detectors and vision–language models, have been used to guide or evaluate diffusion-based generation [ 21 , 17 , 22 , 4, 30 ]. Prior work typically employs these models as controllers or optimization objectives, coupling generation quality to detector behavior and increasing inference cost. In contrast, ATHENA uses external models only for intermediate count estimation and leverages this signal to adaptively steer the diffusion trajectory, without architectural changes or iterative optimization. Overall, existing approaches to improving object count fidelity rely on model-specific internals, incur substantial computational overhead, or compromise visual quality. Efficient, adaptive, and model-agnostic count control at test time remains an open challenge, which ATHENA addresses. 
+
+## 3 Preliminaries 
+
+3.1 Diffusion Models for Text-to-Image Generation 
+
+T2I diffusion models synthesize images by iteratively transforming noise into data through a sequence of denoising steps. At sampling step t, a learned denoiser ϵθ (·) is applied to the current latent representation zt conditioned on a text prompt p. We denote the denoiser output by ϵt ≜ ϵθ (t, z t, p ). The latent state is then updated using a sampler-specific transition operator, 
+
+zt−1 = St(zt, ϵ t, p ), (1) where St(·) may be stochastic or deterministic depending on the sampling scheme, encompassing diffusion samplers such as DDPM [11] and deterministic probability-flow variants [31] used in modern systems. The denoiser output also defines an estimate of the underlying clean latent at step t, denoted by ˆz(t)0 , via a sampler-defined reconstruction operator 
+
+ˆz(t)0 = Dt(zt, ϵ t). (2) For the diffusion models evaluated in this work, this reconstruction is given by 
+
+ˆz(t)0 = zt − σtϵt, (3) where σt is a scheduler-dependent noise scale. The estimated clean latent may be decoded into image space for intermediate analysis when required. 
+
+3.2 Conditional Guidance and Sampling Dynamics 
+
+Conditional control in diffusion-based T2I models is commonly achieved via guidance, where the sampling trajectory is modified to satisfy a desired objective. Given a conditioning loss L(zt, p ), guidance-based methods adjust the denoiser output as 
+
+ˆϵt = ϵt − s ∇zt L(zt, p ), (4) 3Figure 2: Count estimation across diffusion steps. At early sampling steps, object structure is weakly formed and decoded images are too noisy for reliable count estimation. At later steps, object instances become well defined, and counting is reliable, but requires additional diffusion steps and a higher inference cost. This trade-off motivates estimating object count at an intermediate diffusion step. where ϵt ≜ ϵθ (t, z t, p ) and s controls the guidance strength [6, 10]. Such guidance is effective for semantic or appearance-level control but is less suited for global structural properties, such as object count, which are largely determined during early sampling steps. This limitation motivates adaptive interventions that operate early in the sampling trajectory, before global structure becomes fixed. 
+
+## 4 Method 
+
+4.1 Problem Setup and Design Goals 
+
+We study test-time control of object count fidelity in diffusion-based T2I models. Let Gθ denote a pretrained generator that produces an image through an iterative sampling process, yielding a sequence of latent representations {zt}Tt=0 
+
+conditioned on a text prompt p specifying a target object count k for a particular object category. Our objective is to improve the accuracy with which the final generated image satisfies this target count. We assume access to intermediate latent or decoded representations during sampling, and all interventions are performed at test time without retraining or modifying the generator parameters. ATHENA frames object counting as a discrete control problem over the diffusion sampling trajectory. It operates by monitoring intermediate generation signals and applying lightweight, test-time adjustments that influence the trajectory. These design goals define the class of adaptive, test-time interventions considered in the following sections. 
+
+4.2 Count Estimation Across Diffusion Steps 
+
+Diffusion-based T2I generation proceeds through a sequence of intermediate latent representations that transition from noise to a coherent image. At early sampling steps, object structure is insufficiently formed and decoded images are too noisy for reliable automated count estimation. At later steps, object instances are fully formed and count estimation becomes reliable, but this requires additional diffusion steps, increasing inference time. As illustrated in Figure 2, this tradeoff yields an intermediate regime in which object count can be estimated reliably without incurring the cost of late-stage sampling. Motivated by this observation, ATHENA performs count estimation at a fixed intermediate diffusion step test , decoding the corresponding clean latent estimate ˆz(test )0 to balance estimation reliability and inference cost. 
+
+4.3 ATHENA: Test-Time Steering Framework 
+
+ATHENA is a test-time steering framework for improving object count fidelity in diffusion-based T2I generation, without modifying model parameters or requiring retraining. The framework estimates object count at an intermediate diffusion step and uses this signal to steer the sampling trajectory via prompt-based control, enabling corrective intervention before structural errors form. All components operate at inference time and are compatible with both deterministic and stochastic diffusion samplers. 44.3.1 Prompt-Based Steering Mechanism 
+
+At the core of ATHENA is a lightweight, training-free steering mech-anism that modifies the denoising trajectory via prompt conditioning. At diffusion step t, the denoiser is evaluated twice on the current la-tent zt: once with the original prompt p, producing ϵt ≜ ϵθ (t, z t, p ),and once with a control prompt ˆp, producing ˆϵt ≜ ϵθ (t, z t, ˆp) (see Figure 3). These two predictions are combined to form a steered noise estimate 
+
+˜ϵt = ϵt + γ (ϵt − ˆϵt), (5) where γ ≥ 0 controls the steering strength. The sampler update (Equation (1)) is then applied using ˜ϵt in place of ϵt to obtain zt−1.We normalize ˜ϵt to match the norm of ϵt, ensuring the steered latent remains within the denoiser’s expected scale and preserves stable, in-distribution sampling. 
+
+Figure 3: ATHENA steering block. The denoiser is evaluated with the original and control prompts to obtain ϵt and ˆϵt, which are combined to obtain the latent state zt−1 for test-time count control. The steering operation in (5) can be interpreted as a controlled perturbation of the denoiser’s prediction that biases the sampling trajectory away from behaviors induced by the control prompt. The difference term (ϵt − ˆϵt) isolates the directional change in predicted noise when replacing the original prompt p with ˆp, capturing the local influence of the control condition at step t. By adding a scaled version of this difference to ϵt, ATHENA reinforces directions that move the generation toward the target count while preserving semantic structure. From a dynamical perspective, this update modifies the effective vector field of the reverse diffusion process, inducing a prompt-dependent drift without altering model parameters or performing gradient-based optimization. Unlike classifier-or loss-based guidance (Section 3.2), the steering term is computed through forward denoiser evaluations, making it compatible with both stochastic and deterministic samplers. The scalar γ controls the magnitude of this perturbation, enabling smooth interpolation between unsteered sampling ( γ = 0 ) and stronger corrective influence. 
+
+4.3.2 Control Prompt Construction 
+
+ATHENA induces steering by evaluating the denoiser under two textual conditionings: the original prompt p and a modified control prompt ˆp, whose effect on the denoiser output is formalized in Equation (5). The control prompt provides an alternative conditioning signal that encodes corrective intent purely at the prompt level, while remaining fully compatible with the pretrained generator. The framework imposes minimal assumptions on the form of ˆp. In practice, ˆp is constructed by modifying only the object-count specification in the original prompt p, while keeping all other semantic content unchanged. We consider two forms of control prompts: (i) a count-agnostic prompt obtained by removing explicit cardinality constraints, and (ii) a feedback-based prompt in which the target count is replaced by an estimated count from an intermediate decoded generation. In all cases, ˆp is treated identically to p by the underlying model and requires no architectural changes, auxiliary networks, or gradient-based optimization. By separating control prompt construction from the steering mechanism, ATHENA decouples how corrective informa-tion is encoded from how it influences the sampling trajectory. Different choices of ˆp yield distinct instantiations of the framework, while sharing the same denoiser evaluations and sampler interaction. We describe these instantiations in the following subsection. 
+
+4.3.3 ATHENA Control Strategies 
+
+We present three instantiations of ATHENA that progressively increase adaptivity while preserving the same test-time, training-free steering mechanism. All strategies rely on the prompt-based steering operation described in Section 4.3.1 and differ in whether and how intermediate generation signals are used to select the control prompt and steering strength. This progression moves from fixed, count-agnostic control to feedback-informed and adaptive steering, enabling increasingly targeted correction of counting errors while maintaining a lightweight, model-agnostic design. 
+
+ATHENA-Static. ATHENA-Static applies prompt-based steering using a fixed, count-agnostic control prompt. Given an original prompt p specifying a target count k, the control prompt ˆp is constructed by removing the explicit cardinality constraint while preserving all other semantic content. No intermediate count estimation is performed, and steering is applied once from the initial diffusion step to a cutoff tsteer , after which standard diffusion proceeds unmodified. 5This variant isolates the effect of prompt-level steering without feedback or adaptive adjustment. It incurs minimal computational overhead and serves as a baseline demonstrating that count fidelity can be influenced through prompt-based steering. Details are provided in Section A.1. 
+
+ATHENA-Feedback. While static steering can improve count fidelity, its effectiveness depends on how well a fixed control prompt aligns with the trajectory. ATHENA-Feedback addresses this limitation by incorporating a single intermediate count estimate to inform the control prompt. Specifically, diffusion is first run without steering until an intermediate step test , where the partially denoised latent is decoded and the object count is estimated. If the estimated count differs from the target, generation is restarted from the same initial noise using a feedback control prompt constructed by replacing the original count in p with the observed count. Prompt-based steering is then applied once during early diffusion steps down to a cutoff tsteer , after which diffusion proceeds unmodified to completion. No additional count checks or parameter updates are performed. By correcting semantic mismatch between the prompt and the emerging structure, ATHENA-Feedback improves robustness over static steering while remaining simple and efficient. Algorithmic details are provided in Section A.2. 
+
+ATHENA-Adaptive. Although feedback steering makes the control prompt feedback-informed, its success depends on the steering strength γ. If γ is too small, steering may reduce the counting error without reaching the target; if γ is too large, it can overshoot the target and flip the error direction, often at the expense of structural quality. ATHENA-Adaptive resolves this sensitivity through a single, direction-aware adjustment of γ based on intermediate feedback. As illustrated in Figure 4, the method first estimates the baseline count at test without steering. If the estimate deviates from the target, prompt-based steering is applied once using the initial γ. If the resulting count still deviates from the target, the observed change indicates whether steering moved the generation toward or away from the target. When the error direction remains unchanged, γ is doubled; when it flips, γ is halved. A final steered generation is then performed using the adjusted γ, after which diffusion proceeds unmodified to completion. 
+
+Figure 4: ATHENA-Adaptive pipeline. The method estimates object count at an intermediate diffusion step, applies early-stage prompt-based steering, adaptively adjusts the steering strength once based on the observed error direction, and completes generation using standard diffusion. Importantly, ATHENA-Adaptive does not perform iterative optimization or repeated parameter tuning. The error direction observed after a single feedback step provides a signal for adjusting the steering magnitude, striking a balance between corrective strength and structural stability. Further adjustment is unnecessary in practice, as additional iterations increase computational cost with diminishing returns. As a result, the method requires at most two steered trajectories, introduces no additional learned components, and improves robustness while preserving favorable accuracy–runtime trade-offs. Pseudocode is provided in Section A.3. 65 Experiments 
+
+We evaluate ATHENA across multiple T2I diffusion backbones and counting benchmarks to assess effectiveness, robustness, and computational trade-offs. Our experiments span three datasets of increasing complexity, including a newly introduced ATHENA dataset, and compare static, feedback, and adaptive steering against existing baselines. We report quantitative accuracy, analyze performance as a function of target count, and examine accuracy–runtime trade-offs alongside qualitative examples illustrating the impact of adaptive test-time steering. 
+
+5.1 Experimental Setup Models. We evaluate ATHENA on three representative T2I diffusion backbones spanning different architectures and training regimes: SDXL [ 32 , 27 ], SD 3.5 Large [ 33 , 7 ], and FLUX.1-dev [ 14 , 15 ]. All models are used as released, without modification or retraining. 
+
+Datasets. We conduct experiments on three counting benchmarks of increasing complexity. CoCoCount [ 2] consists of simple prompts with explicit numerical constraints and minimal scene context. To avoid bias from repeated prompts in the original benchmark, we use a deduplicated version of the dataset in which prompts with identical text are retained once, yielding 161 unique prompts with target counts from 2 to 10 (see Section B). While well-suited for controlled evaluation, CoCoCount offers limited diversity in prompt structure and scene complexity. To enable systematic analysis across target cardinalities, we construct CoCoCount-E , an extended benchmark in which a filtered subset of CoCoCount prompts is instantiated with target counts from 2 to 10, yielding 648 distinct prompts with consistent structure and a balanced count distribution. We cap the maximum target count at 10, as prior work [2] reports substantial degradation beyond this range, which we also observe empirically. We further introduce the ATHENA dataset, a new benchmark designed to evaluate object counting under progressively challenging prompt conditions. The dataset consists of 360 prompts organized into four levels of increasing complexity, with target counts ranging from 2 to 10 (see Table 1). Prompts are generated using a large language model to systematically combine multiple constraints within a single instruction, ensuring controlled diversity across difficulty levels. Additional construction details and statistics for all benchmarks are provided in Section B. Table 1: Structure of the ATHENA dataset with four levels of increasing prompt complexity.           
+
+> Level Description Example Prompt
+> L1 Hard object categories “nine microphones” L2 + Scene context “eight sneakers at the edge of a pond” L3 + Distractor objects “five jars beside a river with a person” L4 + Relational constraints “seven dumbbells lined up along a sidewalk”
+
+Baselines. We compare ATHENA against unsteered diffusion sampling and two representative baselines from prior work: CountGen [ 2] and Counting Guidance [ 12 ]. Both baselines rely on model-specific components and are therefore not backbone-agnostic. As a result, we evaluate each method on the backbone it was originally designed for: CountGen on SDXL and Counting Guidance on SD 1.4. Although Counting Guidance is evaluated on a different backbone, we include it as a reference due to its comparable inference-time overhead to ATHENA-Adaptive on SDXL, enabling a meaningful comparison of accuracy–runtime trade-offs. CountGen does not support target counts above nine; for such prompts, we report unsteered sampling. Counting Guidance does not support multi-word object categories; these are concatenated with underscores. 
+
+Count Estimation. We estimate intermediate object counts using the pretrained open-vocabulary detector Ground-ingDINO [ 22 ]. The detector is used only at test time for count estimation and is neither fine-tuned nor integrated into the generative models. The same detector configuration is used across all methods and datasets. 
+
+Hyperparameter Selection. All ATHENA hyperparameters, including the estimation step test , steering horizon tsteer ,and steering strength γ, are tuned exclusively on the CoCoCount dataset. Hyperparameter tuning is conducted separately for each diffusion backbone. Once selected, the resulting parameters are fixed and reused without modification for CoCoCount-E and the ATHENA dataset. Exact hyperparameter values are reported in Section C. 
+
+Computational Setup. All experiments are conducted on a single GPU per run. We use NVIDIA RTX A6000 GPUs (48 GB) for CoCoCount and the ATHENA dataset, and NVIDIA A100 SXM4 GPUs (40 GB) for CoCoCount-E. Within each dataset, the same GPU type and random seed are used across all models and methods to ensure fair comparisons. 7Table 2: Quantitative counting performance across diffusion backbones and datasets. Accuracy (%) is reported as exact-match count accuracy, with the best result for each model–dataset pair shown in bold . MAE and RMSE measure counting error, and Time denotes mean generation time per sample (seconds).                                                                                                                                                                                         
+
+> Model Method CoCoCount CoCoCount-E ATHENA Dataset
+> Acc ( ↑)MAE ( ↓)RMSE ( ↓)Time ( ↓)Acc ( ↑)MAE ( ↓)RMSE ( ↓)Time ( ↓)Acc ( ↑)MAE ( ↓)RMSE ( ↓)Time ( ↓)
+> FLUX.1-dev
+> Unsteered 58.4 0.98 1.96 45.8 46.5 1.12 1.93 22.6 39.4 1.78 2.96 45.5 ATHENA-Static 73.3 0.56 1.35 54.8 58.5 0.84 1.73 27.4 48.9 1.31 2.44 54.7 ATHENA-Feedback 71.4 0.67 1.72 56.0 58.3 0.98 2.00 29.8 52.2 1.38 2.60 60.8 ATHENA-Adaptive 70.2 0.65 1.63 64.8 62.2 0.85 1.90 35.1 53.6 1.40 2.72 72.5
+> SD 3.5 Large
+> Unsteered 58.4 0.78 1.50 43.9 44.8 0.98 1.56 24.1 38.9 1.55 2.54 43.8 ATHENA-Static 68.3 0.70 1.57 53.4 52.9 0.97 1.78 29.5 46.7 1.40 2.52 52.7 ATHENA-Feedback 71.4 0.63 1.51 54.9 59.1 0.80 1.77 32.3 51.1 1.31 2.44 58.7 ATHENA-Adaptive 78.3 0.41 1.05 62.0 65.6 0.73 1.60 38.1 56.1 1.16 2.32 70.4
+> SDXL
+> Unsteered 31.7 2.47 4.92 9.4 26.5 3.09 5.85 5.3 19.7 4.02 7.94 9.4 CountGen 50.3 1.90 4.60 44.1 41.7 2.04 4.68 29.2 29.4 2.70 5.45 55.7 ATHENA-Static 39.8 1.98 3.85 11.2 31.8 2.40 4.19 6.3 27.5 2.61 4.62 11.2 ATHENA-Feedback 46.6 1.67 3.59 15.0 36.4 2.24 4.93 8.8 27.2 2.71 4.96 15.8 ATHENA-Adaptive 54.0 1.50 3.47 19.4 45.5 1.93 4.52 11.6 34.7 2.34 3.90 21.2
+> SD 1.4 Counting Guidance 28.6 2.19 3.62 19.9 19.4 2.80 4.27 11.1 10.8 3.69 4.85 19.6
+
+Absolute generation times may differ across datasets due to hardware differences; accordingly, we focus on relative accuracy–runtime trade-offs with fixed hardware. 
+
+5.2 Quantitative Results 
+
+Table 2 summarizes counting performance and runtime across diffusion backbones and datasets. ATHENA-Adaptive consistently improves exact-count accuracy over unsteered generation, with absolute gains of at least 11.8% (FLUX.1-dev on CoCoCount) and up to 22.3% (SDXL on CoCoCount). Adaptive steering outperforms static and feedback variants in nearly all cases; the only exception is CoCoCount with FLUX.1-dev, where static steering performs slightly better. Overall, these results demonstrate that direction-aware adaptation of the steering strength is critical for robust count control across models and datasets. Accuracy improvements are achieved with favorable efficiency trade-offs. As shown in Table 2 and Figure 5, ATHENA-Adaptive attains higher accuracy than CountGen while being over 2.5× faster on the ATHENA dataset. At comparable runtime to Counting Guidance, ATHENA-Adaptive on SDXL achieves nearly 2× higher counting accuracy. In terms of memory usage, CountGen requires 47.5 GB, Counting Guidance uses 17.2 GB, while ATHENA-Adaptive on SDXL requires only 11.9 GB. Thus, ATHENA achieves higher accuracy than prior baselines with approximately 4× lower memory usage than CountGen, highlighting its efficiency as a lightweight, test-time control method. We analyze counting accuracy as a function of the target object count. Figure 6 reports results on CoCoCount-E with the SDXL backbone. Accuracy decreases as the target count increases for all methods, reflecting the growing difficulty 10 20 30 40 50  
+
+> Accuracy (%)
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> Time per Sample (s)
+> Flux
+> Flux - Static
+> Flux - Feedback
+> Flux - Adaptive
+> SD 3.5
+> SD 3.5 - Static
+> SD 3.5 - Feedback
+> SD 3.5 - Adaptive
+> SDXL SDXL - Static
+> SDXL - Feedback
+> SDXL - Adaptive
+> SDXL - CountGen
+> SD 1.4 - Counting Guidance
+
+Figure 5: Accuracy–runtime trade-off on the ATHENA dataset. Colors denote the diffusion back-bone, while marker shapes indicate the method. ATHENA-Adaptive achieves higher accuracy at com-parable or lower runtime across diffusion backbones. 2 3 4 5 6 7 8 9 10 
+
+Number of Objects in the Prompt 
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> SDXL
+> ATHENA-Static
+> ATHENA-Feedback
+> ATHENA-Adaptive
+> Counting Guidance
+> Make It Count
+
+Figure 6: Counting accuracy versus target count on CoCoCount-E with SDXL backbone. ATHENA-Adaptive achieves high accuracy for small counts and nearly 2× the accuracy of unsteered sampling at larger counts. 8Figure 7: Qualitative results on complex, distractor-rich prompts. Guidance denotes Counting Guidance. Green borders indicate correct counts; red borders indicate incorrect counts. All ATHENA variants preserve scene structure and color consistency while handling relational and multi-object instructions. Compared to prior baselines, ATHENA avoids visual artifacts and background distortion, with adaptive steering yielding the most accurate counts. of enforcing precise cardinality. Unsteered generation degrades sharply beyond three objects, and prior baselines exhibit limited robustness as counts increase. In contrast, ATHENA-Adaptive maintains consistently higher accuracy across the full count range. It achieves close to 80% accuracy for two to three objects and nearly 2× the accuracy of unsteered sampling for larger counts. These results indicate that adaptive steering mitigates early semantic drift and slows error accumulation as counting difficulty increases. Additional accuracy–count and accuracy–runtime figures are provided in Section D.1. 
+
+5.3 Qualitative Results 
+
+Figure 7 presents comparisons between unsteered generation, baselines, and ATHENA across diverse prompts. As shown, ATHENA improves count fidelity while preserving scene structure, object appearance, background coherence, and color consistency. Unlike prior baselines, ATHENA avoids visual artifacts such as background blurring, object blending, or disrupted spatial layout, and maintains coherent object–scene relationships in the shown examples, including cases with complex distractors and relational constraints. In contrast, prior methods often modify scene content or introduce visual distortions when attempting to enforce counts. CountGen frequently alters scene semantics, while Counting Guidance often fails to correct miscounting and degrades visual quality for complex prompts. Among the variants, ATHENA-Adaptive most consistently resolves counting errors, particularly for higher target counts and dense layouts. Failure cases are rare and typically arise from inaccurate intermediate detection in especially challenging scenes. Overall, these results indicate that ATHENA enables accurate object counting at test time without sacrificing visual fidelity. Additional examples are provided in Section D.2. 
+
+## 6 Conclusion 
+
+We introduced ATHENA, a model-agnostic test-time steering framework for improving object count fidelity in T2I diffusion models without retraining or architectural changes. By estimating counts at an intermediate diffusion step and applying early prompt-based steering, ATHENA corrects numerical errors before structural mistakes become fixed. Across three diffusion backbones, ATHENA-Adaptive improves exact-count accuracy by up to 22.3%, achieves close to 80% accuracy for small target counts, and consistently outperforms prior baselines. These gains come with favorable efficiency: ATHENA is nearly 2.5× faster than CountGen, achieves almost twice the accuracy of Counting Guidance at similar runtime, and requires roughly 4× less memory on SDXL. Overall, ATHENA is an effective and efficient inference-time method for enforcing discrete numerical constraints in diffusion-based image generation while preserving visual quality. 9Acknowledgements 
+
+We sincerely thank Willie Neiswanger and Justin Cho for their insightful feedback and valuable guidance. This work was partially supported by AWS credits through an Amazon Faculty Research Award, a NAIRR Pilot Award, and generous funding by Coefficient Giving. M. Soltanolkotabi and M. S. Sepehri were supported by the USC-Capital One Center for Responsible AI and Decision Making in Finance (CREDIF) Fellowship. M. Soltanolkotabi is also supported by the Packard Fellowship in Science and Engineering, a Sloan Research Fellowship in Mathematics, NSF CAREER Award #1846369, DARPA FastNICS program, NSF CIF Awards #1813877 and #2008443, and NIH Award DP2LM014564-01. 
+
+## References 
+
+[1] Hyojin Bahng, Caroline Chan, Fredo Durand, and Phillip Isola. Cycle Consistency as Reward: Learning Image-Text Alignment without Human Preferences. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2025. [2] Lital Binyamin, Yoad Tewel, Hilit Segev, Eran Hirsch, Royi Rassin, and Gal Chechik. Make It Count: Text-to-Image Generation with an Accurate Number of Objects. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 13242–13251, 2025. [3] Hila Chefer, Yuval Alaluf, Yael Vinker, Lior Wolf, and Daniel Cohen-Or. Attend-and-excite: Attention-based semantic guidance for text-to-image diffusion models. ACM transactions on Graphics (TOG) , 42(4):1–10, 2023. [4] Tianheng Cheng, Lin Song, Yixiao Ge, Wenyu Liu, Xinggang Wang, and Ying Shan. Yolo-world: Real-time open-vocabulary object detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 16901–16911, 2024. [5] Jooyoung Choi, Jungbeom Lee, Chaehun Shin, Sungwon Kim, Hyunwoo Kim, and Sungroh Yoon. Perception prioritized training of diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 11472–11481, 2022. [6] Prafulla Dhariwal and Alexander Nichol. Diffusion Models Beat GANs on Image Synthesis. Advances in neural information processing systems , 34:8780–8794, 2021. [7] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning , 2024. [8] Haosheng Gan, Berk Tinaz, Mohammad Shahab Sepehri, Zalan Fabian, and Mahdi Soltanolkotabi. ConceptMix++: Leveling the Playing Field in Text-to-Image Benchmarking via Iterative Prompt Optimization. Generative Models for Computer Vision Workshop @ CVPR , 2025. [9] Amir Hertz, Ron Mokady, Jay Tenenbaum, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Prompt-to-Prompt Image Editing with Cross-Attention Control. In The Eleventh International Conference on Learning Representations , 2023. [10] Jonathan Ho and Tim Salimans. Classifier-Free Diffusion Guidance. arXiv preprint arXiv:2207.12598 , 2022. [11] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising Diffusion Probabilistic Models. Advances in neural information processing systems , 33:6840–6851, 2020. [12] Wonjun Kang, Kevin Galim, Hyung Il Koo, and Nam Ik Cho. Counting guidance for high fidelity text-to-image synthesis. In 
+
+2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pages 899–908. IEEE, 2025. [13] Tero Karras, Miika Aittala, Timo Aila, and Samuli Laine. Elucidating the design space of diffusion-based generative models. 
+
+Advances in neural information processing systems , 35:26565–26577, 2022. [14] Black Forest Labs. FLUX. https://github.com/black-forest-labs/flux , 2024. [15] Black Forest Labs, Stephen Batifol, Andreas Blattmann, Frederic Boesel, Saksham Consul, Cyril Diagne, Tim Dockhorn, Jack English, Zion English, Patrick Esser, et al. FLUX. 1 Kontext: Flow Matching for In-Context Image Generation and Editing in Latent Space. arXiv preprint arXiv:2506.15742 , 2025. [16] Joohyeon Lee, Jin-Seop Lee, and Jee-Hyong Lee. CountCluster: Training-Free Object Quantity Guidance with Cross-Attention Map Clustering for Text-to-Image Generation. arXiv preprint arXiv:2508.10710 , 2025. [17] Liunian Harold Li, Pengchuan Zhang, Haotian Zhang, Jianwei Yang, Chunyuan Li, Yiwu Zhong, Lijuan Wang, Lu Yuan, Lei Zhang, Jenq-Neng Hwang, et al. Grounded Language-Image Pre-training. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10965–10975, 2022. 
+
+10 [18] Sen Li, Ruochen Wang, Cho-Jui Hsieh, Minhao Cheng, and Tianyi Zhou. Mulan: Multimodal-llm agent for progressive and interactive multi-object diffusion. arXiv preprint arXiv:2402.12741 , 2024. [19] Shuangqi Li, Hieu Le, Jingyi Xu, and Mathieu Salzmann. Enhancing compositional text-to-image generation with reliable random seeds. In The Thirteenth International Conference on Learning Representations , 2025. [20] Yanyu Li, Pencheng Wan, Liang Han, Yaowei Wang, Liqiang Nie, and Min Zhang. CountDiffusion: Text-to-Image Synthesis with Training-Free Counting-Guidance Diffusion. arXiv preprint arXiv:2505.04347 , 2025. [21] Luping Liu, Zijian Zhang, Yi Ren, Rongjie Huang, Xiang Yin, and Zhou Zhao. Detector guidance for multi-object text-to-image generation. arXiv preprint arXiv:2306.02236 , 2023. [22] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, et al. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In European conference on computer vision , pages 38–55. Springer, 2024. [23] Shweta Mahajan, Tanzila Rahman, Kwang Moo Yi, and Leonid Sigal. Prompting hard or hardly prompting: Prompt inversion for text-to-image diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 6808–6817, 2024. [24] Viktor Makoviychuk, Lukasz Wawrzyniak, Yunrong Guo, Michelle Lu, Kier Storey, Miles Macklin, David Hoeller, Nikita Rudin, Arthur Allshire, Ankur Handa, et al. Isaac gym: High performance gpu-based physics simulation for robot learning. 
+
+arXiv preprint arXiv:2108.10470 , 2021. [25] Sergey I Nikolenko et al. Synthetic data for deep learning . Springer, 2021. [26] Or Patashnik, Daniel Garibi, Idan Azuri, Hadar Averbuch-Elor, and Daniel Cohen-Or. Localizing object-level shape variations with text-to-image diffusion models. In Proceedings of the IEEE/CVF international conference on computer vision , pages 23051–23061, 2023. [27] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and Robin Rombach. SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis. arXiv preprint arXiv:2307.01952 , 2023. [28] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu, and Mark Chen. Hierarchical Text-Conditional Image Generation with CLIP Latents. arXiv preprint arXiv:2204.06125 , 1(2):3, 2022. [29] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-Resolution Image Synthesis with Latent Diffusion Models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. [30] Mohammad Shahab Sepehri, Berk Tinaz, Zalan Fabian, and Mahdi Soltanolkotabi. Hyperphantasia: A Benchmark for Evaluating the Mental Visualization Capabilities of Multimodal LLMs. In The Thirty-ninth Annual Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2025. [31] Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations , 2021. [32] Stability AI. Stable Diffusion XL - Base 1.0. https://huggingface.co/stabilityai/stable-diffusion-xl-base-1. 0, 2023. [33] Stability AI. Stable Diffusion 3.5 - Large. https://huggingface.co/stabilityai/stable-diffusion-3.5-large ,2024. [34] Berk Tinaz, Zalan Fabian, and Mahdi Soltanolkotabi. Emergence and Evolution of Interpretable Concepts in Diffusion Models. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. [35] Jonathan Tremblay, Aayush Prakash, David Acuna, Mark Brophy, Varun Jampani, Cem Anil, Thang To, Eric Cameracci, Shaad Boochoon, and Stan Birchfield. Training deep networks with synthetic data: Bridging the reality gap by domain randomization. In Proceedings of the IEEE conference on computer vision and pattern recognition workshops , pages 969–977, 2018. [36] Xindi Wu, Dingli Yu, Yangsibo Huang, Olga Russakovsky, and Sanjeev Arora. Conceptmix: A compositional image generation benchmark with controllable difficulty. In The Thirty-eight Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2024. [37] Oz Zafar, Lior Wolf, and Idan Schwartz. Detection-Driven Object Count Optimization for Text-to-Image Diffusion Models. 
+
+arXiv preprint arXiv:2408.11721 , 2025. [38] Guanning Zeng, Xiang Zhang, Zirui Wang, Haiyang Xu, Zeyuan Chen, Bingnan Li, and Zhuowen Tu. YOLO-Count: Differentiable Object Counting for Text-to-Image Generation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 16765–16775, 2025. 
+
+11 A Algorithmic Details of ATHENA 
+
+A.1 ATHENA-Static 
+
+Figure 8: ATHENA-Static pipeline. Starting from the same initial noise, prompt-based steering is applied using a fixed, count-agnostic control prompt from diffusion step T down to a cutoff tsteer . Standard diffusion then proceeds unmodified to completion, yielding improved count fidelity without intermediate feedback or adaptive adjustment. 
+
+Algorithm 1 DIFFUSION -S TEPS 
+
+Require: Denoiser: ϵθ , sampling operator: St, text prompt: p, starting step: ts, end step: te, initial latent: zts
+
+1: for t = ts to te + 1 do 
+
+2: ϵt = ϵθ (t, z t, p )
+
+3: zt−1 = St(zt, ϵ t)
+
+4: end for 
+
+5: Return: zte
+
+Algorithm 2 ATHENA -S TEPS 
+
+Require: Denoiser: ϵθ , sampling operator: St, text prompt: p, control prompt: ˆp, starting step: ts, end step: te, initial latent: zts ,steering strength: γ > 0
+
+1: for t = ts to te + 1 do 
+
+2: ϵt = ϵθ (t, z t, p )
+
+3: ˆϵt = ϵθ (t, z t, ˆp)
+
+4: ϵsteer = ϵt + γ(ϵt − ˆϵt)
+
+5: ϵsteer = ∥ϵt∥∥ϵsteer ∥ ϵsteer {Matching the norm of the new update with the original update} 6: zt−1 = St(zt, ϵ steer )
+
+7: end for 
+
+8: Return: zte
+
+Algorithm 3 ATHENA -S TATIC 
+
+Require: Denoiser: ϵθ , sampling operator: St, text prompt: p, target count: k, steering steps: tsteer , total steps: T , steering strength: 
+
+γ > 0, decoder Dec( ·)
+
+1: zT ∼ N (0 , I )
+
+2: ˆp ← remove k from p
+
+3: ztsteer = ATHENA-Steps (ϵθ , St, p, ˆp, ts = T , te = tsteer , zT , γ > 0)4: z0 = Diffusion-Steps (ϵθ , St, p, ts = tsteer , te = 0 , ztsteer )5: x = Dec( z0)
+
+6: Return: x
+
+12 A.2 ATHENA-Feedback 
+
+Figure 9: ATHENA-Feedback pipeline. An intermediate count is estimated at step test without steering. If the estimate differs from the target, generation is restarted from the same initial noise using a feedback control prompt, and a single early-stage steering phase is applied before completing diffusion. 
+
+Algorithm 4 ATHENA -F EEDBACK 
+
+Require: Denoiser: ϵθ , sampling operator: St, reconstruction Dt, text prompt: p, target count: k, steering steps: tsteer , estimation step test , total steps: T , steering strength: γ > 0, decoder Dec( ·), counter Count( ·)
+
+1: zT ∼ N (0 , I )
+
+2: ˆp ← remove k from p
+
+3: ztest = Diffusion-Steps (ϵθ , St, p, ts = T , te = test , zT )4: ˆz0 = Dt(ztest )
+
+5: ˆx = Dec(ˆ z0)
+
+6: c = Count(ˆ x)
+
+7: if c = k then 
+
+8: zout = ztest 
+
+9: else 
+
+10: ˆp ← replace k in p with c
+
+11: ztsteer = ATHENA-Steps (ϵθ , St, p, ˆp, ts = T , te = tsteer , zT , γ > 0)12: ˜ztest = Diffusion-Steps (ϵθ , St, p, ts = tsteer , te = test , ztest )13: zout = ˜ ztest 
+
+14: end if 
+
+15: z0 = Diffusion-Steps (ϵθ , St, p, ts = test , te = 0 , zout )16: x = Dec( z0)
+
+17: Return: x
+
+13 A.3 ATHENA-Adaptive 
+
+Figure 10: ATHENA-Adaptive pipeline. The method estimates object count at an intermediate diffusion step, applies early-stage prompt-based steering, adaptively adjusts the steering strength once based on the observed error direction, and completes generation using standard diffusion. 
+
+Algorithm 5 ATHENA -A DAPTIVE 
+
+Require: Denoiser: ϵθ , sampling operator: St, reconstruction Dt, text prompt: p, target count: k, steering steps: tsteer , estimation step test , total steps: T , steering strength: γ > 0, decoder Dec( ·), counter Count( ·)
+
+1: zT ∼ N (0 , I )
+
+2: ˆp ← remove k from p
+
+3: ztest = Diffusion-Steps (ϵθ , St, p, ts = T , te = test , zT )4: ˆz0 = Dt(ztest )
+
+5: ˆx = Dec(ˆ z0)
+
+6: c1 = Count(ˆ x)
+
+7: if c1 = k then 
+
+8: zout = ztest 
+
+9: else 
+
+10: ˆp ← replace k in p with c
+
+11: ztsteer = ATHENA-Steps (ϵθ , St, p, ˆp, ts = T , te = tsteer , zT , γ > 0)12: ˜ztest = Diffusion-Steps (ϵθ , St, p, ts = tsteer , te = test , ztest )13: ˆz0 = Dt(˜ ztest )
+
+14: ˆx = Dec(ˆ z0)
+
+15: c2 = Count(ˆ x)
+
+16: if c2 = k then 
+
+17: zout = ˜ ztest 
+
+18: else 
+
+19: if (c1 ≤ c2 < k ) ∨ (k < c 2 ≤ c1) then 
+
+20: {Case of not adding/removing enough objects} 21: γ ← 2 × γ
+
+22: else 
+
+23: {Case of adding/removing too many objects} 24: γ ← γ
+
+> 2
+
+25: end if 
+
+26: ztsteer = ATHENA-Steps (ϵθ , St, p, ˆp, ts = T , te = tsteer , zT , γ > 0)27: ¯ztest = Diffusion-Steps (ϵθ , St, p, ts = tsteer , te = test , ztest )28: zout = ¯ ztest 
+
+29: end if 
+
+30: end if 
+
+31: z0 = Diffusion-Steps (ϵθ , St, p, ts = test , te = 0 , zout )32: x = Dec( z0)
+
+33: Return: x
+
+14 B Dataset Construction and Statistics 
+
+B.1 CoCoCount and CoCoCount-E 
+
+The CoCoCount dataset [ 2] consists of text prompts with explicit numerical constraints, targeting object counts from 2 to 10. The original release includes prompts that differ only by random generation seed, as well as prompts with identical semantic structure but different target counts. As a result, the dataset contains repeated prompt content and heterogeneous count distributions. For evaluation, we construct a deduplicated version of CoCoCount by retaining a single instance of each unique prompt text. This results in 161 distinct prompts, which we use as the CoCoCount benchmark in all experiments. To enable controlled analysis across target cardinalities, we further construct CoCoCount-E , an extended benchmark derived from CoCoCount. Starting from a filtered subset of 72 unique prompt templates, we systematically instantiate each prompt with target counts from 2 to 10 while keeping all other prompt content fixed. This yields 648 prompts with consistent structure and a balanced count distribution. Following prior work [ 2], we restrict the target count range to 2–10, as generation quality and counting accuracy degrade substantially beyond this range. We observe the same trend across all evaluated diffusion backbones. Table 3: Dataset statistics for CoCoCount and CoCoCount-E.          
+
+> Dataset Unique Prompts Count Range Total Prompts
+> CoCoCount (deduplicated) 161 2–10 161 CoCoCount-E 72 2–10 648
+
+15 B.2 ATHENA Dataset Generation 
+
+The ATHENA dataset is generated by querying a large language model (GPT-5.2) using the prompt shown below. This prompt instructs the model to produce object-counting instructions with controlled variations in object category, scene context, distractors, and relational constraints, while sampling target counts between 2 and 10. Applying this prompt yields a structured collection of prompts organized into four difficulty levels, with consistent formatting and systematic increases in complexity. Finally, all generated samples are manually inspected to ensure quality. 
+
+## Task Definition 
+
+Generate a challenging object-counting evaluation dataset for text-to-image diffusion models. The dataset is intended to evaluate count fidelity only, under increasingly difficult prompt conditions. 
+
+> ,→
+> ,→
+
+You are given: - A JSON file containing the original CoCoCount dataset (attached). - The specifications below. You must generate a new dataset that: - Does NOT reuse any object categories appearing in CoCoCount for Level 1. - Uses clear, unambiguous noun-phrase prompts suitable for automatic counting. - Contains no duplicate prompts. - Contains exactly one counted object category per prompt. - All prompts must begin with: "A photo of ..." 
+
+## Dataset Output Format 
+
+- Output a single JSON file as a list of entries. - Each entry must contain the following required fields. Required JSON template (exact keys required): {"id": <unique integer>, "prompt": <string>, // full prompt, starts with "A photo of" "object": <string>, // singular object name "object_plural": <string>, // plural form used in the prompt "number": <string>, // number in words (e.g., "three") "int_number": <integer>, // numeric count (e.g., 3) "level": <integer>, // 1, 2, 3, or 4 "difficulty_tag": <string>, // short descriptor (e.g., "hard-object", "scene", "distractor", "relation") ,→
+
+"scene": <string | null>, // scene phrase if present (e.g., "on the ground") "distractor": <string | null>, // uncounted object if present "relation": <string | null>, // relational phrase if present "source": "ATHENA" }
+
+## Detector Compatibility Constraint 
+
+All object categories MUST be reliably detectable by open-vocabulary grounding models (e.g., Grounding DINO) under standard confidence thresholds. Objects must: - be visually salient at typical image resolutions, - have strong and common visual-text associations, - be distinguishable without fine-grained or microscopic detail, commonly appear in natural images rather than technical diagrams or product-only photos. 
+
+16 Avoid objects that are: - extremely small or thin, - rare, niche, or domain-specific, - visually indistinguishable without context, - typically embedded inside other objects. 
+
+## Count Constraints 
+
+- Valid counts: 2 - 10 - Counts should be approximately balanced - "number" must be the word form of "count" - "object_plural" must match the prompt text exactly 
+
+## Difficulty Levels 
+
+Level 1: Hard Object Categories 
+
+- Object categories must NOT appear in CoCoCount. - Objects should be visually challenging for counting (e.g., instance ambiguity, moderate occlusion, reflective or deformable surfaces), but must remain clearly recognizable as distinct object instances by open-vocabulary detection models. 
+
+> ,→
+> ,→
+
+- No verbs - No scene - No distractors 
+
+Prompt format: 
+
+A photo of <number> <object_plural> 
+
+Example pattern: A photo of seven kites 
+
+Level 2: Hard Objects + Scene Context 
+
+- Same object constraints as Level 1. - Add a scene phrase. - Scene must not introduce additional countable objects. - No verbs - No distractors 
+
+Prompt format: 
+
+A photo of <number> <object_plural> <scene> 
+
+Example pattern: A photo of six lanterns in a temple hall 
+
+Level 3: Counted Object + Semantic Distractor 
+
+- One counted object category. - One uncounted distractor (no number specified). - No verbs - Avoid ambiguity about which object is counted. 
+
+Prompt format: 
+
+A photo of <number> <object_plural> <scene> with <distractor> 
+
+Example pattern: A photo of five apples on a table with a dog 
+
+Level 4: Relational Language 
+
+- One counted object category. - Introduce spatial or relational structure. 
+
+17 - No second counted object. - Relational phrasing may include light verb-based constructions if unavoidable. 
+
+Prompt format: 
+
+A photo of <number> <object_plural> <relation> 
+
+Example pattern: A photo of eight chairs arranged around a round table 
+
+## Strict Constraints 
+
+- Do NOT reuse Level-1 object categories from CoCoCount. - Do NOT include multiple counted objects. - Do NOT use vague quantifiers ("several", "many"). - Do NOT use negation-based counting. - Do NOT generate prompts requiring subjective interpretation. - Do NOT generate near-duplicate prompts. - Ensure "scene", "distractor", and "relation" are null when not applicable. 
+
+## Dataset Size 
+
+Generate exactly 360 prompts, distributed as: - Level 1: 120 - Level 2: 100 - Level 3: 100 - Level 4: 40 
+
+## Output Requirements 
+
+- Output valid JSON only - All required fields must be present - Prompts must be natural, fluent, and concise - Share the dataset link when you finish generating it 
+
+## C Hyperparameter Settings 
+
+All diffusion models are evaluated using a fixed random seed (23) for image generation to ensure reproducibility. Table 4 summarizes the hyperparameter settings used for ATHENA across diffusion backbones and steering variants. Table 4: Hyperparameter settings used for ATHENA across diffusion backbones and steering variants. 
+
+Diffusion Backbone Parameter FLUX.1-dev SD 3.5 Large SDXL 
+
+Static Feedback Adaptive Static Feedback Adaptive Static Feedback Adaptive 
+
+test – 20 20 – 20 20 – 30 30 
+
+tsteer 10 5 5 10 5 5 10 10 10 
+
+γ 4 4 4 4 4 4 5 5 5
+
+18 D Additional Experiments 
+
+D.1 Quantitative Results 30 40 50 60 70 80 
+
+Accuracy (%) 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 
+
+> Time per Sample (s)
+
+Flux 
+
+Flux - Static 
+
+Flux - Feedback 
+
+Flux - Adaptive 
+
+SD 3.5 
+
+SD 3.5 - Static 
+
+SD 3.5 - Feedback 
+
+SD 3.5 - Adaptive 
+
+SDXL SDXL - Static 
+
+SDXL - Feedback 
+
+SDXL - Adaptive 
+
+SDXL - CountGen 
+
+SD 1.4 - Counting Guidance 
+
+(a) CoCoCount 20 30 40 50 60 
+
+Accuracy (%) 
+
+5
+
+10 
+
+15 
+
+20 
+
+25 
+
+30 
+
+35 
+
+> Time per Sample (s)
+
+Flux 
+
+Flux - Static 
+
+Flux - Feedback 
+
+Flux - Adaptive 
+
+SD 3.5 
+
+SD 3.5 - Static 
+
+SD 3.5 - Feedback 
+
+SD 3.5 - Adaptive 
+
+SDXL SDXL - Static 
+
+SDXL - Feedback 
+
+SDXL - Adaptive 
+
+SDXL - CountGen 
+
+SD 1.4 - Counting Guidance (b) CoCoCount-E 
+
+Figure 11: Accuracy–runtime trade-offs on CoCoCount and CoCoCount-E. Colors denote the diffusion backbone, while marker shapes indicate the method. ATHENA-Adaptive consistently achieves higher accuracy at comparable or lower runtime than prior baselines. 2 3 4 5 6 7 8 9 10 
+
+Number of Objects in the Prompt 
+
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> FLUX
+> ATHENA-Static
+> ATHENA-Feedback
+> ATHENA-Adaptive
+
+(a) CoCoCount-E (FLUX) 2 3 4 5 6 7 8 9 10 
+
+Number of Objects in the Prompt  
+
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> SD 3.5
+> ATHENA-Static
+> ATHENA-Feedback
+> ATHENA-Adaptive
+
+(b) CoCoCount-E (SD 3.5) 2 3 4 5 6 7 8 9 10 
+
+Number of Objects in the Prompt  
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> SDXL
+> ATHENA-Static
+> ATHENA-Feedback
+> ATHENA-Adaptive
+> Counting Guidance
+> Make It Count
+
+(c) CoCoCount-E (SDXL) 2 3 4 5 6 7 8 9 10 
+
+Number of Objects in the Prompt 
+
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> FLUX
+> ATHENA-Static
+> ATHENA-Feedback
+> ATHENA-Adaptive
+
+(d) ATHENA dataset (FLUX) 2 3 4 5 6 7 8 9 10 
+
+Number of Objects in the Prompt  
+
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> SD 3.5
+> ATHENA-Static
+> ATHENA-Feedback
+> ATHENA-Adaptive
+
+(e) ATHENA dataset (SD 3.5) 2 3 4 5 6 7 8 9 10 
+
+Number of Objects in the Prompt  
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> SDXL
+> ATHENA-Static
+> ATHENA-Feedback
+> ATHENA-Adaptive
+> Counting Guidance
+> Make It Count
+
+(f) ATHENA dataset (SDXL) 
+
+Figure 12: Counting accuracy versus target object count across datasets and diffusion backbones. ATHENA-Adaptive consistently maintains higher accuracy as the target count increases, demonstrating improved robustness to increasing counting difficulty. 19 D.2 Qualitative Results 
+
+Figure 13: Additional qualitative results on relational and multi-object prompts. Results are shown for unsteered generation (FLUX) and the three ATHENA variants. Green borders indicate correct object counts, while red borders denote counting errors. ATHENA improves count fidelity across diverse settings (e.g., grouping, circular layouts, and natural scenes) while preserving scene structure and visual coherence, with the adaptive variant yielding the most consistent corrections. 
+
+Figure 14: Additional qualitative results on relational and multi-object prompts. Results are shown for unsteered generation (SD 3.5) and the three ATHENA variants. Green borders indicate correct object counts, while red borders denote counting errors. ATHENA improves count fidelity across diverse settings (e.g., grouping, circular layouts, and natural scenes) while preserving scene structure and visual coherence, with the adaptive variant yielding the most consistent corrections. 20 Figure 15: Additional qualitative results on relational and multi-object prompts with the SDXL backbone. Results include unsteered generation, CountGen, Counting Guidance ( Guidance ), and the three ATHENA variants. Green borders indicate correct object counts, while red borders denote counting errors. Prior baselines frequently fail to enforce correct counts or introduce visual artifacts, whereas ATHENA improves count fidelity while preserving scene structure and visual coherence, with the adaptive variant yielding the most consistent corrections. 21

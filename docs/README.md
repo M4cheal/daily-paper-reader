@@ -6,67 +6,61 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-22
-- 运行时间：2026-03-22 19:23:30 UTC
+- 最新运行日期：2026-03-23
+- 运行时间：2026-03-23 20:26:47 UTC
 - 运行状态：成功
-- 本次总论文数：15
-- 精读区：4
+- 本次总论文数：13
+- 精读区：2
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 15 篇前沿成果，聚焦 VLA 模型泛化性与机器人轨迹世界模型的重大突破。
-重点推荐通过合成指令增强 VLA 语言理解的研究，以及支持多机器人系统的可扩展世界模型 WestWorld。
-建议关注合成数据驱动的具身智能进化，以及如何通过推理增强和剪枝技术实现更高效的视觉语言
-- 详情：[/202603/22/README](/202603/22/README)
+今日深度解析 13 篇前沿成果，聚焦测试时自适应（TTA）在表情识别与扩散模型生成精度上的关键突破。
+重点推荐评估跨数据集偏移的表情识别研究，以及通过 ATHENA 框架显著提升扩散模型“数数”能力的测试时引导技术。
+建议关注“测试时优化”相关技术，这是无需重新训练即可提升模型在现实复杂场景下鲁棒性的高效方案。
+- 详情：[/202603/23/README](/202603/23/README)
 
 ### 精读区论文标签
-1. [Enhancing Linguistic Generalization of VLA: Fine-Tuning OpenVLA via Synthetic Instruction Augmentation](/202603/22/2603.16044v1-enhancing-linguistic-generalization-of-vla-fine-tuning-openvla-via-synthetic-instruction-augmentation)  
-   标签：评分：9.0/10、query:tta
-   evidence：微调OpenVLA以进行环境自适应
-2. [WestWorld: A Knowledge-Encoded Scalable Trajectory World Model for Diverse Robotic Systems](/202603/22/2603.14392v1-westworld-a-knowledge-encoded-scalable-trajectory-world-model-for-diverse-robotic-systems)  
+1. [Evaluating Test-Time Adaptation For Facial Expression Recognition Under Natural Cross-Dataset Distribution Shifts](/202603/23/2603.19994v1-evaluating-test-time-adaptation-for-facial-expression-recognition-under-natural-cross-dataset-distribution-shifts)  
+   标签：评分：10.0/10、query:tta
+   evidence：自然分布偏移下测试时间自适应方法的评估
+2. [ATHENA: Adaptive Test-Time Steering for Improving Count Fidelity in Diffusion Models](/202603/23/2603.19676v1-athena-adaptive-test-time-steering-for-improving-count-fidelity-in-diffusion-models)  
    标签：评分：8.0/10、query:tta
-   evidence：适用于多样化机器人系统的可扩展轨迹世界模型
-3. [Lightweight User-Personalization Method for Closed Split Computing](/202603/22/2603.14958v1-lightweight-user-personalization-method-for-closed-split-computing)  
-   标签：评分：8.0/10、query:tta
-   evidence：针对封闭系统中数据分布偏移的轻量级自适应框架
-4. [T-QPM: Enabling Temporal Out-Of-Distribution Detection and Domain Generalization for Vision-Language Models in Open-World](/202603/22/2603.18481v1-t-qpm-enabling-temporal-out-of-distribution-detection-and-domain-generalization-for-vision-language-models-in-open-world)  
-   标签：评分：8.0/10、query:tta
-   evidence：在VLM中适应演化的数据分布和时间偏移
+   evidence：扩散模型的自适应测试时引导框架
 
 ### 速读区论文标签
-1. [VLA-Thinker: Boosting Vision-Language-Action Models through Thinking-with-Image Reasoning](/202603/22/2603.14523v1-vla-thinker-boosting-vision-language-action-models-through-thinking-with-image-reasoning)  
+1. [AutoMoT: A Unified Vision-Language-Action Model with Asynchronous Mixture-of-Transformers for End-to-End Autonomous Driving](/202603/23/2603.14851v2-automot-a-unified-vision-language-action-model-with-asynchronous-mixture-of-transformers-for-end-to-end-autonomous-driving)  
    标签：评分：7.0/10、query:tta
-   evidence：VLA模型的动态推理动作，用于在任务期间解决歧义
-2. [ASAP: Attention-Shift-Aware Pruning for Efficient LVLM Inference](/202603/22/2603.14549v2-asap-attention-shift-aware-pruning-for-efficient-lvlm-inference)  
+   evidence：在单一视觉-语言-动作（VLA）模型中统一推理和动作生成
+2. [Look Before Acting: Enhancing Vision Foundation Representations for Vision-Language-Action Models](/202603/23/2603.15618v2-look-before-acting-enhancing-vision-foundation-representations-for-vision-language-action-models)  
    标签：评分：7.0/10、query:tta
-   evidence：大视觉语言模型推理的免训练剪枝
-3. [Learning Question-Aware Keyframe Selection with Synthetic Supervision for Video Question Answering](/202603/22/2603.14953v1-learning-question-aware-keyframe-selection-with-synthetic-supervision-for-video-question-answering)  
+   evidence：视觉-语言-动作 (VLA) 模型的分析与增强
+3. [Zipper-LoRA: Dynamic Parameter Decoupling for Speech-LLM based Multilingual Speech Recognition](/202603/23/2603.17558v2-zipper-lora-dynamic-parameter-decoupling-for-speech-llm-based-multilingual-speech-recognition)  
    标签：评分：7.0/10、query:tta
-   evidence：VideoQA的问题感知关键帧选择
-4. [Look Before Acting: Enhancing Vision Foundation Representations for Vision-Language-Action Models](/202603/22/2603.15618v1-look-before-acting-enhancing-vision-foundation-representations-for-vision-language-action-models)  
+   evidence：多模态语音大模型适配的动态参数解耦
+4. [FASTER: Rethinking Real-Time Flow VLAs](/202603/23/2603.19199v1-faster-rethinking-real-time-flow-vlas)  
    标签：评分：7.0/10、query:tta
-   evidence：增强VLA模型的视觉基础表示
-5. [Evolving Contextual Safety in Multi-Modal Large Language Models via Inference-Time Self-Reflective Memory](/202603/22/2603.15800v1-evolving-contextual-safety-in-multi-modal-large-language-models-via-inference-time-self-reflective-memory)  
+   evidence：VLA模型的实时执行与反应
+5. [Pseudo-Labeling for Unsupervised Domain Adaptation with Kernel GLMs](/202603/23/2603.19422v1-pseudo-labeling-for-unsupervised-domain-adaptation-with-kernel-glms)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态大模型的推理时自我反思记忆
-6. [MoLoRA: Composable Specialization via Per-Token Adapter Routing](/202603/22/2603.15965v1-molora-composable-specialization-via-per-token-adapter-routing)  
+   evidence：协变量偏移下的无监督领域自适应及理论风险界限
+6. [Unbiased Dynamic Multimodal Fusion](/202603/23/2603.19681v1-unbiased-dynamic-multimodal-fusion)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态生成与专业化的逐 Token 适配器路由
-7. [Prototypical Exemplar Condensation for Memory-efficient Online Continual Learning](/202603/22/2603.13804v1-prototypical-exemplar-condensation-for-memory-efficient-online-continual-learning)  
+   evidence：面向现实世界适应性的动态多模态融合
+7. [Robust Safety Filters for Lipschitz-Bounded Adaptive Closed-Loop Systems with Structured Uncertainties](/202603/23/2603.14403v1-robust-safety-filters-for-lipschitz-bounded-adaptive-closed-loop-systems-with-structured-uncertainties)  
    标签：评分：6.0/10、query:tta
-   evidence：具有内存效率压缩的在线持续学习
-8. [Deeper Thought, Weaker Aim: Understanding and Mitigating Perceptual Impairment during Reasoning in Multimodal Large Language Models](/202603/22/2603.14184v1-deeper-thought-weaker-aim-understanding-and-mitigating-perceptual-impairment-during-reasoning-in-multimodal-large-language-models)  
+   evidence：不确定动力系统的在线参数自适应与稳定性分析
+8. [Covariance-Guided Resource Adaptive Learning for Efficient Edge Inference](/202603/23/2603.14577v1-covariance-guided-resource-adaptive-learning-for-efficient-edge-inference)  
    标签：评分：6.0/10、query:tta
-   evidence：减轻多模态LLM推理过程中的感知受损
-9. [CAMD: Coverage-Aware Multimodal Decoding for Efficient Reasoning of Multimodal Large Language Models](/202603/22/2603.14745v1-camd-coverage-aware-multimodal-decoding-for-efficient-reasoning-of-multimodal-large-language-models)  
+   evidence：边缘推理的在线优化与自适应学习
+9. [MMSpec: Benchmarking Speculative Decoding for Vision-Language Models](/202603/23/2603.14989v1-mmspec-benchmarking-speculative-decoding-for-vision-language-models)  
    标签：评分：6.0/10、query:tta
-   evidence：多模态解码和高效推理的理论框架
-10. [Evidential Domain Adaptation for Remaining Useful Life Prediction with Incomplete Degradation](/202603/22/2603.15687v1-evidential-domain-adaptation-for-remaining-useful-life-prediction-with-incomplete-degradation)  
+   evidence：将投机解码作为视觉语言模型的一种推理阶段加速技术进行基准测试。
+10. [MMKU-Bench: A Multimodal Update Benchmark for Diverse Visual Knowledge](/202603/23/2603.15117v1-mmku-bench-a-multimodal-update-benchmark-for-diverse-visual-knowledge)  
    标签：评分：6.0/10、query:tta
-   evidence：不完整退化轨迹的领域自适应
-11. [GigaWorld-Policy: An Efficient Action-Centered World--Action Model](/202603/22/2603.17240v1-gigaworld-policy-an-efficient-action-centered-world--action-model)  
+   evidence：多模态知识更新与一致性评估基准
+11. [HeBA: Heterogeneous Bottleneck Adapters for Robust Vision-Language Models](/202603/23/2603.16653v1-heba-heterogeneous-bottleneck-adapters-for-robust-vision-language-models)  
    标签：评分：6.0/10、query:tta
-   evidence：用于高效机器人策略学习的以动作为中心的世界动作模型
+   evidence：利用模态特定偏置将大规模VLM适配到下游任务
 
 
 <div class="dpr-home-promo-card">
