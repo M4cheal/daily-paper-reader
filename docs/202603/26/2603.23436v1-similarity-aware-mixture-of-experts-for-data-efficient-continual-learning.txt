@@ -1,0 +1,635 @@
+Title: Similarity-Aware Mixture-of-Experts for Data-Efficient Continual Learning
+
+URL Source: https://arxiv.org/pdf/2603.23436v1
+
+Published Time: Wed, 25 Mar 2026 01:33:52 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# Similarity-Aware Mixture-of-Experts for Data-Efficient Continual Learning 
+
+# Connor Mclaughlin 
+
+Northeastern University Boston, Massachusetts, USA 
+
+# Nigel Lee 
+
+The Charles Stark Draper Laboratory, Inc. Cambridge, Massachusetts, USA 
+
+# Lili Su 
+
+Northeastern University Boston, Massachusetts, USA 
+
+## Abstract 
+
+Machine learning models often need to adapt to new data after deployment due to structured or unstructured real-world dynam-ics. The Continual Learning (CL) framework enables continuous model adaptation, but most existing approaches either assume each task contains sufficiently many data samples or that the learning tasks are non-overlapping. In this paper, we address the more gen-eral setting where each task may have a limited dataset, and tasks may overlap in an arbitrary manner without a priori knowledge. This general setting is substantially more challenging for two rea-sons. On the one hand, data scarcity necessitates effective contex-tualization of general knowledge and efficient knowledge transfer across tasks. On the other hand, unstructured task overlapping can easily result in negative knowledge transfer. To address the above challenges, we propose an adaptive mixture-of-experts (MoE) framework over pre-trained models that progressively establishes similarity awareness among tasks. Our design contains two inno-vative algorithmic components: incremental global pooling and instance-wise prompt masking. The former mitigates prompt asso-ciation noise through gradual prompt introduction over time. The latter decomposes incoming task samples into those aligning with current prompts (in-distribution) and those requiring new prompts (out-of-distribution). Together, our design strategically leverages potential task overlaps while actively preventing negative mutual interference in the presence of per-task data scarcity. Experiments across varying data volumes and inter-task similarity show that our method enhances sample efficiency and is broadly applicable. 
+
+## 1 Introduction 
+
+Machine learning models often need to adapt to new data after deployment due to structured or unstructured dynamics in learn-ing tasks. The naïve solution of retraining from scratch with all previously encountered data is prohibitively – and often unnec-essarily – costly, as it ignores both the knowledge gained from historical data and the correlations among tasks. More importantly, such naïve solutions are often infeasible due to privacy constraints and data regulations. The Continual Learning (CL) framework en-ables continuous model adaptation. Yet, most existing approaches either assume each task contains sufficiently many data samples or that the learning tasks are non-overlapping [ 20 , 33 ]. In many modern real-world applications, the amount of data available per task can be scarce, and the tasks themselves are often overlapping. For instance, in fraud detection, each fraud type may be represented by a few cases (data scarcity), but fraudulent patterns often share features across transaction types (task overlap). Similarly, in image classifications, tasks of interests evolve over times but may share similar or recurring task concepts, as illustrated in Fig.1. In this paper, we make an attempt at addressing data scarcity and task overlap simultaneously. For the sake of fair comparison with existing CL benchmarks, we focus on classification tasks, while extending the method to regression problems is left for future work. It is well-known that traditional CL methods often suffer from the issue of catastrophic forgetting – the tendency of a model to lose previously acquired knowledge on seen tasks when trained on new tasks [ 20 ]. Our general setting is substantially more challenging than traditional settings for two reasons. Data scarcity necessi-tates effective contextualization of general knowledge and efficient knowledge transfer across tasks, which is already highly nontriv-ial. On top of that, unstructured task overlap—while providing a fundamental basis for information sharing—can also easily lead to negative knowledge transfer. Thus, we believe this more general setting calls for a fundamental rethinking of CL method designs. To address per-task data scarcity and to make effective use of existing computation, we pursue knowledge transfer along two complementary dimensions: (1) knowledge transfer from a pre-trained foundation model via prompting, (2) inter-task knowledge transfer via adaptively establishing and strengthening a pool of prompts (i.e., mixture-of-experts [MoE]). Intuitively, the former allows us to extract task-relevant knowledge from a well-trained generalist by training a compatible domain expert (i.e., the prompt), whereas the latter iteratively enhances the expertise of the experts by collaboratively refining the prompts based on newly observed data. Harnessing the capabilities of pre-trained Vision Transformers (ViTs), recent advancements in rehearsal-free CL have pivoted to-wards prompt-based strategies [ 30 , 34 –36 ]. By learning only a small set of prompt parameters that are injected into a frozen ViT, these approaches substantially reduce the number of trainable parameters and, consequently, the sample complexity required for adapting to new tasks. A prominent direction in prompt-based CL is the expert-prompt strategy [ 34 , 35 ], where each task is assigned its own prompt parameters trained solely on task-specific data. While effective, this design implicitly assumes the availability of sufficient Task 1 Task 2 Task t 
+
+> Similar/Repeated Concepts
+> Task t+1
+
+Figure 1: As tasks of interest evolve over time, the learner may encounter similar or recurring concepts. For example, Task 1 and Task 𝑡 + 1 may both involve the high-level category of birds. 
+
+> arXiv:2603.23436v1 [cs.LG] 24 Mar 2026 Mclaughlin et al.
+
+task-specific supervision and clear task delineation. An alternative is the global prompt pool [ 30 , 36 ], which allows prompts to be shared and updated across all tasks. While this encourages reuse, it introduces optimization noise due to routing errors. Routing er-rors create a fundamental dilemma in data-scarce regimes. As local data become more limited, effective learning increasingly relies on knowledge transfer from other tasks or pre-trained models. How-ever, data scarcity also amplifies routing noise, which can in turn lead to negative knowledge transfer. An illustration on this can be found in Fig. 3 Section 5. 
+
+Contributions. Our contributions can be summarized as follows. 
+
+• We identify a general, yet critically overlooked, setting in modern CL practice that necessitates a fundamental rethink-ing of cross-task knowledge sharing. 
+
+• To enable effective knowledge sharing despite data-scarcity, we challenge the rigid routing structures of prior prompt-based approaches and propose an adaptive and similarity-aware routing mechanism. Our design contains two inno-vative algorithmic components: incremental global pooling and instance-wise prompt masking. Together, they effec-tively leverage potential task overlaps while preventing negative mutual interference in the presence of per-task data scarcity. 
+
+• Our method establishes a connection between CL and out-of-distribution detection [ 9 , 10 ]: by measuring the similarity between incoming data and previously encountered tasks, the model can more effectively allocate prompts to separate task heterogeneity and high sampling noise. We hope that this connection can inspire the design of future CL methods by drawing on tools and insights developed in the out-of-distribution detection community. 
+
+• Experiments across varying data volumes and inter-task similarity show that our method enhances sample efficiency and is broadly applicable. 
+
+## 2 Related Work 
+
+The primary objective of CL is to enable machine learning models to acquire new skills over time without erasing previously acquired knowledge, i.e., catastrophic forgetting . CL has received intensive re-search attention due to its broad applications. Several recent surveys provide comprehensive overviews of the foundations, challenges, and recent advances in CL [ 4, 29 , 33 ]. In the following, we briefly touch on a few lines of work that are closely related to our setting. Interested readers are referred to the corresponding surveys for further details. 
+
+Regularization-based methods aim to preserve knowledge by con-straining parameter updates. Approaches such as Elastic Weight Consolidation [ 11 ] and Synaptic Intelligence [ 39 ] introduced penalty terms to the loss function, protecting weights deemed critical for previous tasks. Knowledge distillation [ 16 ] is a frequent compan-ion to these methods, transferring output probabilities from an old model to the current one to stabilize training [ 1]. However, these methods can struggle in settings where the task identity is unavailable during inference. 
+
+Parameter isolation methods [ 19 , 27 , 28 ] mitigated interference by allocating different subsets of model parameters to specific tasks. Techniques such as supermasks [ 37 ] or pruning [ 18 ] ensure that new tasks do not disrupt existing pathways. Although effective in removing forgetting, these architectures often scale poorly, as the model complexity may grow linearly with the number of tasks. 
+
+Rehearsal-based/rehearsal-free methods. Rehearsal-based methods [ 2, 3 , 17 , 23 , 31 , 38 , 40 ] generally yield the strongest performance in class incremental learning settings. These methods maintain a memory buffer of samples from past distributions (experience replay) or generate them via generative models (pseudo-rehearsal). Despite their efficacy, the storage of raw data raises significant con-cerns about privacy. As a result, the field of rehearsal-free methods [ 30 , 35 ] has gained significant attention, which is the topic of this work. 
+
+Prompt-based CL has emerged as a compelling parameter-efficient alternative to traditional fine-tuning. Inspired by advances in Natu-ral Language Processing (NLP), these methods freeze a pre-trained backbone (e.g., a ViT) and append a small set of learnable vectors (prompts) to the input sequence. The core challenge in this domain is designing mechanisms to select and update prompts dynamically. L2P [ 36 ] introduced the concept of a shared prompt pool, utilizing a key-query mechanism to retrieve relevant prompts for a given input. DualPrompt [ 35 ] refined this by architecturally separating prompts into task-agnostic and task-specific components to better balance stability and plasticity. Other variants, such as S-Prompts [34 ], focused purely on task-specific learning, while CODA-Prompt [30 ] employed an attention-based weighted summation to construct prompts from a pool. Consistent Prompting [ 41 ] further emphasizes the stability of prompt behavior across distributions. 
+
+## 3 Problem Formulation 
+
+We study the problem of rehearsal-free CL, where a classification model M is trained sequentially on a series of tasks without storing past data. Formally, the learner observes a sequence of 𝑇 datasets 
+
+𝔖 = {S 0, S1, . . . , S𝑇 −1 }, with each S𝑡 = {( 𝑥 𝑖 𝑡 , 𝑦 𝑖 𝑡 )} 𝑛 𝑡  
+
+> 𝑖 =1
+
+where 𝑥 𝑖 𝑡 ∈ X 
+
+is the input feature vector, 𝑦 𝑖 𝑡 ∈ C is a label. Let C𝑡 = {𝑦 𝑖 𝑡 : 𝑖 =
+
+1, · · · , 𝑛 𝑡 } denote the collection of distinct labels of task S𝑡 . As mentioned in Section 1, we consider the general setting wherein 𝑛 𝑡 
+
+may be small, and C𝑡 ∩ C 𝑡 ′ ≠ ∅ for some 𝑡 ′ ≠ 𝑡 .To avoid overfitting and to better capture the generalization capability of the trained model, we measure its performance in terms of the average generalization error of the tasks in 𝑇 . Formally, let 𝑑 𝑡 denote the underlying distribution for which (𝑥 𝑖 𝑡 , 𝑦 𝑖 𝑡 ) 𝑖.𝑖.𝑑. 
+
+∼ 𝑑 𝑡 .We would like to obtain a model M that minimizes the average generation error 
+
+min 
+
+> M
+
+1
+
+𝑇 
+
+> 𝑇
+
+∑︁  
+
+> 𝑡 =1
+
+E(𝑥,𝑦 )∼ 𝑑 𝑡 [1{ M ( 𝑥 )≠𝑦 } ], (1) where M ( 𝑥 ) denotes the label prediction, and 1{ M ( 𝑥 )≠𝑦 } is an indicator function which takes value 1 if M ( 𝑥 ) ≠ 𝑦 , and 0 otherwise. At the inference time, the trained model is not told to which task the input feature encountered 𝑥 belongs. We focus on rehearsal-free methods, i.e., no subset of samples from previous tasks is stored. Similarity-Aware Mixture-of-Experts for Data-Efficient Continual Learning Task t                        
+
+> Input
+> P0
+> Query Function
+> Continual OOD Detection
+> Selected Prompt Model Training
+> Prompt P0Prompt P1Prompt Pn
+> Prompt Set
+> Similarity Query
+> Prompt P0Prompt P1Prompt Pt-1
+> Task t
+> Input x
+> Query Function
+> Selected Prompt Model Training
+> Prompt Pt
+> Task-Specific Prompt Training
+> Global Prompt Pool Training
+> Queryable Prompt Set Prompt P0Prompt P1Prompt Pt-1
+> Prompt Pt
+> Train New Task Prompt
+> Refine Previous Task Prompts
+> Xis not OOD
+> Xis OOD
+
+Figure 2: Comparison of Prompt Routing Strategies. (Left) When training on task 𝑡 , typical methods select prompt models in one of two ways: either by querying an unstructured global pool or by rigidly training a prompt designated for task 𝑡 . (Right) We employ an out-of-distribution (OOD) detector to dynamically determine which prompts may be queried. Inputs detected as novel (OOD) are routed to a task-specific prompt to learn new concepts, whereas for familiar samples, we query the set of previous task prompts to facilitate knowledge reuse. 
+
+## 4 Preliminaries: Prompt-Based CL 
+
+We introduce the relevant backgrounds and notations for the prompt-based continual learning and mixture-of-experts that our method builds upon. 
+
+Model Structure. In the prompt-based CL, model to be learned is decomposed into three components: (1) a pre-trained backbone foundation model 𝑓 𝜃 (e.g. a pre-trained ViT), which encodes the general knowledge obtained in the pre-training; (2) a collection of prompts P that can be flexibly combined with 𝑓 𝜃 to extract knowledge that are specific to the given task sequence 𝔖 , and (3) classification head 𝑔 𝜓 , where 𝜓 denotes learnable parameters [ 5, 36 ]. For any given 𝑥 , its label prediction is determined as 
+
+b𝑦 (𝑥 ) = 𝑔 𝜓 ◦ ( 𝑓 𝜃 (𝑥 ) ⊕ 𝑝 (𝑥 )) , (2) where 𝑝 (𝑥 ) is a set of prompts that are relevant to input 𝑥 , and, with slight abuse of notation, ⊕ represents the chosen modulation operation between the prompts and the pre-trained backbone. Throughout the CL process, the backbone model 𝑓 𝜃 remains fixed, whereas 𝜓 is repeatedly updated for each task. In addition, for any given task, the prompts are updated according to some rules of determining 𝑝 (𝑥 ), which we will elaborate on soon. 
+
+ViT as the Pre-trained Backbone 𝑓 𝜃 . An input 𝑥 ∈ X := R𝐻 ×𝑊 ×𝐶 
+
+is split into 𝑁 = 𝐻𝑊 /𝑃 2 patches, each linearly projected to 𝑑 -dimensional tokens. Together with a class token 𝑒 cls and positional embeddings, the input to the first layer is 
+
+ℎ0 = [𝑒 cls ; 𝑒 1 
+
+> 𝑝
+
+; . . . ; 𝑒 𝑁 𝑝 ] + 𝑒 pos ∈ R𝐿 ℎ ×𝑑 , (3) where 𝐿 ℎ = 𝑁 + 1 is the sequence length. A transformer encoder layer applies multi-head self-attention (MSA) followed by an MLP. For the 𝑙 -th layer, with input ℎ𝑙 ∈ R𝐿 ℎ ×𝑑 ,MSA (ℎ𝑄 , ℎ 𝐾 , ℎ 𝑉 ) = Concat (ℎ1, . . . , ℎ 𝑚 )𝑊 𝑂 , (4) 
+
+ℎ𝑖 = Attention (ℎ𝑄 𝑊 𝑄 𝑖 , ℎ 𝐾 𝑊 𝐾 𝑖 , ℎ 𝑉 𝑊 𝑉 𝑖 ) (5) where 𝑊 𝑂 ,𝑊 𝑄 𝑖 ,𝑊 𝐾 𝑖 ,𝑊 𝑉 𝑖 are learned projections, 𝑚 is the number of heads, and in vanilla ViT we set ℎ𝑄 = ℎ𝐾 = ℎ𝑉 = ℎ𝑙 .
+
+Prompt Structure. We employ a Vision Transformer (ViT) back-bone 𝑓 𝜃 , modulated by a set of learnable prompts P, where each 
+
+𝑝 ∈ P is a parameter vector 𝑝 ∈ R𝐿 𝑝 ×𝑑 . Our framework supports common modulation strategies such as prompt tuning [ 14 ], where prompts are prepended to the input sequence, and prefix tuning [15 ], where they are prepended to keys and values in MSA layers. The choice of modulation and layers is treated as a hyperparameter. 
+
+Query-Based Selection. To handle non-stationary data distribu-tions, prompts are typically selected dynamically based on input relevance. We focus on instance-wise query mechanisms [ 35 , 36 ], where a query function 𝑞 (· , ·) measures the similarity between an input sample 𝑥 and a prompt’s key 𝜙 (𝑝 ). Commonly, the query operates in the pre-trained embedding space (e.g., using the [CLS] token 𝑧 (𝑥 ) = 𝑓 𝜃 (𝑥 ) [ 0]), and 𝜙 (𝑝 ) is a learnable key vector asso-ciated with prompt 𝑝 . The relevance score is defined via cosine similarity: 
+
+𝑞 (𝑥, 𝜙 (𝑝 )) := ⟨𝑧 (𝑥 ), 𝜙 (𝑝 )⟩ ∥𝑧 (𝑥 )∥∥ 𝜙 (𝑝 )∥ . (6) For any input 𝑥 , we select a subset of prompts 𝑝 (𝑥 ) by retrieving the top-𝐾 matches from the available pool P:
+
+𝑝 (𝑥 ) := arg max 
+
+> R ⊆ P ,| R | =𝐾
+
+∑︁ 𝑝 ∈ R 
+
+𝑞 (𝑥, 𝜙 (𝑝 )) . (7) While soft aggregation [ 30 ] is an alternative, we focus on hard selection for clarity. 
+
+Optimization. Let L denote the prediction loss (e.g., cross-entropy). The prediction is given by b𝑦 (𝑥 ) = 𝑔 𝜓 (𝑓 𝜃 (𝑥 ) ⊕ 𝑝 (𝑥 )) , where ⊕ de-notes the prompt modulation. The prompts and the classification head 𝑔 𝜓 are updated by minimizing the empirical risk over the current task samples S𝑡 :
+
+min  
+
+> 𝑝 ∈ P , 𝜓
+
+1
+
+𝑛 𝑡 𝑛 𝑡 ∑︁ 
+
+> 𝑖 =1
+
+L( 𝑦 𝑖 , b𝑦 (𝑥 𝑖 )) . (8) Intuitively, the more frequently a prompt 𝑝 is selected via Eq. 7, the more it contributes to—and is updated by—the task loss. 
+
+Existing Strategies. Existing prompt-based CL methods generally fall into two categories based on how they manage the pool P:
+
+• Global Prompt Pool [30 , 36 ]: The pool size |P | = 𝑁 𝑝 is fixed. Prompts are initialized once (randomly or via heuris-tics) and shared across all tasks. During training, the entire Mclaughlin et al. 
+
+pool is available for selection, and updates are driven purely by the query mechanism defined above. 
+
+• Task-Specific Prompts [35 , 40 ]: A new, disjoint set of prompts P𝑡 is created for each task 𝑡 , such that P𝑡 ∩ P 𝑡 ′ = ∅
+
+for 𝑡 ≠ 𝑡 ′. During training on task 𝑡 , the search space in Eq. 7 is restricted to only the newly created prompts P𝑡 ,explicitly isolating tasks to prevent interference. 
+
+## 5 Methodology 
+
+In this work, we propose a novel adaptive routing mechanism designed to facilitate effective knowledge transfer in the presence of per-task data scarcity. Specifically, we introduce two innovative and complementary algorithmic components: (A) incremental global pooling and (B) instance-wise prompt masking . At a high-level, component (A) is used to control the routing errors in somewhat early stage of the CL procedure. In component (B), via a novel masking strategy, we essentially decompose the current task 
+
+S𝑡 into samples that can be well-explained by existing prompts and the ones that are nearly “orthogonal”. 
+
+## 5.1 Incremental Global Pooling 
+
+We maintain a global prompt pool that grows incrementally as we encounter more and more tasks. Let eP𝑡 denote the incrementally constructed pool up to task 𝑡 ,such that | eP𝑡 | ≤ | eP𝑡 ′ | for any 𝑡 ′ > 𝑡 . While the prompt indices of 
+
+eP𝑡 form a subset of eP𝑡 ′ , the prompts themselves are continuously updated, so strictly speaking eP𝑡 ⊈ eP𝑡 ′ . At the start of task 𝑡 , new prompts are incorporated, i.e., eP𝑡 = eP′  
+
+> 𝑡 −1
+
+∪ { new prompts }, where 
+
+eP′  
+
+> 𝑡 −1
+
+is the collection of updated prompts at the end (𝑡 − 1)-th task training. We initialize these new prompts to be orthogonal to the current prompt set eP′ 
+
+> 𝑡 −1
+
+, following recent practice [ 30 ]. This initialization minimizes the initial overlap between the new prompt training and past knowledge. All prompts in eP𝑡 are available for routing the samples in S𝑡 , and may possibly be updated during training. It is worth noting that, for each task 𝑡 , this algorithmic com-ponent can already substantially constrain negative interference across tasks, especially when per-task data are scarce. We study this phenomenon in Figure 3, by training an identical set of prompt parameters on ImageNet-R with various prompt selection methods using varying proportions of the training set. Despite knowledge sharing becomes a necessity when isolated task prompts lack suf-ficient samples, only in the extreme low-data regime (e.g., 1% of training data), global pooling has superior performance to task-specific learning, indicating that existing global pooling methods do not lead to successful knowledge sharing. The superior perfor-mance of our approach can be attributed to the following rationale. When 𝑡 is small, only a limited number are updated to encode task sequence relevant information in the prompt pool, leaving the ma-jority in their original state. When per-task data is scarce, even the updated prompts retain significant noise, blurring the distinction between them and the unmodified prompts. By restricting the pool size when 𝑡 is small, we increase the selection frequency of previous updated prompts, enabling the refinement of consolidated knowl-edge. By continuously introducing new prompts, fresh capacity is allocated for the novel knowledge contained in later tasks. 0.01 0.05 0.10 0.25 0.50 
+
+> Data Proportion
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> Accuracy (%)
+> 23.4
+> 46.1
+> 54.4
+> 63.1
+> 67.2
+> 23.1
+> 46.7
+> 56.3
+> 64.1
+> 68.6
+> 23.8
+> 48.0
+> 58.8
+> 64.8
+> 68.7
+> Global Pooling
+> Task-Specific
+> Incremental
+
+Figure 3: Final Average Accuracy on ImageNet-R across vary-ing training set sizes (expressed as a fraction of the full dataset). While global pooling enables effective transfer in scarce-data regimes, it suffers from interference as data avail-ability increases. Incremental expansion mitigates this by reducing routing errors in early learning stage, simultane-ously enabling the refinement of consolidated knowledge and the allocation of fresh capacity for novel knowledge. 
+
+## 5.2 Instance-Wise Prompt Masking. 
+
+Task overlap is both an enabler and a threat: it enables knowledge transfer yet, in the presence of unknown relatedness and dataset noise, it inherently risks catastrophic negative interference. We introduce a novel masking strategy that acts on each sample in the current tasks S𝑡 .Fix any arbitrary task 𝑡 . Let 𝑚 (𝑥, H𝑡 −1) ∈ { 0, 1} denote a mask-ing function that determines which subgroup of eP𝑡 one should route a input covariate 𝑥 of task S𝑡 to. Here, H𝑡 −1 denotes light-weight task summary (e.g., embedding statistics, feature covari-ances, or uncertainty measures) up to the end of the (𝑡 − 1)-th task. If 𝑚 (𝑥, H𝑡 −1) = 0, we mask away the new prompts created, restrict-ing the query-based prompt selection for sample 𝑥 to e𝑃 ′ 
+
+> 𝑡 −1
+
+; that is, we restrict the optimization in Eq. (7) from over P to over e𝑃 ′ 
+
+> 𝑡 −1
+
+. If 
+
+𝑚 (𝑥, H𝑡 −1) = 1, we we mask away existing prompts, restricting the query-based prompt selection for sample 𝑥 to new prompts. Let 
+
+P𝑡 (𝑥 ) denote the prompt pool for 𝑥 .
+
+P𝑡 (𝑥 ) =
+
+( eP′ 
+
+> 𝑡 −1
+
+, if 𝑚 (𝑥, H𝑡 −1) = 0
+
+{new prompts }, if 𝑚 (𝑥, H𝑡 −1) = 1. (9) Importantly, this masking strategy does not replace the underlying query mechanism (e.g., learnable keys), but rather filters the search space available to it. Intuitively, this instance-wise prompt can help in decomposing the current task S𝑡 into samples that can be well-explained by existing prompts and the ones that are nearly “orthogonal”. The “orthogonality” may stem from two sources: fundamental statisti-cal heterogeneity (i.e., distributional differences) and the random sampling noise. The former persists as 𝑡 increases, while the latter diminishes as more relevant samples are observed over time. Similarity-Aware Mixture-of-Experts for Data-Efficient Continual Learning 
+
+## 5.3 Masking Function Design 
+
+The effectiveness of the instance-wise prompt masking in Section 5.2 depends crucially on the design of the masking functions, which is the focus on this subsection. A poor design of 𝑚 can yield inferior overall performance compared to using incremental pooling alone. The concept of history-auxiliary sample decomposition mirrors the central challenge of out-of-distribution (OOD) detection: sam-ples well-explained by existing prompts are treated as in-distribution (ID), while those that are not are considered OOD. To implement the masking function 𝑚 , we adopt the Relative Mahalanobis Distance (RMD) [24] as the discriminative metric. 
+
+Definition 1. Let 𝑓 : X → R𝑑 be a given feature extractor. Let D = {( 𝑥 𝑖 , 𝑦 𝑖 )} 𝑛 𝑖 =1 be a given classification dataset with label set C. For each 𝑐 ∈ C , define the class-wise feature mean as 𝜇 𝑐 :=    
+
+> 1
+> | { 𝑖 ∈ [ 𝑛 ]:𝑦 𝑖 =𝑐 } |
+
+Í𝑛 𝑖 =1 𝑓 (𝑥 𝑖 )1{𝑦 𝑖 =𝑐 }. Let Σ denote the overall feature vari-ance matrix. Suppose that Σ is of full rank. The Mahalanobis distance of a given input 𝑥 to class 𝑐 is defined as MD 𝑓 𝑐 (𝑥 ) = (𝑓 (𝑥 ) − 𝜇 𝑐 ) Σ−1 (𝑓 (𝑥 ) − 𝜇 𝑐 ) .
+
+Furthermore, let MD 𝑓 𝑐 = 1    
+
+> | { 𝑖 ∈ [ 𝑛 ]:𝑦 𝑖 =𝑐 } |
+
+Í𝑛 𝑖 =1 MD 𝑓 𝑐 (𝑥 𝑖 )1{𝑦 𝑖 =𝑐 }. The Relative Mahalanobis Distance of a given 𝑥 to class 𝑐 is defined as RMD 𝑓 (𝑥 ) = min  
+
+> 𝑐 ∈ C
+
+
+
+MD 𝑓 𝑐 (𝑥 ) − MD 𝑓 𝑐 
+
+
+
+.
+
+We select RMD primarily for its state-of-the-art performance in near-OOD detection. We prioritize the near-OOD setting as it addresses the critical challenge where inputs may be perceptually similar to previous samples (potentially resulting in high query sim-ilarity), but semantically distinct [ 21 ]. This assumption is regarded as more practical for realistic open-world applications compared to 
+
+far -OOD detection (e.g., noise vs. images) [ 7]. Furthermore, RMD is highly efficient to apply within prompt-based CL, as it lever-ages the pre-computed backbone features. We discuss the specific implementation and computational details below. 
+
+Feature Statistics. In our rehearsal-free CL, dataset D is not given all at once, and cannot be stored as along the task sequence 𝔖 . To obtain 𝜇 𝑐 and Σ under this data access constraint, we maintain task summary statistics H𝑡 −1 = {H class   
+
+> 𝑡 −1
+
+, H global   
+
+> 𝑡 −1
+
+} for all tasks up to 𝑡 ,estimated in the feature space of the pre-trained model 𝑓 𝜃 .
+
+• Per-class statistics: H class   
+
+> 𝑡 −1
+
+= {( 𝜇 𝑡 −1 
+
+> 𝑐
+
+, Σ𝑡 −1 
+
+> 𝑐
+
+, 𝑛 𝑡 −1 
+
+> 𝑐
+
+, dMD 𝑓 𝜃 ,𝑡 −1 
+
+> 𝑐
+
+) :
+
+𝑐 ∈ ∪ 𝑡 −1  
+
+> 𝑟 =0
+
+C𝑟 }, where 𝜇 𝑡 −1 
+
+> 𝑐
+
+∈ R𝑑 and Σ𝑡 −1 
+
+> 𝑐
+
+∈ R𝑑 ×𝑑 denote the empirical mean and covariance of the extracted features for class 𝑐 , 𝑛 𝑐 is the total number of samples with label 𝑐 
+
+in all previous tasks, and dMD 𝑓 𝜃 ,𝑡 −1 
+
+> 𝑐
+
+is an approximation of MD 𝑓 𝜃 ,𝑡 −1 
+
+> 𝑐
+
+.
+
+• Global background statistics: H global   
+
+> 𝑡 −1
+
+= (𝜇 bg ,𝑡 −1, Σbg ,𝑡 −1),computed overall features observed so far. At the end of task 𝑡 , the per-class statistics (𝜇 𝑐 , Σ𝑐 , 𝑛 𝑐 ) and global statistics (𝜇 bg , Σbg ) are updated using extracted features from S𝑡 via standard online mean and covariance updates. The approximation 
+
+dMD 𝑓 𝜃  
+
+> 𝑐
+
+is updated as 
+
+dMD 𝑓 𝜃 ,𝑡 𝑐 = 𝑛 𝑡 −1
+
+> 𝑐
+
+𝑛 𝑡 −1 
+
+> 𝑐
+
++ Δ𝑛 𝑡 𝑐 
+
+dMD 𝑓 𝜃 ,𝑡 −1
+
+> 𝑐
+
++ 1
+
+𝑛 𝑡 −1 
+
+> 𝑐
+
++ Δ𝑛 𝑡 𝑐 𝑛 𝑡 ∑︁ 
+
+> 𝑖 =1
+
+ 𝑓 𝜃 (𝑥 𝑖 𝑡 ) − 𝜇 𝑡 𝑐 
+
+ Σ−1
+
+> bg ,𝑡
+
+ 𝑓 𝜃 (𝑥 𝑖 𝑡 ) − 𝜇 𝑡 𝑐 
+
+ ,
+
+where Δ𝑛 𝑡 𝑐 = Í𝑛 𝑡  
+
+> 𝑖 =1
+
+1{𝑦 𝑖 𝑡 =𝑐 }. In practice, the presence of noise in real-world data generally ensures that the covariance matrices Σ𝑐 
+
+and Σbg are full rank. When this assumption is violated, we apply a standard regularization technique by adding 𝜖 I with a small 𝜖 .
+
+Masking Function. 
+
+Let RMD 𝑡 (𝑥 ) := min     
+
+> 𝑐 ∈∪ 𝑡 −1
+> 𝑟 =0C𝑟
+
+
+
+MD 𝑓 𝜃 ,𝑡 −1 
+
+> 𝑐
+
+(𝑥 ) − dMD 𝑓 𝜃 ,𝑡 −1
+
+> 𝑐
+
+
+
+,
+
+where MD 𝑓 𝜃 ,𝑡 −1 
+
+> 𝑐
+
+(𝑥 ) =  𝑓 𝜃 (𝑥 ) − 𝜇 𝑡 −1
+
+> 𝑐
+
+ Σ−1 
+
+> bg ,𝑡 −1
+
+ 𝑓 𝜃 (𝑥 ) − 𝜇 𝑡 −1
+
+> 𝑐
+
+ . We pro-pose the following masking function: 
+
+𝑚 (𝑥, H class   
+
+> 𝑡 −1
+
+, H global   
+
+> 𝑡 −1
+
+) =
+
+(
+
+0, if RMD 𝑡 (𝑥 ) ≤ 𝜏 𝑡 
+
+1, if RMD 𝑡 (𝑥 ) > 𝜏 𝑡 ,
+
+where the task-specific decision threshold 𝜏 𝑡 is determined as the em-pirical 𝑞 -th quantile of this buffer: 
+
+𝜏 𝑡 = 𝑄 𝑞 ({ RMD 𝑡 ′ (𝑥 ) : 𝑥 ∈ D 𝑡 ′ , 𝑡 ′ ≤ 𝑡 }) , (10) where 𝑄 𝑞 (·) denotes the empirical 𝑞 -th quantile (e.g., 𝑞 = 0.99 ) of the given set. We empirically validate our choice of masking function com-pared with existing routing methods in Table 1, where we analyze the prompt retrieval scores for seen versus unseen task samples throughout training on ImageNet-R. To quantify the reliability of detecting genuine task shifts, we report the Area Under the Curve (AUC) metric, which measures the distributional separation be-tween the similarity scores of known tasks and those of disjoint, unseen tasks (i.e., future classes of ImageNet-R). Ideally, unseen tasks should yield distinctively lower scores, but standard query mechanisms exhibit poor separation, with AUC dropping as low as 0.6 in some settings. This indicates that similarity scores alone may be unreliable for routing samples in a global prompt pool. ImageNet-R 5-Dataset Learnable Key ([35, 36]) .602 .749 Task Centroids ([34]) .633 .698 Task Classifier ([13]) .749 .791 Online RMD (Ours) .877 .819 
+
+Table 1: Task Separability Analysis. Average AUC scores for discriminating between seen and unseen tasks. We compare our proposed method against popular query score mecha-nisms (Learnable Keys, Task Centroids, Task Classifiers) on the ImageNet-R and 5-Dataset benchmarks. Mclaughlin et al. 
+
+## 6 Experiments 6.1 Evaluation Setup 
+
+Benchmark: We evaluate our method on several standard and challenging continual learning benchmarks. Split CIFAR-100 [ 12 ]consists of 100 classes partitioned into 10 incremental tasks. Split ImageNet-R [ 25 ] contains 200 classes featuring diverse artistic ren-ditions, split into 10 tasks to test robustness against significant intra-class style variations. 5-Datasets [ 6] provides a sequence of five distinct datasets: CIFAR-10, MNIST, Fashion-MNIST, SVHN, and notMNIST, to measure performance under extreme domain shifts between tasks. As another benchmark of performance under domain shift, we include DomainNet [ 22 ], which introduces visu-ally distinct domains (e.g., Clipart, Quickdraw) sequentially. Finally, we adopt the mixed-dataset protocol from Ke et al . [8] , which we de-noted as M-EMNIST and M-CifarCeleb. These benchmarks present a sequence of both similar and dissimilar tasks, where task similar-ity is emulated by sampling data from the same “client" in datasets commonly used for federated learning. For both mixed datasets, we evaluate on a 20-task setting, with 10 similar and dissimilar tasks respectively. 
+
+Compared Methods. Our evaluation compares with five state-of-the-art prompting methods: L2P [ 36 ], DualPrompt [ 35 ], S-Prompt [ 34 ], CODA-Prompt [ 30 ], and HiDe-Prompt [ 32 ]. Following [ 32 ], we modernize the S-Prompt and use a shared classification head, denoting the resulting method as S-Prompt++. We report Final Average Accuracy (FAA), Cumulative Average Accuracy (CAA), and Final Forgetting Measure (FFM). 
+
+Implementation: Our proposed routing policy is agnostic to the underlying prompt structure (e.g., prefix-tuning vs. prompt-tuning), similarity scoring function, and auxiliary strategies beyond prompt selection while training. In our experiments, we instantiate our method using two distinct architectures: we adopt HiDe-Prompt [32 ] as our primary base recipe for main result comparisons, and utilize S-Prompt++ [ 34 ] as a simplified baseline for ablation studies (Figures 3, 5, 4). Unless otherwise specified, we follow standard protocols con-sistent with previous work [ 30 , 32 ]. We employ an ImageNet-21k pre-trained ViT-B [ 26 ] backbone optimized via Adam with a batch size of 128. We set the prompt length 𝐿 𝑝 = 5 and quantile 𝑞 = 0.95 
+
+when determining the OOD threshold. All input images are resized to 224 ×224 and normalized to [0,1]. 
+
+## 6.2 Results and Analysis 
+
+Comparative Analysis of Prompt Routing Policies. We begin by evaluating our dynamic routing policy against the two domi-nant paradigms in the literature: global pooling and task-specific allocation. Figure 4 illustrates the performance of these strategies across varying training data proportions. We first evaluate the proposed dynamic routing policy against the two predominant paradigms in prompt-based continual learn-ing: global pooling and task-specific allocation. Figure 4 illustrates the comparative performance of these strategies across varying training data proportions. Our analysis reveals that the proposed method is particularly effective in data-constrained regimes, where the choice of routing policy determines the efficiency of knowledge 0.05 0.10 0.25 0.50 0.75 1.00         
+
+> Data Proportion
+> 0
+> 20
+> 40
+> 60
+> Accuracy (%)  46.1
+> 54.4
+> 63.1
+> 67.2 68.7 69.6
+> 46.7
+> 56.3
+> 64.1
+> 68.6 70.0 70.5
+> 48.0
+> 58.8
+> 64.8
+> 68.7 69.8 70.3
+> 48.3
+> 58.8
+> 66.4
+> 70.4 71.2 71.5
+> Global Pooling
+> Task-Specific
+> Incremental
+> Incremental+Adaptive
+
+Figure 4: Impact of training data availability on routing method performance on ImageNet-R. 
+
+acquisition. In contrast, task-specific methods exhibit limited scala-bility in these settings; because parameter sets are strictly disjoint, the model is unable to exploit cross-task redundancies, necessitating a high volume of samples to optimize each new prompt. Conversely, while global-pool methods facilitate parameter sharing, the lack of structured routing results in a high degree of inter-task inter-ference and representational collapse. In the low-data regime, this interference frequently outweighs the benefits of sharing, causing global-pool methods to underperform relative to isolated baselines. The proposed adaptive routing policy circumvents this trade-off by dynamically modulating the degree of parameter sharing based on the input distribution. By selectively retrieving relevant features while isolating task-specific refinements, our method maintains the high plasticity required for data-efficient learning without the performance degradation associated with unstructured sharing. Consequently, we observe consistent improvements over baseline routing methods, with the most significant margins occurring when training data is most scarce. 
+
+Knowledge Accumulation and Reuse in Extended Task Streams. We utilize the 5-Datasets and DomainNet benchmarks (Tables 2 and 3) to evaluate model scalability over extended horizons. These datasets are representative of practical settings where the model encounters a diverse range of inputs, e.g., new classes from different datasets (5-Datasets), or shared classes across distinct visual domains (DomainNet). As shown in Table 2, our method achieves the highest Final Average Accuracy (FAA) across all task settings. While all methods experience a performance decline as the sequence length increases, the margin of our improvement grows with task length. Table 3 presents a similar trend on the DomainNet benchmark. In this setting, HiDe-Prompt obtains the best performance in the 5-task scenario where the pressure for knowledge reuse is lower. However, as the task length increases, its performance degrades more significantly compared to our approach. Overall, these results across both benchmarks support the conclu-sion that our routing mechanism facilitates more efficient training. Similarity-Aware Mixture-of-Experts for Data-Efficient Continual Learning 
+
+Table 2: Performance on 5-Datasets. We present FAA ( ↑)across different task scales (5, 10, and 15 tasks). 
+
+Method 5-Datasets 5-task 10-task 15-task L2P 81.84 78.45 75.22 DualPrompt 77.91 74.33 71.15 S-Prompt++ 86.06 82.71 79.58 CODA-Prompt 64.18 61.52 58.83 HiDe-Prompt 93.83 90.25 87.12 Ours 93.92 91.18 88.45 
+
+Table 3: Performance on DomainNet. We present FAA ( ↑)across different task scales (5, 10, and 15 tasks). 
+
+Method DomainNet 5-task 10-task 15-task L2P 69.58 66.82 64.15 DualPrompt 70.73 68.11 65.48 S-Prompt++ 72.35 69.54 66.88 CODA-Prompt 73.24 70.62 68.03 HiDe-Prompt 78.92 75.68 72.85 Ours 78.65 76.54 73.91 
+
+By accurately distinguishing between novel information and recur-ring concepts, the model effectively balances parameter isolation with knowledge reuse, leading to superior scalability over extended horizons. 
+
+Robustness on Mixed Data Streams. To further evaluate the flexibility of our routing mechanism, we utilize the mixed-dataset protocol [ 8], denoted as M-EMNIST and M-CifarCeleb. In this set-ting, the task sequence is heterogeneous: some tasks introduce entirely new classes, while others present samples from the same overall distribution as previously encountered tasks, such as hand-written samples from a previously seen author or photos of a known individual.                                            
+
+> Method M-EMNIST M-CifarCeleb FAA CA FM FAA CA FM L2P 93.12 94.50 2.11 72.44 76.88 6.40 DualPrompt 95.88 96.92 1.85 78.10 81.55 5.11 CODA-Prompt 95.50 97.10 1.90 77.65 82.40 5.45 S-Prompt++ 96.12 97.25 1.40 76.90 80.22 4.92 HiDe-Prompt 98.45 98.90 0.75 86.55 88.92 2.85 Ours 99.31 99.55 0.48 90.11 92.70 2.38
+
+Table 4: Evaluation on task sequences with a mixture of sim-ilar and dissimilar tasks. 
+
+As shown in Table 4, our method achieves state-of-the-art perfor-mance in these mixed environments. The performance gap suggests that our routing mechanism is better equipped to distinguish be-tween novelty and recurrence within the stream. Specifically, while baseline methods are typically optimized for disjoint boundaries and may treat every task as a new learning problem, our approach appears to correctly route samples from recurring distributions back to established prompts for refinement. This behavior likely prevents the parameter redundancy observed in boundary-based methods, which tend to allocate unnecessary capacity when a known concept reappears under a different task label. These results indicate that by decoupling prompt selection from the chronological task index, the model can more effectively balance the reuse of existing knowledge with the isolation of new information. 
+
+Verification on Standard Benchmarks. Finally, we evaluate our method on the standard Class-Incremental Learning (CIL) bench-marks, Split CIFAR-100 and Split ImageNet-R. In these protocols, the task sequence is strictly disjoint and sequential, with ample training data for each task. As presented in Table 5, our method achieves performance that is competitive with the current state-of-the-art HiDe-prompt. While this benchmark does not challenge the sample efficiency or mixed-sequence resilience as our previous studies, it serves as a verification for the stability of our method. 
+
+## 6.3 Ablation Experiments 
+
+To investigate the underlying mechanism driving the performance gains observed in the preceding sections, we visualize the prompt selection statistics during both training and inference in Figure 5. During training, task-specific methods exhibit a uniform distri-bution of prompt updates, as routing is determined rigidly by task ID. In contrast, global pooling baselines show sharper concentra-tion on certain prompts, while our adaptive routing demonstrates a more uniform distribution with selective peaks at earlier prompts, indicating effective knowledge reuse. At inference time, the global pooling and our proposed routing methods largely maintain their training distributions. However, task-specific allocation reveals a critical structural inefficiency: the selection frequency becomes significantly sparse, with many prompts that were uniformly updated during training now rarely retrieved for prediction. This misalignment between training and inference suggests that the value of the training samples was not fully utilized, explaining the lower parameter efficiency observed in low-data regimes. We formalize this phenomenon by defining the Usage Gap (Δusage )as the 𝐿 1 distance between the proportion of samples assigned to each prompt during training ( 𝑝 train ) and inference ( 𝑝 val ): 
+
+Δusage =
+
+> | P |
+
+∑︁ 
+
+> 𝑖 =1
+
+|𝑝 train ,𝑖 − 𝑝 val ,𝑖 |, (11) where 𝑝 ∈ [ 0, 1] | P | represents the vector of assignment propor-tions across the entire prompt set P. Task-specific methods exhibit a high Δusage , while our adaptive routing maintains the closest alignment. While global pooling achieves lower Δusage than task-specific al-location, it over-utilizes a small subset of prompts to represent data from multiple disparate tasks. This capacity collapse leads to repre-sentational interference and performance decay over long horizons, Mclaughlin et al. 
+
+Table 5: Overall performance of continual learning. We present the final average accuracy (FAA), cumulative average accuracy (CAA) and final forgetting measure (FFM) with ± standard deviation, over three runs of different random seeds and task splits. 
+
+Method Split CIFAR-100 Split ImageNet-R FAA ( ↑) CAA ( ↑) FFM ( ↓) FAA ( ↑) CAA ( ↑) FFM ( ↓)L2P 83.06 ±0.17 88.25 ±0.01 6.58 ±0.40 63.65 ±0.12 67.25 ±0.02 7.51 ±0.17 
+
+DualPrompt 86.60 ±0.19 90.64 ±0.01 4.45 ±0.16 68.79 ±0.31 71.96 ±0.04 4.49 ±0.14 
+
+S-Prompt++ 88.81 ±0.18 92.25 ±0.03 3.87 ±0.05 69.68 ±0.12 72.50 ±0.04 3.29 ±0.05 
+
+CODA-Prompt 86.94 ±0.63 91.57 ±0.75 4.04 ±0.18 70.03 ±0.47 74.26 ±0.24 5.17 ±0.22 
+
+HiDe-Prompt 92.61 ±0.28 94.03 ±0.01 3.16 ±0.10 75.06 ±0.12 76.60 ±0.01 2.17 ±0.19 
+
+Ours 92.53 ±0.22 93.80 ±0.03 3.18 ±0.12 75.10 ±0.15 78.19 ±0.02 2.15 ±0.17 P0 P1 P2 P3 P4 P5 P6 P7 P8 P9 
+
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> Prompt Usage Proportion
+
+Training-Time Prompt 
+
+Usage on ImageNet-R 
+
+Method (Usage Gap) 
+
+> Global Pooling
+> (Gap: 0.292)
+> Task Specific
+> (Gap: 0.785)
+> Incremental
+> (Gap: 0.227)
+> Incremental+Adaptive
+> (Gap: 0.213)
+
+P0 P1 P2 P3 P4 P5 P6 P7 P8 P9 
+
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> 0.40
+> Prompt Usage Proportion
+
+Inference-Time Prompt 
+
+Usage on ImageNet-R 
+
+Method (Usage Gap) 
+
+> Global Pooling
+> (Gap: 0.292)
+> Task Specific
+> (Gap: 0.785)
+> Incremental
+> (Gap: 0.227)
+> Incremental+Adaptive
+> (Gap: 0.213)
+
+Figure 5: Comparison of prompt allocation during training (top) and inference time (bottom) on ImageNet-R (10-Tasks). 
+
+particularly when task heterogeneity is high. Our adaptive rout-ing avoids both extremes: it maintains alignment between training and inference while distributing capacity to prevent interference, ensuring that the model’s learned representations remain both ac-cessible and task-appropriate. This structural efficiency drives the improvements in scalability and robustness demonstrated across the previous experiments. 
+
+## 7 Conclusion 
+
+In this work, we addressed the challenges of Continual Learning under per-task data scarcity and unstructured task overlap. We investigated the inherent trade-offs between global pooling and task-specific training, specifically the delicate balance between facilitating knowledge sharing and avoiding inter-task interference. To navigate this, we developed an adaptive mixture-of-experts framework based on incremental global pooling with instance-wise prompt masking. Our empirical evaluation demonstrates that this approach yields consistent improvements over state-of-the-art baselines, partic-ularly in low-data regimes, extended task streams, and scenar-ios involving a complex mixture of similar and dissimilar tasks. These results indicate the efficacy of knowledge sharing with out-of-distribution awareness for efficient continual learning. Future work could investigate alternative OOD detection mech-anisms tailored for continual streams or explore tighter integration of distribution-aware metrics directly into the query-key matching process to further refine parameter efficiency. 
+
+## References                    
+
+> [1] Rahaf Aljundi, Min Lin, Baptiste Goujaud, and Yoshua Bengio. 2018. Mem-ory aware synapses: Learning what (not) to forget. In European Conference on Computer Vision . Springer, 139–154. [2] Pietro Buzzega, Matteo Boschini, Angelo Porrello, Davide Abati, and Simone Calderara. 2020. Dark experience for general continual learning. In Advances in Neural Information Processing Systems (NeurIPS) .[3] Arslan Chaudhry, Marcus Rohrbach, Mohamed Elhoseiny, Thalaiyasingam Ajan-than, Puneet K Dokania, Philip HS Torr, and Marc’Aurelio Ranzato. 2019. Efficient lifelong learning with AGEM. In International Conference on Learning Represen-tations (ICLR) .[4] Matthias De Lange, Rahaf Aljundi, Marc Masana, Sarah Parisot, Xu Jia, Aleš Leonardis, Gregory Slabaugh, and Tinne Tuytelaars. 2021. A continual learning survey: Defying forgetting in classification tasks. IEEE transactions on pattern analysis and machine intelligence 44, 7 (2021), 3366–3385. [5] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xi-aohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, et al .2020. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 (2020). [6] Sayna Ebrahimi, Franziska Franzese, Catherine Yates, Christopher Frederickson, and Trevor Darrell. 2020. Adversarial continual learning. In European Conference on Computer Vision . Springer, 120–135. [7] Stanislav Fort, Jie Ren, and Balaji Lakshminarayanan. 2021. Exploring the limits of out-of-distribution detection. Advances in neural information processing systems
+> 34 (2021), 7068–7081.
+
+Similarity-Aware Mixture-of-Experts for Data-Efficient Continual Learning 
+
+[8] Zixuan Ke, Bing Liu, Hu Xu, and Lei Shu. 2021. Continual Learning of a Mixed Se-quence of Similar and Dissimilar Tasks. In Proc. Neural Inf. Process. Syst. (NeurIPS) .[9] Gyuhak Kim, Sepideh Esmaeilpour, Changnan Xiao, and Bing Liu. 2022. Con-tinual learning based on ood detection and task masking. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 3856–3866. [10] Gyuhak Kim, Changnan Xiao, Tatsuya Konishi, Zixuan Ke, and Bing Liu. 2025. Open-world continual learning: Unifying novelty detection and continual learn-ing. Artificial Intelligence 338 (2025), 104237. [11] James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al . 2017. Overcoming catastrophic forgetting in neural networks. Proceedings of the National Academy of Sciences 114, 13 (2017), 3521– 3526. [12] Alex Krizhevsky, Geoffrey Hinton, et al . 2009. Learning multiple layers of features from tiny images. (2009). [13] Minh Le, An Nguyen, Huy Nguyen, Trang Nguyen, Trang Pham, Linh Van Ngo, and Nhat Ho. 2025. Mixture of Experts Meets Prompt-Based Continual Learning. arXiv:2405.14124 [cs.LG] https://arxiv.org/abs/2405.14124 [14] Brian Lester, Rami Al-Rfou, and Noah Constant. 2021. The power of scale for parameter-efficient prompt tuning. arXiv preprint arXiv:2104.08691 (2021). [15] Xiang Lisa Li and Percy Liang. 2021. Prefix-tuning: Optimizing continuous prompts for generation. arXiv preprint arXiv:2101.00190 (2021). [16] Zhizhong Li and Derek Hoiem. 2016. Learning without forgetting. In European Conference on Computer Vision . Springer, 614–629. [17] David Lopez-Paz and Marc-Aurelio Ranzato. 2017. Gradient episodic memory for continual learning. In Advances in Neural Information Processing Systems .6467–6476. [18] Arun Mallya, Dillon Davis, and Svetlana Lazebnik. 2018. Piggyback: Adapting a single network to multiple tasks by learning to mask weights. In Proceedings of the European Conference on Computer Vision (ECCV) . 67–82. [19] Arun Mallya and Svetlana Lazebnik. 2018. PackNet: Adding multiple tasks to a single network by iterative pruning. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition . 7765–7773. [20] Michael McCloskey and Neal J Cohen. 1989. Catastrophic interference in con-nectionist networks: The sequential learning problem. In Psychology of learning and motivation . Vol. 24. Elsevier, 109–165. [21] Jishnu Mukhoti, Tsung-Yu Lin, Bor-Chun Chen, Ashish Shah, Philip HS Torr, Puneet K Dokania, and Ser-Nam Lim. 2023. Raising the bar on the evaluation of out-of-distribution detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 4365–4375. [22] Xingchao Peng, Qinxun Bai, Xide Xia, Zijun Huang, Kate Saenko, and Bo Wang. 2019. Moment matching for multi-source domain adaptation. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 1406–1415. [23] Sylvestre-Alvise Rebuffi, Alexander Kolesnikov, Georg Sperl, and Christoph H Lampert. 2017. iCaRL: Incremental classifier and representation learning. In 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition .2001–2010. [24] Jie Ren, Stanislav Fort, Jeremiah Liu, Abhijit Guha Roy, Shreyas Padhy, and Balaji Lakshminarayanan. 2021. A Simple Fix to Mahalanobis Distance for Improving Near-OOD Detection. arXiv:2106.09022 [cs.LG] https://arxiv.org/abs/2106.09022 [25] Tal Ridnik, Emanuel Ben-Baruch, Asaf Noy, and Lihi Zelnik-Manor. 2021. Imagenet-21k pretraining for the masses. In Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks .[26] Tal Ridnik, Emanuel Ben-Baruch, Asaf Noy, and Lihi Zelnik-Manor. 2021. Imagenet-21k pretraining for the masses. arXiv preprint arXiv:2104.10972 (2021). [27] Andrei A Rusu, Neil C Rabinowitz, Guillaume Desjardins, Hubert Soyer, James Kirkpatrick, Koray Kavukcuoglu, Razvan Pascanu, and Raia Hadsell. 2016. Pro-gressive neural networks. In arXiv preprint arXiv:1606.04671 .[28] Joan Serra, Didac Suris, Marius Miron, and Alexandros Karatzoglou. 2018. Over-coming catastrophic forgetting with hard attention to the task. In Proceedings of the 35th International Conference on Machine Learning . PMLR, 4548–4557. [29] Haizhou Shi, Zihao Xu, Hengyi Wang, Weiyi Qin, Wenyuan Wang, Yibin Wang, Zifeng Wang, Sayna Ebrahimi, and Hao Wang. 2025. Continual learning of large language models: A comprehensive survey. Comput. Surveys 58, 5 (2025), 1–42. [30] Kevin Smith, Daniel Ho, Aniruddha Gupta, Arun Ahuja, Dilip Krishnan, Pieter Abbeel, and Judy Hoffman. 2022. CODA-Prompt: COntinual Decomposed Attention-based Prompting for Rehearsal-Free Continual Learning. arXiv preprint arXiv:2211.13218 (2022). [31] Eli Verwimp, Matthias De Lange, and Tinne Tuytelaars. 2021. Rehearsal revealed: The limits and merits of revisiting samples in continual learning. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 9385–9394. [32] Liyuan Wang, Jingyi Xie, Xingxing Zhang, Mingyi Huang, Hang Su, and Jun Zhu. 2023. Hierarchical decomposition of prompt-based continual learning: Rethinking obscured sub-optimality. Advances in Neural Information Processing Systems 36 (2023), 69054–69076. [33] Liyuan Wang, Xingxing Zhang, Hang Su, and Jun Zhu. 2024. A comprehensive survey of continual learning: Theory, method and application. IEEE transactions on pattern analysis and machine intelligence 46, 8 (2024), 5362–5383. [34] Yabin Wang, Zhiwu Huang, and Xiaopeng Hong. 2022. S-prompts learning with pre-trained transformers: An occam’s razor for domain incremental learning. 
+
+Advances in Neural Information Processing Systems 35 (2022), 5682–5695. [35] Zifeng Wang, Zizhao Zhang, Chen-Yu Lee, Judy Hoffman Lee, Taylor Mordan, Gavin Roeder, Eric Li, Tong Wang, Qihang Yu, Yifan Zhan, et al . 2022. Du-alPrompt: Complementary Prompting for Rehearsal-Free Continual Learning. 
+
+arXiv preprint arXiv:2204.04799 (2022). [36] Zifeng Wang, Zizhao Zhang, Chen-Yu Lee, Han Zhang, Ruoxi Sun, Xiaoqi Ren, Guolong Su, Vincent Perot, Jennifer Dy, and Tomas Pfister. 2022. Learning to Prompt for Continual Learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 139–149. [37] Mitchell Wortsman, Vivek Ramanujan, Chawin Liu, Aniruddha Kembhavi, Mo-hammad Rastegari, and Ali Farhadi. 2020. Supermasks in Superposition. In 
+
+Advances in Neural Information Processing Systems , Vol. 33. 15173–15184. [38] Jaehong Yoon, Divyam Madaan, Eunho Yang, and Sung Ju Hwang. 2021. On-line coreset selection for rehearsal-based continual learning. arXiv preprint arXiv:2106.01085 (2021). [39] Friedemann Zenke, Ben Poole, and Surya Ganguli. 2017. Continual learning through synaptic intelligence. In Proceedings of the 34th International Conference on Machine Learning-Volume 70 . JMLR. org, 3987–3995. [40] Yaqian Zhang, Bernhard Pfahringer, Eibe Frank, Albert Bifet, Nick Jin Sean Lim, and Yunzhe Jia. 2022. A simple but strong baseline for online continual learn-ing: Repeated augmented rehearsal. Advances in Neural Information Processing Systems 35 (2022), 14771–14783. [41] Yujun Zhao, Yixiao Li, Zifeng Wang, Tong Wang, Qihang Yu, Yifan Zhan, et al .2024. Consistent Prompting for Compositional Zero-Shot Learning. arXiv preprint arXiv:2403.08568 (2024).

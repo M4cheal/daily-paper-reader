@@ -6,65 +6,64 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-25
-- 运行时间：2026-03-25 20:15:39 UTC
+- 最新运行日期：2026-03-26
+- 运行时间：2026-03-26 20:07:32 UTC
 - 运行状态：成功
-- 本次总论文数：15
+- 本次总论文数：14
 - 精读区：4
-- 速读区：11
+- 速读区：10
 
 ### 今日简报（AI）
-今日深度解析 15 篇前沿论文，重点突破了视频表情识别的测试时自适应与离线强化学习中的
-- 详情：[/202603/25/README](/202603/25/README)
+今日精选 14 篇前沿论文，深度聚焦点云分析适配与视觉-语言-动作（VLA）模型的鲁棒性突破。
+重点关注多模态贝叶斯分布学习对点云识别的提升，以及 SOMA 系统如何通过记忆增强大幅强化 VLA 模型的上下文自适应能力。
+建议优先研读两篇满分论文，掌握多模态融合与模型在线演进的最新范式。
+- 详情：[/202603/26/README](/202603/26/README)
 
 ### 精读区论文标签
-1. [Test-Time Adaptation via Cache Personalization for Facial Expression Recognition in Videos](/202603/25/2603.21309v2-test-time-adaptation-via-cache-personalization-for-facial-expression-recognition-in-videos)  
+1. [Adapting Point Cloud Analysis via Multimodal Bayesian Distribution Learning](/202603/26/2603.22070v2-adapting-point-cloud-analysis-via-multimodal-bayesian-distribution-learning)  
    标签：评分：10.0/10、query:tta
-   evidence：针对视觉语言模型（VLM）提出了一种无梯度的测试时间自适应方法。
-2. [Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning](/202603/25/2603.22430v1-model-predictive-control-with-differentiable-world-models-for-offline-reinforcement-learning)  
-   标签：评分：9.0/10、query:tta
-   evidence：强化学习中世界模型的推理时自适应框架
-3. [VP-VLA: Visual Prompting as an Interface for Vision-Language-Action Models](/202603/25/2603.22003v1-vp-vla-visual-prompting-as-an-interface-for-vision-language-action-models)  
+   evidence：多模态3D视觉语言模型的测试时间自适应
+2. [SOMA: Strategic Orchestration and Memory-Augmented System for Vision-Language-Action Model Robustness via In-Context Adaptation](/202603/26/2603.24060v1-soma-strategic-orchestration-and-memory-augmented-system-for-vision-language-action-model-robustness-via-in-context-adaptation)  
+   标签：评分：10.0/10、query:tta
+   evidence：视觉-语言-动作模型的上下文自适应以增强鲁棒性
+3. [Tiny Inference-Time Scaling with Latent Verifiers](/202603/26/2603.22492v2-tiny-inference-time-scaling-with-latent-verifiers)  
    标签：评分：8.0/10、query:tta
-   evidence：提高VLA模型在分布外场景下的鲁棒性
-4. [Stability-Preserving Online Adaptation of Neural Closed-loop Maps](/202603/25/2603.22469v1-stability-preserving-online-adaptation-of-neural-closed-loop-maps)  
+   evidence：多模态模型的推理时缩放
+4. [Dual-Teacher Distillation with Subnetwork Rectification for Black-Box Domain Adaptation](/202603/26/2603.22908v2-dual-teacher-distillation-with-subnetwork-rectification-for-black-box-domain-adaptation)  
    标签：评分：8.0/10、query:tta
-   evidence：神经网络控制器的稳定性保持在线自适应机制
+   evidence：利用视觉语言模型进行黑盒领域自适应
 
 ### 速读区论文标签
-1. [Visual Set Program Synthesizer](/202603/25/2603.15997v1-visual-set-program-synthesizer)  
+1. [StreamingEval: A Unified Evaluation Protocol towards Realistic Streaming Video Understanding](/202603/26/2603.21493v1-streamingeval-a-unified-evaluation-protocol-towards-realistic-streaming-video-understanding)  
    标签：评分：7.0/10、query:tta
-   evidence：用于集合视觉问答的视觉程序合成
-2. [SARE: Sample-wise Adaptive Reasoning for Training-free Fine-grained Visual Recognition](/202603/25/2603.17729v2-sare-sample-wise-adaptive-reasoning-for-training-free-fine-grained-visual-recognition)  
+   evidence：在现实流式限制下评估在线视频模型
+2. [A Foundation Model for Instruction-Conditioned In-Context Time Series Tasks](/202603/26/2603.22586v1-a-foundation-model-for-instruction-conditioned-in-context-time-series-tasks)  
    标签：评分：7.0/10、query:tta
-   evidence：针对免训练多模态模型的样本级自适应推理
-3. [EVA: Aligning Video World Models with Executable Robot Actions via Inverse Dynamics Rewards](/202603/25/2603.17808v2-eva-aligning-video-world-models-with-executable-robot-actions-via-inverse-dynamics-rewards)  
+   evidence：通过条件化示例在推理时进行自适应
+3. [Dual-Teacher Distillation with Subnetwork Rectification for Black-Box Domain Adaptation](/202603/26/2603.22908v1-dual-teacher-distillation-with-subnetwork-rectification-for-black-box-domain-adaptation)  
    标签：评分：7.0/10、query:tta
-   evidence：针对视频世界模型可执行性差距的推理阶段缓解技术
-4. [CoVFT: Context-aware Visual Fine-tuning for Multimodal Large Language Models](/202603/25/2603.21077v1-covft-context-aware-visual-fine-tuning-for-multimodal-large-language-models)  
-   标签：评分：7.0/10、query:tta
-   evidence：多模态大语言模型 (MLLM) 的视觉微调与适配
-5. [DualCoT-VLA: Visual-Linguistic Chain of Thought via Parallel Reasoning for Vision-Language-Action Models](/202603/25/2603.22280v1-dualcot-vla-visual-linguistic-chain-of-thought-via-parallel-reasoning-for-vision-language-action-models)  
-   标签：评分：7.0/10、query:tta
-   evidence：视觉-语言-动作（VLA）模型的思维链推理
-6. [Tiny Inference-Time Scaling with Latent Verifiers](/202603/25/2603.22492v1-tiny-inference-time-scaling-with-latent-verifiers)  
-   标签：评分：7.0/10、query:tta
-   evidence：多模态生成模型的推理时缩放
-7. [Lightweight Adaptation for LLM-based Technical Service Agent: Latent Logic Augmentation and Robust Noise Reduction](/202603/25/2603.18074v1-lightweight-adaptation-for-llm-based-technical-service-agent-latent-logic-augmentation-and-robust-noise-reduction)  
+   evidence：利用视觉语言模型先验的黑盒领域自适应
+4. [PromptHub: Enhancing Multi-Prompt Visual In-Context Learning with Locality-Aware Fusion, Concentration and Alignment](/202603/26/2603.18891v1-prompthub-enhancing-multi-prompt-visual-in-context-learning-with-locality-aware-fusion-concentration-and-alignment)  
    标签：评分：6.0/10、query:tta
-   evidence：用于内化潜在决策动态的轻量级自适应框架
-8. [Mitigating Shortcut Reasoning in Language Models: A Gradient-Aware Training Approach](/202603/25/2603.20899v1-mitigating-shortcut-reasoning-in-language-models-a-gradient-aware-training-approach)  
+   evidence：用于任务完成的视觉上下文学习
+5. [From Inference Efficiency to Embodied Efficiency: Revisiting Efficiency Metrics for Vision-Language-Action Models](/202603/26/2603.19131v1-from-inference-efficiency-to-embodied-efficiency-revisiting-efficiency-metrics-for-vision-language-action-models)  
    标签：评分：6.0/10、query:tta
-   evidence：通过梯度感知训练提高分布偏移下的泛化能力
-9. [ResPrune: Text-Conditioned Subspace Reconstruction for Visual Token Pruning in Large Vision-Language Models](/202603/25/2603.21105v1-resprune-text-conditioned-subspace-reconstruction-for-visual-token-pruning-in-large-vision-language-models)  
+   evidence：机器人执行中VLA模型的效率指标与自适应策略
+6. [Compensating Visual Insufficiency with Stratified Language Guidance for Long-Tail Class Incremental Learning](/202603/26/2603.21708v1-compensating-visual-insufficiency-with-stratified-language-guidance-for-long-tail-class-incremental-learning)  
    标签：评分：6.0/10、query:tta
-   evidence：用于高效LVLM推理的免训练视觉令牌剪枝
-10. [CVT-Bench: Counterfactual Viewpoint Transformations Reveal Unstable Spatial Representations in Multimodal LLMs](/202603/25/2603.21114v1-cvt-bench-counterfactual-viewpoint-transformations-reveal-unstable-spatial-representations-in-multimodal-llms)  
+   evidence：演化分布下增量学习的自适应语言引导
+7. [Similarity-Aware Mixture-of-Experts for Data-Efficient Continual Learning](/202603/26/2603.23436v1-similarity-aware-mixture-of-experts-for-data-efficient-continual-learning)  
    标签：评分：6.0/10、query:tta
-   evidence：多模态大语言模型中空间表示的稳定性分析
-11. [CurvZO: Adaptive Curvature-Guided Sparse Zeroth-Order Optimization for Efficient LLM Fine-Tuning](/202603/25/2603.21725v1-curvzo-adaptive-curvature-guided-sparse-zeroth-order-optimization-for-efficient-llm-fine-tuning)  
+   evidence：模型部署后对新数据的持续自适应
+8. [VISion On Request: Enhanced VLLM efficiency with sparse, dynamically selected, vision-language interactions](/202603/26/2603.23495v1-vision-on-request-enhanced-vllm-efficiency-with-sparse-dynamically-selected-vision-language-interactions)  
    标签：评分：6.0/10、query:tta
-   evidence：用于高效大语言模型微调的自适应曲率指导优化
+   evidence：推理过程中的动态视觉语言交互
+9. [SCoOP: Semantic Consistent Opinion Pooling for Uncertainty Quantification in Multiple Vision-Language Model Systems](/202603/26/2603.23853v1-scoop-semantic-consistent-opinion-pooling-for-uncertainty-quantification-in-multiple-vision-language-model-systems)  
+   标签：评分：6.0/10、query:tta
+   evidence：多VLM系统的无需训练不确定性量化，以增强鲁棒性
+10. [Attention-aware Inference Optimizations for Large Vision-Language Models with Memory-efficient Decoding](/202603/26/2603.23914v1-attention-aware-inference-optimizations-for-large-vision-language-models-with-memory-efficient-decoding)  
+   标签：评分：6.0/10、query:tta
+   evidence：大型视觉语言模型的推理时间优化
 
 
 <div class="dpr-home-promo-card">
