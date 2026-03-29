@@ -6,58 +6,66 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-28
-- 运行时间：2026-03-28 19:39:46 UTC
+- 最新运行日期：2026-03-29
+- 运行时间：2026-03-29 19:39:17 UTC
 - 运行状态：成功
-- 本次总论文数：12
-- 精读区：1
+- 本次总论文数：15
+- 精读区：4
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 12 篇前沿成果，重点攻克通用机器学习理论框架与多模态视频理解难题。
-核心推荐评分 8.0 的跨范式学习理论，以及利用曲率感知内存优化 MLLM 流式视频处理的新技术。
-建议优先研读通用学习理论以把握底层逻辑，并关注如何通过 RAG 交互精准建模用户偏好。
-- 详情：[/202603/28/README](/202603/28/README)
+今日深度解析 15 篇前沿成果，重点突破了跨主体脑电图像检索与机器人零样本高效导航。
+核心看
+- 详情：[/202603/29/README](/202603/29/README)
 
 ### 精读区论文标签
-1. [General Machine Learning: Theory for Learning Under Variable Regimes](/202603/28/2603.23220v1-general-machine-learning-theory-for-learning-under-variable-regimes)  
+1. [SATTC: Structure-Aware Label-Free Test-Time Calibration for Cross-Subject EEG-to-Image Retrieval](/202603/29/2603.20738v1-sattc-structure-aware-label-free-test-time-calibration-for-cross-subject-eeg-to-image-retrieval)  
+   标签：评分：9.0/10、query:tta
+   evidence：针对受试者偏移的无标签测试时间校准
+2. [CATNAV: Cached Vision-Language Traversability for Efficient Zero-Shot Robot Navigation](/202603/29/2603.22800v1-catnav-cached-vision-language-traversability-for-efficient-zero-shot-robot-navigation)  
    标签：评分：8.0/10、query:tta
-   evidence：变动机制和演化条件下学习的理论框架
+   evidence：利用多模态LLM和视觉语义缓存实现零样本机器人导航
+3. [Experiential Reflective Learning for Self-Improving LLM Agents](/202603/29/2603.24639v1-experiential-reflective-learning-for-self-improving-llm-agents)  
+   标签：评分：8.0/10、query:tta
+   evidence：测试时启发式检索用于环境自适应
+4. [LaMP: Learning Vision-Language-Action Policies with 3D Scene Flow as Latent Motion Prior](/202603/29/2603.25399v1-lamp-learning-vision-language-action-policies-with-3d-scene-flow-as-latent-motion-prior)  
+   标签：评分：8.0/10、query:tta
+   evidence：用于机器人操作的视觉-语言-动作框架
 
 ### 速读区论文标签
-1. [CurveStream: Boosting Streaming Video Understanding in MLLMs via Curvature-Aware Hierarchical Visual Memory Management](/202603/28/2603.19571v1-curvestream-boosting-streaming-video-understanding-in-mllms-via-curvature-aware-hierarchical-visual-memory-management)  
+1. [PAVE: Premise-Aware Validation and Editing for Retrieval-Augmented LLMs](/202603/29/2603.20673v1-pave-premise-aware-validation-and-editing-for-retrieval-augmented-llms)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态大模型中的流式视频理解
-2. [A Federated Many-to-One Hopfield model for associative Neural Networks](/202603/28/2603.19902v1-a-federated-many-to-one-hopfield-model-for-associative-neural-networks)  
+   evidence：证据驱动问答的推理阶段验证层
+2. [SLARM: Streaming and Language-Aligned Reconstruction Model for Dynamic Scenes](/202603/29/2603.22893v3-slarm-streaming-and-language-aligned-reconstruction-model-for-dynamic-scenes)  
    标签：评分：7.0/10、query:tta
-   evidence：流式分布偏移和客户端异构下的联邦学习
-3. [User Preference Modeling for Conversational LLM Agents: Weak Rewards from Retrieval-Augmented Interaction](/202603/28/2603.20939v1-user-preference-modeling-for-conversational-llm-agents-weak-rewards-from-retrieval-augmented-interaction)  
+   evidence：动态场景的实时流式推理
+3. [Memory-Augmented Vision-Language Agents for Persistent and Semantically Consistent Object Captioning](/202603/29/2603.24257v1-memory-augmented-vision-language-agents-for-persistent-and-semantically-consistent-object-captioning)  
    标签：评分：7.0/10、query:tta
-   evidence：无需微调的在线向量更新实现个性化
-4. [When Models Judge Themselves: Unsupervised Self-Evolution for Multimodal Reasoning](/202603/28/2603.21289v1-when-models-judge-themselves-unsupervised-self-evolution-for-multimodal-reasoning)  
+   evidence：用于维持跨时间语义一致性的记忆增强智能体
+4. [UniICL: Systematizing Unified Multimodal In-context Learning through a Capability-Oriented Taxonomy](/202603/29/2603.24690v1-uniicl-systematizing-unified-multimodal-in-context-learning-through-a-capability-oriented-taxonomy)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态推理的无监督自我进化，无需人工标注答案
-5. [ROM: Real-time Overthinking Mitigation via Streaming Detection and Intervention](/202603/28/2603.22016v1-rom-real-time-overthinking-mitigation-via-streaming-detection-and-intervention)  
-   标签：评分：7.0/10、query:tta
-   evidence：用于实时缓解的流式预测与控制
-6. [Unlocking Few-Shot Capabilities in LVLMs via Prompt Conditioning and Head Selection](/202603/28/2603.24181v1-unlocking-few-shot-capabilities-in-lvlms-via-prompt-conditioning-and-head-selection)  
-   标签：评分：7.0/10、query:tta
-   evidence：在推理阶段使用提示调节来提高视觉特征类别的可分离性
-7. [Beyond Attention Magnitude: Leveraging Inter-layer Rank Consistency for Efficient Vision-Language-Action Models](/202603/28/2603.24941v1-beyond-attention-magnitude-leveraging-inter-layer-rank-consistency-for-efficient-vision-language-action-models)  
-   标签：评分：7.0/10、query:tta
-   evidence：视觉-语言-动作模型的动态令牌选择
-8. [MMaDA-VLA: Large Diffusion Vision-Language-Action Model with Unified Multi-Modal Instruction and Generation](/202603/28/2603.25406v1-mmada-vla-large-diffusion-vision-language-action-model-with-unified-multi-modal-instruction-and-generation)  
-   标签：评分：7.0/10、query:tta
-   evidence：用于机器人控制的原生扩散视觉-语言-动作模型
-9. [The Workload-Router-Pool Architecture for LLM Inference Optimization: A Vision Paper from the vLLM Semantic Router Project](/202603/28/2603.21354v1-the-workload-router-pool-architecture-for-llm-inference-optimization-a-vision-paper-from-the-vllm-semantic-router-project)  
+   evidence：多模态模型中通过示例实现的免训练自适应
+5. [Predictive Regularization Against Visual Representation Degradation in Multimodal Large Language Models](/202603/29/2603.20808v1-predictive-regularization-against-visual-representation-degradation-in-multimodal-large-language-models)  
    标签：评分：6.0/10、query:tta
-   evidence：多模态智能体基于用户反馈的路由自适应
-10. [StateLinFormer: Stateful Training Enhancing Long-term Memory in Navigation](/202603/28/2603.23571v1-statelinformer-stateful-training-enhancing-long-term-memory-in-navigation)  
+   evidence：多模态大模型中的视觉表示退化
+6. [Compass: Optimizing Compound AI Workflows for Dynamic Adaptation](/202603/29/2603.20821v1-compass-optimizing-compound-ai-workflows-for-dynamic-adaptation)  
    标签：评分：6.0/10、query:tta
-   evidence：导航智能中的持续自适应与长期记忆
-11. [Heuristic Self-Paced Learning for Domain Adaptive Semantic Segmentation under Adverse Conditions](/202603/28/2603.24322v1-heuristic-self-paced-learning-for-domain-adaptive-semantic-segmentation-under-adverse-conditions)  
+   evidence：AI 工作流在不同负载下的动态自适应
+7. [Causally-Guided Diffusion for Stable Feature Selection](/202603/29/2603.20930v1-causally-guided-diffusion-for-stable-feature-selection)  
    标签：评分：6.0/10、query:tta
-   evidence：恶劣条件下语义分割的无监督领域自适应
+   evidence：分布偏移下的稳定性分析与鲁棒特征选择
+8. [When Models Judge Themselves: Unsupervised Self-Evolution for Multimodal Reasoning](/202603/29/2603.21289v2-when-models-judge-themselves-unsupervised-self-evolution-for-multimodal-reasoning)  
+   标签：评分：6.0/10、query:tta
+   evidence：多模态推理模型的无监督自我演化
+9. [IGV-RRT: Prior-Real-Time Observation Fusion for Active Object Search in Changing Environments](/202603/29/2603.21887v1-igv-rrt-prior-real-time-observation-fusion-for-active-object-search-in-changing-environments)  
+   标签：评分：6.0/10、query:tta
+   evidence：来自视觉语言模型的在线目标相关性估计
+10. [TorR: Towards Brain-Inspired Task-Oriented Reasoning via Cache-Oriented Algorithm-Architecture Co-design](/202603/29/2603.22855v1-torr-towards-brain-inspired-task-oriented-reasoning-via-cache-oriented-algorithm-architecture-co-design)  
+   标签：评分：6.0/10、query:tta
+   evidence：利用时间相干性和查询缓存实现实时边缘部署
+11. [OccAny: Generalized Unconstrained Urban 3D Occupancy](/202603/29/2603.23502v1-occany-generalized-unconstrained-urban-3d-occupancy)  
+   标签：评分：6.0/10、query:tta
+   evidence：针对城市场景的自适应以及3D占据预测的域外泛化
 
 
 <div class="dpr-home-promo-card">

@@ -1,0 +1,371 @@
+Title: SATTC: Structure-Aware Label-Free Test-Time Calibration for Cross-Subject EEG-to-Image Retrieval
+
+URL Source: https://arxiv.org/pdf/2603.20738v1
+
+Published Time: Tue, 24 Mar 2026 00:40:32 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# SATTC: Structure-Aware Label-Free Test-Time Calibration for Cross-Subject EEG-to-Image Retrieval 
+
+## Qunjie Huang Yunnan University, China 
+
+huangqunjie@stu.ynu.edu.cn 
+
+## Weina Zhu *
+
+## Yunnan University, China 
+
+zhuweina@ynu.edu.cn 
+
+## Abstract 
+
+Cross-subject EEG-to-image retrieval for visual decoding is challenged by subject shift and hubness in the embedding space, which distort similarity geometry and destabilize top-k rankings, making small-k shortlists unreliable. We in-troduce SATTC (Structure-Aware Test-Time Calibration), a label-free calibration head that operates directly on the sim-ilarity matrix of frozen EEG and image encoders. SATTC combines a geometric expert—subject-adaptive whitening of EEG embeddings with an adaptive variant of Cross-domain Similarity Local Scaling (CSLS)—and a struc-tural expert built from mutual nearest neighbors, bidirec-tional top-k ranks, and class popularity, fused via a sim-ple Product-of-Experts rule. On THINGS-EEG under a strict leave-one-subject-out protocol, standardized infer-ence with cosine similarities, ℓ2-normalized embeddings, and candidate whitening already yields a strong cross-subject baseline over the original ATM retrieval setup. Building on this baseline, SATTC further improves Top-1 and Top-5 accuracy, reduces hubness and per-class imbal-ance, and produces more reliable small-k shortlists. These gains transfer across multiple EEG encoders, supporting SATTC as an encoder-agnostic, label-free test-time cali-bration layer for cross-subject neural decoding. Code is available at https://github.com/QunjieHuang/ SATTC-CVPR2026 
+
+## 1. Introduction 
+
+Decoding visual perception from brain activity is a long-standing goal in neuroscience and machine learning. Non-invasive electroencephalography (EEG) is particularly at-tractive because it is portable, relatively low-cost, and of-fers millisecond temporal resolution. Building on these advantages, recent work has demonstrated EEG-based vi-sual classification, zero-shot EEG-to-image retrieval, and image reconstruction with diffusion models [13, 22, 24]. 
+
+> *
+
+Corresponding author. hub 
+
+> classes
+
+Encoder       
+
+> Cross -subject EEG -to -image retrieval under LOSO; test -time unlabeled; encoders frozen
+> Unseen test
+> subject A/B/C …
+> Candidate
+> images new S
+> hub -dominated,
+> unstable Top -k
+> Baseline
+> SATTC
+> SAW (subj. -adaptive whitening)
+> Ada -CSLS (geometric expert)
+> Struct. expert (MNN & hubness)
+> PoE fusion
+> Calibrated
+> Shortlist
+> Frozen EEG/Image
+> Encoders
+> Structure -Aware Test -Time Calibration Framework
+> (SATTC ,ours )iq-Top k candidates
+> Multiple top -k entries correspond
+> to the same hub class ||||
+
+Figure 1. Overview of cross-subject EEG-to-image retrieval un-der leave-one-subject-out (LOSO) evaluation and the proposed SATTC (Structure-Aware Test-Time Calibration) head. Frozen EEG and image encoders produce a similarity matrix whose base-line top-k shortlist is hub-dominated; SATTC performs subject-adaptive whitening, adaptive CSLS, and a structural expert with product-of-experts (PoE) fusion to yield calibrated top-k candi-dates in a label-free test-time setting. 
+
+In EEG-to-image retrieval, an EEG signal is mapped into a joint embedding space and used to retrieve its nearest image neighbors. With the growing availability of large-scale EEG-image benchmarks and powerful cross-modal encoders [17], EEG-to-image retrieval pipelines can now be evaluated at scale, yet a central question emerges: how can we reliably retrieve rich visual semantics from non-invasive EEG signals in realistic cross-subject settings? Early work on EEG-based visual retrieval largely re-lied on supervised learning, training subject-specific clas-sifiers or regressors on labeled EEG-image pairs to predict stimulus labels or features. However, such pipelines re-quire costly trial-level annotations, are constrained by lim-ited data, and typically generalize poorly to unseen sub-jects. As real cross-subject deployments seldom provide labels for new users, unsupervised and zero-shot paradigms have emerged as natural alternatives. Several recent stud-ies adopt encoder-centric unsupervised or zero-shot EEG-to-image paradigms that align EEG and image embeddings via contrastive learning [3, 4, 13, 22, 23, 27]. These works introduce increasingly expressive EEG encoders and report 
+
+> arXiv:2603.20738v1 [cs.CV] 21 Mar 2026
+
+strong zero-shot recognition and retrieval performance on THINGS-EEG benchmarks [7], but their test-time evalua-tion typically reduces to non-standardized nearest-neighbor search over learned similarity scores in the shared space. In parallel, a separate line of EEG decoding research improves cross-subject robustness by learning subject-invariant or domain-adapted representations through adversarial infer-ence, multi-source marginal distribution adaptation, and plug-and-play domain adaptation modules [5, 16, 19, 29]. While effective for representation learning, these methods operate at training time and have not been instantiated as generic, label-free calibration heads [25, 28] that can stan-dardize and improve retrieval shortlists in zero-shot cross-subject EEG-to-image settings. Despite these advances, current unsupervised and zero-shot EEG-to-image retrieval pipelines still suffer from three test-time limitations: (1) Missing structure-aware, label-free test-time calibration . Existing work largely focuses on encoder design while reducing inference to bare nearest-neighbor search, so the joint effect of cross-subject shift and hubness on top-k rankings has not been systemati-cally characterized, nor corrected, at test time. (2) Lack of subject-adaptive, density-aware hubness mitigation . Most pipelines operate in a single globally normalized similar-ity space with simple ℓ2 or global whitening, or omit hub-ness correction altogether. When CSLS variants are used, they typically rely on a globally fixed neighborhood size tuned on labeled validation data, which fails to capture query- and class-specific local densities in strict zero-shot, cross-subject scenarios. (3) Underused structural cues and absent shortlist calibration . Current pipelines treat each query in isolation and mainly report global Top-1/Top-5 or mAP, without leveraging mutual nearest neighbors, bidirec-tional top-k ranks, or class popularity patterns to diagnose and correct small-k shortlist quality and per-class imbal-ance. They also lack a reusable test-time head that can be at-tached to arbitrary cross-subject EEG-to-image encoders to improve Top-1 while preserving Top-5 and mitigating hub-ness. To address these limitations, we propose SATTC (Structure-Aware Test-Time Calibration), a label-free cali-bration head that operates purely on the test-time similar-ity matrix of frozen EEG and image encoders. We first standardize the inference pipeline with cosine similarities, 
+
+ℓ2-normalized embeddings, and candidate whitening, then combine a geometric expert—subject-adaptive whitening of EEG embeddings followed by an adaptive CSLS scheme based on row- and column-wise local densities—with a structural expert that leverages mutual nearest neighbors, bidirectional top-k ranks, and class popularity patterns. The two experts are fused via a simple Product-of-Experts rule to recalibrate EEG–image similarity scores, explicitly mit-igating hubness and producing more stable small-k short-lists for downstream zero-shot decoding. Our main contri-butions are summarized as follows: • We formulate cross-subject EEG-to-image retrieval as a structure-aware, label-free test-time calibration problem, and empirically characterize how subject shift and hub-ness jointly destabilize top-k rankings in this setting. • We introduce a geometric expert that combines subject-adaptive whitening of EEG embeddings with an adaptive CSLS scheme, estimating row- and column-wise local densities to derive query- and class-dependent neighbor-hoods and reduce hubness without global-k tuning. • We propose a structural expert that operates on the pre-CSLS similarity matrix using mutual nearest neighbors, bidirectional top-k ranks, and class popularity, and fuse it with the geometric expert via a Product-of-Experts model. Experiments on the THINGS-EEG cross-subject benchmark show that our standardized inference base-line already outperforms the original ATM pipeline, and that SATTC further improves Top-1 accuracy over strong fixed-k and adaptive CSLS baselines without harming Top-5 performance, while reducing hubness and per-class imbalance and yielding more reliable small-k shortlists. 
+
+## 2. Related Work 
+
+2.1. EEG-based Visual Decoding and Cross-Subject Generalization 
+
+EEG-based visual decoding has progressed from early coarse category recognition to fine-grained visual classifi-cation, image retrieval, and reconstruction [13, 23, 24]. A common recipe is to learn an encoder that maps short EEG segments into a visual or multimodal embedding space, fol-lowed by nearest-neighbor retrieval or regression to image features on datasets such as THINGS-EEG. Despite strong results, most systems are still evaluated in subject-specific or lightly adapted settings, assuming a separate model or labeled data for each target user, which underestimates the difficulty of deployment to unseen users without per-subject labels. To improve cross-subject robustness, recent work ex-plores subject-independent training, domain-invariant EEG features, and shared latent spaces using adversarial in-ference, multi-source marginal distribution adaptation, or plug-and-play domain adaptation modules [5, 16, 19, 29]. However, these approaches primarily focus on encoder ar-chitectures and training losses. They rarely analyze how similarity scores behave at test time under subject shift and hubness, nor how to recalibrate the retrieval geometry once the encoder is fixed. In contrast, we adopt a cross-subject EEG-to-image retrieval setup with frozen encoders and no target labels, and focus on label-free test-time calibration of the EEG-image similarity structure, complementary to representation-learning methods. 2.2. Label-Free Test-Time Adaptation and Calibra-tion 
+
+Test-time adaptation and post-hoc calibration seek to reduce train-test mismatch by updating models or predictions us-ing unlabeled test data [15, 26]. Many test-time adaptation (TTA) methods adapt batch-normalization statistics or min-imize prediction entropy on streaming test samples, while post-hoc calibration approaches such as temperature scaling and its variants correct miscalibrated classifier confidences after training [8]. However, most of these techniques ei-ther require labeled validation data for tuning or implicitly rely on pseudo-labels and class-conditional statistics, which can be fragile for noisy, highly variable EEG data in cross-subject scenarios. Moreover, they are typically designed for closed-set classifier logits rather than dense similarity ma-trices arising in retrieval. We instead consider a strict label-free test-time regime where the EEG and image encoders are frozen and only the test-time similarity matrix is observable. Our goal is to de-sign a calibration operator that acts directly on EEG–image similarities to stabilize top-k rankings for downstream neu-ral decoding. 
+
+2.3. Hubness, CSLS, and Structure-Aware Re-trieval Priors 
+
+High-dimensional nearest-neighbor retrieval is strongly af-fected by hubness, where a few points appear in the top-
+
+k lists of many queries and dominate rankings [6, 20]. Cross-domain Similarity Local Scaling (CSLS) mitigates hubness by using local neighborhoods to rescale similarity scores and down-weight globally “popular” candidates [11]. Follow-up work refines CSLS or exploits mutual nearest neighbors and bidirectional ranks to discard inconsistent matches and sharpen alignments [2, 21, 30], but typically assumes a fixed neighborhood size and treats hubness as a purely geometric effect. Rare classes in sparse regions can therefore be over-penalized, while dense hubs are not al-ways fully suppressed when k is small. Structure-aware re-ranking techniques based on graph diffusion [10], mutual kNN graphs, or label propagation further exploit relationships among queries and candidates in image and cross-modal retrieval [2, 30]. Yet these meth-ods usually rely on labeled data, transductive supervision, or iterative pseudo-labeling, and are not tailored to noisy cross-subject EEG where only small-k shortlists and unla-beled test data are available. Our approach instead keeps the encoders fixed and operates purely on the pre-CSLS similarity matrix, combining an adaptive CSLS variant with query- and class-dependent neighborhoods and a structural prior built from mutual nearest neighbors, bidirectional top-k ranks, and class popularity, fused via a Product-of-Experts formulation to obtain calibrated EEG–image re-trieval scores. 
+
+## 3. Method 
+
+3.1. Label-Free Test-Time Calibration: Problem Setup and Overview 
+
+We consider cross-subject EEG-to-image retrieval on the THINGS-EEG dataset [7, 9], which provides multichannel EEG recordings while subjects view images from a fixed vocabulary of object categories. Let Q denote EEG queries from unseen test subjects and C the set of candidate image classes. A pretrained EEG encoder feeg maps each query 
+
+q ∈ Q to an embedding zq ∈ Rd, and an image encoder 
+
+fimg maps each class c ∈ C to an embedding vc ∈ Rd. After subject-adaptive whitening and normalization (Section 3.2), we obtain a pre-CSLS similarity matrix 
+
+Snew (q, c ) = ψ(˜ zq , ˜vc) (1) where ˜zq and ˜vc denote the normalized EEG and image embeddings, and ψ denotes the pre-CSLS scoring function specified in Section 3.2. Retrieval is performed by ranking candidates c ∈ C in descending order of Snew (q, c ), and our main evaluation metric is top-k retrieval accuracy (typically 
+
+k ∈ { 1, 5}) over queries from unseen subjects. We adopt a strict label-free test-time regime. The en-coders feeg and fimg are frozen; no labels or pseudo-labels from test subjects are available, and no adaptation of net-work weights is allowed. The only object we are allowed to modify at test time is the similarity structure itself. For-mally, we seek a calibration operator 
+
+F : Snew 7 → Sfinal (2) that uses only unlabeled test-time statistics to produce cal-ibrated scores Sfinal (q, c ) whose induced rankings better re-flect true EEG–image correspondences and reduce hubness, yielding more reliable small-k shortlists for downstream de-coding. We instantiate F as a Product-of-Experts (PoE) fusion between two complementary experts. A geometric ex-pert Sgeom applies an adaptive CSLS scheme to Snew , us-ing query- and class-dependent neighborhood sizes derived from local densities to mitigate hubness without tuning a global k (Section 3.3). In parallel, a structural expert Sstruct 
+
+is built directly on the pre-CSLS similarities, exploiting mu-tual nearest neighbors, bidirectional top-k ranks, and class popularity patterns as structure-aware priors (Section 3.4). Section 3.5 describes how these experts are fused via a sim-ple PoE to obtain the final calibrated scores Sfinal .Fig. 1 illustrates this label-free test-time setting and the SATTC calibration head acting on the similarity matrix. 
+
+3.2. Geometric Normalization via Subject-Adaptive Whitening 
+
+Raw EEG embeddings exhibit strong subject-dependent shifts: even when different subjects perform the same task, S01 S02 S03 S04 S05 S06 S07 S08 S09 S10 
+
+> Test subject
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> Top-5 accuracy (%)
+
+(a) Std. baseline Std.+SAW SATTC        
+
+> 25 50 75 100 125 150 175 200
+> Class rank
+> 50
+> 100
+> 150
+> 200
+> 250
+> 300
+> Class frequency  NK(c)
+
+(b) Std.+SAW   
+
+> + fixed CSLS
+> + adaptive CSLS
+> SATTC
+> 1510
+> K
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> ΔRecall@K (percentage points)
+> Std.+SAW
+
+(c)  
+
+> Std.+SAW SATTC
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Per-class Recall@5 (%)
+
+(d) Figure 2. Effect of SAW and SATTC on subject shift, hubness, and shortlist quality. (a) Per-subject Top-5 accuracy under LOSO. (b) Class popularity NK (c). (c) ∆Recall@K over the Std.+SAW baseline. (d) Distribution of per-class Recall@5 for Std.+SAW and SATTC. SAW improves the standardized baseline, while SATTC further reduces hubness and yields more balanced and reliable small-K shortlists. 
+
+their feature distributions can differ markedly in mean, variance, and covariance structure, leading to pronounced statistical and covariance shifts across subjects and ses-sions [1, 14]. We apply subject-adaptive whitening (SAW) to EEG fea-tures before computing similarities. Let s(q) denote the subject index of query q, and 
+
+zq = feeg (q) ∈ Rd (3) be the encoder output. For each subject s, we estimate a mean μs and covariance Σs from the unlabeled embeddings in the current split: training embeddings for training sub-jects, and unlabeled test-time embeddings (or a calibration window) for the held-out subject. Construct a regularized whitening transform 
+
+Ws = (Σ s + λI )− 12 (4) with λ > 0 for numerical stability. Each query is first whitened as 
+
+ˆzq = Ws(q)
+
+ zq − μs(q)
+
+ (5) and then ℓ2-normalized to obtain 
+
+˜zq = ˆzq
+
+∥ˆzq ∥2
+
+(6) This yields approximately zero-mean, identity-covariance, unit-norm EEG embeddings per subject and maps different subjects onto a shared sphere while preserving relative di-rections. We apply the same SAW transform during training and evaluation to maintain a consistent feature space. On the image side, we optionally apply global whitening to candidate embeddings. Let 
+
+vc = fimg (c) (7) denote the candidate-side visual representation for class c ∈
+
+C. We estimate a global mean μimg and covariance Σimg ,form 
+
+ˆvc = (Σ img + λI )− 12 (vc − μimg ) (8) and normalize 
+
+˜vc = ˆvc
+
+∥ˆvc∥2
+
+(9) using ˜vc as the normalized prototype; when whitening is disabled, we simply apply ℓ2-normalization to vc.Given normalized embeddings ˜zq and ˜vc, we define a temperature-scaled cosine similarity 
+
+Sbase (q, c ) = ατ ⟨˜zq , ˜vc⟩ (10) where α is a learned logit scale from contrastive pretrain-ing and τ is a global temperature. Optionally, we apply global z-score normalization to Sbase using precomputed mean and variance over a held-out unlabeled set, yielding the pre-CSLS similarity matrix Snew (q, c ) used in subse-quent stages. 3.3. Adaptive CSLS Geometric Expert for Hubness Mitigation 
+
+Even after SAW-based normalization, the pre-CSLS simi-larity matrix Snew (q, c ) still exhibits hubness: a few image classes c appear in the top-k neighbors of many queries q,while rare classes are under-retrieved [6, 12, 18]. Cross-domain Similarity Local Scaling (CSLS) is a standard rem-edy for hubness in cross-domain retrieval, using local-neighborhood averages to rescale similarity scores [11]. Given similarities s(q, c ), CSLS defines 
+
+csls( q, c ) = 2 s(q, c ) − rq (q) − rc(c) (11) where rq (q) and rc(c) are average similarities to the k near-est neighbors of query q and class c, respectively. By sub-tracting these local averages, CSLS down-weights candi-dates that are globally “popular” with many queries and par-tially compensates for local density. However, standard CSLS uses a fixed neighborhood size 
+
+k for all queries and classes, implicitly assuming a roughly uniform density in the embedding space. Cross-subject EEG embeddings violate this assumption: some queries re-side in sparse regions with only a few meaningful proto-types, whereas some classes form dense hubs that attract many unrelated queries. A global k can thus under-penalize true hubs and over-penalize rare but correct neighbors, sup-pressing genuine matches from the top-k list. To address this, we construct an adaptive CSLS geomet-ric expert that retains the CSLS form but derives query-and class-dependent neighborhoods from local densities on 
+
+Snew . Let 
+
+s(q, c ) = Snew (q, c ) (12) denote the normalized similarity between query q and class 
+
+c. For each query q, we estimate a row-wise local density 
+
+ρrow (q) = 1
+
+m
+
+X  
+
+> c∈N(m)
+> row (q)
+
+s(q, c ) (13) where N (m) 
+
+> row
+
+(q) is the set of m most similar classes to q,with m ≫ Kmax , the largest top-K cutoff we evaluate (e.g. 
+
+Kmax = 20 ). 
+
+krow (q) ∈ [kmin , k max ] (14) via a monotonic mapping from densities to integers in 
+
+[kmin , k max ], so that denser queries use larger neighbor-hoods and sparser queries use smaller ones. Similarly, for each class c we estimate a column-wise density ρcol (c), for example from how frequently c appears in row-wise top-K lists, and derive a class-specific neigh-borhood size 
+
+kcol (c) ∈ [kmin , k max ] (15) Given these adaptive neighborhood sizes, we compute 
+
+rq (q) = 1
+
+krow (q)
+
+X  
+
+> c′∈N(krow (q))
+> row (q)
+
+s(q, c ′), (16) 
+
+rc(c) = 1
+
+kcol (c)
+
+X  
+
+> q′∈N(kcol (c))
+> col (c)
+
+s(q′, c ) (17) where N (krow (q))  
+
+> row
+
+(q) and N (kcol (c))  
+
+> col
+
+(c) denote the adaptive k-nearest neighbors along rows and columns. Our adaptive CSLS score is then defined as 
+
+Sgeom (q, c ) = 2 s(q, c ) − rq (q) − rc(c) (18) This construction preserves the familiar CSLS form while relaxing the fixed-density assumption: each query and class is normalized by a neighborhood size matched to its local density. All quantities are computed from Snew alone, with-out access to any labels or pseudo-labels, and when the den-sity mappings are constant krow (q) = kcol (c) = k0, our formulation reduces exactly to standard fixed-k CSLS. We use Sgeom as the geometric expert in our Product-of-Experts fusion. 
+
+3.4. Structural Expert from Pre-CSLS Similarity Evidence 
+
+While the adaptive CSLS geometric expert mitigates hub-ness from a local-density perspective, the pre-CSLS similar-ity matrix Snew already contains structural patterns that cor-relate with reliable matches and hubs. We convert these pat-terns into a structural expert Sstruct that complements Sgeom 
+
+without changing the encoder or recomputing similarities. Given Snew (q, c ), we compute row- and column-wise ranks 
+
+rrow (q, c ) = 1 + # { c′ | Snew (q, c ′) > S new (q, c ) },rcol (c, q ) = 1 + # { q′ | Snew (q′, c ) > S new (q, c ) } (19) where exact score ties in Snew are broken deterministically. A pair (q, c ) is a strict mutual nearest neighbor (MNN@1) if 
+
+rrow (q, c ) = rcol (c, q ) = 1 (20) and we also consider bidirectional top-L pairs 
+
+rrow (q, c ) ≤ L, rcol (c, q ) ≤ L (21) which extend strict MNN@1 to slightly lower-confidence but still consistent matches. We define a class-popularity statistic 
+
+ρ(c) = # {q | rrow (q, c ) ≤ K} (22) the number of queries for which class c appears in the row-wise top-K. Large ρ(c) indicates hub-like behavior, whereas small ρ(c) indicates rare or under-retrieved classes. Normalizing ρ(c) across classes by min-max scaling yields a hubness score h(c) ∈ [0 , 1] used to scale penalties on sus-pected hubs. Using these quantities, we distinguish three structural cases over (q, c ): (i) anchors , the strict MNN@1 pairs in (20); (ii) bidirectional top-L pairs , satisfying (21); (iii) hub-like candidates , where rrow (q, c ) > K , rcol (c, q ) is small, and h(c) is large, i.e., c acts as a hub across many queries but is not locally supported for this query. We construct a structural logit matrix Sstruct ∈ R|Q|×| C|,initialized to zero, and update 
+
+Sstruct (q, c ) = 
+
+
+
++λanchor , (q, c ) ∈ A −λpen h(c), (q, c ) ∈ H 
+
+0, otherwise (23) where A ⊂ Q × C collects anchors and strong bidirec-tional top-L pairs, H ⊂ Q × C collects hub-like candi-dates, and λanchor , λ pen > 0 control the strength of bonus and penalty. Penalties are masked on pairs in A, so high-confidence structural matches are only boosted, never sup-pressed. All decisions in (23) depend solely on Snew ; Sgeom 
+
+and the encoder are not used, and Snew itself is never modi-fied. In summary, Sstruct provides a structure-aware prior over query–class pairs: it locks mutual top-1 and bidirectional top-L matches via positive bias and down-weights ubiqui-tous hub classes, and, being computed once from pre-CSLS evidence and then held fixed, regularizes the final rankings without iterative self-reinforcement. 
+
+3.5. Product-of-Experts Fusion and Final Scoring 
+
+We combine the geometric expert Sgeom (adaptive CSLS on 
+
+Snew ) and the structural expert Sstruct (pre-CSLS evidence; Section 3.4) into a single calibrated scoring function. For each query q, the geometric expert defines an unnormalized distribution 
+
+pgeom (c | q) ∝ exp  Sgeom (q, c ) (24) and the structural expert defines 
+
+pstruct (c | q) ∝ exp  Sstruct (q, c ) (25) A simple Product-of-Experts (PoE) fusion then gives 
+
+pfinal (c | q) ∝ pgeom (c | q)α pstruct (c | q)β (26) where α, β ≥ 0 control the relative influence of the two experts. In logit space this reduces to a weighted sum 
+
+Sfinal (q, c ) = α S geom (q, c ) + β S struct (q, c ) (27) In practice we fix α = 1 and tune a single scalar hyperpa-rameter β, making the fusion lightweight and interpretable. Setting β = 0 recovers pure adaptive CSLS, while β > 0
+
+progressively enforces the structure-aware prior encoded by 
+
+Sstruct : mutual top-1 and bidirectional top-L matches re-ceive a constant positive bias and hub-like candidates re-ceive a negative bias proportional to their popularity level (Section 3.4). Because Sstruct is computed once from the pre-CSLS matrix Snew and never updated based on Sfinal , the PoE acts as a single-shot regularizer rather than an iterative self-reinforcement scheme. At test time, the label-free calibration operator from Sec-tion 3.1 can thus be written as 
+
+Tβ (Snew ) := PoE β (Sgeom , S struct ) = Sfinal (28) where Sgeom and Sstruct are the geometric and structural ex-perts applied to Snew . Top-K retrieval is obtained by rank-ing classes c ∈ C according to Sfinal (q, c ) for each query 
+
+q.
+
+## 4. Experiments 
+
+4.1. Experimental Setup 
+
+Dataset and cross-subject protocol. We evaluate on the public THINGS-EEG dataset [7, 9], which provides EEG recordings from 10 subjects viewing images from 200 ob-ject categories. We adopt a leave-one-subject-out (LOSO) protocol: in each of 10 folds, one subject is held out for test-ing and the remaining nine are used for training and tuning. To separate tuning from final evaluation, we use a nested LOSO procedure. From the nine training subjects, we se-lect three representative dev subjects (easy/medium/hard) via a subject-level distance analysis and use only them for hyperparameter and epoch selection. We then fix the se-lected configuration, train a single model on all nine train-ing subjects, and perform one-shot evaluation on the held-out subject. All hyperparameters were tuned once on a fixed dev pack from the training folds and then frozen across all LOSO folds and across encoders; at test time we perform label-free calibration using only unlabeled EEG from the held-out subject, and test labels are used solely for evalua-tion. 
+
+Evaluation metrics and baselines. We evaluate 200-way EEG-to-image retrieval: for each test EEG query, the model ranks all 200 candidate image classes. We report Top-5 accuracy as the primary metric and Top-1 accuracy as a secondary identification metric, and additionally show Recall@ K curves and hubness statistics in later sections. To isolate the contribution of each component in our cal-ibration pipeline, we compare a sequence of seven models, labeled ATM, Standardized baseline, +SAW, +SAW+CW, +CSLS, +Ada-CSLS, and SATTC (ours) in Table 1. Start-ing from the original ATM cross-subject baseline and our standardized baseline with cosine similarity, ℓ2-normalized features, and candidate-side whitening but no SAW or test-time calibration (“Standardized baseline” in Table 1), we incrementally add subject-adaptive whitening on EEG (+SAW), fixed-k CSLS (+CSLS), adaptive CSLS as the ge-ometric expert (+Ada-CSLS), and finally the structural PoE module on top of adaptive CSLS (SATTC). All variants share the same training setup: AdamW optimizer, batch size 1024, learning rate 5 × 10 −4, and a fixed temperature 
+
+τ = 1 .0, trained and evaluated on a single NVIDIA RTX 4090 GPU. 
+
+4.2. Cross-Subject EEG-to-Image Retrieval Results 
+
+Overall comparison with baselines. Table 1 reports 200-way cross-subject retrieval averaged over all LOSO folds and three seeds. Cosine similarity with ℓ2-normalized features and candidate-side whitening (same encoder) al-ready improves substantially over the original ATM base-line with unnormalized dot products, yielding the “Stan-dardized baseline” row in Table 1. Introducing subject-adaptive whitening on the EEG side (SAW) on top of the cosine + candidate-side whitening (CW) baseline brings a clear gain and serves as our cross-subject reference, showing that subject-specific normaliza-tion is crucial in the LOSO setting. On this SAW con-figuration (with candidate whitening), both fixed-k CSLS and adaptive CSLS further increase Top-5 accuracy while keeping Top-1 comparable; the adaptive variant matches the best fixed-k configuration without a single global k,validating the geometric expert. Finally, adding the struc-tural PoE module on top of adaptive CSLS (SATTC, ours) gives the strongest end-to-end result: relative to the SAW baseline, both Top-1 and Top-5 improve, while relative to adaptive CSLS, SATTC preserves Top-5 and improves Top-1 through structure-aware refinement. 
+
+Subject- and seed-wise stability. Across three random seeds per LOSO fold, standard deviations over subjects and seeds are small and the relative ordering between the base-line, SAW, CSLS/Ada-CSLS, and SATTC is consistent, in-dicating that our label-free test-time calibration is robust to initialization and subject splits. 
+
+4.3. Ablations for Label-Free Test-Time Calibration 
+
+Effect of SAW and candidate whitening. Table 1 sum-marizes the whitening ablations. Compared to our standard-ized baseline (cosine + ℓ2 + CW), adding subject-adaptive whitening on the EEG side (+SAW) is the dominant source of improvement: Top-5 rises from 30.5% to 36.4% and Top-1 from 9.2% to 13.7%. This shows that normaliz-ing subject-specific EEG statistics is the key ingredient for cross-subject generalization under LOSO. Further adjusting candidate whitening in the presence of SAW (+SAW+CW) yields only a small additional Top-5 gain (36.8%) with com-parable Top-1, so the direct contribution of candidate-side whitening to retrieval remains modest once EEG features have been subject-normalized. However, we retain candidate whitening (CW) primarily to support the structural expert rather than chase additional                     
+
+> Table 1. Cross-subject 200-way EEG-to-image retrieval results on THINGS-EEG under LOSO. Mean Top-5 and Top-1 accuracy (%) over all test folds and three random seeds for the ATM baseline, our standardized baseline (cosine + ℓ2normalization + candidate whitening), and successive additions of SAW, candidate whiten-ing, CSLS variants, and SATTC. Method Top-5 (%) ↑Top-1 (%) ↑
+> ATM (original) 20.0 5.5 Standardized baseline 30.5 9.2 + SAW 36.4 13.7 + SAW + CW 36.8 13.5 + SAW + CW + CSLS 38.1 14.1 + SAW + CW + Ada-CSLS 38.8 13.9
+> SATTC (ours) 38.4 14.8
+
+accuracy. With SAW alone, similarities are normalized row-wise, but column scales can still vary across classes. Un-der SAW+CW, the pre-CSLS similarity matrix Snew used in SATTC has both query-wise rows and class-wise columns on a comparable scale, making class-popularity N K (c),mutual nearest neighbors, and other rank-based statistics derived from Snew (Section 3.4) more stable. We therefore adopt SAW+CW as the default backbone for all subsequent CSLS variants and SATTC experiments despite its modest standalone gain over +SAW. 
+
+Fixed-k vs. adaptive CSLS. Table 1 reports results for fixed-k CSLS (with k = 12 tuned on dev subjects) and our adaptive CSLS applied on the SAW+CW configuration. The two variants obtain very similar Top-1 and Top-5 accu-racy, with adaptive CSLS trading a small decrease in Top-1 for a slightly higher Top-5 while avoiding a globally chosen neighborhood size. Their hubness profiles, however, dif-fer: as shown in Fig. 2, adaptive CSLS further flattens the class-occurrence curve and reduces the dominance of a few hub classes compared to fixed-k CSLS, leading to a more balanced use of prototypes across ranks. This supports our choice of adaptive CSLS as the geometric expert: it pre-serves retrieval accuracy while providing stronger and more flexible hubness mitigation than a single global k.
+
+Impact of structural expert and PoE. Finally, Table 1 iso-lates the contribution of the structural expert and PoE by comparing +SAW+CW+Ada-CSLS with our full SATTC model (+Ada-CSLS+PoE). SATTC keeps Top-5 accuracy essentially unchanged (38.4 vs. 38.8%) while providing a clear Top-1 gain (14.8 vs. 13.9%), highlighting that the structural expert sharpens strict identification while preserv-ing overall retrieval coverage. Consistent with this, Fig. 2 shows that the structural PoE head in SATTC attains the largest ∆Recall@K over the Std.+SAW baseline for small 
+
+K (1 and 5); relative to adaptive CSLS alone, it recovers more classes whose true label appears within small-K short-lists, reflecting better class-wise calibration even when the global Top-5 score remains comparable. Practically, the calibration pipeline admits two deploy-ment modes. For single-trial or online inference, the SAW+CSLS branch can be calibrated once from a small un-labeled window and then applied to subsequent trials with frozen parameters, whereas the structural expert and PoE serve as a batch refinement stage when multiple unlabeled test queries are available. In strict disjoint N -shot exper-iments, a one-time unlabeled window of N = 50 already reaches 94.8% of the N = 200 SAW+CSLS upper bound. The PoE hyperparameter is also robust: a broad region of 
+
+β values yields near-identical Top-5 performance, and the default β = 1 .9 is within 0.1 percentage points of the best setting. Importantly, the full pipeline shows no end-to-end Top-1/Top-5 trade-off: from the SAW baseline to SATTC, Top-1 improves from 13.7% to 14.8%, while Top-5 im-proves from 36.4% to 38.4%. 
+
+4.4. Hubness Reduction and Shortlist Quality 
+
+Hubness and class popularity distribution. We use the class-popularity statistic NK (c) from Section 3.4 as a hub-ness indicator (Fig. 2). Under the SAW+CW configura-tion, fixed-k CSLS shortens the heavy tail of NK (c) rela-tive to the cosine baseline but still leaves some hubs; adap-tive CSLS further flattens NK (c), while SATTC yields the most uniform profile on this class-popularity statistic by suppressing spurious hubs and boosting underused classes. 
+
+Per-class fairness and Recall@ K. Per-class perfor-mance is evaluated with Recall@5 boxplots and Recall@ K
+
+curves for K ∈ { 1, 2, 5, 10 , 20 } (Fig. 2). Compared to the SAW+CW baseline, both fixed-k CSLS and adaptive CSLS increase mean Recall@5; adaptive CSLS also achieves a higher median and lower variance across classes. SATTC further raises median Recall@5, narrows the spread, and shows the largest gains for small K ≤ 5, the regime most relevant for downstream decoding. 
+
+4.5. Encoder-Agnostic Plug-and-Play Calibration 
+
+We next test whether SATTC is tied to a specific EEG en-coder or can act as a generic calibration layer. Table 2 re-ports 200-way cross-subject retrieval on THINGS-EEG for four heterogeneous encoders (ATM, EEGNetV4, EEGCon-former, and ShallowFBCSPNet), spanning CSP-style, com-pact CNN, and transformer architectures. For each encoder we compare our standardized inference baseline to the same model equipped with SATTC as a label-free test-time cali-bration head, without changing the backbone or using labels from test subjects. SATTC consistently improves all encoders. Top-5 accu-racy increases by roughly 8–16 percentage points and Top-1 by about 4–8 points across backbones (e.g., from 30 .5                        
+
+> Table 2. Plug-and-play generalization of SATTC across EEG en-coders on 200-way THINGS-EEG cross-subject retrieval. For each encoder, we report Top-5 and Top-1 accuracy (%) averaged over all LOSO folds and three random seeds, comparing our stan-dardized inference baseline to the same encoder with SATTC ap-plied as a label-free test-time calibration head. Encoder Top-5 ↑Top-1 ↑
+> Baseline +SATTC Baseline +SATTC ATM 30.5 38.4 9.2 14.8
+> EEGNetV4 20.5 34.8 5.4 10.8
+> EEGConformer 11.6 23.2 2.5 6.9
+> ShallowFBCSPNet 14.6 30.8 3.5 11.1
+
+to 38 .4 Top-5 and 9.2 to 14 .8 Top-1 for ATM, and from 
+
+20 .5 to 34 .8 and 5.4 to 10 .8 for EEGNetV4), with similar gains for EEGConformer and ShallowFBCSPNet. These results indicate that SATTC operates on the geometry of the EEG–image similarity space rather than on encoder de-tails, and can be plugged into existing cross-subject EEG pipelines as an encoder-agnostic, label-free test-time cali-bration module. 
+
+## 5. Discussion and Conclusion 
+
+Limitations. SATTC is currently evaluated only on THINGS-EEG under a LOSO cross-subject retrieval proto-col. Its structural expert is hand-crafted from ranks, mutual nearest neighbors, and class popularity, and the current im-plementation operates on precomputed similarity matrices. In practice, the SAW+CSLS branch supports calibration-once then frozen inference, whereas the structural expert and PoE are most naturally applied in a batch refinement stage when multiple unlabeled test queries are available. Extending the method to additional datasets, encoder fami-lies, and decoding regimes such as retrieval-then-generation or EEG/fMRI reconstruction [3, 13] remains an important direction for future work. 
+
+Conclusion. We cast cross-subject EEG-to-image retrieval as a label-free test-time calibration problem on similar-ity matrices. SATTC operates on frozen EEG and im-age encoders through a modular calibration head that com-bines subject-adaptive whitening, adaptive CSLS, and a lightweight structural prior from pre-CSLS similarities. On THINGS-EEG under strict LOSO evaluation, SATTC im-proves Top-1 and Top-5 over strong standardized baselines, reduces hubness and per-class imbalance, and yields more reliable small-k shortlists. Together with its plug-and-play gains across multiple EEG encoders, these results suggest that similarity-space calibration is a practical route toward more robust cross-subject neural decoding. References 
+
+[1] Isabela Albuquerque, Jo˜ ao Monteiro, Olivier Rosanne, Ab-hishek Tiwari, Jean-Franc ¸ois Gagnon, and Tiago H Falk. Cross-subject statistical shift estimation for generalized electroencephalography-based mental workload assessment. In 2019 IEEE International Conference on Systems, Man and Cybernetics (SMC) , pages 3647–3653. IEEE, 2019. [2] Song Bai, Xiang Bai, Qi Tian, and Longin Jan Latecki. Reg-ularized diffusion process for visual retrieval. In Proceed-ings of the Thirty-First AAAI Conference on Artificial Intel-ligence , page 3967–3973. AAAI Press, 2017. [3] Chi-Sheng Chen. Necomimi: Neural-cognitive multimodal eeg-informed image generation with diffusion models. arXiv preprint arXiv:2410.00712 , 2024. [4] Chi-Sheng Chen and Chun-Shu Wei. Mind’s eye: image recognition by eeg via multimodal similarity-keeping con-trastive learning. arXiv preprint arXiv:2406.16910 , 2024. [5] Hao Chen, Ming Jin, Zhunan Li, Cunhang Fan, Jinpeng Li, and Huiguang He. Ms-mda: Multisource marginal dis-tribution adaptation for cross-subject and cross-session eeg emotion recognition. Frontiers in Neuroscience , 15:778488, 2021. [6] Georgiana Dinu, Angeliki Lazaridou, and Marco Baroni. Im-proving zero-shot learning by mitigating the hubness prob-lem. arXiv preprint arXiv:1412.6568 , 2014. [7] Tijl Grootswagers, Ivy Zhou, Amanda K Robinson, Martin N Hebart, and Thomas A Carlson. Human eeg recordings for 1,854 concepts presented in rapid serial visual presentation streams. Scientific Data , 9(1):3, 2022. [8] Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q Weinberger. On calibration of modern neural networks. In International conference on machine learning , pages 1321–1330. PMLR, 2017. [9] Martin N Hebart, Adam H Dickter, Alexis Kidder, Wan Y Kwok, Anna Corriveau, Caitlin Van Wicklin, and Chris I Baker. Things: A database of 1,854 object concepts and more than 26,000 naturalistic object images. PLOS ONE ,14(10):e0223792, 2019. [10] Ahmet Iscen, Giorgos Tolias, Yannis Avrithis, Teddy Furon, and Ondrej Chum. Efficient diffusion on region manifolds: Recovering small objects with compact cnn representations. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 2077–2086, 2017. [11] Guillaume Lample, Alexis Conneau, Marc’Aurelio Ranzato, Ludovic Denoyer, and Herv´ e J´ egou. Word translation with-out parallel data. In International Conference on Learning Representations , 2018. [12] Angeliki Lazaridou, Georgiana Dinu, and Marco Baroni. Hubness and pollution: Delving into cross-space mapping for zero-shot learning. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Lan-guage Processing (Volume 1: Long Papers) , pages 270–280, 2015. [13] Dongyang Li, Chen Wei, Shiying Li, Jiachen Zou, and Quanying Liu. Visual decoding and reconstruction via eeg embeddings with guided diffusion. In Advances in Neural In-formation Processing Systems , pages 102822–102864. Cur-ran Associates, Inc., 2024. [14] Jun Ma, Banghua Yang, Wenzheng Qiu, Yunzhe Li, Shouwei Gao, and Xinxing Xia. A large eeg dataset for studying cross-session variability in motor imagery brain-computer interface. Scientific Data , 9(1):531, 2022. [15] Shuaicheng Niu, Jiaxiang Wu, Yifan Zhang, Yaofo Chen, Shijian Zheng, Peilin Zhao, and Mingkui Tan. Efficient test-time model adaptation without forgetting. In Interna-tional conference on machine learning , pages 16888–16905. PMLR, 2022. [16] Ozan ¨Ozdenizci, Ye Wang, Toshiaki Koike-Akino, and Deniz Erdo˘ gmus ¸. Learning invariant representations from eeg via adversarial inference. IEEE Access , 8:27074–27085, 2020. [17] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In Proceedings of the 38th International Conference on Machine Learning ,pages 8748–8763. PMLR, 2021. [18] Milos Radovanovic, Alexandros Nanopoulos, and Mirjana Ivanovic. Hubs in space: Popular nearest neighbors in high-dimensional data. Journal of Machine Learning Research ,11(sept):2487–2531, 2010. [19] Qingshan She, Chenqi Zhang, Feng Fang, Yuliang Ma, and Yingchun Zhang. Multisource associate domain adaptation for cross-subject and cross-session eeg emotion recognition. 
+
+IEEE Transactions on Instrumentation and Measurement ,72:1–12, 2023. [20] Yutaro Shigeto, Ikumi Suzuki, Kazuo Hara, Masashi Shimbo, and Yuji Matsumoto. Ridge regression, hubness, and zero-shot learning. In Joint European conference on ma-chine learning and knowledge discovery in databases , pages 135–151. Springer, 2015. [21] Samuel L. Smith, David H. P. Turban, Steven Hamblin, and Nils Y. Hammerla. Offline bilingual word vectors, orthog-onal transformations and the inverted softmax. In Interna-tional Conference on Learning Representations , 2017. [22] Yonghao Song, Bingchuan Liu, Xiang Li, Nanlin Shi, Yijun Wang, and Xiaorong Gao. Decoding Natural Images from EEG for Object Recognition. In International Conference on Learning Representations , 2024. [23] Yonghao Song, Yijun Wang, Huiguang He, and Xiaorong Gao. Recognizing natural images from eeg with language-guided contrastive learning. IEEE Transactions on Neural Networks and Learning Systems , 36(9):15896–15910, 2025. [24] Concetto Spampinato, Simone Palazzo, Isaak Kavasidis, Daniele Giordano, Nasim Souly, and Mubarak Shah. Deep learning human mind for automated visual classification. In 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pages 4503–4511, 2017. [25] Yu Sun, Xiaolong Wang, Zhuang Liu, John Miller, Alexei Efros, and Moritz Hardt. Test-time training with self-supervision for generalization under distribution shifts. In International conference on machine learning , pages 9229– 9248. PMLR, 2020. [26] Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno Ol-shausen, and Trevor Darrell. Tent: Fully test-time adaptation by entropy minimization. In International Conference on Learning Representations , 2021. [27] Enshang Zhang, Zhicheng Zhang, and Takashi Hanakawa. Category-aware eeg image generation based on wavelet transform and contrast semantic loss. In Proceedings of the Thirty-Fourth International Joint Conference on Artificial Intelligence, IJCAI-25 , pages 7922–7930. International Joint Conferences on Artificial Intelligence Organization, 2025. Main Track. [28] Marvin Zhang, Sergey Levine, and Chelsea Finn. Memo: Test time robustness via adaptation and augmentation. In 
+
+Advances in Neural Information Processing Systems , pages 38629–38642. Curran Associates, Inc., 2022. [29] Li-Ming Zhao, Xu Yan, and Bao-Liang Lu. Plug-and-play domain adaptation for cross-subject eeg-based emotion recognition. In Proceedings of the AAAI conference on arti-ficial intelligence , pages 863–870, 2021. [30] Zhun Zhong, Liang Zheng, Donglin Cao, and Shaozi Li. Re-ranking person re-identification with k-reciprocal encoding. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 1318–1327, 2017.
