@@ -6,66 +6,61 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-29
-- 运行时间：2026-03-29 19:39:17 UTC
+- 最新运行日期：2026-03-30
+- 运行时间：2026-03-30 20:15:02 UTC
 - 运行状态：成功
-- 本次总论文数：15
-- 精读区：4
-- 速读区：11
+- 本次总论文数：13
+- 精读区：7
+- 速读区：6
 
 ### 今日简报（AI）
-今日深度解析 15 篇前沿成果，重点突破了跨主体脑电图像检索与机器人零样本高效导航。
-核心看
-- 详情：[/202603/29/README](/202603/29/README)
+今日深度解析 13 篇前沿论文，聚焦 VLA 模型在复杂环境下的鲁棒性增强与实时推理优化。
+重点推荐 SOMA 系统的上下文适配方案与 CD-Buffer 的恶劣天气检测框架，两者均在环境自适应领域获得满分评价。
+建议关注 VLA 模型从离线微调向在线强化学习转化的技术路径，把握具身智能实时化与高效蒸馏的新趋势。
+- 详情：[/202603/30/README](/202603/30/README)
 
 ### 精读区论文标签
-1. [SATTC: Structure-Aware Label-Free Test-Time Calibration for Cross-Subject EEG-to-Image Retrieval](/202603/29/2603.20738v1-sattc-structure-aware-label-free-test-time-calibration-for-cross-subject-eeg-to-image-retrieval)  
+1. [SOMA: Strategic Orchestration and Memory-Augmented System for Vision-Language-Action Model Robustness via In-Context Adaptation](/202603/30/2603.24060v2-soma-strategic-orchestration-and-memory-augmented-system-for-vision-language-action-model-robustness-via-in-context-adaptation)  
+   标签：评分：10.0/10、query:tta
+   evidence：无需参数微调的视觉-语言-动作(VLA)模型上下文自适应
+2. [CD-Buffer: Complementary Dual-Buffer Framework for Test-Time Adaptation in Adverse Weather Object Detection](/202603/30/2603.26092v1-cd-buffer-complementary-dual-buffer-framework-for-test-time-adaptation-in-adverse-weather-object-detection)  
+   标签：评分：10.0/10、query:tta
+   evidence：用于目标检测中领域偏移实时自适应的测试时间自适应 (TTA)
+3. [AcTTA: Rethinking Test-Time Adaptation via Dynamic Activation](/202603/30/2603.26096v1-actta-rethinking-test-time-adaptation-via-dynamic-activation)  
+   标签：评分：10.0/10、query:tta
+   evidence：通过动态激活和参数更新进行测试时间自适应
+4. [ClipTTT: CLIP-Guided Test-Time Training Helps LVLMs See Better](/202603/30/2603.26486v1-clipttt-clip-guided-test-time-training-helps-lvlms-see-better)  
+   标签：评分：10.0/10、query:tta
+   evidence：分布偏移下LVLM的测试时间训练
+5. [ETA-VLA: Efficient Token Adaptation via Temporal Fusion and Intra-LLM Sparsification for Vision-Language-Action Models](/202603/30/2603.25766v1-eta-vla-efficient-token-adaptation-via-temporal-fusion-and-intra-llm-sparsification-for-vision-language-action-models)  
    标签：评分：9.0/10、query:tta
-   evidence：针对受试者偏移的无标签测试时间校准
-2. [CATNAV: Cached Vision-Language Traversability for Efficient Zero-Shot Robot Navigation](/202603/29/2603.22800v1-catnav-cached-vision-language-traversability-for-efficient-zero-shot-robot-navigation)  
-   标签：评分：8.0/10、query:tta
-   evidence：利用多模态LLM和视觉语义缓存实现零样本机器人导航
-3. [Experiential Reflective Learning for Self-Improving LLM Agents](/202603/29/2603.24639v1-experiential-reflective-learning-for-self-improving-llm-agents)  
-   标签：评分：8.0/10、query:tta
-   evidence：测试时启发式检索用于环境自适应
-4. [LaMP: Learning Vision-Language-Action Policies with 3D Scene Flow as Latent Motion Prior](/202603/29/2603.25399v1-lamp-learning-vision-language-action-policies-with-3d-scene-flow-as-latent-motion-prior)  
-   标签：评分：8.0/10、query:tta
-   evidence：用于机器人操作的视觉-语言-动作框架
+   evidence：视觉-语言-动作 (VLA) 模型的有效 Token 自适应框架
+6. [Meta-Learned Adaptive Optimization for Robust Human Mesh Recovery with Uncertainty-Aware Parameter Updates](/202603/30/2603.26447v1-meta-learned-adaptive-optimization-for-robust-human-mesh-recovery-with-uncertainty-aware-parameter-updates)  
+   标签：评分：9.0/10、query:tta
+   evidence：测试时间细化过程中的不确定性感知自适应更新
+7. [Adapt as You Say: Online Interactive Bimanual Skill Adaptation via Human Language Feedback](/202603/30/2603.26466v1-adapt-as-you-say-online-interactive-bimanual-skill-adaptation-via-human-language-feedback)  
+   标签：评分：9.0/10、query:tta
+   evidence：在部署时针对新任务变体对双臂技能进行零样本在线自适应
 
 ### 速读区论文标签
-1. [PAVE: Premise-Aware Validation and Editing for Retrieval-Augmented LLMs](/202603/29/2603.20673v1-pave-premise-aware-validation-and-editing-for-retrieval-augmented-llms)  
+1. [Rethinking Token Reduction for Large Vision-Language Models](/202603/30/2603.21701v1-rethinking-token-reduction-for-large-vision-language-models)  
+   标签：评分：8.0/10、query:tta
+   evidence：多轮视觉问答中的令牌削减
+2. [VLA-OPD: Bridging Offline SFT and Online RL for Vision-Language-Action Models via On-Policy Distillation](/202603/30/2603.26666v1-vla-opd-bridging-offline-sft-and-online-rl-for-vision-language-action-models-via-on-policy-distillation)  
+   标签：评分：8.0/10、query:tta
+   evidence：VLA模型在部署期间进行后训练以应对分布偏移
+3. [Fast-dVLA: Accelerating Discrete Diffusion VLA to Real-Time Performance](/202603/30/2603.25661v2-fast-dvla-accelerating-discrete-diffusion-vla-to-real-time-performance)  
    标签：评分：7.0/10、query:tta
-   evidence：证据驱动问答的推理阶段验证层
-2. [SLARM: Streaming and Language-Aligned Reconstruction Model for Dynamic Scenes](/202603/29/2603.22893v3-slarm-streaming-and-language-aligned-reconstruction-model-for-dynamic-scenes)  
+   evidence：预训练VLA模型的自适应成本与性能提升
+4. [Policy-Guided World Model Planning for Language-Conditioned Visual Navigation](/202603/30/2603.25981v1-policy-guided-world-model-planning-for-language-conditioned-visual-navigation)  
    标签：评分：7.0/10、query:tta
-   evidence：动态场景的实时流式推理
-3. [Memory-Augmented Vision-Language Agents for Persistent and Semantically Consistent Object Captioning](/202603/29/2603.24257v1-memory-augmented-vision-language-agents-for-persistent-and-semantically-consistent-object-captioning)  
-   标签：评分：7.0/10、query:tta
-   evidence：用于维持跨时间语义一致性的记忆增强智能体
-4. [UniICL: Systematizing Unified Multimodal In-context Learning through a Capability-Oriented Taxonomy](/202603/29/2603.24690v1-uniicl-systematizing-unified-multimodal-in-context-learning-through-a-capability-oriented-taxonomy)  
-   标签：评分：7.0/10、query:tta
-   evidence：多模态模型中通过示例实现的免训练自适应
-5. [Predictive Regularization Against Visual Representation Degradation in Multimodal Large Language Models](/202603/29/2603.20808v1-predictive-regularization-against-visual-representation-degradation-in-multimodal-large-language-models)  
+   evidence：用于视觉导航的潜空间世界模型规划
+5. [SSAM: Singular Subspace Alignment for Merging Multimodal Large Language Models](/202603/30/2603.21584v1-ssam-singular-subspace-alignment-for-merging-multimodal-large-language-models)  
    标签：评分：6.0/10、query:tta
-   evidence：多模态大模型中的视觉表示退化
-6. [Compass: Optimizing Compound AI Workflows for Dynamic Adaptation](/202603/29/2603.20821v1-compass-optimizing-compound-ai-workflows-for-dynamic-adaptation)  
+   evidence：多模态大语言模型合并
+6. [GazeQwen: Lightweight Gaze-Conditioned LLM Modulation for Streaming Video Understanding](/202603/30/2603.25841v1-gazeqwen-lightweight-gaze-conditioned-llm-modulation-for-streaming-video-understanding)  
    标签：评分：6.0/10、query:tta
-   evidence：AI 工作流在不同负载下的动态自适应
-7. [Causally-Guided Diffusion for Stable Feature Selection](/202603/29/2603.20930v1-causally-guided-diffusion-for-stable-feature-selection)  
-   标签：评分：6.0/10、query:tta
-   evidence：分布偏移下的稳定性分析与鲁棒特征选择
-8. [When Models Judge Themselves: Unsupervised Self-Evolution for Multimodal Reasoning](/202603/29/2603.21289v2-when-models-judge-themselves-unsupervised-self-evolution-for-multimodal-reasoning)  
-   标签：评分：6.0/10、query:tta
-   evidence：多模态推理模型的无监督自我演化
-9. [IGV-RRT: Prior-Real-Time Observation Fusion for Active Object Search in Changing Environments](/202603/29/2603.21887v1-igv-rrt-prior-real-time-observation-fusion-for-active-object-search-in-changing-environments)  
-   标签：评分：6.0/10、query:tta
-   evidence：来自视觉语言模型的在线目标相关性估计
-10. [TorR: Towards Brain-Inspired Task-Oriented Reasoning via Cache-Oriented Algorithm-Architecture Co-design](/202603/29/2603.22855v1-torr-towards-brain-inspired-task-oriented-reasoning-via-cache-oriented-algorithm-architecture-co-design)  
-   标签：评分：6.0/10、query:tta
-   evidence：利用时间相干性和查询缓存实现实时边缘部署
-11. [OccAny: Generalized Unconstrained Urban 3D Occupancy](/202603/29/2603.23502v1-occany-generalized-unconstrained-urban-3d-occupancy)  
-   标签：评分：6.0/10、query:tta
-   evidence：针对城市场景的自适应以及3D占据预测的域外泛化
+   evidence：通过参数高效调制实现流式视频理解
 
 
 <div class="dpr-home-promo-card">
