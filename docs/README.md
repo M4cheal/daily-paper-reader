@@ -6,61 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-30
-- 运行时间：2026-03-30 20:15:02 UTC
+- 最新运行日期：2026-03-31
+- 运行时间：2026-03-31 20:23:40 UTC
 - 运行状态：成功
-- 本次总论文数：13
-- 精读区：7
-- 速读区：6
+- 本次总论文数：17
+- 精读区：6
+- 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 13 篇前沿论文，聚焦 VLA 模型在复杂环境下的鲁棒性增强与实时推理优化。
-重点推荐 SOMA 系统的上下文适配方案与 CD-Buffer 的恶劣天气检测框架，两者均在环境自适应领域获得满分评价。
-建议关注 VLA 模型从离线微调向在线强化学习转化的技术路径，把握具身智能实时化与高效蒸馏的新趋势。
-- 详情：[/202603/30/README](/202603/30/README)
+今日精研 17 篇前沿论文，重点攻克流式时间序列与持续学习中的测试时自适应（TTA）难题。
+RG-TTA 与子空间优化技术凭借满分表现，实现了无反向传播的高效模型演进与流式数据元控制。
+建议深入探索元认知推理与视觉锚点方案，以低成本解决大模型的逻辑偏差与幻觉问题。
+- 详情：[/202603/31/README](/202603/31/README)
 
 ### 精读区论文标签
-1. [SOMA: Strategic Orchestration and Memory-Augmented System for Vision-Language-Action Model Robustness via In-Context Adaptation](/202603/30/2603.24060v2-soma-strategic-orchestration-and-memory-augmented-system-for-vision-language-action-model-robustness-via-in-context-adaptation)  
+1. [RG-TTA: Regime-Guided Meta-Control for Test-Time Adaptation in Streaming Time Series](/202603/31/2603.27814v1-rg-tta-regime-guided-meta-control-for-test-time-adaptation-in-streaming-time-series)  
    标签：评分：10.0/10、query:tta
-   evidence：无需参数微调的视觉-语言-动作(VLA)模型上下文自适应
-2. [CD-Buffer: Complementary Dual-Buffer Framework for Test-Time Adaptation in Adverse Weather Object Detection](/202603/30/2603.26092v1-cd-buffer-complementary-dual-buffer-framework-for-test-time-adaptation-in-adverse-weather-object-detection)  
+   evidence：针对流式时间序列分布偏移的测试时间自适应
+2. [Subspace Optimization for Backpropagation-Free Continual Test-Time Adaptation](/202603/31/2603.28678v1-subspace-optimization-for-backpropagation-free-continual-test-time-adaptation)  
    标签：评分：10.0/10、query:tta
-   evidence：用于目标检测中领域偏移实时自适应的测试时间自适应 (TTA)
-3. [AcTTA: Rethinking Test-Time Adaptation via Dynamic Activation](/202603/30/2603.26096v1-actta-rethinking-test-time-adaptation-via-dynamic-activation)  
-   标签：评分：10.0/10、query:tta
-   evidence：通过动态激活和参数更新进行测试时间自适应
-4. [ClipTTT: CLIP-Guided Test-Time Training Helps LVLMs See Better](/202603/30/2603.26486v1-clipttt-clip-guided-test-time-training-helps-lvlms-see-better)  
-   标签：评分：10.0/10、query:tta
-   evidence：分布偏移下LVLM的测试时间训练
-5. [ETA-VLA: Efficient Token Adaptation via Temporal Fusion and Intra-LLM Sparsification for Vision-Language-Action Models](/202603/30/2603.25766v1-eta-vla-efficient-token-adaptation-via-temporal-fusion-and-intra-llm-sparsification-for-vision-language-action-models)  
+   evidence：无反向传播的持续测试时间自适应系统
+3. [Live Interactive Training for Video Segmentation](/202603/31/2603.26929v1-live-interactive-training-for-video-segmentation)  
    标签：评分：9.0/10、query:tta
-   evidence：视觉-语言-动作 (VLA) 模型的有效 Token 自适应框架
-6. [Meta-Learned Adaptive Optimization for Robust Human Mesh Recovery with Uncertainty-Aware Parameter Updates](/202603/30/2603.26447v1-meta-learned-adaptive-optimization-for-robust-human-mesh-recovery-with-uncertainty-aware-parameter-updates)  
+   evidence：推理时通过LoRA从人类修正中进行在线学习
+4. [A Provable Energy-Guided Test-Time Defense Boosting Adversarial Robustness of Large Vision-Language Models](/202603/31/2603.26984v1-a-provable-energy-guided-test-time-defense-boosting-adversarial-robustness-of-large-vision-language-models)  
    标签：评分：9.0/10、query:tta
-   evidence：测试时间细化过程中的不确定性感知自适应更新
-7. [Adapt as You Say: Online Interactive Bimanual Skill Adaptation via Human Language Feedback](/202603/30/2603.26466v1-adapt-as-you-say-online-interactive-bimanual-skill-adaptation-via-human-language-feedback)  
+   evidence：可证明的能量引导测试时间变换用于LVLM鲁棒性
+5. [Test-Time Instance-Specific Parameter Composition: A New Paradigm for Adaptive Generative Modeling](/202603/31/2603.27665v1-test-time-instance-specific-parameter-composition-a-new-paradigm-for-adaptive-generative-modeling)  
    标签：评分：9.0/10、query:tta
-   evidence：在部署时针对新任务变体对双臂技能进行零样本在线自适应
+   evidence：用于自适应建模的测试时间实例特定参数组合
+6. [Tunable Domain Adaptation Using Unfolding](/202603/31/2603.26931v1-tunable-domain-adaptation-using-unfolding)  
+   标签：评分：8.0/10、query:tta
+   evidence：利用展开网络在推理期间进行受控自适应
 
 ### 速读区论文标签
-1. [Rethinking Token Reduction for Large Vision-Language Models](/202603/30/2603.21701v1-rethinking-token-reduction-for-large-vision-language-models)  
+1. [CoT2-Meta: Budgeted Metacognitive Control for Test-Time Reasoning](/202603/31/2603.28135v1-cot2-meta-budgeted-metacognitive-control-for-test-time-reasoning)  
    标签：评分：8.0/10、query:tta
-   evidence：多轮视觉问答中的令牌削减
-2. [VLA-OPD: Bridging Offline SFT and Online RL for Vision-Language-Action Models via On-Policy Distillation](/202603/30/2603.26666v1-vla-opd-bridging-offline-sft-and-online-rl-for-vision-language-action-models-via-on-policy-distillation)  
-   标签：评分：8.0/10、query:tta
-   evidence：VLA模型在部署期间进行后训练以应对分布偏移
-3. [Fast-dVLA: Accelerating Discrete Diffusion VLA to Real-Time Performance](/202603/30/2603.25661v2-fast-dvla-accelerating-discrete-diffusion-vla-to-real-time-performance)  
+   evidence：具有元级控制的测试时间推理框架
+2. [Visual Attention Drifts,but Anchors Hold:Mitigating Hallucination in Multimodal Large Language Models via Cross-Layer Visual Anchors](/202603/31/2603.25088v1-visual-attention-driftsbut-anchors-holdmitigating-hallucination-in-multimodal-large-language-models-via-cross-layer-visual-anchors)  
    标签：评分：7.0/10、query:tta
-   evidence：预训练VLA模型的自适应成本与性能提升
-4. [Policy-Guided World Model Planning for Language-Conditioned Visual Navigation](/202603/30/2603.25981v1-policy-guided-world-model-planning-for-language-conditioned-visual-navigation)  
+   evidence：缓解多模态大模型幻觉的无需训练方法
+3. [Learning to Select Visual In-Context Demonstrations](/202603/31/2603.26775v1-learning-to-select-visual-in-context-demonstrations)  
    标签：评分：7.0/10、query:tta
-   evidence：用于视觉导航的潜空间世界模型规划
-5. [SSAM: Singular Subspace Alignment for Merging Multimodal Large Language Models](/202603/30/2603.21584v1-ssam-singular-subspace-alignment-for-merging-multimodal-large-language-models)  
+   evidence：多模态大语言模型的上下文学习自适应
+4. [Meta-Contrastive Learning for Vision-Language Models via Task-Adaptive CLIP Training](/202603/31/2603.27091v1-meta-contrastive-learning-for-vision-language-models-via-task-adaptive-clip-training)  
+   标签：评分：7.0/10、query:tta
+   evidence：通过元学习实现对特定领域分布的快速自适应
+5. [ResAdapt: Adaptive Resolution for Efficient Multimodal Reasoning](/202603/31/2603.28610v1-resadapt-adaptive-resolution-for-efficient-multimodal-reasoning)  
+   标签：评分：7.0/10、query:tta
+   evidence：多模态大语言模型的输入端自适应框架
+6. [AdaptToken: Entropy-based Adaptive Token Selection for MLLM Long Video Understanding](/202603/31/2603.28696v1-adapttoken-entropy-based-adaptive-token-selection-for-mllm-long-video-understanding)  
+   标签：评分：7.0/10、query:tta
+   evidence：在多模态大模型中使用熵进行自适应Token选择的免训练框架
+7. [Temporal Credit Is Free](/202603/31/2603.28750v1-temporal-credit-is-free)  
+   标签：评分：7.0/10、query:tta
+   evidence：流式机器学习基准的在线自适应
+8. [Label-Free Cross-Task LoRA Merging with Null-Space Compression](/202603/31/2603.26317v1-label-free-cross-task-lora-merging-with-null-space-compression)  
    标签：评分：6.0/10、query:tta
-   evidence：多模态大语言模型合并
-6. [GazeQwen: Lightweight Gaze-Conditioned LLM Modulation for Streaming Video Understanding](/202603/30/2603.25841v1-gazeqwen-lightweight-gaze-conditioned-llm-modulation-for-streaming-video-understanding)  
+   evidence：跨任务自适应的无标签 LoRA 适配器合并
+9. [Mitigating the Reasoning Tax in Vision-Language Fine-Tuning with Input-Adaptive Depth Aggregation](/202603/31/2603.26330v1-mitigating-the-reasoning-tax-in-vision-language-fine-tuning-with-input-adaptive-depth-aggregation)  
    标签：评分：6.0/10、query:tta
-   evidence：通过参数高效调制实现流式视频理解
+   evidence：视觉语言模型的输入自适应机制
+10. [Reflect to Inform: Boosting Multimodal Reasoning via Information-Gain-Driven Verification](/202603/31/2603.26348v1-reflect-to-inform-boosting-multimodal-reasoning-via-information-gain-driven-verification)  
+   标签：评分：6.0/10、query:tta
+   evidence：推理过程中多模态推理的自我演进框架
+11. [Inference-Time Structural Reasoning for Compositional Vision-Language Understanding](/202603/31/2603.27349v1-inference-time-structural-reasoning-for-compositional-vision-language-understanding)  
+   标签：评分：6.0/10、query:tta
+   evidence：视觉语言模型的推理时结构化推理与增强
 
 
 <div class="dpr-home-promo-card">
