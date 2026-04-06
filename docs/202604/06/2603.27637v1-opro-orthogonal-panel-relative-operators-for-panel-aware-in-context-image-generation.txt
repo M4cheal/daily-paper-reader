@@ -1,0 +1,863 @@
+Title: OPRO: Orthogonal Panel-Relative Operators for Panel-Aware In-Context Image Generation
+
+URL Source: https://arxiv.org/pdf/2603.27637v1
+
+Published Time: Tue, 31 Mar 2026 01:08:57 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# OPRO: Orthogonal Panel-Relative Operators for Panel-Aware In-Context Image Generation 
+
+## Sanghyeon Lee, Minwoo Lee, Euijin Shin, Kangyeol Kim, Seunghwan Choi, Jaegul Choo Korea Advanced Institute of Science and Technology (KAIST) Daejeon, Korea      
+
+> {shlee6825, minwoo011015, ejshin0310, kangyeolk, shadow2496, jchoo }@kaist.ac.kr
+
+## Abstract 
+
+We introduce a parameter-efficient adaptation method for panel-aware in-context image generation with pre-trained diffusion transformers. The key idea is to compose learn-able, panel-specific orthogonal operators onto the back-bone’s frozen positional encodings. This design provides two desirable properties: (1) isometry, which preserves the geometry of internal features, and (2) same-panel invari-ance, which maintains the model’s pre-trained intra-panel synthesis behavior. Through controlled experiments, we demonstrate that the effectiveness of our adaptation method is not tied to a specific positional encoding design but gen-eralizes across diverse positional encoding regimes. By en-abling effective panel-relative conditioning, the proposed method consistently improves in-context image-based in-structional editing pipelines, including state-of-the-art ap-proaches. 
+
+## 1. Introduction 
+
+Large-scale pre-trained models, from diffusion models [14, 28] to more recent diffusion transformers (DiTs) [6, 10, 27], have achieved state-of-the-art results in high-fidelity im-age generation. A promising application for these models is in-context image generation (ICG). In this paradigm, the model adapts its outputs to visual examples provided in context, much as large language models (LLMs) use tex-tual prompts for in-context learning [4, 36]. Enabling such flexible, example-based control has long been a research topic in image generation, often referred to as exemplar- or reference-based generation [11, 26]. A typical setup for ICG is the tiled-panel layout [16, 30], which arranges one or more context panels and a target query panel as separate visual regions. As illustrated in Fig. 1, existing ICG approaches are commonly based on two main paradigms: leveraging inpainting-based DiTs [3] and text-to-image (T2I) DiTs [2]. ICG methods based on inpainting DiTs [21, 30, 31, 43] formulate the generation process as a spatial completion problem. These methods place the context panels on a uni-fied canvas, mask the target panel, and generate it condi-tioned on the visible panels and the text instruction. Be-cause inpainting-based ICG methods process the entire tiled layout as a single image, positional encodings [32] are as-signed to a single global coordinate grid shared across all panels as illustrated in Fig. 1(a). Alternatively, ICG frameworks based on T2I DiTs [15, 16, 37] incorporate context images through feature injec-tion or inversion techniques [22]. Rather than arranging all panels on a unified canvas, T2I-based methods first encode or invert the context images separately and then fuse the re-sulting latent representations into the target-generation pro-cess through attention [34]. To condition the target query, these methods concatenate the extracted context representa-tions within the attention pathway of the target-generation stream. Each panel uses its own coordinate system before inter-panel fusion as illustrated in Fig. 1(b). This allows both the reference and target panels to share the same scale for positioning. Despite the distinct structural choices of global-canvas and per-panel encodings, both remain panel-agnostic at the attention level. In inpainting-based ICG, the tiled layout is processed on a single global coordinate grid; tokens from different panels are treated as distant regions within a single canvas rather than members of distinct panels. In T2I-based ICG, context features are encoded in separate streams and fused into target generation through attention; because each stream is position-encoded in its own local frame, tokens from different panels can share identical positional indices. In neither case does the attention mechanism receive an ex-plicit signal indicating whether a token pair is intra-panel or inter-panel. Consequently, the adapter must simultaneously learn inter-panel relation transfer and preserve the back-bone’s pre-trained intra-panel synthesis behavior, creating a dual burden for adaptation. This observation motivates an adaptation mechanism 
+
+> arXiv:2603.27637v1 [cs.CV] 29 Mar 2026 Inter-
+> panel
+> Intra-
+> panel
+> Intra-
+> panel
+> Inter-
+> panel
+> VAE encoder
+> Inpainting DiT
+> VAE encoder
+> T2I DiT
+
+(a) Global-Canvas Enc. (b) Per-Panel Enc.      
+
+> Query
+> Tokens
+> Coordinate (H,W) (1,1) (H,W) (1,1) (H,W) (1,1) (H,W) (1,1) (2H,2W) (1,1) (1,2)
+> Wx2
+> Hx2
+> W
+> H
+
+(c) Panelized Attention with OPRO  
+
+> Intra-panel:
+> Inter-panel:
+> Context Images
+> Before Fine-tuning With OPRO
+
+Figure 1. Two positional regimes in tiled ICG and the role of OPRO in panelized attention. (a) Global-canvas encoding : Inpainting-based DiTs treat the tiled layout as a single image on a single global coordinate grid, so different panels become disjoint regions of a unified canvas. (b) Per-panel encoding : T2I-based methods encode each panel in its own local frame and then fuse context features into target generation through attention, reusing the same coordinate range across panels. (c) In panelized attention, diagonal blocks are intra-panel and off-diagonal blocks are inter-panel. OPRO preserves the intra-panel blocks while modulating the inter-panel blocks. 
+
+that explicitly distinguishes inter-panel from intra-panel in-teractions in attention. To this end, we introduce the Orthog-onal Panel-Relative Operator (OPRO), a parameter-efficient fine-tuning (PEFT) method that applies learnable, panel-specific orthogonal operators to the backbone’s position-aware queries and keys. OPRO is designed to preserve pre-trained intra-panel behavior while introducing a learnable panel-relative modulation for inter-panel interactions as il-lustrated in Fig. 1(c). This design is guided by two key prop-erties. First, isometry (Proposition 1) preserves the norms of the transformed queries and keys, preventing unintended rescaling of attention logits and thereby maintaining the backbone’s feature geometry during fine-tuning. Second, 
+
+invariance on the same panel (Proposition 2) guarantees that the attention scores between tokens of the same panel remain identical to those of the pre-trained backbone. To-gether, these properties allow the adapter to focus its ca-pacity on inter-panel transfer without perturbing pre-trained intra-panel synthesis. Our main contributions are summarized as follows: • We propose OPRO, a parameter-efficient panel-relative adaptation method for tiled in-context generation, which applies learnable, panel-specific orthogonal operators to the backbone’s position-aware queries and keys. • We establish that OPRO provides two exact guarantees for structured adaptation: same-panel invariance , which preserves pre-trained intra-panel attention, and isometry ,which preserves feature norms and avoids unintended rescaling of attention logits. • We introduce a two-stage compositional reasoning bench-mark to perform a controlled analysis of OPRO and evaluate its consistent performance improvements across diverse positional regimes, including APE, RoPE [32], LieRE [25], and ComRoPE [39]. • We demonstrate that OPRO is effective in real-world ICG by improving instructional image editing, includ-ing gains over state-of-the-art methods [37, 43] on Mag-icBrush [41]. 
+
+## 2. Related Work 
+
+2.1. In-Context Image Generation 
+
+Motivated by the in-context learning phenomenon in large language models [4, 36], early ICG methods sought to replicate similar behavior in diffusion models. Prompt Dif-fusion [35], iPromptDiff [7], and Context Diffusion [23] are trained on curated visual or textual queries/instructions paired with targets. These methods integrate the encoded features into the diffusion backbone and optimize the model under a standard diffusion objective [14]. Although effec-tive within their specific training settings, these approaches are better characterized as training-time context condition-ing. Their ability to generalize to unseen tasks remains to be thoroughly established. Recent works, such as IC-LoRA [16] and Diptych [30], highlight an emerging tiled-canvas in-context regime for large-scale diffusion transformers and inpainting models [3, 6, 27]. In these setups, reference images and the textual query are arranged on a single canvas, and the model empir-ically transfers concepts, styles, and identities without full model retraining. IC-LoRA exploits this behavior via PEFT on tiled canvases, providing an alternative to explicit con-ditioning methods such as IP-Adapter [38]. Diptych builds on high-capacity inpainting models (e.g., FluxFill [3]) with a left-to-right canvas layout, where background removal re-duces leakage and attention amplification improves the fi-delity of the conditioned region. In parallel, PEFT has emerged as a practical approach to adapt robust text-to-image backbones while retain-ing their zero-shot behavior. ACE++ [21] proposes an instruction-based diffusion framework that extends long-context inpainting-style inputs to diverse generation and editing tasks, offering both full and lightweight fine-tuning variants. InsertAnything [31] introduces a unified DiT-based reference insertion framework whose in-context edit-ing mechanism treats reference images as contextual con-ditioning via multimodal attention. ICEdit [43] attains strong instruction-guided editing performance with PEFT and Mixture-of-Experts [17]. UNO [37] proposes a progres-sive synthesis pipeline that harnesses the intrinsic in-context capabilities of diffusion transformers. 
+
+2.2. Orthogonal Relative Positional Encodings 
+
+Rotary position embedding (RoPE) [32] encodes a rela-tive offset as a block-diagonal rotation, making the atten-tion kernel equivariant to translations along the modeled axes. RoPE has been widely adopted in language mod-els [8, 18, 33] for long-context stability and extensions. This core idea was naturally adapted to 2D token layouts for vision. While early applications used simple axis-wise frequencies, later work proposed mixed axial frequencies to capture diagonals and perspective effects [12]. 2D rel-ative positional encodings are now a foundational compo-nent in modern large-scale Diffusion Transformers, such as PixArt-α [6] and the MMDiT architecture used in Flux [10]. Beyond these 2D adaptations, the concept of orthogonal rotation has been generalized further: Lie group-based ap-proaches (LieRE) [25] model rotations directly in higher-dimensional subspaces, and commuting-angle formulations (ComRoPE) [39] learn trainable rotation spectra with guar-anteed commutativity. While these foundational encodings effectively model continuous pixel displacements through rotational transformations, they remain inherently agnostic to discrete canvas partitions. We propose to augment this mathematical structure by injecting an explicit panel-aware phase into the position-aware representations. 
+
+## 3. Method 
+
+We address in-context image generation by modifying position-aware attention to allow panel identity to influ-ence cross-panel interactions while preserving the back-bone’s pre-trained same-panel behavior. Our key idea is to apply a learnable, panel-specific orthogonal modulation to the backbone’s frozen, position-aware queries and keys. Our approach is detailed as follows. We first formalize tiled-panel ICG with position-aware attention in Sec. 3.1. We then introduce the Orthogonal Panel-Relative Operator (OPRO) and its core properties in Sec. 3.2. Finally, Sec. 3.3 describes our parameterization and zero-interference initial-ization strategy. 
+
+3.1. Tiled-Panel ICG with Position-Aware Attention 
+
+We consider a tiled layout partitioned into P panels. After patchification and flattening, the model processes a token sequence of length L. Each token i ∈ { 1, . . . , L } is asso-ciated with two attributes: a panel index p(i) ∈ { 1, . . . , P }
+
+and a spatial coordinate xi in its native positional frame. Let ˜qi, ˜ki ∈ Rdh denote the backbone’s frozen, position-aware query and key representations for token i in a given attention head of dimension dh. These representations are obtained after the backbone applies its native positional mechanism. Depending on the backbone family, this posi-tional mechanism may arise from a single global coordinate system over a tiled canvas or from per-panel positional en-coding followed by cross-panel fusion. We keep this defini-tion general and do not assume a specific positional encod-ing form. The standard attention score between tokens i and j is 
+
+sij = ⟨˜qi, ˜kj ⟩√dh
+
+. (1) In tiled-panel ICG, standard PEFT modules update shared attention projections but do not explicitly encode whether a token pair is same-panel or cross-panel in the attention logit. Consequently, panel-agnostic adaptation methods (e.g., LoRA) face a dual burden: they must ac-quire inter-panel retrieval capabilities while simultaneously preserving the pre-trained intra-panel geometry of the back-bone. 
+
+3.2. Orthogonal Panel-Relative Operator (OPRO) 
+
+While standard PEFT modules or simple linear adapters could be used to inject panel identity, they inherently al-ter the backbone’s feature space. This disruption forces the model to relearn intra-panel attention geometries, degrad-ing the pre-trained generation quality. To explicitly encode panel identity while strictly preserving the native same-panel behavior, we require a transformation that preserves the inner product. Therefore, we introduce a set of learnable panel opera-tors restricted to the special orthogonal group: 
+
+{Up}Pp=1 , Up ∈ SO( dh). (2) By definition, these operators satisfy the orthogonality con-dition U ⊤ 
+
+> p
+
+Up = I.Given the frozen, position-aware query and key repre-sentations of the backbone, OPRO applies the panel opera-tor associated with each token: 
+
+ˆqi = Up(i) ˜qi, ˆkj = Up(j) ˜kj . (3) Encode  
+
+> &
+> Concat
+> Crop
+> Generated Image
+> (Optional)
+> Panel-Aware Encoding with OPRO
+> DiT Blocks
+> Ours (OPRO)
+
+Figure 2. Overview of OPRO for tiled-panel in-context image generation. The proposed framework partitions a tiled canvas into P
+
+panels and processes them as a single token sequence. Within each attention layer of a backbone, OPRO modulates the position-aware queries ( ˜qi) and keys ( ˜kj ) via panel-specific orthogonal operators ( Up(i) and Up(j)). This adaptation explicitly guides cross-panel interac-tions while preserving the original same-panel attention geometry. An example generated image is provided on the right. 
+
+The resulting attention score becomes 
+
+s′ 
+
+> ij
+
+= ⟨ˆqi, ˆkj ⟩√dh
+
+=˜q⊤
+
+> i
+
+
+
+U ⊤
+
+> p(i)
+
+Up(j)
+
+ ˜kj
+
+√dh
+
+. (4) Equation (4) demonstrates that OPRO preserves the position-aware query and key features of the backbone while introducing an explicit panel-relative modulation through the relative operator U ⊤
+
+> p(i)
+
+Up(j). When two tokens belong to the same panel, this relative operator collapses to the identity. Conversely, when they belong to different pan-els, OPRO learns a panel-specific modulation of the original attention score. 
+
+Proposition 1 (Isometry) . For all tokens i, j , the OPRO transformation preserves the norms of the position-aware query and key vectors: 
+
+∥ˆqi∥ = ∥˜qi∥, ∥ˆkj ∥ = ∥˜kj ∥.
+
+Proof. By definition, ˆqi = Up(i) ˜qi and ˆkj = Up(j) ˜kj . Since each Up is orthogonal, U ⊤ 
+
+> p
+
+Up = I. Therefore, 
+
+∥ˆqi∥2 = ˜ q⊤ 
+
+> i
+
+U ⊤
+
+> p(i)
+
+Up(i) ˜qi = ˜ q⊤ 
+
+> i
+
+˜qi = ∥˜qi∥2,
+
+and likewise ∥ˆkj ∥ = ∥˜kj ∥.
+
+Proposition 2 (Same-Panel Invariance) . If two tokens i and 
+
+j belong to the same panel, i.e., p(i) = p(j), then OPRO preserves their original attention score: 
+
+⟨ˆqi, ˆkj ⟩ = ⟨˜qi, ˜kj ⟩.
+
+Equivalently, for the same-panel token pairs, s′ 
+
+> ij
+
+= sij .Proof. If p(i) = p(j) = p, then from Eq. (4), 
+
+⟨ˆqi, ˆkj ⟩ = ˜ q⊤ 
+
+> i
+
+U ⊤ 
+
+> p
+
+Up ˜kj = ˜ q⊤ 
+
+> i
+
+˜kj = ⟨˜qi, ˜kj ⟩.
+
+Thus, the attention score is preserved for all same-panel to-ken pairs. These two propositions together yield the structural be-havior we seek. Proposition 1 ensures that OPRO solely ro-tates the position-aware query and key features of the back-bone without changing their norms, thereby avoiding unin-tended rescaling of the attention logits. Proposition 2 en-sures that intra-panel attention remains identical to that of the pre-trained backbone. As a result, OPRO can concen-trate its capacity on modulating cross-panel interactions, where panel identity matters, without perturbing the pre-trained same-panel synthesis behavior of the backbone. 
+
+Relation to orthogonal relative positional encodings 
+
+Our formulation above is defined for general position-aware queries and keys, and therefore does not require a spe-cific positional encoding family. However, when the un-derlying architecture employs an orthogonal relative po-sitional encoding (e.g., RoPE [32], LieRE [25], or Com-RoPE [39]), OPRO admits an additional compositional in-terpretation around the frozen positional operator. We defer this orthogonal-relative derivation, along with the RoPE-style block-diagonal specialization, to the supplementary material. 
+
+3.3. Parameterization and Zero-Interference Ini-tialization 
+
+Section 3.2 defines OPRO through abstract orthogonal op-erators Up ∈ SO( dh). We now describe an efficient param-eterization for learning these operators and an initialization strategy that preserves the pre-trained backbone at the start of fine-tuning. 
+
+Low-rank Lie exponential parameterization Directly optimizing a transformation matrix on the constrained man-ifold of orthogonal matrices ( SO( dh)) demands computa-tionally expensive operations, such as Riemannian gradi-ent descent or repeated matrix projections. To handle this efficiently, we optimize an unconstrained skew-symmetric generator in the corresponding Lie algebra so (dh) and re-cover the orthogonal operator via the matrix exponential map [20]. Specifically, we define two learnable matrices Lp, R p ∈
+
+Rdh×ρ for each panel p, where ρ < d h is the rank, and formulate the generator Ap as 
+
+Ap = LpR⊤ 
+
+> p
+
+− RpL⊤ 
+
+> p
+
+. (5) The orthogonal operator Up is then obtained through the matrix exponential 
+
+Up = exp( Ap). (6) Because A⊤ 
+
+> p
+
+= −Ap, the matrix exponential naturally guar-antees orthogonality ( U ⊤ 
+
+> p
+
+Up = I) by construction. This parameterization allows standard optimizers to operate in an unconstrained Euclidean space while yielding a dense cross-channel orthogonal transform in a parameter-efficient manner. 
+
+Zero-interference initialization As demonstrated by ControlNet [42], zero initialization is a highly effective strategy when applying additive or multiplicative modules to pre-trained models. Because OPRO is designed to adapt a frozen backbone, the adapter must not interfere with the pre-trained representations at the optimization step zero. We achieve this by initializing the low-rank matrices as follows: 
+
+Lp = 0 , Rp ∼ N (0 , σ 2). (7) Under this asymmetric initialization, the generator evalu-ates to Ap = 0 , yielding Up = exp(0) = I. Consequently, OPRO begins as an exact identity mapping, leaving the orig-inal attention of the backbone completely unchanged at the start of training. Furthermore, this initialization still admits non-zero gradients for Lp, ensuring that optimization com-mences immediately. Detailed derivations of the gradients are provided in the supplementary material. 
+
+## 4. Experiments 
+
+We conduct experiments to validate OPRO’s effectiveness. First, in Sec. 4.1, we introduce a two-stage composi-tional reasoning task. This controlled proxy task is de-signed to analyze OPRO’s core properties: its ability to preserve pre-trained knowledge (Same-Panel Invariance) while robustly learning new inter-panel rules. Second, in Sec. 4.2, we evaluate OPRO on the real-world task of in-structional image editing within a two-panel layout. We demonstrate that OPRO, when integrated as a lightweight module, consistently enhances the performance of state-of-the-art diffusion-based editing methods [37, 43]. Finally, to demonstrate OPRO’s scalability beyond this two-panel setup, we extend our evaluation to a three-panel layout for 
+
+subject-driven generation in the supplementary material. 
+
+4.1. Two-Stage Compositional Reasoning Task 
+
+ICG requires a model to infer a latent, episode-specific rule from visual examples and apply it to a query. This pro-cess demands two distinct abilities: (1) robust intra-panel perception to understand the content within each panel, (2) inter-panel reasoning to infer the relationship between pan-els. We design a synthetic two-stage benchmark (Fig. 3) motivated by Raven-style puzzles [40] to concisely evalu-ate these abilities using the proposed method. In Stage 1 (single-panel pretext), we equip the model with core percep-tual skills (e.g., arrow detection and angle composition). In Stage 2 (grid reasoning), we then test a hypothesis: can the model preserve its pre-trained Stage 1 skills when deployed in a multi-panel context while simultaneously learning the new inter-panel reasoning task in its adapters? Throughout the evaluation, we can measure how effectively different adapters (OPRO vs. LoRA) handle the panel-based struc-ture by replacing pixel generation with classification. 
+
+Stage 1: Single-Panel Pretext Task Stage 1: Pretrain the model from scratch on a single-panel geometric task. As shown on the left of Fig. 3, each image contains a single panel with two arrows placed at random, non-overlapping positions. Arrow orientations are sampled from 
+
+{0◦, 45 ◦, . . . , 315 ◦}. The label is the sum of the two orien-tations modulo 360 ◦, quantized into 8 classes. To prevent shortcutting, we introduce distractors by rendering arrows at random scales and scattering letters across the panel. This pretext induces key intra-panel skills, consisting of robust arrow detection and geometric composition, specifically an-gle addition. 
+
+Stage 2: Grid Reasoning Stage 2 tests the model’s ability to learn inter-panel visual reasoning rules while preserving its pre-trained Stage 1 skills. We partition the image into an 
+
+n×n grid ( n∈{ 2, 3, 4}). Crucially, as described in Fig. 3, 
+
+each row functions as an independent reasoning prob-lem. For a given row i, the first n − 1 panels serve as visual context (examples), and the final n-th panel is the held-out query (question). The model’s objective is to: (1) infer a hid-den visual transformation rule from the context panels, (2) apply the found rule to the visual content (the two arrows) in the query. We consider two categories of visual transformation rules: (i) Rotation : 8 distinct rules defined by visually ro-tating the panel content (both arrows) by k · 45 ◦ relative to the previous panel, where k∈N. (ii) Mirror Symmetry : 2 distinct rules correspond to a visual reflection of the panel content about the vertical canvas axis (e.g., in a 3-panel row, the third panel is a reflection of the first). To avoid ambigu-ity that can arise with reflections under 8-way quantization Table 1. Accuracy of LoRA ( r = 8 ) with/without OPRO ( ρ = 8 ) across panels. ∆ is the absolute gain over LoRA.                                                                      
+
+> Panel 2×2
+> Type MLP LoRA +OPRO ∆
+> APE [34] 34.90 38.00 40.50 +2 .50
+> RoPE [32] 37.60 46.40 49.90 +3 .50
+> LieRE [25] 33.40 58.10 58.10 +0 .00
+> ComRoPE [39] 38.60 58.50 66.60 +8 .10
+> Panel 3×3
+> Type MLP LoRA +OPRO ∆
+> APE [34] 23.70 24.40 26.30 +1 .90
+> RoPE [32] 27.40 36.20 42.00 +5 .80
+> LieRE [25] 29.00 34.20 42.70 +8 .50
+> ComRoPE [39] 24.80 37.80 45.70 +7 .90
+> Panel 4×4
+> Type MLP LoRA +OPRO ∆
+> APE [34] 20.00 19.50 24.20 +4 .70
+> RoPE [32] 19.60 30.30 39.20 +8 .90
+> LieRE [25] 20.10 22.90 26.70 +3 .80
+> ComRoPE [39] 18.90 29.20 47.20 +18 .00
+
+W / n 
+
+Stage 2: Grid Reasoning   
+
+> Given
+> Example
+> (Context)
+> Question
+> Row
+> (Query)
+> Rule: Rotation
+> Answer: 90
+
+Rules               
+
+> 315 270 225
+> 225 180 135
+> 45 0315
+> 225 90 225
+> 135 135 135
+> 315 90 315
+> + 315
+> symmetric
+> + 315
+> 135 180 315
+
+# =+
+
+W
+
+Sum of two orientation angles Predict the rule and answer the question 
+
+Stage 1: Single Panel Pretext 
+
+> Rotation
+> Mirror Symmetry
+
+Figure 3. Two-stage compositional reasoning. Stage 1 (single-panel pretext): classify the sum of two arrow orientations modulo  360 ◦
+
+(8-way) with distractors. Stage 2 (grid reasoning): on an  n×n grid, each row provides context examples and a held-out query; the row-wise rule is either rotation by  k·45 ◦ or vertical mirror symmetry. 
+
+in the limited 2×2 context, we use only the Rotation rules for n = 2 panels. For n ∈ { 3, 4}, we uniformly sample from the complete set of both Rotation and Mirror Symme-try rules. 
+
+Experimental Setup We design a two-stage experiment to evaluate OPRO’s effectiveness in fine-tuning for a multi-panel task. All experiments are based on ViT-B [9]. 
+
+Stage 1 (Backbone pretraining). We train four back-bones from scratch on a single-panel pretext task, differ-ing only in positional encodings: APE [34], RoPE [32], LieRE [25], and ComRoPE [39]. 
+
+Stage 2 (Multi-panel fine-tuning). We initialize from Stage 1 and freeze the backbone, then fine-tune on an 8-way grid-reasoning classification task under three settings: • Linear Probe: Only the classification head (an MLP) is trained. • LoRA: Only LoRA is trained (rank r=8). • LoRA + OPRO (Ours): Both LoRA (r=8) and our OPRO (rank ρ = 8 )Both stages use  50 k training and  1k validation images at 
+
+224 ×224 . We use a batch size of 256, Adam [19], and cross-entropy loss. We report top-1 validation accuracy (chance level 12.5%). 
+
+Robustness to Positional Encodings Tab. 1 summarizes accuracy across positional-encoding backbones and grid sizes. LoRA+OPRO improves over LoRA in the majority of settings, with gains that generally increase with task dif-ficulty (larger n×n); improvements reach up to +18 .0% for ComRoPE at 4×4. Gains are observed with both absolute (APE) and relative (orthogonal) (RoPE, LieRE, ComRoPE) encodings, indicating that the operator is not tied to a spe-cific positional scheme. 
+
+Parameter Efficiency We measure the accu-racy–parameter trade-off on 3 × 3 grids (Fig. 4) using a frozen ViT-B backbone (86.6M parameters). LoRA adds trainable parameters that scale linearly with its rank r,amounting to 1.327M for r = 8 . Our OPRO, which scales with its own rank ρ, introduces a minimal overhead. For instance, at ρ = 8 , OPRO adds only 0.111M parameters. This overhead is negligible, representing just 8.4% of the LoRA parameters (at r = 8 ) and 0.13% of the backbone 0.10 0.15 0.20 0.25 0.30 
+
+> Learnable Parameters (M)
+> 20
+> 25
+> 30
+> 35
+> 40
+> 45
+> 50
+> Accuracy (%)
+> PE Type
+> AP
+> RoPE
+> ComRoPE
+> LieRE
+> Method
+> LoRA
+> + OPRO
+> LoRA Rank
+> r=2
+> r=4
+> r=8
+
+Figure 4. OPRO’s impact on parameter efficiency. Validation accuracy (%) plotted against the number of trainable adapter pa-rameters (M) for 3×3 panels 
+
+size . As shown in Fig. 4, this high parameter efficiency allows LoRA+OPRO to achieve a significantly better accuracy–parameter trade-off than LoRA alone. 
+
+Ablation Studies To validate that the performance gains of OPRO stem from its specific structural properties, we conducted ablation studies on two key design principles: (i) Isometry (norm-preserving transformation) and (ii) Same-Panel Invariance (SP-Inv). We created two variants to iso-late the impact of these properties. All variants, including OPRO, were tested at ρ = 4 for a fair comparison. 
+
+1) Additive Panel Bias (APB) . Replace OPRO with per-panel additive biases for queries/keys. This design is non-isometric (vector addition alters norms) and violates SP-Inv (the biases distort the pre-trained Stage 1 scores): 
+
+⟨ ˜Qi + bQp , ˜Kj + bKp ⟩ = ⟨ ˜Qi, ˜Kj ⟩ + ⟨ ˜Qi, b Kp ⟩
+
++⟨bQp , ˜Kj ⟩ + ⟨bQp , b Kp ⟩.
+
+2) Asymmetric Orthogonal Operator : In this variant, we learn independent orthogonal operators for queries and keys,  Up, V p ∈ SO( dh):
+
+ˆQi = Up(i) ˜Qi, ˆKj = Vp(j) ˜Kj .
+
+This design maintains isometry, but breaks SP-Inv unless 
+
+Up = Vp, as the inner product becomes: 
+
+⟨ ˆQi, ˆKj ⟩ = ⟨ ˜Qi, (U ⊤ 
+
+> p
+
+Vp) ˜Kj ⟩.
+
+For SP-Inv across all same-panel pairs, we require  U ⊤ 
+
+> p
+
+Vp =
+
+I, which implies  Up = Vp. However, independent learning generally violates this condition. 
+
+Table 2. Ablation on 2-stage compositional reasoning task (ViT-B, 3×3). We analyze the impact of component removal. APB 
+
+lacks isometry, and Asym-OPRO violates SP-Inv. w/o Zero Init 
+
+denotes OPRO with random initialization. OPRO (Ours) satisfies all properties. 
+
+Method Isometry SP-Inv Accuracy LoRA (Baseline) - - 36.20 + APB No No 35.70 + Asym-OPRO Yes No 39.70 + OPRO (w/o Zero Init) Yes Yes 38.60 
+
++ OPRO (Ours) Yes Yes 42.00 
+
+4.2. Instructional Image Editing with OPRO 
+
+While Sec. 4.1 provides a controlled benchmark, the pri-mary objective is to evaluate OPRO on real-world in-context image generation. Specifically, instructional image editing is formulated as a task comprising two panels: a source reference panel and a target query panel. To assess editing capabilities on this layout, the MagicBrush [41] test set is utilized. Following prior evaluation protocols [41, 43], visual consistency and editing fidelity are measured using L1, CLIP-I [13], and DINO [5, 24] metrics. 
+
+Experimental Setup To demonstrate that OPRO is ag-nostic to backbone architectures and positional-encoding schemes, we integrate it as a lightweight module (+0.93M parameters, ρ = 32 ) into state-of-the-art baselines repre-senting both ICG paradigms. For inpainting-based meth-ods (global-canvas encoding), we evaluate ICEdit [43], ACE++ [21], and InsertAnything [31], instantiated on Flux-Fill [3]. For T2I-based methods (per-panel encoding), we evaluate UNO [37], instantiated on FLUX.1. We train all models for 5,000 steps using the Adam optimizer [19] with a learning rate of 1 × 10 −4 and a batch size of 8. The spatial layout and text conditioning are adapted to each paradigm. For inpainting baselines, source images are re-sized to 512 ×512 and placed on the left half of a 512 ×1024 
+
+canvas, trained with right-half masking, and prompted fol-lowing ICEdit: “A diptych with two side-by-side images of the same scene. On the right, the scene is identical to the left but instruction.” For the T2I-based UNO, we follow its na-tive per-panel setup and utilize a direct instruction prompt: 
+
+“Create a single image identical to the reference but with the following edit: instruction.” 
+
+Quantitative Results As Tab. 3 demonstrates, adding OPRO consistently improves performance across all base-lines while introducing only +0.93M parameters. This over-head corresponds to 4.16% for ICEdit (22.4M) and 0.20% INPUT             
+
+> :Make a big whale
+> jump over the boat .
+> ACE++ + OPRO InsertAnything + OPRO ICEdit + OPRO
+> :Have the boy be
+> wearing sunglasses.
+
+Figure 5. Comparison with inpainting-based ICG baselines on MagicBrush [41] test set. Following ICEdit [43], a diptych prompt is used: “A diptych with two side-by-side images . . . but { P } .” Red dotted boxes highlight regions where the baselines fail to preserve context from the input image, resulting in incorrect or incomplete edits. INPUT       
+
+> :Let the flowers in
+> the vase be blue.
+> INPUT
+> :Replace the logo on
+> the sign with a smiley face .
+> UNO + OPRO UNO + OPRO
+
+Figure 6. Comparison with a T2I baseline on MagicBrush [41] test set. In UNO [37], we use the following instruction: “Create a single image matching the reference, but with the following edit: { P } .” 
+
+Table 3. Quantitative results on MagicBrush [41] test set. OPRO (ρ = 32 ) adds only +0.93M learnable parameters and consistently improves. 
+
+Methods Train. Pa L1 ↓ CLIP-I ↑ DINO ↑
+
+ACE++ [arXiv’25] 76.6M 0.1215 0.8658 0.7394 
+
++ OPRO ( ρ = 32 ) +0.93M 0.1114 0.8749 0.7767 
+
+InsertAnything [arXiv’25] 37.5M 0.1327 0.8722 0.7917 
+
++ OPRO ( ρ = 32 ) +0.93M 0.1269 0.8735 0.8009 
+
+ICEdit [NeurIPS’25] 22.4M 0.1189 0.8703 0.7706 
+
++ OPRO ( ρ = 32 ) +0.93M 0.0781 0.9002 0.8531 
+
+UNO [ICCV’25] 478.2M 0.0575 0.9236 0.8961 
+
++ OPRO ( ρ = 32 ) +0.93M 0.0387 0.9281 0.8980 
+
+for UNO (478.2M), indicating that the additional cost re-mains negligible across markedly different model scales. The largest improvement is observed for ICEdit. OPRO reduces L1 by 34.31% (0.1189 → 0.0781), while increasing CLIP-I from 0.8703 to 0.9002 and DINO from 0.7706 to 0.8531. Qualitative results are in Fig. 5 and Fig. 6. 
+
+## 5. Limitations 
+
+OPRO introduces a small number of additional orthogonal transforms in the attention layers, which increase training time and inference latency. We view this as a reasonable computational trade-off for improved in-context behavior. Additionally, the model is trained on a fixed panel layout. While we can handle multi-reference configurations dur-ing inference by reusing learned operators for panels with shared functional roles (detailed in the supplementary ma-terial), handling entirely new layouts that require distinct operators remains an area for future work. 
+
+## 6. Conclusion 
+
+We propose OPRO, a panel-relative orthogonal adapter for multi-panel in-context image generation. By applying learn-able, panel-specific orthogonal operators to the backbone’s frozen, position-aware queries and keys, OPRO preserves the feature geometry while cleanly decoupling cross-panel retrieval from intra-panel synthesis. Furthermore, OPRO consistently outperforms standard LoRA in both real-world instructional image editing and our proposed compositional reasoning benchmark. Acknowledgments 
+
+This work was supported by Institute for Information & communications Technology Planning & Evaluation(IITP) grant funded by the Korea government(MSIT) (RS-2019-II190075, Artificial Intelligence Graduate School Pro-gram(KAIST)), the National Research Foundation of Ko-rea(NRF) grant funded by the Korea government(MSIT) (No. RS-2025-00555621), and i-Scream Media. This re-search was also supported by the High-Performance Com-puting Support Project, funded by the Ministry of Science and ICT (MSIT) and the National IT Industry Promotion Agency (NIPA) under grant No. RQT-25-070278 (provid-ing 40 H100 GPUs). 
+
+## References 
+
+[1] P.-A. Absil, R. Mahony, and R. Sepulchre. Optimization Al-gorithms on Matrix Manifolds . Princeton University Press, Princeton, NJ, 2008. 12, 13 [2] Black Forest Labs. Flux, 2024. 1 [3] Black Forest Labs. FLUX.1 Fill [pro], 2024. 1, 2, 7, 13 [4] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Sub-biah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakan-tan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Lan-guage models are few-shot learners. Advances in neural in-formation processing systems , 33:1877–1901, 2020. 1, 2 [5] Mathilde Caron, Hugo Touvron, Ishan Misra, Herv´ e J´ egou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerg-ing properties in self-supervised vision transformers. In Pro-ceedings of the IEEE/CVF international conference on com-puter vision , pages 9650–9660, 2021. 7 [6] Junsong Chen, Jincheng Yu, Chongjian Ge, Lewei Yao, Enze Xie, Yue Wu, Zhongdao Wang, James Kwok, Ping Luo, Huchuan Lu, and Zhenguo Li. Pixart-α: Fast training of dif-fusion transformer for photorealistic text-to-image synthesis, 2023. 1, 2, 3 [7] Tianqi Chen, Yongfei Liu, Zhendong Wang, Jianbo Yuan, Quanzeng You, Hongxia Yang, and Mingyuan Zhou. Improving in-context learning in diffusion mod-els with visual context-modulated prompts. arXiv preprint arXiv:2312.01408 , 2023. 2 [8] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, et al. Palm: Scaling language modeling with pathways. Journal of Machine Learning Research , 24(240): 1–113, 2023. 3 [9] Alexey Dosovitskiy. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 , 2020. 6 [10] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas M¨ uller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling recti-fied flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning ,2024. 1, 3 [11] Leon A. Gatys, Alexander S. Ecker, and Matthias Bethge. Image style transfer using convolutional neural networks. In 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2016. 1 [12] Byeongho Heo, Song Park, Dongyoon Han, and Sangdoo Yun. Rotary position embedding for vision transformer. In 
+
+European Conference on Computer Vision , pages 289–305. Springer, 2024. 3 [13] Jack Hessel, Ari Holtzman, Maxwell Forbes, Ronan Le Bras, and Yejin Choi. Clipscore: A reference-free evaluation met-ric for image captioning. In Proceedings of the 2021 confer-ence on empirical methods in natural language processing ,pages 7514–7528, 2021. 7 [14] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising dif-fusion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. 1, 2 [15] Lianghua Huang, Wei Wang, Zhi-Fan Wu, Huanzhang Dou, Yupeng Shi, Yutong Feng, Chen Liang, Yu Liu, and Jingren Zhou. Group diffusion transformers are unsupervised multi-task learners. arXiv preprint arXiv:2410.15027 , 2024. 1 [16] Lianghua Huang, Wei Wang, Zhi-Fan Wu, Yupeng Shi, Huanzhang Dou, Chen Liang, Yutong Feng, Yu Liu, and Jin-gren Zhou. In-context lora for diffusion transformers. arXiv preprint arXiv:2410.23775 , 2024. 1, 2 [17] Robert A Jacobs, Michael I Jordan, Steven J Nowlan, and Geoffrey E Hinton. Adaptive mixtures of local experts. Neu-ral computation , 3(1):79–87, 1991. 3 [18] Albert Q Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Deven-dra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, et al. Mixtral of experts. arXiv preprint arXiv:2401.04088 , 2024. 3 [19] Diederik P Kingma. Adam: A method for stochastic opti-mization. arXiv preprint arXiv:1412.6980 , 2014. 6, 7, 11 [20] Mario Lezcano-Casado and David Martınez-Rubio. Cheap orthogonal constraints in neural networks: A simple parametrization of the orthogonal and unitary group. In In-ternational Conference on Machine Learning , pages 3794– 3803. PMLR, 2019. 5 [21] Chaojie Mao, Jingfeng Zhang, Yulin Pan, Zeyinzi Jiang, Zhen Han, Yu Liu, and Jingren Zhou. Ace++: Instruction-based image creation and editing via context-aware content filling. arXiv preprint arXiv:2501.02487 , 2025. 1, 3, 7, 16 [22] Ron Mokady, Amir Hertz, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Null-text inversion for editing real im-ages using guided diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 6038–6047, 2023. 1 [23] Ivona Najdenkoska, Animesh Sinha, Abhimanyu Dubey, Dhruv Mahajan, Vignesh Ramanathan, and Filip Radenovic. Context diffusion: In-context aware image generation. In 
+
+European Conference on Computer Vision , pages 375–391. Springer, 2024. 2 [24] Maxime Oquab, Timoth´ ee Darcet, Th´ eo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al. Dinov2: Learning robust visual features without supervision. 
+
+arXiv preprint arXiv:2304.07193 , 2023. 7 [25] Sophie Ostmeier, Brian Axelrod, Maya Varma, Michael Moseley, Akshay S Chaudhari, and Curtis Langlotz. Liere: Lie rotational positional encodings. In Forty-second Interna-tional Conference on Machine Learning , 2025. 2, 3, 4, 6, 11, 13 [26] Taesung Park, Ming-Yu Liu, Ting-Chun Wang, and Jun-Yan Zhu. Semantic image synthesis with spatially-adaptive nor-malization. In Proceedings of the IEEE Conference on Com-puter Vision and Pattern Recognition , 2019. 1 [27] William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF inter-national conference on computer vision , pages 4195–4205, 2023. 1, 2 [28] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. 1 [29] Nataniel Ruiz, Yuanzhen Li, Varun Jampani, Yael Pritch, Michael Rubinstein, and Kfir Aberman. Dreambooth: Fine tuning text-to-image diffusion models for subject-driven generation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 22500– 22510, 2023. 11 [30] Chaehun Shin, Jooyoung Choi, Heeseung Kim, and Sungroh Yoon. Large-scale text-to-image model with inpainting is a zero-shot subject-driven image generator. In Proceedings of the Computer Vision and Pattern Recognition Conference ,pages 7986–7996, 2025. 1, 2 [31] Wensong Song, Hong Jiang, Zongxing Yang, Ruijie Quan, and Yi Yang. Insert anything: Image insertion via in-context editing in dit. arXiv preprint arXiv:2504.15009 , 2025. 1, 3, 7, 16 [32] Jianlin Su, Murtadha Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding. Neurocomputing , 568:127063, 2024. 1, 2, 3, 4, 6, 11, 13 [33] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timoth´ ee Lacroix, Bap-tiste Rozi` ere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. 
+
+arXiv preprint arXiv:2302.13971 , 2023. 3 [34] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems , 30, 2017. 1, 6 [35] Zhendong Wang, Yifan Jiang, Yadong Lu, Pengcheng He, Weizhu Chen, Zhangyang Wang, Mingyuan Zhou, et al. In-context learning unlocked for diffusion models. Advances in Neural Information Processing Systems , 36:8542–8562, 2023. 2 [36] Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, et al. Emergent abilities of large language models. arXiv preprint arXiv:2206.07682 ,2022. 1, 2 [37] Shaojin Wu, Mengqi Huang, Wenxu Wu, Yufeng Cheng, Fei Ding, and Qian He. Less-to-more generalization: Unlocking more controllability by in-context generation. arXiv preprint arXiv:2504.02160 , 2025. 1, 2, 3, 5, 7, 8, 16 [38] Hu Ye, Jun Zhang, Sibo Liu, Xiao Han, and Wei Yang. Ip-adapter: Text compatible image prompt adapter for text-to-image diffusion models. arXiv preprint arXiv:2308.06721 ,2023. 2 [39] Hao Yu, Tangyu Jiang, Shuning Jia, Shannan Yan, Shunning Liu, Haolong Qian, Guanghao Li, Shuting Dong, and Chun Yuan. Comrope: Scalable and robust rotary position embed-ding parameterized by trainable commuting angle matrices. In Proceedings of the Computer Vision and Pattern Recog-nition Conference , pages 4508–4517, 2025. 2, 3, 4, 6, 11, 13 [40] Chi Zhang, Feng Gao, Baoxiong Jia, Yixin Zhu, and Song-Chun Zhu. Raven: A dataset for relational and analogical vi-sual reasoning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 5317– 5327, 2019. 5 [41] Kai Zhang, Lingbo Mo, Wenhu Chen, Huan Sun, and Yu Su. Magicbrush: A manually annotated dataset for instruction-guided image editing. Advances in Neural Information Pro-cessing Systems , 36:31428–31449, 2023. 2, 7, 8 [42] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding conditional control to text-to-image diffusion models. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision , pages 3836–3847, 2023. 5 [43] Zechuan Zhang, Ji Xie, Yu Lu, Zongxin Yang, and Yi Yang. In-context edit: Enabling instructional image editing with in-context generation in large scale diffusion transformer. arXiv preprint arXiv:2504.20690 , 2025. 1, 2, 3, 5, 7, 8, 11, 13, 16 OPRO: Orthogonal Panel-Relative Operators for Panel-Aware In-Context Image Generation 
+
+# Supplementary Material Input Images 
+
+LoRA  LoRA+OPRO  LoRA+OPRO LoRA 
+
+with the Eiffel Tower  with a wheat field in the background   
+
+> Figure 7. Qualitative comparison on subject-driven image generation. Results are shown on the DreamBooth [29] test set under a three-panel protocol. For each subject, two reference images sampled from a four-shot support set occupy the first two panels, and the third panel is synthesized from a fully masked target canvas. We compare LoRA-only fine-tuning of ICEdit [43] with the same model modulated by OPRO.
+
+This supplementary material provides additional empir-ical results, analyses, and implementation details that com-plement the main manuscript. Section A evaluates OPRO on subject-driven image generation in a three-panel setting. Section B presents a RoPE-aligned block-diagonal parame-terization and its formal derivation, and Section C provides a detailed analysis of the zero-initialization strategy. Sec-tion D analyzes the computational overhead of OPRO. Sec-tion E presents additional qualitative results and examines inference-time scalability. Section F reports ablation stud-ies on instructional image editing, and Section G summa-rizes the complete hyperparameter settings used in the ex-periments. 
+
+## A. Subject-Driven Image Generation with OPRO 
+
+To assess the scalability of OPRO beyond the two-panel setting in the main manuscript, we evaluate subject-driven image generation in a three-panel layout leveraging the DreamBooth [29] test dataset. For each subject, we con-struct a four-shot support set and randomly sample two ref-erence images to populate the first two panels. The third panel serves as a fully masked target canvas. We adopt ICEdit [43] as the base model and integrate OPRO as a lightweight panel-relative adaptation module. This task places a stronger emphasis on cross-panel subject consis-tency because the target panel must be synthesized from scratch while aggregating subject cues from multiple ref-  
+
+> Table 4. Quantitative comparison on subject-driven image gen-eration. Results are reported on a subset of DreamBooth using a three-panel layout with two reference panels and one fully masked target panel. OPRO consistently improves ICEdit on both DINO and CLIP-I. Higher is better in all cases.
+
+Method DINO (↑) CLIP-I (↑)ICEdit [43] (LoRA-only) 0.5828 0.7376 ICEdit [43] + OPRO 0.6192 0.7724 
+
+erence panels. Optimization proceeds for 2,000 steps with Adam [19] at a learning rate of 1 × 10 −4.Table 4 shows that OPRO improves ICEdit on both DINO and CLIP-I, with absolute gains of 0.0364 and 0.0348, respectively. Figure 7 further illustrates more faith-ful preservation of subject appearance and more coherent synthesis of the target panel than the LoRA-only baseline. 
+
+## B. RoPE-Aligned Block-Diagonal Parameteri-zation 
+
+This section complements Sec. 3.2 of the main manuscript by detailing the relationship between OPRO and orthogonal relative positional encodings [25, 32, 39]. As briefly dis-cussed in the main text, OPRO admits an additional com-positional interpretation around the frozen positional oper-ator. We first derive this general orthogonal-relative form and then present a RoPE-aligned block-diagonal specializa-tion, which yields the panel-relative phase-shift interpreta-tion. This specialization is introduced for analysis and in-tuition; the trainable parameterization used in the main ex-periments is the low-rank Lie exponential parameterization in Sec. 3.3 of the main manuscript. 
+
+General orthogonal-relative form. For completeness, the frozen position-aware vectors are expressed in matrix form. Let  qi, k j ∈ Rdh denote the content vectors before the frozen positional transform, and let the backbone posi-tional mechanism be represented by an orthogonal operator 
+
+R(x) ∈ SO( dh):
+
+˜qi = R(xi)qi, ˜kj = R(xj )kj .
+
+Assume that  R(x) satisfies the relative-position property 
+
+R(xi)⊤R(xj ) = R(xj − xi).
+
+Applying OPRO gives 
+
+ˆqi = Up(i) ˜qi, ˆkj = Up(j) ˜kj ,
+
+and therefore 
+
+⟨ˆqi, ˆkj ⟩ = q⊤ 
+
+> i
+
+R(xi)⊤U ⊤
+
+> p(i)
+
+Up(j)R(xj )kj .
+
+This expression shows that OPRO preserves the frozen po-sitional operator while inserting a learnable panel-relative orthogonal factor  U ⊤
+
+> p(i)
+
+Up(j).
+
+RoPE-aligned block-diagonal specialization. To obtain a closed-form phase interpretation, we consider a stronger specialization in which  Up is restricted to the same block-diagonal  SO(2)  basis as RoPE. Let  dh be even and write 
+
+R(x) = diag 
+
+
+
+R(1) (θ1(x)) , . . . , R (dh/2) (θdh/2(x)) 
+
+
+
+,
+
+where each  R(k)(θ) ∈ SO(2)  is a  2 × 2 rotation. We param-eterize 
+
+Up = diag 
+
+
+
+R(1) (ϕp, 1), . . . , R (dh/2) (ϕp,d h/2)
+
+
+
+.
+
+Because  R(x) and  Up are block-diagonal rotations acting on the same two-dimensional channel pairs, they commute: 
+
+UpR(x) = R(x)Up.
+
+Hence, 
+
+⟨ˆqi, ˆkj ⟩ = q⊤ 
+
+> i
+
+R(xi)⊤U ⊤
+
+> p(i)
+
+Up(j)R(xj )kj
+
+= q⊤ 
+
+> i
+
+R(xi)⊤R(xj )U ⊤
+
+> p(i)
+
+Up(j)kj
+
+= q⊤ 
+
+> i
+
+R(xj − xi)U ⊤
+
+> p(i)
+
+Up(j)kj .
+
+Moreover, 
+
+U ⊤
+
+> p(i)
+
+Up(j) = diag 
+
+
+
+R(1) (ϕp(j),1 − ϕp(i),1), . . . , R(dh/2) (ϕp(j),d h/2 − ϕp(i),d h/2)
+
+
+
+,
+
+so the effective angle of the  k-th block is 
+
+θk(xj − xi) + ϕp(j),k − ϕp(i),k .
+
+Therefore, in this RoPE-aligned block-diagonal specializa-tion, OPRO injects a learnable panel-relative phase offset into each frequency block. 
+
+Validation on Compositional Reasoning Task Table 5 summarizes the performance of the block-diagonal param-eterization implementation (OPRO-BD) applied to the two-stage compositional reasoning task. With only a minimal parameter overhead equal to the number of panels ( P =4, 9, 16 ), OPRO-BD demonstrates improvements for or-thogonal positional encodings in the 3 × 3 and 4 × 4 panel experiments. 
+
+## C. Detailed Analysis of Zero Initialization Strategy 
+
+In this section, we provide a detailed analysis of the zero-initialization strategy. We first formally prove that our pa-rameterization guarantees non-degenerate gradients. Recall from Sec. 3.3 in the manuscripts that for each panel p we parameterize the orthogonal operator as 
+
+Up = exp( Ap), Ap = LpR⊤ 
+
+> p
+
+− RpL⊤ 
+
+> p
+
+,
+
+where Lp, R p ∈ Rdh×r are learnable parameters and exp( ·)
+
+denotes the matrix exponential. We initialize 
+
+Lp = 0, Rp ∼ N (0 , σ 2),
+
+so that Ap = 0 and Up = I at step 0. Thus the OPRO oper-ator has no effect on the pre-trained model at initialization, while still admitting a non-degenerate gradient, as we show below. 
+
+Notation Let L be a scalar loss and define the Frobenius inner product ⟨X, Y ⟩ = tr( X⊤Y ). Write 
+
+G := ∇Up L and ˜G := D exp ∗ 
+
+> Ap
+
+[G],
+
+where D exp Ap is the differential of the matrix exponential at Ap and D exp ∗ 
+
+> Ap
+
+is its adjoint with respect to the Frobe-nius inner product [1]. 
+
+Proposition 3 (Zero initialization identity mapping with non-degenerate gradient) . Let Up = exp( Ap) with 
+
+Ap = LpR⊤ 
+
+> p
+
+− RpL⊤ 
+
+> p
+
+.Table 5. Effect of the block-diagonal implementation of OPRO on top of LoRA ( r = 8 ). We report the accuracy (%) of LoRA+OPRO-BD and the absolute change ∆ (percentage points) compared to the LoRA baseline from Tab. 1 of the main manuscript. Panel 2 × 2 Panel 3 × 3 Panel 4 × 4                              
+
+> Type +OPRO-BD ∆+OPRO-BD ∆+OPRO-BD ∆
+> APE 37.10 −0.90 23.60 −0.80 19.00 −0.50
+> RoPE[32] 45.80 −0.60 38.70 +2 .50 32.50 +2 .20
+> LieRE[25] 58.70 +0 .60 36.20 +2 .00 23.30 +0 .40
+> ComRoPE[39] 57.90 −0.60 40.90 +3 .10 29.80 +0 .60
+
+Then the gradients of L with respect to Lp and Rp are 
+
+∇Lp L = ( ˜G − ˜G⊤) Rp, ∇Rp L = ( ˜G⊤ − ˜G) Lp.
+
+In particular, at zero initialization ( Ap = 0 and Lp = 0), we have Up = I and ˜G = G, so 
+
+∇Lp L = ( G − G⊤) Rp, ∇Rp L = 0.
+
+Thus, the operator is initially the identity, but optimization starts immediately through Lp, while Rp remains fixed at the first step. Proof. By the chain rule and the expression for the differen-tial of the matrix exponential [1], for any perturbation E we have 
+
+dL = ⟨G, D exp Ap [dA p]⟩ = ⟨ ˜G, dA p⟩.
+
+Differentiating Ap = LpR⊤ 
+
+> p
+
+− RpL⊤ 
+
+> p
+
+gives 
+
+dA p = dL p R⊤ 
+
+> p
+
++ Lp dR ⊤ 
+
+> p
+
+− dR p L⊤ 
+
+> p
+
+− Rp dL ⊤ 
+
+> p
+
+.
+
+Substituting this into the inner product and applying the identity ⟨X, Y Z ⊤⟩ = ⟨XZ, Y ⟩, we expand ⟨ ˜G, dA p⟩:
+
+⟨ ˜G, dA p⟩ = ˜G, dL p R⊤ 
+
+> p
+
++ Lp dR ⊤ 
+
+> p
+
+− dR p L⊤ 
+
+> p
+
+− Rp dL ⊤
+
+> p
+
+= ( ˜G − ˜G⊤) Rp, dL p + ( ˜G⊤ − ˜G) Lp, dR p .
+
+By the definition of the gradient with respect to the Frobe-nius inner product, this implies 
+
+∇Lp L = ( ˜G − ˜G⊤) Rp, ∇Rp L = ( ˜G⊤ − ˜G) Lp.
+
+Under zero initialization Ap = 0, the Jacobian of the expo-nential map is the identity, therefore ˜G = G. With Lp = 0,the gradients simplify to: 
+
+∇Lp L = ( G − G⊤) Rp, ∇Rp L = 0,
+
+□
+
+## D. Computational Cost Analysis 
+
+We analyze the computational overhead of OPRO when integrated with FluxFill [3]. OPRO introduces additional orthogonal transformations within the attention layers. Specifically, at each step and layer, OPRO performs two 
+
+128 × 128 matrix-vector rotations, corresponding to queries and keys, across all tokens. The additional floating-point op-erations ( ∆FLOPs) can be approximated as 
+
+∆FLOPs ≈ Npanel · Nhead · d2 
+
+> h
+
+· Ntokens · Nlayers · Nsteps , (8) where Ntokens denotes the number of tokens per panel. Sub-stituting the configuration parameters detailed in Sec. 4.2 of the main manuscript ( Npanel = 2 , Nhead = 24 , dh =128 , Ntokens = 4,096 , Nlayers = 57 , Nsteps = 28 ), the total additional computation amounts to approximately 10.3 TFLOPs. Furthermore, the cost of computing the ma-trix exponential is negligible (approximately 6.7 GFLOPs). Given the substantial computational budget of diffusion transformers, this theoretical overhead remains marginal. 
+
+## E. Qualitative Results and Inference-Time Scalability 
+
+We present additional qualitative results generated by ICEdit [43] equipped with OPRO. Figure 8 demonstrates the versatility of OPRO across multiple instructional edit-ing tasks. The provided examples illustrate the capability of the model to execute precise modifications, including object replacement, attribute alteration, text rendering, and global style transfer, while preserving the content of the original image. Furthermore, Fig. 9 details the inference-time scalabil-ity of OPRO by demonstrating compositional generation with multi-reference inputs. Specifically, we apply a model trained on a fixed two-panel layout to a three-panel config-uration comprising two reference images. We enable this multi-reference inference by reusing the OPRO learned for the single-reference panel across both references, while ap-plying the target operator to the generation panel. By as-signing images to panels that share identical functional roles Original Image Edit clothes Modify color Change hair style Render text Transfer style              
+
+> … edit clothes into
+> blue cardigan layered
+> with white shirt.
+> … modify color of the
+> knit sweater into blue.
+> … modify her hairstyle
+> into glam blonde.
+> … render text “OPRO ”
+> on her sweater
+> … transfer the image
+> into sketch -like photo
+> … edit clothes into
+> blue cardigan layered
+> with white shirt.
+> … modify color of the
+> knit sweater into blue.
+> … modify her hairstyle
+> into glam blonde.
+> … render text “OPRO ”
+> on her sweater
+> … transfer the image
+> into sketch -like photo
+> … edit clothes into
+> blue cardigan layered
+> with white shirt.
+> … modify color of the
+> hoodie into pink.
+> … modify his hairstyle
+> into straightened blck .
+> … render text “OPRO ”
+> on his hoodie
+> … transfer the image
+> into sketch -like photo
+
+Figure 8. Qualitative results on diverse instructional editing tasks. We demonstrate the versatility of OPRO across a broad spectrum of editing categories. The examples illustrate the model’s capability to precisely follow instructions for object replacement, attribute modifi-cation, text rendering, and global style transfer, all while maintaining high fidelity to the original image content. Table 6. Ablation Studies on MagicBrush. The table validates the design principles of OPRO on the ICEdit baseline ( r=16 ). Rela-tive to OPRO, breaking isometry (APB) or same-panel invariance (Asym-OPRO) reduces performance. Removing zero initialization preserves spatial alignment but lowers semantic consistency, as re-flected by CLIP-I and DINO. 
+
+Method Isometry SP-Inv L1 ↓ CLIP-I ↑ DINO ↑
+
+LoRA (Baseline) - - 0.1189 0.8703 0.7706 + APB No No 0.0966 0.8893 0.8196 + Asym-OPRO Yes No 0.0988 0.8880 0.8151 + OPRO (w/o Zero Init) Yes Yes 0.0780 0.8989 0.8510 
+
++ OPRO (Ours) Yes Yes 0.0781 0.9002 0.8531 
+
+during inference, we achieve multi-reference compositional generation without requiring retraining. 
+
+## F. Ablation Studies on Instructional Image Editing 
+
+Table 6 extends the ablation studies of the main manuscript to the MagicBrush dataset. Consistent with the results of the compositional reasoning task, violating isometry (APB) or same-panel invariance (Asym-OPRO) degrades perfor-mance across all metrics. Furthermore, omitting zero ini-tialization (+ OPRO w/o Zero Init) achieves a spatial align-ment error (L1) comparable to that of the proposed OPRO, yet yields lower semantic consistency scores (CLIP-I and DINO) than the proposed method. This semantic degrada-tion aligns with the accuracy drop observed in the main manuscript, demonstrating that an identity mapping initial-ization is essential to preserve the visual priors of the pre-trained model. 
+
+## G. Complete Hyperparameter Settings 
+
+We provide detailed hyperparameter configurations used in our experiments. Tab. 7 summarizes the training settings for High -quality artistic illustration showing the black dog from Panel A 
+
+rendered in the expressive painting style of Panel B (Vincent van Gogh’s 
+
+The Starry Night). Maintain the dog’s facial proportions, ear shape, fur 
+
+silhouette, and overall posture exactly as in Panel A. 
+
+Apply Van Gogh’s signature swirling brushstrokes, textured impasto 
+
+patterns, and vibrant blue –yellow nighttime palette consistently across 
+
+the entire scene. 
+
+Reconstruct the background using the dynamic sky motifs, circular star 
+
+patterns, and flowing motion cues from Panel B while keeping the dog as 
+
+the central subject with clear definition. 
+
+Render the entire query panel with thick painterly strokes, rich color 
+
+layering, rhythmic texture, and stylized highlights, while keeping both 
+
+context panels unchanged. 
+
+High -quality 3D -cartoon illustration showing the woman from Panel A 
+
+transformed into the stylized animated aesthetic of Panel B. 
+
+Maintain the woman’s body proportions, trench coat silhouette, handbag, 
+
+sunglasses shape, and walking posture. 
+
+Translate her facial features into the expressive cartoon style: smooth 
+
+contours, larger stylized eyes, simplified nose and lips, and clean character 
+
+shading, while retaining her recognizable identity. 
+
+Reconstruct the urban street environment using the bright, friendly, 
+
+rounded architectural style seen in Panel B, with soft lighting, warm color 
+
+palettes, and simplified background geometry. 
+
+Render the entire query panel with smooth gradients, clean outlines, soft 
+
+ambient occlusion, and consistent 3D -animation lighting, while keeping 
+
+both context panels unchanged. Figure 9. Qualitative examples of multi-reference compositional generation. We demonstrate the capability to integrate attributes from multiple context panels. The model synthesizes a new image by combining the style from the first panel and the object from the second panel. Note that this compositional ability emerges without explicit training on multi-reference layouts. 
+
+the instructional image editing baselines. Tab. 8 presents the optimization details for the two-stage compositional reason-ing task. Table 7. Hyperparameters for instructional image editing baselines. All models are trained for 5,000 steps using the AdamW optimizer (weight decay 0.01, learning rate 1 × 10 −4) with a batch size of 8. We use bfloat16 precision and a constant learning rate schedule. Note that InsertAnything uses FluxPriorRedux for reference-image conditioning, while UNO adopts an in-context approach. We adapt OPRO in each self-attention layer.                          
+
+> Method Base Model Pos. Encoding LoRA Target Modules LoRA Rank ( r)OPRO Rank ( ρ)
+> ICEdit [43] FluxFill Dev Global-canvas Attention ( q,k,v,out )16 32 ACE++ [21] FluxFill Dev Global-canvas Attn + MLP + Modulation 16 32 InsertAnything [31] FluxFill Dev (+Redux) Global-canvas Attention Projections ( q,k,v,out )16 32 UNO [37] Flux Dev Per-panel Attention Projections + MLP 256 32
+
+Table 8. Detailed hyperparameters for two-stage compositional reasoning. Hyperparameter Stage 1 (Pre-training) Stage 2 (Fine-tuning) 
+
+Optimization Adam ( β1 = 0 .9, β 2 = 0 .999 ) Adam ( β1 = 0 .9, β 2 = 0 .999 )Batch Size 256 256 Learning Rate 1 × 10 −3 (Warmup+Cosine) 5 × 10 −4 (Constant) Weight Decay 0.05 0.05 
+
+Training Steps 50k 2k 
+
+Architecture / Adapter 
+
+Patch Size 16 × 16 16 × 16 
+
+Positional Encoding Learnable (APE/RoPE etc.) Frozen Adapter Rank - LoRA r = 8 / OPRO ρ = (2 , 4, 8)
