@@ -6,76 +6,67 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-07
-- 运行时间：2026-04-07 20:41:09 UTC
+- 最新运行日期：2026-04-08
+- 运行时间：2026-04-08 20:04:58 UTC
 - 运行状态：成功
-- 本次总论文数：18
-- 精读区：7
+- 本次总论文数：15
+- 精读区：4
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 18 篇 AI 前沿成果，聚焦 3D 重建与跨区域时空融合的测试时自适应突破。
-满分论文展示了先验知识与不确定性感知在提升模型泛化性上的核心价值。
-推荐关注测试时自适应（TTA）技术，探索其在多模态机器人控制与持续学习中的实战潜力。
-- 详情：[/202604/07/README](/202604/07/README)
+今日精选 15 篇前沿论文，深度聚焦测试时训练（TTT）与自适应技术在推荐系统中的突破。
+满分论文《In-Place Test-Time Training》与检索增强的 TTA 方案，为模型实时优化与序列推荐提供了高效新范式。
+建议优先研读测试时自适应相关文献，掌握如何让模型在推理阶段实现低开销的持续进化。
+- 详情：[/202604/08/README](/202604/08/README)
 
 ### 精读区论文标签
-1. [Learning 3D Reconstruction with Priors in Test Time](/202604/07/2604.03878v1-learning-3d-reconstruction-with-priors-in-test-time)  
+1. [In-Place Test-Time Training](/202604/08/2604.06169v1-in-place-test-time-training)  
    标签：评分：10.0/10、query:tta
-   evidence：利用先验在推理阶段优化网络的测试时间框架
-2. [Uncertainty-Aware Test-Time Adaptation for Cross-Region Spatio-Temporal Fusion of Land Surface Temperature](/202604/07/2604.04153v1-uncertainty-aware-test-time-adaptation-for-cross-region-spatio-temporal-fusion-of-land-surface-temperature)  
-   标签：评分：10.0/10、query:tta
-   evidence：用于回归任务的不确定性感知测试时间自适应框架
-3. [Adapting Neural Robot Dynamics on the Fly for Predictive Control](/202604/07/2604.04039v1-adapting-neural-robot-dynamics-on-the-fly-for-predictive-control)  
+   evidence：大语言模型的就地测试时间训练，在推理时调整权重
+2. [Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation](/202604/08/2604.05379v1-retrieve-then-adapt-retrieval-augmented-test-time-adaptation-for-sequential-recommendation)  
    标签：评分：9.0/10、query:tta
-   evidence：机器人动力学模型的即时快速自适应
-4. [Context is All You Need](/202604/07/2604.04364v1-context-is-all-you-need)  
-   标签：评分：9.0/10、query:tta
-   evidence：通过在部署时适应未标记的测试数据来提高鲁棒性
-5. [Decocted Experience Improves Test-Time Inference in LLM Agents](/202604/07/2604.04373v1-decocted-experience-improves-test-time-inference-in-llm-agents)  
-   标签：评分：9.0/10、query:tta
-   evidence：通过测试时间缩放和上下文构建改进大语言模型
-6. [StableTTA: Training-Free Test-Time Adaptation that Improves Model Accuracy on ImageNet1K to 96%](/202604/07/2604.04552v1-stabletta-training-free-test-time-adaptation-that-improves-model-accuracy-on-imagenet1k-to-96)  
-   标签：评分：9.0/10、query:tta
-   evidence：用于图像分类的免训练测试时间自适应方法
-7. [PointTPA: Dynamic Network Parameter Adaptation for 3D Scene Understanding](/202604/07/2604.04933v1-pointtpa-dynamic-network-parameter-adaptation-for-3d-scene-understanding)  
-   标签：评分：9.0/10、query:tta
-   evidence：针对动态场景数据的测试时间参数自适应框架
+   evidence：针对序列推荐的检索增强测试时间自适应
+3. [DC-Ada: Reward-Only Decentralized Observation-Interface Adaptation for Heterogeneous Multi-Robot Teams](/202604/08/2604.03905v1-dc-ada-reward-only-decentralized-observation-interface-adaptation-for-heterogeneous-multi-robot-teams)  
+   标签：评分：8.0/10、query:tta
+   evidence：部署期间异构多机器人团队的去中心化自适应
+4. [VLA-InfoEntropy: A Training-Free Vision-Attention Information Entropy Approach for Vision-Language-Action Models Inference Acceleration and Success](/202604/08/2604.05323v1-vla-infoentropy-a-training-free-vision-attention-information-entropy-approach-for-vision-language-action-models-inference-acceleration-and-success)  
+   标签：评分：8.0/10、query:tta
+   evidence：视觉-语言-动作 (VLA) 模型的免训练推理加速
 
 ### 速读区论文标签
-1. [Gram-Anchored Prompt Learning for Vision-Language Models via Second-Order Statistics](/202604/07/2604.03980v1-gram-anchored-prompt-learning-for-vision-language-models-via-second-order-statistics)  
+1. [CL-VISTA: Benchmarking Continual Learning in Video Large Language Models](/202604/08/2604.00677v1-cl-vista-benchmarking-continual-learning-in-video-large-language-models)  
    标签：评分：7.0/10、query:tta
-   evidence：通过提示学习将视觉语言模型适配到下游任务
-2. [VA-FastNavi-MARL: Real-Time Robot Control with Multimedia-Driven Meta-Reinforcement Learning](/202604/07/2604.03998v1-va-fastnavi-marl-real-time-robot-control-with-multimedia-driven-meta-reinforcement-learning)  
+   evidence：视频大语言模型的持续学习与自适应
+2. [S0 Tuning: Zero-Overhead Adaptation of Hybrid Recurrent-Attention Models](/202604/08/2604.01168v2-s0-tuning-zero-overhead-adaptation-of-hybrid-recurrent-attention-models)  
    标签：评分：7.0/10、query:tta
-   evidence：机器人控制中对未见指令的快速自适应
-3. [Is Prompt Selection Necessary for Task-Free Online Continual Learning?](/202604/07/2604.04420v1-is-prompt-selection-necessary-for-task-free-online-continual-learning)  
+   evidence：通过调整初始状态矩阵实现混合循环注意力模型的零开销自适应
+3. [Token Warping Helps MLLMs Look from Nearby Viewpoints](/202604/08/2604.02870v1-token-warping-helps-mllms-look-from-nearby-viewpoints)  
    标签：评分：7.0/10、query:tta
-   evidence：针对流数据的无任务在线持续学习自适应策略
-4. [Less Detail, Better Answers: Degradation-Driven Prompting for VQA](/202604/07/2604.04838v1-less-detail-better-answers-degradation-driven-prompting-for-vqa)  
+   evidence：视角变化下多模态大模型视觉推理的 Token 扭曲
+4. [Stabilizing Unsupervised Self-Evolution of MLLMs via Continuous Softened Retracing reSampling](/202604/08/2604.03647v1-stabilizing-unsupervised-self-evolution-of-mllms-via-continuous-softened-retracing-resampling)  
    标签：评分：7.0/10、query:tta
-   evidence：通过退化驱动提示提高VQA性能
-5. [ATLAS-RTC: Closing the Loop on LLM Agent Output with Token-Level Runtime Control](/202604/07/2603.27905v2-atlas-rtc-closing-the-loop-on-llm-agent-output-with-token-level-runtime-control)  
+   evidence：多模态大模型的无监督自我演化与后训练自适应
+5. [Data Attribution in Adaptive Learning](/202604/08/2604.04892v1-data-attribution-in-adaptive-learning)  
+   标签：评分：7.0/10、query:tta
+   evidence：在自适应学习设置中形式化数据归因
+6. [EffiPair: Improving the Efficiency of LLM-generated Code with Relative Contrastive Feedback](/202604/08/2604.05137v1-effipair-improving-the-efficiency-of-llm-generated-code-with-relative-contrastive-feedback)  
+   标签：评分：7.0/10、query:tta
+   evidence：测试时间的推理期迭代细化框架
+7. [LinguDistill: Recovering Linguistic Ability in Vision- Language Models via Selective Cross-Modal Distillation](/202604/08/2604.00829v2-lingudistill-recovering-linguistic-ability-in-vision--language-models-via-selective-cross-modal-distillation)  
    标签：评分：6.0/10、query:tta
-   evidence：解码过程中的运行时控制与干预
-6. [Adapting Text LLMs to Speech via Multimodal Depth Up-Scaling](/202604/07/2604.00489v1-adapting-text-llms-to-speech-via-multimodal-depth-up-scaling)  
+   evidence：VLM中的多模态适配与语言能力恢复
+8. [CoLA: Cross-Modal Low-rank Adaptation for Multimodal Downstream Tasks](/202604/08/2604.03314v1-cola-cross-modal-low-rank-adaptation-for-multimodal-downstream-tasks)  
    标签：评分：6.0/10、query:tta
-   evidence：通过多模态深度上采样将文本大模型适配至语音
-7. [FourierMoE: Fourier Mixture-of-Experts Adaptation of Large Language Models](/202604/07/2604.01762v1-fouriermoe-fourier-mixture-of-experts-adaptation-of-large-language-models)  
+   evidence：多模态任务的参数高效自适应
+9. [VLA-Forget: Vision-Language-Action Unlearning for Embodied Foundation Models](/202604/08/2604.03956v1-vla-forget-vision-language-action-unlearning-for-embodied-foundation-models)  
    标签：评分：6.0/10、query:tta
-   evidence：通过频域混合专家机制适配大语言模型
-8. [Language-Pretraining-Induced Bias: A Strong Foundation for General Vision Tasks](/202604/07/2604.01833v1-language-pretraining-induced-bias-a-strong-foundation-for-general-vision-tasks)  
+   evidence：具身基础模型的视觉-语言-动作遗忘学习
+10. [Scale-Aware Vision-Language Adaptation for Extreme Far-Distance Video Person Re-identification](/202604/08/2604.04183v1-scale-aware-vision-language-adaptation-for-extreme-far-distance-video-person-re-identification)  
    标签：评分：6.0/10、query:tta
-   evidence：将大语言模型参数与视觉任务对齐的模态自适应学习器
-9. [Towards Realistic Class-Incremental Learning with Free-Flow Increments](/202604/07/2604.02765v1-towards-realistic-class-incremental-learning-with-free-flow-increments)  
+   evidence：极端距离重识别的视觉语言自适应
+11. [Discovering Failure Modes in Vision-Language Models using RL](/202604/08/2604.04733v1-discovering-failure-modes-in-vision-language-models-using-rl)  
    标签：评分：6.0/10、query:tta
-   evidence：针对以真实流形式到达的数据的类增量学习
-10. [MSAO: Adaptive Modality Sparsity-Aware Offloading with Edge-Cloud Collaboration for Efficient Multimodal LLM Inference](/202604/07/2604.02945v1-msao-adaptive-modality-sparsity-aware-offloading-with-edge-cloud-collaboration-for-efficient-multimodal-llm-inference)  
-   标签：评分：6.0/10、query:tta
-   evidence：多模态大模型的自适应模态稀疏感知卸载
-11. [V-Reflection: Transforming MLLMs from Passive Observers to Active Interrogators](/202604/07/2604.03307v1-v-reflection-transforming-mllms-from-passive-observers-to-active-interrogators)  
-   标签：评分：6.0/10、query:tta
-   evidence：多模态大语言模型的积极视觉反思
+   evidence：自动发现视觉语言模型中的失败模式
 
 
 <div class="dpr-home-promo-card">
