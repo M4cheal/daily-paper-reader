@@ -6,62 +6,64 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-09
-- 运行时间：2026-04-09 20:28:58 UTC
+- 最新运行日期：2026-04-10
+- 运行时间：2026-04-10 20:28:58 UTC
 - 运行状态：成功
 - 本次总论文数：14
 - 精读区：3
 - 速读区：11
 
 ### 今日简报（AI）
-今日复盘 14 篇前沿论文，重点攻克空间记忆的弹性测试时训练（TTT）与非
-- 详情：[/202604/09/README](/202604/09/README)
+今日精选 14 篇前沿论文，深度聚焦多模态证据检索与强化学习的自探索效率提升。
+重点推荐无需训练的熵梯度接地技术（EGG）及测试时变分合成（TTVS），两者在 VLM 证据获取与 RL 性能优化上表现卓越。
+建议关注多模态模型在空间推理与决策智能体方向的轻量化与约束优化趋势。
+- 详情：[/202604/10/README](/202604/10/README)
 
 ### 精读区论文标签
-1. [Fast Spatial Memory with Elastic Test-Time Training](/202604/09/2604.07350v1-fast-spatial-memory-with-elastic-test-time-training)  
-   标签：评分：10.0/10、query:tta
-   evidence：弹性测试时间训练以稳定快速权重更新
-2. [Learning to Query History: Nonstationary Classification via Learned Retrieval](/202604/09/2604.07027v1-learning-to-query-history-nonstationary-classification-via-learned-retrieval)  
+1. [Entropy-Gradient Grounding: Training-Free Evidence Retrieval in Vision-Language Models](/202604/10/2604.08456v1-entropy-gradient-grounding-training-free-evidence-retrieval-in-vision-language-models)  
+   标签：评分：9.0/10、query:tta
+   evidence：视觉语言模型中无需训练的测试时证据检索
+2. [TTVS: Boosting Self-Exploring Reinforcement Learning via Test-time Variational Synthesis](/202604/10/2604.08468v1-ttvs-boosting-self-exploring-reinforcement-learning-via-test-time-variational-synthesis)  
+   标签：评分：9.0/10、query:tta
+   evidence：自我进化推理模型的测试时间变分合成
+3. [MemCoT: Test-Time Scaling through Memory-Driven Chain-of-Thought](/202604/10/2604.08216v1-memcot-test-time-scaling-through-memory-driven-chain-of-thought)  
    标签：评分：8.0/10、query:tta
-   evidence：通过历史检索实现非平稳分类的在线自适应
-3. [Tracking Adaptation Time: Metrics for Temporal Distribution Shift](/202604/09/2604.07266v1-tracking-adaptation-time-metrics-for-temporal-distribution-shift)  
-   标签：评分：8.0/10、query:tta
-   evidence：区分时间偏移下自适应与内在难度的指标
+   evidence：长上下文推理的测试时内存扩展
 
 ### 速读区论文标签
-1. [Stabilizing Unsupervised Self-Evolution of MLLMs via Continuous Softened Retracing reSampling](/202604/09/2604.03647v2-stabilizing-unsupervised-self-evolution-of-mllms-via-continuous-softened-retracing-resampling)  
+1. [Learning to Search: A Decision-Based Agent for Knowledge-Based Visual Question Answering](/202604/10/2604.07146v2-learning-to-search-a-decision-based-agent-for-knowledge-based-visual-question-answering)  
    标签：评分：7.0/10、query:tta
-   evidence：MLLM的无监督自我进化与稳定学习
-2. [Less Detail, Better Answers: Degradation-Driven Prompting for VQA](/202604/09/2604.04838v2-less-detail-better-answers-degradation-driven-prompting-for-vqa)  
+   evidence：知识库VQA的自适应搜索代理
+2. [Efficient Dataset Selection for Continual Adaptation of Generative Recommenders](/202604/10/2604.07739v1-efficient-dataset-selection-for-continual-adaptation-of-generative-recommenders)  
    标签：评分：7.0/10、query:tta
-   evidence：通过退化驱动提示在推理时提高VQA性能
-3. [Not All Turns Are Equally Hard: Adaptive Thinking Budgets For Efficient Multi-Turn Reasoning](/202604/09/2604.05164v1-not-all-turns-are-equally-hard-adaptive-thinking-budgets-for-efficient-multi-turn-reasoning)  
+   evidence：在流式环境中对不断演变的用户行为进行持续自适应
+3. [Faithful GRPO: Improving Visual Spatial Reasoning in Multimodal Language Models via Constrained Policy Optimization](/202604/10/2604.08476v1-faithful-grpo-improving-visual-spatial-reasoning-in-multimodal-language-models-via-constrained-policy-optimization)  
    标签：评分：7.0/10、query:tta
-   evidence：推理时间计算效率与自适应预算分配
-4. [Staggered Integral Online Conformal Prediction for Safe Dynamics Adaptation with Multi-Step Coverage Guarantees](/202604/09/2604.06058v1-staggered-integral-online-conformal-prediction-for-safe-dynamics-adaptation-with-multi-step-coverage-guarantees)  
+   evidence：通过策略优化改进多模态模型的视觉空间推理
+4. [RewardFlow: Generate Images by Optimizing What You Reward](/202604/10/2604.08536v1-rewardflow-generate-images-by-optimizing-what-you-reward)  
    标签：评分：7.0/10、query:tta
-   evidence：用于安全动力学自适应的在线共形预测
-5. [TwinLoop: Simulation-in-the-Loop Digital Twins for Online Multi-Agent Reinforcement Learning](/202604/09/2604.06610v1-twinloop-simulation-in-the-loop-digital-twins-for-online-multi-agent-reinforcement-learning)  
-   标签：评分：7.0/10、query:tta
-   evidence：多智能体系统中针对环境变化的在线运行时自适应
-6. [Q-Zoom: Query-Aware Adaptive Perception for Efficient Multimodal Large Language Models](/202604/09/2604.06912v1-q-zoom-query-aware-adaptive-perception-for-efficient-multimodal-large-language-models)  
-   标签：评分：7.0/10、query:tta
-   evidence：多模态大模型的查询感知自适应感知
-7. [Language-Pretraining-Induced Bias: A Strong Foundation for General Vision Tasks](/202604/09/2604.01833v2-language-pretraining-induced-bias-a-strong-foundation-for-general-vision-tasks)  
+   evidence：基于VQA奖励的推理阶段引导
+5. [Optimizing Neurorobot Policy under Limited Demonstration Data through Preference Regret](/202604/10/2604.03523v1-optimizing-neurorobot-policy-under-limited-demonstration-data-through-preference-regret)  
    标签：评分：6.0/10、query:tta
-   evidence：模态自适应学习器用于对齐大语言模型参数与视觉任务
-8. [Drift-Based Policy Optimization: Native One-Step Policy Learning for Online Robot Control](/202604/09/2604.03540v1-drift-based-policy-optimization-native-one-step-policy-learning-for-online-robot-control)  
+   evidence：解决机器人智能体测试轨迹中的误差
+6. [Don't Blink: Evidence Collapse during Multimodal Reasoning](/202604/10/2604.04207v1-dont-blink-evidence-collapse-during-multimodal-reasoning)  
    标签：评分：6.0/10、query:tta
-   evidence：用于在线机器人控制的一步生成策略
-9. [Graph-to-Frame RAG: Visual-Space Knowledge Fusion for Training-Free and Auditable Video Reasoning](/202604/09/2604.04372v1-graph-to-frame-rag-visual-space-knowledge-fusion-for-training-free-and-auditable-video-reasoning)  
+   evidence：多模态推理失效模式与不确定性信号
+7. [Vero: An Open RL Recipe for General Visual Reasoning](/202604/10/2604.04917v1-vero-an-open-rl-recipe-for-general-visual-reasoning)  
    标签：评分：6.0/10、query:tta
-   evidence：无需训练的视觉空间知识视频推理
-10. [RCP: Representation Consistency Pruner for Mitigating Distribution Shift in Large Vision-Language Models](/202604/09/2604.04972v1-rcp-representation-consistency-pruner-for-mitigating-distribution-shift-in-large-vision-language-models)  
+   evidence：针对多种任务的通用视觉推理开放强化学习方案
+8. [DAT: Dual-Aware Adaptive Transmission for Efficient Multimodal LLM Inference in Edge-Cloud Systems](/202604/10/2604.05375v1-dat-dual-aware-adaptive-transmission-for-efficient-multimodal-llm-inference-in-edge-cloud-systems)  
    标签：评分：6.0/10、query:tta
-   evidence：缓解大型视觉语言模型中的分布偏移
-11. [MMEmb-R1: Reasoning-Enhanced Multimodal Embedding with Pair-Aware Selection and Adaptive Control](/202604/09/2604.06156v1-mmemb-r1-reasoning-enhanced-multimodal-embedding-with-pair-aware-selection-and-adaptive-control)  
+   evidence：针对连续视频流的多模态大模型推理自适应传输
+9. [Physics-Aligned Spectral Mamba: Decoupling Semantics and Dynamics for Few-Shot Hyperspectral Target Detection](/202604/10/2604.05562v1-physics-aligned-spectral-mamba-decoupling-semantics-and-dynamics-for-few-shot-hyperspectral-target-detection)  
    标签：评分：6.0/10、query:tta
-   evidence：多模态嵌入中推理的自适应控制
+   evidence：少样本检测的参数高效光谱自适应
+10. [Feedback Adaptation for Retrieval-Augmented Generation](/202604/10/2604.06647v1-feedback-adaptation-for-retrieval-augmented-generation)  
+   标签：评分：6.0/10、query:tta
+   evidence：部署中RAG系统的反馈自适应
+11. [From Static to Interactive: Adapting Visual in-Context Learners for User-Driven Tasks](/202604/10/2604.06748v1-from-static-to-interactive-adapting-visual-in-context-learners-for-user-driven-tasks)  
+   标签：评分：6.0/10、query:tta
+   evidence：使视觉上下文学习者适应用户驱动的任务
 
 
 <div class="dpr-home-promo-card">
