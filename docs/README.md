@@ -6,64 +6,56 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-10
-- 运行时间：2026-04-10 20:28:58 UTC
+- 最新运行日期：2026-04-11
+- 运行时间：2026-04-11 19:59:58 UTC
 - 运行状态：成功
-- 本次总论文数：14
-- 精读区：3
+- 本次总论文数：11
+- 精读区：0
 - 速读区：11
 
 ### 今日简报（AI）
-今日精选 14 篇前沿论文，深度聚焦多模态证据检索与强化学习的自探索效率提升。
-重点推荐无需训练的熵梯度接地技术（EGG）及测试时变分合成（TTVS），两者在 VLM 证据获取与 RL 性能优化上表现卓越。
-建议关注多模态模型在空间推理与决策智能体方向的轻量化与约束优化趋势。
-- 详情：[/202604/10/README](/202604/10/README)
+今日速览 11 篇论文，重点攻克多模态大模型在视频流推理加速与复杂图表逻辑推理上的性能瓶颈。
+CodecSight 巧妙利用视频编解码信号实现高效推理，而 Chart-RL 则通过强化学习显著提升了 VLM 的图表问答精度。
+建议关注底层信号处理与策略优化相结合的思路，这是提升多模态模型实用性的关键方向。
+- 详情：[/202604/11/README](/202604/11/README)
 
 ### 精读区论文标签
-1. [Entropy-Gradient Grounding: Training-Free Evidence Retrieval in Vision-Language Models](/202604/10/2604.08456v1-entropy-gradient-grounding-training-free-evidence-retrieval-in-vision-language-models)  
-   标签：评分：9.0/10、query:tta
-   evidence：视觉语言模型中无需训练的测试时证据检索
-2. [TTVS: Boosting Self-Exploring Reinforcement Learning via Test-time Variational Synthesis](/202604/10/2604.08468v1-ttvs-boosting-self-exploring-reinforcement-learning-via-test-time-variational-synthesis)  
-   标签：评分：9.0/10、query:tta
-   evidence：自我进化推理模型的测试时间变分合成
-3. [MemCoT: Test-Time Scaling through Memory-Driven Chain-of-Thought](/202604/10/2604.08216v1-memcot-test-time-scaling-through-memory-driven-chain-of-thought)  
-   标签：评分：8.0/10、query:tta
-   evidence：长上下文推理的测试时内存扩展
+- 本次无精读推荐。
 
 ### 速读区论文标签
-1. [Learning to Search: A Decision-Based Agent for Knowledge-Based Visual Question Answering](/202604/10/2604.07146v2-learning-to-search-a-decision-based-agent-for-knowledge-based-visual-question-answering)  
+1. [CodecSight: Leveraging Video Codec Signals for Efficient Streaming VLM Inference](/202604/11/2604.06036v3-codecsight-leveraging-video-codec-signals-for-efficient-streaming-vlm-inference)  
    标签：评分：7.0/10、query:tta
-   evidence：知识库VQA的自适应搜索代理
-2. [Efficient Dataset Selection for Continual Adaptation of Generative Recommenders](/202604/10/2604.07739v1-efficient-dataset-selection-for-continual-adaptation-of-generative-recommenders)  
+   evidence：利用视频编解码信号进行高效的流式VLM推理
+2. [Visual prompting reimagined: The power of the Activation Prompts](/202604/11/2604.06440v1-visual-prompting-reimagined-the-power-of-the-activation-prompts)  
    标签：评分：7.0/10、query:tta
-   evidence：在流式环境中对不断演变的用户行为进行持续自适应
-3. [Faithful GRPO: Improving Visual Spatial Reasoning in Multimodal Language Models via Constrained Policy Optimization](/202604/10/2604.08476v1-faithful-grpo-improving-visual-spatial-reasoning-in-multimodal-language-models-via-constrained-policy-optimization)  
-   标签：评分：7.0/10、query:tta
-   evidence：通过策略优化改进多模态模型的视觉空间推理
-4. [RewardFlow: Generate Images by Optimizing What You Reward](/202604/10/2604.08536v1-rewardflow-generate-images-by-optimizing-what-you-reward)  
-   标签：评分：7.0/10、query:tta
-   evidence：基于VQA奖励的推理阶段引导
-5. [Optimizing Neurorobot Policy under Limited Demonstration Data through Preference Regret](/202604/10/2604.03523v1-optimizing-neurorobot-policy-under-limited-demonstration-data-through-preference-regret)  
+   evidence：用于下游任务自适应的视觉提示技术
+3. [Chart-RL: Policy Optimization Reinforcement Learning for Enhanced Visual Reasoning in Chart Question Answering with Vision Language Models](/202604/11/2604.03157v1-chart-rl-policy-optimization-reinforcement-learning-for-enhanced-visual-reasoning-in-chart-question-answering-with-vision-language-models)  
    标签：评分：6.0/10、query:tta
-   evidence：解决机器人智能体测试轨迹中的误差
-6. [Don't Blink: Evidence Collapse during Multimodal Reasoning](/202604/10/2604.04207v1-dont-blink-evidence-collapse-during-multimodal-reasoning)  
+   evidence：强化学习用于图表问答
+4. [KiToke: Kernel-based Interval-aware Token Compression for Video Large Language Models](/202604/11/2604.03414v1-kitoke-kernel-based-interval-aware-token-compression-for-video-large-language-models)  
    标签：评分：6.0/10、query:tta
-   evidence：多模态推理失效模式与不确定性信号
-7. [Vero: An Open RL Recipe for General Visual Reasoning](/202604/10/2604.04917v1-vero-an-open-rl-recipe-for-general-visual-reasoning)  
+   evidence：视频大语言模型的无训练内容自适应令牌压缩
+5. [CLEAR: Unlocking Generative Potential for Degraded Image Understanding in Unified Multimodal Models](/202604/11/2604.04780v1-clear-unlocking-generative-potential-for-degraded-image-understanding-in-unified-multimodal-models)  
    标签：评分：6.0/10、query:tta
-   evidence：针对多种任务的通用视觉推理开放强化学习方案
-8. [DAT: Dual-Aware Adaptive Transmission for Efficient Multimodal LLM Inference in Edge-Cloud Systems](/202604/10/2604.05375v1-dat-dual-aware-adaptive-transmission-for-efficient-multimodal-llm-inference-in-edge-cloud-systems)  
+   evidence：针对退化输入的理解与生成的联合优化
+6. [RAG or Learning? Understanding the Limits of LLM Adaptation under Continuous Knowledge Drift in the Real World](/202604/11/2604.05096v1-rag-or-learning-understanding-the-limits-of-llm-adaptation-under-continuous-knowledge-drift-in-the-real-world)  
    标签：评分：6.0/10、query:tta
-   evidence：针对连续视频流的多模态大模型推理自适应传输
-9. [Physics-Aligned Spectral Mamba: Decoupling Semantics and Dynamics for Few-Shot Hyperspectral Target Detection](/202604/10/2604.05562v1-physics-aligned-spectral-mamba-decoupling-semantics-and-dynamics-for-few-shot-hyperspectral-target-detection)  
+   evidence：真实世界设置下大语言模型在持续知识漂移中的自适应
+7. [Improving Sparse Memory Finetuning](/202604/11/2604.05248v1-improving-sparse-memory-finetuning)  
    标签：评分：6.0/10、query:tta
-   evidence：少样本检测的参数高效光谱自适应
-10. [Feedback Adaptation for Retrieval-Augmented Generation](/202604/10/2604.06647v1-feedback-adaptation-for-retrieval-augmented-generation)  
+   evidence：通过稀疏记忆微调持续自适应新知识
+8. [CoStream: Codec-Guided Resource-Efficient System for Video Streaming Analytics](/202604/11/2604.06036v1-costream-codec-guided-resource-efficient-system-for-video-streaming-analytics)  
    标签：评分：6.0/10、query:tta
-   evidence：部署中RAG系统的反馈自适应
-11. [From Static to Interactive: Adapting Visual in-Context Learners for User-Driven Tasks](/202604/10/2604.06748v1-from-static-to-interactive-adapting-visual-in-context-learners-for-user-driven-tasks)  
+   evidence：视频流分析的资源高效系统
+9. [Autopoiesis: A Self-Evolving System Paradigm for LLM Serving Under Runtime Dynamics](/202604/11/2604.07144v1-autopoiesis-a-self-evolving-system-paradigm-for-llm-serving-under-runtime-dynamics)  
    标签：评分：6.0/10、query:tta
-   evidence：使视觉上下文学习者适应用户驱动的任务
+   evidence：针对运行时动态环境的LLM服务在线自演化系统
+10. [Decompose, Look, and Reason: Reinforced Latent Reasoning for VLMs](/202604/11/2604.07518v1-decompose-look-and-reason-reinforced-latent-reasoning-for-vlms)  
+   标签：评分：6.0/10、query:tta
+   evidence：针对复杂视觉推理任务的强化潜空间推理
+11. [VSAS-BENCH: Real-Time Evaluation of Visual Streaming Assistant Models](/202604/11/2604.07634v1-vsas-bench-real-time-evaluation-of-visual-streaming-assistant-models)  
+   标签：评分：6.0/10、query:tta
+   evidence：流式视觉语言模型的评估及随时间推移的一致性
 
 
 <div class="dpr-home-promo-card">
