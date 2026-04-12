@@ -6,56 +6,56 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-11
-- 运行时间：2026-04-11 19:59:58 UTC
+- 最新运行日期：2026-04-12
+- 运行时间：2026-04-12 19:57:12 UTC
 - 运行状态：成功
 - 本次总论文数：11
 - 精读区：0
 - 速读区：11
 
 ### 今日简报（AI）
-今日速览 11 篇论文，重点攻克多模态大模型在视频流推理加速与复杂图表逻辑推理上的性能瓶颈。
-CodecSight 巧妙利用视频编解码信号实现高效推理，而 Chart-RL 则通过强化学习显著提升了 VLM 的图表问答精度。
-建议关注底层信号处理与策略优化相结合的思路，这是提升多模态模型实用性的关键方向。
-- 详情：[/202604/11/README](/202604/11/README)
+今日速览 11 篇前沿论文，重点攻克自我进化智能体、竞争性代码生成及高效视觉-语言-动作（VLA）模型。
+值得关注 Combee 提示词学习框架对智能体能力的规模化提升，以及 A1 开源模型在具身智能协同上的透明与高效。
+建议开发者尝试“测试-修复”迭代流以优化代码质量，并关注轻量化 VLA 模型在复杂任务中的适配潜力。
+- 详情：[/202604/12/README](/202604/12/README)
 
 ### 精读区论文标签
 - 本次无精读推荐。
 
 ### 速读区论文标签
-1. [CodecSight: Leveraging Video Codec Signals for Efficient Streaming VLM Inference](/202604/11/2604.06036v3-codecsight-leveraging-video-codec-signals-for-efficient-streaming-vlm-inference)  
+1. [Combee: Scaling Prompt Learning for Self-Improving Language Model Agents](/202604/12/2604.04247v1-combee-scaling-prompt-learning-for-self-improving-language-model-agents)  
    标签：评分：7.0/10、query:tta
-   evidence：利用视频编解码信号进行高效的流式VLM推理
-2. [Visual prompting reimagined: The power of the Activation Prompts](/202604/11/2604.06440v1-visual-prompting-reimagined-the-power-of-the-activation-prompts)  
+   evidence：无需参数更改即可从推理时间上下文中进行提示学习
+2. [An Iterative Test-and-Repair Framework for Competitive Code Generation](/202604/12/2604.05560v1-an-iterative-test-and-repair-framework-for-competitive-code-generation)  
    标签：评分：7.0/10、query:tta
-   evidence：用于下游任务自适应的视觉提示技术
-3. [Chart-RL: Policy Optimization Reinforcement Learning for Enhanced Visual Reasoning in Chart Question Answering with Vision Language Models](/202604/11/2604.03157v1-chart-rl-policy-optimization-reinforcement-learning-for-enhanced-visual-reasoning-in-chart-question-answering-with-vision-language-models)  
+   evidence：推理时的迭代测试与修复框架
+3. [A1: A Fully Transparent Open-Source, Adaptive and Efficient Truncated Vision-Language-Action Model](/202604/12/2604.05672v2-a1-a-fully-transparent-open-source-adaptive-and-efficient-truncated-vision-language-action-model)  
+   标签：评分：7.0/10、query:tta
+   evidence：自适应且高效的视觉-语言-动作模型
+4. [INSPATIO-WORLD: A Real-Time 4D World Simulator via Spatiotemporal Autoregressive Modeling](/202604/12/2604.07209v1-inspatio-world-a-real-time-4d-world-simulator-via-spatiotemporal-autoregressive-modeling)  
+   标签：评分：7.0/10、query:tta
+   evidence：通过时空自回归建模实现的实时4D世界模拟器
+5. [Formally Guaranteed Control Adaptation for ODD-Resilient Autonomous Systems](/202604/12/2604.07414v1-formally-guaranteed-control-adaptation-for-odd-resilient-autonomous-systems)  
+   标签：评分：7.0/10、query:tta
+   evidence：自主系统控制自适应的形式化保证
+6. [DSCA: Dynamic Subspace Concept Alignment for Lifelong VLM Editing](/202604/12/2604.07965v1-dsca-dynamic-subspace-concept-alignment-for-lifelong-vlm-editing)  
+   标签：评分：7.0/10、query:tta
+   evidence：视觉语言模型的终身编辑与动态适配
+7. [See the Forest for the Trees: Loosely Speculative Decoding via Visual-Semantic Guidance for Efficient Inference of Video LLMs](/202604/12/2604.05650v1-see-the-forest-for-the-trees-loosely-speculative-decoding-via-visual-semantic-guidance-for-efficient-inference-of-video-llms)  
    标签：评分：6.0/10、query:tta
-   evidence：强化学习用于图表问答
-4. [KiToke: Kernel-based Interval-aware Token Compression for Video Large Language Models](/202604/11/2604.03414v1-kitoke-kernel-based-interval-aware-token-compression-for-video-large-language-models)  
+   evidence：视频大语言模型的免训练自适应解码
+8. [Learning Without Losing Identity: Capability Evolution for Embodied Agents](/202604/12/2604.07799v1-learning-without-losing-identity-capability-evolution-for-embodied-agents)  
    标签：评分：6.0/10、query:tta
-   evidence：视频大语言模型的无训练内容自适应令牌压缩
-5. [CLEAR: Unlocking Generative Potential for Degraded Image Understanding in Unified Multimodal Models](/202604/11/2604.04780v1-clear-unlocking-generative-potential-for-degraded-image-understanding-in-unified-multimodal-models)  
+   evidence：动态环境中具身智能体的能力演化
+9. [TSUBASA: Improving Long-Horizon Personalization via Evolving Memory and Self-Learning with Context Distillation](/202604/12/2604.07894v1-tsubasa-improving-long-horizon-personalization-via-evolving-memory-and-self-learning-with-context-distillation)  
    标签：评分：6.0/10、query:tta
-   evidence：针对退化输入的理解与生成的联合优化
-6. [RAG or Learning? Understanding the Limits of LLM Adaptation under Continuous Knowledge Drift in the Real World](/202604/11/2604.05096v1-rag-or-learning-understanding-the-limits-of-llm-adaptation-under-continuous-knowledge-drift-in-the-real-world)  
+   evidence：通过参数化自适应和自我学习弥合个性化大模型训练与推理之间的差距
+10. [AdaSpark: Adaptive Sparsity for Efficient Long-Video Understanding](/202604/12/2604.08077v1-adaspark-adaptive-sparsity-for-efficient-long-video-understanding)  
    标签：评分：6.0/10、query:tta
-   evidence：真实世界设置下大语言模型在持续知识漂移中的自适应
-7. [Improving Sparse Memory Finetuning](/202604/11/2604.05248v1-improving-sparse-memory-finetuning)  
+   evidence：视频大语言模型的自适应稀疏框架
+11. [Small Vision-Language Models are Smart Compressors for Long Video Understanding](/202604/12/2604.08120v1-small-vision-language-models-are-smart-compressors-for-long-video-understanding)  
    标签：评分：6.0/10、query:tta
-   evidence：通过稀疏记忆微调持续自适应新知识
-8. [CoStream: Codec-Guided Resource-Efficient System for Video Streaming Analytics](/202604/11/2604.06036v1-costream-codec-guided-resource-efficient-system-for-video-streaming-analytics)  
-   标签：评分：6.0/10、query:tta
-   evidence：视频流分析的资源高效系统
-9. [Autopoiesis: A Self-Evolving System Paradigm for LLM Serving Under Runtime Dynamics](/202604/11/2604.07144v1-autopoiesis-a-self-evolving-system-paradigm-for-llm-serving-under-runtime-dynamics)  
-   标签：评分：6.0/10、query:tta
-   evidence：针对运行时动态环境的LLM服务在线自演化系统
-10. [Decompose, Look, and Reason: Reinforced Latent Reasoning for VLMs](/202604/11/2604.07518v1-decompose-look-and-reason-reinforced-latent-reasoning-for-vlms)  
-   标签：评分：6.0/10、query:tta
-   evidence：针对复杂视觉推理任务的强化潜空间推理
-11. [VSAS-BENCH: Real-Time Evaluation of Visual Streaming Assistant Models](/202604/11/2604.07634v1-vsas-bench-real-time-evaluation-of-visual-streaming-assistant-models)  
-   标签：评分：6.0/10、query:tta
-   evidence：流式视觉语言模型的评估及随时间推移的一致性
+   evidence：通过查询感知压缩使多模态大语言模型适应长视频
 
 
 <div class="dpr-home-promo-card">
