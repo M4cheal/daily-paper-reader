@@ -1,0 +1,838 @@
+Title: ZOTTA: Test-Time Adaptation with Gradient-Free Zeroth-Order Optimization
+
+URL Source: https://arxiv.org/pdf/2603.14254v1
+
+Published Time: Tue, 17 Mar 2026 02:17:13 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+> 1
+
+# ZOTTA: Test-Time Adaptation with Gradient-Free Zeroth-Order Optimization 
+
+Ronghao Zhang, Shuaicheng Niu, Qi Deng, Yanjie Dong, Jian Chen, Runhao Zeng 
+
+Abstract —Test-time adaptation (TTA) aims to improve model robustness under distribution shifts by adapting to unlabeled test data, but most existing methods rely on backpropagation (BP), which is computationally costly and incompatible with non-differentiable models such as quantized models—limiting practical deployment on numerous edge devices. Recent BP-free approaches alleviate overhead but remain either architecture-specific or limited in optimization capacity to handle high-dimensional models. We propose ZOTTA, a fully BP-free TTA framework that performs efficient adaptation using only forward passes via Zeroth-Order Optimization (ZOO). While ZOO is theoretically appealing, naive application leads to slow conver-gence under high-dimensional parameter spaces and unstable optimization due to the lack of labels. ZOTTA overcomes these challenges through 1) Distribution-Robust Layer Selection, which automatically identifies and freezes layers that already extract distribution-invariant features, updating only domain-sensitive layers to reduce the optimization dimensionality and accelerate convergence; 2) Spatial Feature Aggregation Alignment, which stabilizes ZOO by aligning globally aggregated spatial features between source and target to reduce gradient variance. Together, these components enable architecture-agnostic and stable BP-free adaptation. Extensive experiments on ImageNet-C/R/Sketch/A show that ZOTTA outperforms or matches BP-based methods, e.g., it reduces memory usage by 84% and improves accuracy by 3.9% over SAR on ImageNet-C. 
+
+Index Terms —Test-time adaptation, Zeroth-order optimiza-tion, Out-of-distribution generalization, Robustness 
+
+I. I NTRODUCTION 
+
+Test-time adaptation (TTA) aims to improve model gen-eralization under distribution shifts by adapting to unla-beled target-domain data during inference. This is critical for real-world deployment, where test distributions often change dynamically. Most existing TTA methods [1]–[5] rely on backpropagation (BP) to update model parameters through auxiliary objectives such as self-supervision or entropy mini-mization. While effective, BP-based methods incur high com-putational and memory costs and cannot be applied to non-differentiable models, such as quantized models with vanishing gradients [6], limiting their practicality in resource-constrained settings such as edge devices. To bypass these limitations, BP-free TTA has gained in-terest. Learning-free approaches such as BN-Adapt [7] and                                      
+
+> Ronghao Zhang, Qi Deng and Jian Chen are with South China University of Technology, Guangzhou, 510000, China. Shuaicheng Niu is with Nanyang Technological University, 639798, Singapore. Yanjie Dong is with Xi’an Jiaotong University, Xi’an, 710049, China. Runhao Zeng is with Shenzhen MSU-BIT University, Shenzhen, 518172, China. E-mail: zhangronghao16@gmail.com; shuaicheng.niu@ntu.edu.sg; dengqi.kei@gmail.com; ydong@xjtu.edu.cn; ellachen@scut.edu.cn; runhaozeng.cs@gmail.com.
+
+T3A [8] adjust feature statistics or prototypes for quick adapta-tion but offer limited performance gains. Learning-based meth-ods, e.g., FOA [9], optimize lightweight prompts for Vision Transformers (ViTs) via evolutionary search, achieving better results but remaining architecture-specific. Overall, current BP-free methods still face two fundamental limitations (sum-marized in Table I): 1) Poor architectural generality: Methods like BN-Adapt are restricted to CNNs with BatchNorm, while FOA relies on ViT architectures; 2) Low optimization capacity: 
+
+Current designs can only adjust low-dimensional parameters, limiting scalability to complex, high-dimensional models. Zeroth-order optimization (ZOO) [10]–[13] offers a natural path toward addressing the above limitations, providing a theoretically grounded BP-free learning mechanism that es-timates gradients through forward-pass perturbations. It re-quires no backward computation, scales to high-dimensional optimization, and supports arbitrary architectures. However, applying ZOO directly to online unsupervised TTA is inferior in practice, even with extensive forward passes (as shown in Figure 1). Our diagnostic analysis reveals two key obstacles: 
+
+1) Slow convergence under high-dimensional parameter space —ZOO’s convergence rate deteriorates as the number of optimized parameters increases, leading to inefficient adapta-tion; and 2) Unstable optimization objective —without labels, typical entropy-based losses fluctuate heavily under domain shift, leading to noisy gradient estimates and unstable updates. Hence, the core challenge is not using ZOO itself, but making ZOO efficient and stable for online, unsupervised adaptation. We propose zeroth-order TTA (ZOTTA), a practical, model-agnostic framework that realizes efficient and stable test-time adaptation purely through forward passes. To tackle the two above challenges, ZOTTA introduces two comple-mentary mechanisms: 1) Distribution-Robust Layer Se-lection (DRLS): Since ZOO’s convergence speed degrades with parameter dimensionality, we propose a layer-wise se-lection mechanism that identifies and freezes distribution-invariant layers while updating only domain-sensitive ones. This adaptive pruning of the optimization space drastically accelerates convergence without sacrificing adaptation quality. 
+
+2) Spatial Feature Aggregation Alignment (SFAA): Because ZOO estimates gradients through stochastic perturbations, it is highly sensitive to loss-surface irregularities. SFAA acts as a gradient regularizer, providing a smooth and architecture-agnostic optimization objective by aligning the aggregated feature statistics between source and target domains. This preserves global representational structure, reduces gradient variance, and stabilizes ZOO updates across CNN and ViT architectures. Together, DRLS and SFAA form a synergistic design: DRLS accelerates ZOO by reducing the optimization 
+
+> arXiv:2603.14254v1 [cs.CV] 15 Mar 2026 2
+
+TABLE I: Comparison of our method with previous backpropagation (BP)-based and BP-free test-time adaptation methods. Runtime accuracy and memory are the average results of the full-precision ViT-Base and ResNet50-GN models on ImageNet-C (corruption level 5) with batch size 64. FOA results are reported under the same number of forward passes as ours.                               
+
+> Method BP-Based BP-Free & Learning-Free BP-Free & Learning-Based Ours (e.g., SAR [4]) (e.g., T3A [8]) (e.g., FOA [9]) Rely on BP? Yes No No No Learn from an objective? Yes No Yes Yes Learnable params Norm layer N/A Prompt Norm layer Model compatibility ViTs, CNNs, etc. ViTs, CNNs, etc. ViTs ViTs & CNNs, etc. Acc. & Mem. (ViT) 62.7% (5,166 MB) 56.9% (957 MB) 62.4% (830 MB) 66.6% (825 MB) Acc. & Mem. (ResNet) 46.8% (5,429 MB) 30.9% (969 MB) N/A 44.9% (782 MB)
+
+space, while SFAA stabilizes ZOO by regularizing the opti-mization dynamics, jointly enabling efficient and reliable BP-free adaptation. We validate ZOTTA across diverse benchmarks, including ImageNet-C/R/Sketch/A, and CIFAR100-C, using both CNN and ViT models. Moreover, we demonstrate its scalability by adapting a multimodal large model on the MathVista bench-mark, highlighting its generality and practical deployment value. Our main contributions are as follows:  
+
+> •
+
+We introduce ZOTTA, a backpropagation-free TTA framework built upon zeroth-order optimization, enabling efficient and architecture-agnostic adaptation using only forward passes. ZOTTA naturally supports both CNNs and ViTs and is well-suited for resource-constrained non-differentiable deployment scenarios.  
+
+> •
+
+We provide diagnostic analysis identifying ZOO’s core challenges in TTA—slow convergence under high-dimensional updates and instability from noisy unsuper-vised objectives—and address them with two compo-nents: Distribution-Robust Layer Selection (DRLS) to re-duce the optimization dimensionality, and Spatial Feature Aggregation Alignment (SFAA) to provide a stable, low-variance learning signal.  
+
+> •
+
+Experiments on ImageNet-C/R/Sketch/A and CIFAR100-C across CNN and ViT backbones show that ZOTTA substantially outperforms prior BP-free methods and even surpasses some BP-based baselines, while drastically reducing memory and computational overhead. II. R ELATED WORK 
+
+Test-Time Adaptation (TTA) aims to address the issue of distribution shift during testing through unsupervised or self-supervised methods [14]–[20]. Existing TTA methods can be classified into two categories based on the need for backpropagation (BP). 
+
+1) BP-based methods adapt models during test time by computing gradients via BP. For example, TTT [1] and TTT++ [21] introduce self-supervised tasks, while MEMO [3] and TENT [2] minimize entropy. SAR [4], EATA [5] and DeYO [22] focus on selective sample updates. However, BP-based TTA methods incur high computational overhead. While recent methods like EcoTTA [23] and MECTA [24] reduce memory, they still require far more than BP-free methods and remain reliant on a differentiable framework, limiting real-world applicability. 
+
+2) BP-free methods avoid the above issues by eliminating gradient computation. T3A [8] and LAME [25] adjust proto-types or outputs directly, but lack strong learning objectives. To address this, FOA [9] introduces a learning-based strategy using evolutionary search over prompts, but is restricted to ViTs and struggles with high-dimensional parameter optimiza-tion. In summary, designing a more broadly applicable and efficient learning-based forward-only TTA method is still an open challenge. 
+
+Zeroth-Order Optimization (ZOO) estimates gradients via finite-difference approximations using only forward passes, eliminating the need for backpropagation and offering strong memory efficiency compared to first-order methods like SGD and Adam [26], [27]. Foundational works [28]–[30] have established its theoretical basis, and applications span model reuse [31] and model explanation [32]. However, ZOO often suffers from high gradient variance and slow convergence due to its random-direction estimates, limiting its use in deep, high-dimensional models. To improve efficiency, prior works proposed asynchronous parallelism [33], variance re-duction [34], prior-guided sampling [35], and gradient sparsity exploitation [36]. Recent methods [37] further extend ZOO to large models. Although ZOO methods have been largely explored in offline supervised settings. Their applicability to online, unsu-pervised TTA—where models must adapt to distribution shifts using streaming unlabeled data and limited access per sam-ple—remains underexplored. In this work, we bridge this gap by integrating ZOO into TTA for the first time, leveraging its backpropagation-free nature and memory efficiency to enable model-agnostic online adaptation under distribution shifts. III. M ETHODOLOGY 
+
+a) Problem Statement: Given a model fθ trained on source samples x ∼ P (x), test-time adaptation (TTA) aims to adapt it to target samples x′ ∼ U (x) where U (x)̸ =
+
+P (x), , to mitigate degradation under distribution shifts. Most TTA methods employ first-order optimization to minimize an unsupervised objective function L(·), updating the model parameters θ iteratively as 
+
+θt+1 = θt − η · ∇L (θt), (1) where η is the learning rate, and ∇L (θt) denotes the gradient of the loss with respect to model parameters θt at time step t. However, backpropagation (BP) requires high memory 355              
+
+> 57
+> 2410 20 30 50 100
+> The number of forward passes per sample
+> NoAdapt
+> 56
+> 58
+> 60
+> 62
+> 64
+> 2410 20 30 50 100
+> Accuracy (%)
+> The number of forward passes per sample
+> Naive ZOO
+> ZOTTA(Ours)
+> NoAdapt
+> Efficient Inefficient
+
+Fig. 1: Comparison of Naive ZOO vs. Ours with varying #forward passes us-ing ViT-Base on ImageNet-C (Gauss, level 5). 0                  
+
+> 50
+> 100
+> 150
+> 200
+> 250
+> 300
+> 350
+> 400
+> 450
+> 500
+> 0100 200 300 400 500 600 700
+> Gradient Norm
+> Online Batch
+> FO Naive ZOO Ours
+> -0.02
+> -0.01
+> 0.00
+> 0.01
+> 0.02
+> 0.03
+> 0.04
+> 0.05
+> 0.06
+> 0100 200 300 400 500 600 700
+> Cossine Similarity
+> Online Batch
+> cos ( 𝑔𝑔 𝐹𝐹𝐹𝐹 ,�𝑔𝑔 𝑁𝑁𝑁𝑁𝑁𝑁𝑁𝑁𝑁𝑁 _𝑍𝑍 𝐹𝐹𝐹𝐹
+> )
+> cos ( 𝑔𝑔 𝐹𝐹𝐹𝐹 ,�𝑔𝑔 𝐹𝐹 𝑂𝑂𝑂𝑂𝑂𝑂
+> )
+
+Fig. 2: Analysis of ZOO gradient quality compared to the First-Order (FO) gradient on ImageNet-C, showing (Left) their respective gradient norms and (Right) the cosine similarity between the ZOO gradients (Naive ZOO, Ours) and the FO gradient. and differentiable computation graphs, making it unsuitable for quantized or resource-constrained cases. Recent learning-based BP-free methods [9] reduce memory cost but typically update only low-dimensional or architecture-specific parame-ters (e.g., ViT prompts), limiting scalability and generality to different model architectures. 
+
+A. Motivation 
+
+Zeroth-Order Optimization (ZOO) offers a natural BP-free alternative for TTA, since it estimates gradients using only forward-pass perturbations. Formally, the randomized gradient estimator [10] approximates the gradient via two-sided finite differences: 
+
+ˆg = 1
+
+k
+
+> k
+
+X
+
+> i=1
+
+L(θ + cu i) − L (θ − cu i)2c ui, (2) where k represents the number of function queries, with gra-dient ˆg obtained by averaging the k estimations. ui ∼ N (0 , I )
+
+denotes a random perturbation sampled from a Gaussian distribution. c > 0 is a perturbation size, also referred as the smoothing parameter. 
+
+Naive ZOO is insufficient for TTA Despite its appeal-ing properties, directly applying ZOO to TTA by updating all normalization parameters (common practice in the TTA field) yields weak adaptation. As in Figure 1, ZOO relies on numerous forward passes and achieved limited performance. To understand why, we compare the ZOO-estimated gradient 
+
+ˆgZOO with a first-order reference gradient gF O computed via BP using the same unsupervised objective. 
+
+Empirical findings From Figure 2, naive ZOO exhibits two persistent issues: 1) Large and volatile gradient magnitude: 
+
+|| ˆgZOO || fluctuates several orders of magnitude more than 
+
+|| gF O || , indicating substantial estimator variance. 2) Near-zero gradient alignment: The cosine similarity between ˆgZOO 
+
+and gF O remains close to zero, suggesting that ZOO updates deviate significantly from the descent direction implied by first-order optimization. 
+
+Underlying causes Our analysis reveals two structural factors behind these behaviors: 1) High estimator vari-ance due to high parameter dimensionality. ZOO’s finite-difference estimator suffers variance that increases with the dimensionality d of the optimization space. Theory [10] shows 
+
+Algorithm 1 The TTA Pipeline of ZOTTA 
+
+Require: Trained model f (·; θ), target samples set 
+
+D={xi}Ni=1 , small sample sets Did = {xid i }Ki=1 and 
+
+Dood = {xood j }Kj=1 from ID and OOD domains, purity threshold τ , hyper-parameter step , learning rate η 
+
+> 1:
+
+Pre-TTA Processing:  
+
+> 2:
+
+// Distribution-Robust Layer Selection:  
+
+> 3:
+
+Extract layer feature Zid i & Zood i using Did & Dood  
+
+> 4:
+
+Compute purity Pl for each layer l via Eqn. (3)  
+
+> 5:
+
+Determine update layer set U = {l | Pl ≥ τ } 
+
+> 6:
+
+During TTA:  
+
+> 7:
+
+for s = 1 to step do  
+
+> 8:
+
+// Spatial Feature Aggregation Alignment:  
+
+> 9:
+
+Calculate the loss L in Eqn. (6)  
+
+> 10:
+
+// Zeroth-Order Gradient Estimation:  
+
+> 11:
+
+Calculate gradient ˆg using {xi} via Eqn. (2)  
+
+> 12:
+
+Update parameters: θ ← θ − ηˆg 
+
+> 13:
+
+Compute predictions: ˆyi = f (xi; θ) 
+
+> 14:
+
+end for 
+
+that gradient variance scales with √d. In TTA, updating all affine parameters in normalization layers of ViT-base intro-duces around 38K dimensions, which aligns with the large variance observed in our experiments. 2) Uniform scalar scaling across all parameters. The estimator ˆg = ∆L 
+
+> 2c
+
+u uses a single scalar (∆ L/2c) to scale the entire d-dimensional perturbation vector. This coupling forces all parameters to share one update magnitude, making it difficult for ZOO to differentiate which layers or parameters are truly responsible for correcting domain shift. This leads to noisy and poorly structured updates. 
+
+Implication for TTA ZOO theoretically converges at a rate of O(√d/ √T ) [10], [30], meaning that large dimensionality and the small number of optimization steps available in streaming TTA jointly limit its effectiveness. Therefore, to make ZOO effective in online TTA, two key conditions must be met: 1) Reduce the effective optimization dimensionality; 2) Stabilize the unsupervised objective to reduce estimator noise. 
+
+B. Zeroth-Order TTA Framework 
+
+Based on the above observations, we propose ZOTTA, a BP-free TTA framework that addresses ZOO’s two key limitations. 4+   
+
+> update
+> 𝑴𝑴𝑴𝑴𝑴𝑴𝑴𝑴𝑴𝑴 ;𝜽𝜽 𝒕𝒕 𝑴𝑴𝑴𝑴𝑴𝑴𝑴𝑴𝑴𝑴 ;𝜽𝜽 𝒕𝒕+𝟏𝟏
+> input
+> Step 1: perturb
+
+Zeroth-Order Optimization             
+
+> 𝜽𝜽 𝒕𝒕 +=𝜽𝜽 𝒕𝒕 +𝒄𝒄𝒄𝒄
+> 𝜽𝜽 𝒕𝒕 −=𝜽𝜽 𝒕𝒕 − 𝒄𝒄𝒄𝒄
+> Step 2: calculate loss & estimate gradient
+> 𝒄𝒄 ~𝓝𝓝 (𝟎𝟎 ,𝑰𝑰 )
+
+alignment loss 
+
++                
+
+> Layer
+> Layer
+> 𝒑𝒑 𝜽𝜽 𝒕𝒕 +
+> 𝒑𝒑 𝜽𝜽 𝒕𝒕 −
+> �𝒈𝒈 =𝓛𝓛 𝜽𝜽 𝒕𝒕 +− 𝓛𝓛 𝜽𝜽 𝒕𝒕 −𝟐𝟐 𝒄𝒄 𝒄𝒄
+> 𝓛𝓛 𝜽𝜽 𝒕𝒕 +
+> 𝓛𝓛 𝜽𝜽 𝒕𝒕 −
+> Layer
+> Layer
+> Precomputed in source domain
+
+Spatial Feature Aggregation Alignment  Tuned  Frozen   
+
+> Align
+> Aggregate Aggregate Aggregate Aggregate
+> Align Align Align
+> Alignment loss
+
+Alignment loss  
+
+> 𝓛𝓛 𝑨𝑨 𝑴𝑴 𝒍𝒍 𝒈𝒈 𝒍𝒍
+
+𝜽𝜽 𝒕𝒕 +𝜽𝜽 𝒕𝒕 −
+
+Distribution-Robust Layer Selection   
+
+> L
+> L
+> L
+> L
+> Layer
+> Layer
+> Layer
+> Layer
+> ID samples OOD samples
+> Tuned or Frozen?
+> Features Clustering
+> Tuned
+> Frozen
+> Tuned or Frozen?
+
+Before TTA 
+
+> Model
+> Features Clustering
+
+if 
+
+then 
+
+then 
+
+then 
+
+then 
+
+if 
+
+Fig. 3: An overview of the proposed ZOTTA framework, which enables BP-free TTA through two main components: 1) 
+
+Distribution-Robust Layer Selection : Before TTA, we identify distribution-invariant layers and freeze them, updating only distribution-sensitive layers to reduce the optimization dimensionality. 2) Zeroth-Order Gradient Estimation via Spatial Feature Aggregation Alignment : For each TTA step, we inject Gaussian perturbations into the selected parameters, aggregate spatial/token features into global descriptors, and align their statistics with the source domain. This alignment objective provides a more stable zeroth-order gradient obtained from the loss difference of two-sided perturbed forward passes. As shown in Figure 3, ZOTTA consists of two complemen-tary components: 1) Distribution-Robust Layer Selection (DRLS) (Sec. III-C) : Select layers to update or freeze based on cross-domain feature separability, reducing trainable pa-rameters and accelerating ZOO convergence. 2) Spatial Fea-ture Aggregation Alignment (SFAA) (Sec. III-D) : Aggregate spatial features into global representations for alignment to reduce domain discrepancies, compensating for the limitations of unstable signals induced by entropy-based TTA objectives. The overall pseudo-code is summarized in Algorithm 1. 
+
+C. Distribution-Robust Layer Selection 
+
+Although ZOO enables BP-free updates with high mem-ory efficiency, its convergence becomes a bottleneck when adapting high-dimensional models such as CNNs and ViTs—especially in online TTA, where each sample is seen only once. Since ZOO’s convergence rate deteriorates with the number of optimized parameters [10], reducing the effective optimization dimensionality is crucial for improving adapta-tion efficiency. To tackle this, we propose a Distribution-Robust Layer Selection strategy that improves ZOO efficiency by restricting updates to normalization layers that are most sensitive to domain shifts. This strategy is grounded in the motivation that adaptation often seeks to align the feature distribution between source and target domains, i.e., reducing the feature separability between the in-distribution (ID) domain and out-of-distribution (OOD) domain. In this sense, if the features of ID and OOD data are already aligned before adaptation, further updating becomes less necessary, as such layers contribute little additional information or capacity for adaptation. Con-versely, if the ID and OOD features are well separated before adaptation, there exists considerable potential to update these layers, thereby aligning the features within the representation space for adaptation. To identify such layers, we introduce a lightweight, architecture-agnostic proxy— clustering purity —that measures domain separability of layer-wise features and selects only the most domain-sensitive layers for ZOO updates. Formally, we sample two small sets from both the ID domain and the OOD domain (only 64 samples per domain): 
+
+Did = {xid i }Ni=1 and Dood = {xood i }Ni=1 . The OOD samples are obtained at the beginning of the test stream via OOD detection [38], while the ID samples can be taken directly from the source data (if available) or extracted from the test stream using the same OOD detection mechanism. Obtaining such small subsets is straightforward in practice and is widely adopted in prior work [5]. Taking ViT as an example, for each sample, we extract features at layer l, obtaining feature tensors Zid i ∈ RM ×d and Zood i ∈ RM ×d, where d is the feature dimension and M is the number of tokens. For token 
+
+m, we perform 2-means clustering on the feature vectors 
+
+{zid i,m , zood i,m }i from all samples within Did and Dood . The clustering purity at layer l is defined as: 
+
+Pl,m = 12N
+
+> 2
+
+X
+
+> q=1
+
+max  
+
+> c∈{ id,ood }
+
+|C q,m ∩ Y c| , P l = 1
+
+M
+
+> M
+
+X
+
+> m=1
+
+Pl,m ,
+
+(3) where Cq,m is the q-th cluster and Yc is the ground-truth set of features from ID or OOD domain. Here, higher purity reflects stronger domain-specific separation, whereas lower purity indicates distribution invariance due to mixed-domain clustering. We then select layers for ZOO-based updates using a threshold τ : U = {l | Pl ≥ τ }, and freeze all remaining layers. Optionally, shallow layers may also be frozen since they capture generic low-level features (see Sec. V-A). This strategy substantially reduces the effective optimization dimen-5
+
+TABLE II: Comparisons with state-of-the-art methods on ImageNet-C with ViT-Base w.r.t Accuracy(%).                                                                                                                                                                                      
+
+> Noise Blur Weather Digital Type Method Gauss. Shot Impul. Defoc. Glass Motion Zoom Snow Frost Fog Brit. Contr. Elastic Pixel JPEG Avg. /NoAdapt 56.8 56.8 57.5 46.9 35.6 53.1 44.8 62.2 62.5 65.7 77.7 32.6 46.0 67.0 67.6 55.5 BP-based TENT 60.3 61.6 61.8 59.2 56.5 63.5 59.2 54.3 64.5 2.3 79.1 67.4 61.5 72.5 70.6 59.6 CoTTA 63.6 63.8 64.1 55.5 51.1 63.6 55.5 70.0 69.4 71.5 78.5 9.7 64.5 73.4 71.2 61.7 SAR 59.2 60.5 60.7 57.5 55.6 61.8 57.6 65.9 63.5 69.1 78.7 45.7 62.4 71.9 70.3 62.7 EATA 61.2 62.3 62.7 60.0 59.2 64.7 61.7 69.0 66.6 71.8 79.7 66.8 65.0 74.2 72.3 66.5 DeYO 62.4 64.0 63.9 61.0 60.7 66.4 62.9 70.9 69.6 73.7 80.5 67.2 69.9 75.7 73.7 68.2 BP-free LAME 56.5 56.5 57.2 46.4 34.7 52.7 44.2 58.4 61.5 63.1 77.4 24.7 44.6 66.6 67.2 54.1 T3A 56.4 56.9 57.3 47.9 37.8 54.3 46.9 63.6 60.8 68.5 78.1 38.3 50.0 67.6 69.1 56.9 FOA 60.8 61.5 62.0 55.7 43.5 58.5 51.5 66.9 64.3 70.7 80.5 64.2 53.1 72.1 70.9 62.4 ZOTTA(Ours) 61.8 63.7 63.8 57.9 57.8 62.8 59.7 70.2 67.8 72.3 80.5 66.0 67.6 74.0 73.2 66.6
+
+sionality, stabilizes ZOO’s gradient estimates, and accelerates convergence—while preserving layers that are already domain-invariant. 
+
+D. Spatial Feature Aggregation Alignment 
+
+Entropy minimization is widely used in TTA [2], [3], [39], but its reliance on model confidence makes it unstable for ZOO. Under distribution shift, prediction logits fluctuate sharply, and ZOO’s finite-difference estimator further ampli-fies this noise, producing high-variance gradient estimates. Thus, ZOO requires a smoother, more spatially anchored 
+
+objective whose response to perturbations changes more grad-ually. 
+
+a) Why Spatial Features?: In both CNNs and Vision Transformers (ViTs), intermediate representations encode rich spatial or token-wise structure: CNNs produce spatial ac-tivation maps of size H × W × d, ViTs produce token embeddings of size M × d. Unlike prediction logits, these spatial/token features evolve smoothly and capture stable, task-relevant statistics (such as activation distribution, magnitude, and global context). Such smoothness makes them ideal for ZOO, whose finite-difference gradient estimator benefits from low-variance objectives. Hence, spatial aggregation provides a natural mechanism to stabilize ZOO. 
+
+b) Unified Spatial Aggregation Across Architectures: 
+
+To make the objective architecture-agnostic, we unify spatial features from CNNs and ViTs by aggregating them into global descriptors: 
+
+v(i) 
+
+> l
+
+= h(z(i)1 , z (i)2 , ..., z (i) 
+
+> m
+
+) = 1
+
+m
+
+> m
+
+X
+
+> j=1
+
+z(i) 
+
+> j
+
+, (4) where m is the number of spatial maps for CNNs and tokens for ViTs. We implement h(·) as: 1) CNNs–global average pooling over spatial coordinates (H, W ); 2) ViTs: averaging over all token embeddings. This spatial aggregation filters local noise, producing stable layer-wise statistics well-suited for ZOO-based adaptation. 
+
+c) Spatial Feature Aggregation Alignment (SFAA): Based on aggregated features, we align global statistics between the source domain and test-time batches. Before adaptation, for each layer l we compute the source statistics: 
+
+μSl = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+v(i) 
+
+> l
+
+, σSl =
+
+vuut 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+v(i) 
+
+> l
+
+− μSl
+
+> 2
+
+. (5) During TTA, for the incoming batch Xt, we compute μl(Xt)
+
+and σl(Xt) and define the loss: 
+
+L(f (Xt; θ)) = X
+
+> x∈X
+
+X
+
+> c∈C cls
+
+−λ1 ˆyc log ˆ yc+
+
+λ2
+
+> L
+
+X
+
+> l=1
+
+(∥ μl(Xt) − μSl ∥2 + ∥ σl(Xt) − σSl ∥2). (6) This alignment stabilizes ZOO updates by providing a smooth, low-noise objective that anchors intermediate representations to source-domain statistics. IV. M AIN RESULTS 
+
+A. Experimental Setups 
+
+Datasets, Models and Compared Methods We conduct experiments on five benchmark datasets: 1) ImageNet-C [40] and 2) CIFAR100-C [41], 15 corruption types across 4 cate-gories, evaluated at severity level 5; 3) ImageNet-R [42], var-ious artistic renditions of 200 ImageNet classes; 4) ImageNet-Sketch [43], sketch-style images of 1,000 ImageNet classes; 
+
+5) ImageNet-A [44], naturally occurring, real-world adver-sarial examples. We primarily focus on ViT-Base [45] and also conduct experiments on ResNet50-GN [46], [47]. Both models are trained on the source ImageNet-1K training set. The compared SOTA TTA methods include: 1) BP-based :TENT [2], CoTTA [48], SAR [4], EATA [5] and DeYO [22]; 
+
+2) BP-free : LAME [25], T3A [8] and FOA [9]. 
+
+Implementation Details We use zeroth-order optimization to estimate gradients. For all backbones, following [49], we set k = 5 and c = 0 .01 in Eqn. (2). We set the learning rate to 0.01 and clustering purity threshold τ to 0.6. For ViT-Base, we set the λ1 to 1, and λ2 to 0.4. For ResNet50-GN, we set the λ1 to 0.1, and λ2 to 1. Before TTA , we acquire 64 samples comprising data from both the source domain and the speckle noise corruption subset of ImageNet-C validation set (simulating data sampled from an online batch). Using these samples, we first calculate statistics for Spatial Feature Aggregation Alignment within the source domain and then perform cluster purity analysis on the model. For ViT-Base, we update parameters in layers 3-5; for ResNet50-GN, we update stage/layer 2. During TTA , we update only the selected affine transformation parameters of layer normalization for ViT and the group normalization parameters for ResNet50-GN, keeping all other parameters frozen. Notably, k serve as 6
+
+TABLE III: Comparisons with state-of-the-arts methods on ImageNet-R, ImageNet-Sketch and ImageNet-A with ViT-Base w.r.t Acc.(%).                                               
+
+> Type Method RSketch AAvg. /NoAdapt 59.5 44.9 0.1 34.8 BP-based TENT 63.9 49.1 52.9 55.3 CoTTA 63.5 50.0 52.2 55.2 SAR 63.3 48.7 52.5 54.8 EATA 63.3 50.9 53.4 55.9 DeYO 66.1 52.2 54.1 57.5 BP-free LAME 59.0 44.4 49.9 51.1 T3A 58.0 47.6 48.9 51.5 FOA 60.6 46.6 50.6 52.6 Ours 61.5 47.3 51.0 53.3
+
+TABLE IV: Resource usage on ViT-Base. #FP/#BP indicate forward/backward passes per sample. We report average accu-racy on ImageNet-C (level 5). Wall-clock time (s) and memory (MB) are measured on 50,000 images using an RTX4090 GPU. EATA(GC) employs gradient checkpointing to reduce memory. EATA* updates only the norm layers of the last two ViT blocks. K is the population size; k is the number of gradient estimations—both influence #FP.                                                                                        
+
+> Type Method #FP #BP ImageNet-C Runtime(s) Memory(MB) /NoAdapt 1055.5 54 819 BP-based TENT 1159.6 123 5165 CoTTA 3or35 161.7 620 16,516 SAR [1,2] [0,2] 62.7 243 5,166 EATA 1166.5 128 5,175 EATA(GC) 1166.5 226 2,701 EATA* 1159.4 73 1,468 DeYO 2168.2 180 5,351 BP-free LAME 1054.1 55 819 T3A 1056.9 126 957 Ours(k=1) 2061.7 114 824 Ours(k=2) 4064.9 230 824 FOA(K=10) 10 062.4 621 831 Ours(k=5) 10 066.6 559 825 FOA(K=28) 28 066.3 1648 832 Ours(k=14) 28 067.6 1561 828
+
+trade-offs between resource usage and efficiency and can be adjusted based on practical requirements. For a fair comparison we set the default k in our method to 5 (i.e., 10 forward passes), while configuring FOA with a population size K of 10 in the main experiments. For comparisons under varying numbers of forward passes, please refer to Table IV and Figure 4. 
+
+B. Comparisons with State-of-the-Art Methods 1) Results using ViT-Base Architecture: We report the av-erage accuracy of 15 different corruptions on the ImageNet-C dataset (severity level 5) and results on ImageNet-R, -Sketch and -A with ViT-Base in Tables II, III and IV. Compared with BP-based methods , our approach not only surpasses TENT and CoTTA but also outperforms SAR (66.6% vs. 62.7%), indicating a BP-free solution can achieve competitive results. While slightly behind the current BP-based SOTA DeYO, our performance can be further improved by increas-ing the number of forward passes (see Table IV). A major strength of our method is its much lower memory usage (825 MB vs. 5,165 MB for TENT), making it well-suited for resource-limited environments. In contrast, BP-based methods require more memory due to BP and a fully differentiable TABLE V: Comparisons with state-of-the-art methods on ImageNet-C/R/Sketch/A with ResNet50-GN w.r.t Accu-racy(%).                                                          
+
+> Type Method CRSketch AAvg. /NoAdapt 31.3 40.2 28.1 13.9 28.4 BP-based TENT 31.4 40.3 28.2 13.9 28.5 CoTTA 32.7 40.9 26.3 14.4 28.6 SAR 46.8 51.4 36.2 20.2 38.6 EATA 47.1 47.7 37.5 15.9 37.0 DeYO 34.9 41.8 28.3 14.3 29.8 BP-free LAME 30.5 40.5 28.8 13.8 28.4 T3A 30.9 37.0 30.7 13.1 27.9 FOA 24.5 39.3 26.6 12.5 25.7 Ours 44.9 43.0 30.5 14.1 33.1
+
+framework, limiting their applicability on edge devices. Even with optimizations—such as EATA* updating only the last two ViT blocks—performance drops significantly under tighter memory budgets, and memory usage still exceeds that of BP-free methods. Compared with BP-free methods , our approach consistently achieves stronger performance. Notably, it achieves an 8.3% gain over T3A (66.6% vs. 56.9%) and surpasses FOA by 4.2% (66.6% vs. 62.4%) under the same setting of 10 forward passes per sample, without using FOA’s activation shift. This demonstrates our method’s superior adaptation ability with equal computation cost. Moreover, as shown in Table IV and Figure 4(a), our method maintains consistent advantages over FOA across different inference budgets, indicating better efficiency-performance trade-offs. We further validate generalization on ImageNet-R, -Sketch, -A and CIFAR100-C, where our method again shows strong robustness under diverse distribution shifts. 
+
+2) Results using ResNet50-GN Architecture: We report the average accuracy across 15 corruption types on ImageNet-C (severity 5) and results on ImageNet-R, -Sketch and -A using ResNet50-GN (Table V). Compared with BP-based meth-ods , our method surpasses TENT and CoTTA, and although SAR and EATA remain slightly ahead, we significantly reduce the gap while remaining BP-free—enabling adaptation in non-differentiable or resource-constrained scenarios. Compared with BP-free methods , our approach shows clear superiority: it outperforms LAME and improves over T3A by a notable 14% on ImageNet-C (44.9% vs. 30.9%). FOA is hard to generalize beyond ViTs. We attempted to adapt it to ResNet by training a learnable 7 × 7 convolutional prompt added to the input, but it performed worse than no adaptation across multiple datasets—highlighting its poor transferability. In contrast, our method generalizes well across architectures and, as illustrated in Figure 4(b), consistently outperforms FOA under different numbers of forward passes. V. A BLATION STUDIES 
+
+A. Effect of Distribution-Robust Layer Selection 
+
+To analyze the layer-wise distribution robustness, we use 64 pre-stored images from the ImageNet source domain (ID) and 64 images obtained from the first TTA online test batch (OOD) to compute clustering purity at each ViT-Base layer. As shown in Figure 5, purity is high in shallow layers, decreases with 755.5                            
+
+> 59.2
+> 59.7
+> 61.5
+> 62.4
+> 64.0
+> 65.1 65.5
+> 61.7
+> 64.9 65.7
+> 66.6 67.1 67.4 67.6
+> 54
+> 56
+> 58
+> 60
+> 62
+> 64
+> 66
+> 68
+> 0510 15 20 25 30
+> Accuracy(%)
+> The number of foward passes per sample
+> (a) ViT-Base
+> NoAdapt
+> FOA
+> ZOTTA(Ours)
+> 31.3
+> 25.5 25.5 25.0 23.7 24.5 23.1 23.2
+> 40.1
+> 42.7 43.7 44.9 45.2 45.7 45.9
+> 20
+> 25
+> 30
+> 35
+> 40
+> 45
+> 50
+> 0510 15 20 25 30
+> Accuracy(%)
+> The number of foward passes per sample
+> (b) ResNet50(GN)
+> NoAdapt
+> FOA
+> ZOTTA(Ours)
+
+Fig. 4: Comparison of our ZOTTA vs. FOA under different numbers of forward passes on ImageNet-C (avg acc over level 5 corruptions) using different models. 0.50                      
+
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> 012345678910 11
+> Clustering Purity
+> Layer Index
+> 55.5
+> 59.2
+> 59.7
+> 61.5
+> 62.4
+> 64.0
+> 65.1 65.5
+> 61.7
+> 64.9 65.7
+> 66.6 67.1 67.4 67.6
+> 54
+> 56
+> 58
+> 60
+> 62
+> 64
+> 66
+> 68
+> 0510 15 20 25 30
+> Accuracy(%)
+> The number of foward passes per sample
+> (a) ViT-Base
+> NoAdapt
+> FOA
+> ZOTTA(Ours)
+
+Fig. 5: Per-layer clustering purity of ViT-Base. 52          
+
+> 54
+> 56
+> 58
+> 60
+> 62
+> 64
+> 66
+> 68
+> 0200 400 600 800
+> Accuracy (%)
+> The number of Adaptation Iterations
+> 0,1,2 1,2,3 2,3,4
+> 3,4,5 4,5,6 5,6,7
+> 6,7,8 All
+
+Fig. 6: Convergence rates when updating different layers (numbers denote layer indices selected for update). 52       
+
+> 54
+> 56
+> 58
+> 60
+> 62
+> 64
+> 66
+> 68
+> 0200 400 600 800
+> Accuracy (%)
+> The number of Adaptation Iterations
+> CMP1 (All) CMP2 (8,9,10)
+> CMP3 (3,8,10) CMP4 (0,1,9)
+> ZOTTA (3,4,5)
+
+Fig. 7: Convergence rates of different layer selection methods (numbers denote updated layer indices). TABLE VI: Ablation of Spatial Feature Aggregation Alignment(SFAA) loss with ViT-Base on ImageNet-C. Entropy SFAA Avg. Acc. (%) 55.5 
+
+✓ 60.6 
+
+✓ 65.5 
+
+✓ ✓ 66.6 
+
+depth, and stabilizes around 0.5 in deeper layers—reflecting that shallow layers encode domain-specific features, while deeper layers capture more domain-invariant representations. To validate the effect of this selection strategy, we conduct an ablation study on ImageNet-C. For each run, we update only three consecutive layers, varying the position of the updated layers across the network. Results in Figure 6 reveal three observations: 1) Updating layers with high purity (e.g., Layers 3–5, purity > 0.6) consistently outperforms full-parameter updates; 2) updating lower-purity layers (e.g., Lay-ers 6–8, purity < 0.6) degrades performance; 3) modifying the first layer (Layer 0) leads to noticeable performance drops, likely due to its role in capturing low-level features that should remain unchanged. These findings confirm that clustering purity serves as an effective signal for selecting adaptation-sensitive layers. Moreover, the benefit is not tied to a specific layer: any group of high-purity layers yields better performance than full-parameter updates, validating the flexibility and generality of our strategy. 
+
+Comparisons of Different Layer Selection Methods We compare against four intuitive baselines: 1) CMP1 : Update all parameters; 2) CMP2 : Select layers with largest parameter magnitudes; 3) CMP3 : Select layers with highest absolute gra-dient values; 4) CMP4 : Identifies layers whose normalization parameters (affine scale/shift) have the greatest influence on outputs. For fair comparison, all methods update exactly three layers during adaptation. As shown in Figure 7, our method outperforms all baselines in both accuracy and convergence speed, demonstrating more effective and efficient adaptation than heuristics based on parameter or gradient magnitude. By explicitly evaluating layer-wise domain robustness, it se-lectively updates distribution-sensitive layers, making it well-suited for unsupervised TTA. 
+
+B. Effect of Feature Aggregation Alignment 
+
+Relying solely on entropy minimization can introduce in-stability and noisy gradients when combined with ZOO. To improve ZOO’s gradient stability, we introduced the Spatial Feature Aggregation Alignment (SFAA) as a model-agnostic objective. As shown in our ablation study (Table VI), using entropy alone leads to poor adaptation (60.6%), while using SFAA alone achieves a significant performance gain (65.5%). Combining both objectives yields the best result (66.6%). This demonstrates that SFAA provides a much more stable learning signal for gradient-free optimization and is critical for improving adaptation robustness. 
+
+C. Sensitivity Analysis of Batch Size for SFAA 
+
+The efficacy of the SFAA loss depends on aligning test-time batch statistics with the source domain. Since the statistical reliability of a batch is inherently sensitive to its size, we conducted an analysis to verify ZOTTA’s robustness to small batch sizes. As shown in Figure 8, performance remained stable or slightly improved as the batch size was reduced from 64 down to 4, with a significant performance drop only occurring at the extreme minimum of batch size 2. This result confirms that ZOTTA is robust and does not depend on large batches for stable adaptation, as the supervisory signal remains reliable down to a size of 4, although severe statistical bias emerges at the extreme size of 2. To handle the challenge of extremely small batch sizes, such as 1, we employ a special strategy (please refer to Sec. VI-C). 866.6  67.3  67.4  67.1  67.4      
+
+> 65.8
+> 53.0
+> 55.5
+> 58.0
+> 60.5
+> 63.0
+> 65.5
+> 68.0
+> 70.5
+> 64 32 16 842
+> Accuracy(%)
+
+Batch size 
+
+图表标题  
+
+> NoAdapt Ours
+
+Fig. 8: Batch size sensitivity analysis on ImageNet-C using ViT-Base. 63.2             
+
+> 65.9 66.2 66.5 66.6 66.7 66.6
+> 53.0
+> 55.5
+> 58.0
+> 60.5
+> 63.0
+> 65.5
+> 68.0
+> 70.5
+> 24816 32 64 128 256
+> Accuracy(%)
+
+The number of source samples 
+
+图表标题  
+
+> NoAdapt Ours
+
+Fig. 9: Batch size sensitivity analysis on ImageNet-C using ViT-Base. 
+
+D. Sensitivity to the Number of Source Samples for SFAA 
+
+To compute the alignment targets for SFAA, reference statistics from the source domain are required. However, ac-cessing a large source dataset to calculate these global statistics is often impractical in real-world scenarios. We therefore analyze SFAA’s sensitivity to the number of source samples used. As shown in Figure 9, SFAA is highly data-efficient: using only 8 source samples—a number that is exceptionally practical to obtain—yields a significant accuracy gain (e.g., 65.9%). Increasing the sample size to 16 (66.2%), 32 (66.5%), and 64 (66.6%) shows diminishing returns, with performance plateauing as sample counts increase further to 128 (66.7%) and 256 (66.6%). Considering this saturation point and the balance between practicality and performance, we adopted 64 samples for our default setting, validating SFAA’s real-world applicability. 
+
+E. Ablation of Weight λ2 for SFAA 
+
+We introduce the Spatial Feature Aggregation Alignment (SFAA) objective to generate more stable gradients in label-free TTA scenarios. To investigate the impact of different 
+
+λ2 values in Eqn. (6) on experimental outcomes, we fix the weight λ1 of the entropy loss at 1.0 and conduct experiments on ImageNet-C using ViT-Base. Results are presented in Figure 10. These demonstrate stable model performance when 
+
+λ2 ranges between 0.1 and 0.5, indicating relative insensitivity to λ2 within this interval. However, excessive λ2 values lead to performance degradation. The results suggest that an 66.4            
+
+> 66.6 66.6 66.6 66.5
+> 66.3
+> 66.1
+> 65.7
+> 65.3
+> 64.5
+> 65.0
+> 65.5
+> 66.0
+> 66.5
+> 67.0
+> 67.5
+> 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+> Accuracy (%)
+
+Weight 𝜆𝜆 2 for the SFAA loss 
+
+Fig. 10: Effect of SFAA loss weight λ2 on ImageNet-C using ViT-Base. oversized λ2 causes the SFAA loss to excessively dominate gradient direction during optimization, potentially interfering with and suppressing the contribution of the entropy loss, thereby impairing performance. Conversely, when λ2 resides within the reasonable range of 0.1–0.5, the SFAA loss operates at a comparable scale to the entropy loss, enabling effective collaboration. We select λ2 = 0 .4 as the default value in our experiments to balance the influence of both loss functions. VI. F URTHER EXPERIMENTS AND ANALYSIS 
+
+A. Results on Quantized Models 
+
+Model quantization is commonly employed in real-world deployments to enhance efficiency, but its non-differentiable nature invalidates BP-based TTA methods, making BP-free approaches a more viable solution. Our experiments with 8-bit quantized models (Table VII) show that although quan-tization degrades the performance of all BP-free methods, our approach achieves 64.8% accuracy, substantially outper-forming the previous best FOA (58.6%). This demonstrates ZOO maintains robust performance in low-precision scenarios, highlighting its practical value for real-world deployments. 
+
+B. Extension to Multimodal Large Model 
+
+To demonstrate ZOTTA’s generality and scalability, we extend our evaluation to multimodal large models (MLMs), where massive model size often makes BP-based adaptation impracticala at test time. We apply our BP-free framework to adapt the Qwen2.5-VL-3B [50] model on the multimodal rea-soning benchmark MathVista [51]. To simulate a challenging OOD reasoning shift, we focus evaluation on the free-form VQA questions from the three most difficult skill types: “ge-ometry reasoning”, “numeric commonsense”, and “logical rea-soning”. During TTA, we employ an entropy minimization ob-jective to update the post-attention normalization layers in the model’s decoder. As shown in Table VIII, ZOTTA’s (38.9%) ability to significantly outperform the NoAdapt (34.7%) and SOTA BP-free FOA (36.1%), while approaching the BP-based TENT (39.6%), confirms its scalability to large-scale multimodal models, highlighting its strong generality and practical value. 9
+
+TABLE VII: Results on quantized ViT-Base models on ImageNet-C with 8-bit floating-point precision w.r.t Accuracy(%).                                                                                    
+
+> Noise Blur Weather Digital Method Gauss. Shot Impul. Defoc. Glass Motion Zoom Snow Frost Fog Brit. Contr. Elastic Pixel JPEG Avg. NoAdapt 55.3 55.1 56.0 45.9 34.5 51.9 42.1 60.8 60.7 63.3 77.2 22.3 44.2 65.9 66.7 53.5 T3A 55.6 55.7 55.7 45.8 34.4 51.1 41.2 59.5 61.9 66.8 76.4 45.5 43.4 65.6 67.5 55.1 FOA 58.3 59.0 60.6 52.7 36.0 54.0 46.5 63.0 62.2 71.0 77.6 55.4 45.7 68.9 68.2 58.6 Ours 60.1 61.8 62.0 56.3 56.4 61.8 57.6 69.2 66.2 70.8 80.0 58.8 65.8 73.3 72.5 64.8
+
+TABLE VIII: Results on MathVista using the Qwen2.5VL-3B-Instruct model. “MT-VQA” denotes math-targeted VQA, and “G-VQA” denotes general VQA.                    
+
+> Type Method MT-VQA G-VQA Total Acc.(%) /NoAdapt 51.7 22.6 34.7 BP-based TENT 56.7 27.4 39.6 BP-free FOA 53.3 23.8 36.1 Ours 56.7 26.2 38.9
+
+TABLE IX: Comparisons with state-of-the-arts methods on ImageNet-C under three type of wild TTA settings with ViT-Base w.r.t Acc.(%).                            
+
+> Type Method Mixed distribution shift Batch size=1 Label shift /NoAdapt 55.5 55.5 55.5 BP-based TENT 60.4 59.3 59.4 SAR 60.7 59.1 63.8 EATA 64.6 66.5 62.5 DeYO 63.9 67.7 64.2 BP-free FOA 60.8 64.6 60.4 Ours 62.8 67.4 62.3
+
+C. TTA Results on Wild TTA Settings 
+
+To further validate the robustness of our method in real-istic dynamic environments, we evaluate ZOTTA under the “wild” TTA settings proposed by SAR [4]. These settings simulate three challenging scenarios: mixed distribution shifts 
+
+with randomly shuffled corruptions, single sample adaptation 
+
+(batch size=1), and imbalanced label shifts with class-ordered data streams. Since our SFAA loss relies on batch statistics, for the single-sample setting, we adopt a lightweight memory queue storing only four historical samples to assist in statistical estimation, following the strategy in FOA [9]. As shown in Table IX, ZOTTA consistently outperforms the SOTA BP-free method FOA across all metrics, achieving superior accuracy on mixed shifts (62.8% vs. 60.8%), single sample adaptation (67.4% vs. 64.6%), and label shifts (62.3% vs. 60.4%). More-over, despite being a fully gradient-free approach, ZOTTA achieves performance competitive with, and in some cases surpassing, BP-based methods such as TENT and SAR. These results demonstrate that ZOTTA maintains exceptional stabil-ity and effectiveness even under extreme distribution changes, confirming its suitability for practical edge deployment. 
+
+D. TTA Results on Continual Setting 
+
+To validate the effectiveness of the proposed method across diverse TTA scenarios, and in accordance with [48], we con-structed a more challenging continual adaptation (Continual setting) scenario on ImageNet-C. This scenario simulates the real-world process of continuously evolving environments: data exhibiting distinct corruption types are presented se-quentially to the model in complete batches. That is, upon processing all samples of one corruption type, the model im-mediately commences adaptation to the next type. This setting is designed to evaluate the model’s adversarial robustness and long-term adaptation capabilities within dynamically changing conditions. Experimental results are detailed in Table X and Table XI. The results demonstrate that within the continual adaptation setting, the performance of most TTA methods exhibits a decline, underscoring the inherent challenge of this scenario. 
+
+Comparison with BP-based methods : Our method signif-icantly outperforms TENT and SAR across both ViT and ResNet architectures. On ViT, its performance (65.0%) ap-proaches that of DeYO (65.1%). Notably, EATA achieves optimal performance under this setting; our method, while operating without backpropagation, delivers performance com-petitive with EATA. Comparison with BP-free methods :Our method exhibits clear superiority over LAME and T3A. Compared to FOA, our approach not only holds an advan-tage on ViT (65.0% vs. 63.9%) but, more crucially, demon-strates generalizability across diverse model architectures (e.g., ResNet). In contrast, FOA is constrained by its reliance on the ViT architecture and cannot be effectively applied to ResNet. These results collectively substantiate the proposed method’s effectiveness in demanding continual adaptation scenarios, its computational efficiency (being BP-free), and its architectural versatility. 
+
+E. More Results on CIFAR100-C 
+
+To further investigate the generalization capability and uni-versality of the proposed method, we conducted evaluations on the CIFAR100-C dataset in addition to experiments on ImageNet-C and its variants. The results are presented in Ta-ble XII and Table XIII. Comparison with BP-based methods :Our approach significantly outperforms TENT and SAR across both architectures. For instance, on the ViT architecture, our method (68.9%) achieves a 4.0% performance improvement over TENT (64.9%). Meanwhile, our performance remains comparable to, if not slightly superior to, EATA and DeYO. 
+
+Comparison with BP-free methods : Across both architec-tures, our method demonstrates substantial advantages over objective-free approaches such as LAME and T3A. Compared with the learning-based BP-free method FOA, our approach exhibits a clear superiority on ViT (68.9% vs. 63.1%). More significantly, FOA’s design heavily relies on characteristics specific to ViT architecture and fails when applied to ResNet (7.0%). In contrast, our method delivers robust performance on both ViT and ResNet (60.3%), further highlighting its exceptional architectural versatility and effectiveness. 10 
+
+TABLE X: Comparisons with state-of-the-arts methods on ImageNet-C under continual setting with ViT-Base w.r.t Acc.(%). 
+
+Noise Blur Weather Digital Type Method Gauss. Shot Impul. Defoc. Glass Motion Zoom Snow Frost Fog Brit. Contr. Elastic Pixel JPEG Avg. / NoAdapt 56.8 56.8 57.5 46.9 35.6 53.1 44.8 62.2 62.5 65.7 77.7 32.6 46.0 67.0 67.6 55.5 BP-based TENT 57.6 59.8 60.9 51.8 49.6 59.8 53.4 64.0 62.7 68.0 78.6 66.6 54.5 70.0 69.8 61.8 SAR 59.2 61.2 61.7 54.2 55.3 58.7 55.7 61.0 61.9 64.6 76.8 58.4 58.4 68.5 68.8 61.6 EATA 61.2 64.8 65.4 59.1 60.3 64.7 63.2 68.3 68.9 72.5 79.9 60.8 67.5 73.3 72.8 66.8 DeYO 59.8 63.5 64.6 56.0 57.7 62.1 56.4 66.5 66.2 71.7 79.3 65.6 63.8 72.1 70.9 65.1 BP-free LAME 56.5 56.6 57.3 46.4 34.8 52.7 44.2 58.4 61.6 63.1 77.5 24.7 44.6 66.6 67.2 54.1 T3A 56.4 56.6 56.7 45.3 34.5 51.8 43.4 60.5 62.8 62.4 77.0 45.7 44.4 66.7 68.4 55.5 FOA 60.8 63.0 63.9 53.2 50.1 59.7 56.1 65.9 70.0 70.9 80.8 65.3 53.3 72.1 72.9 63.9 Ours 62.2 64.7 64.4 55.7 57.2 61.5 57.9 65.8 67.8 69.3 79.7 64.6 62.3 71.5 71.1 65.0 
+
+TABLE XI: Comparisons with state-of-the-arts methods on ImageNet-C under continual setting with ResNet50-GN w.r.t Acc.(%). 
+
+Noise Blur Weather Digital Type Method Gauss. Shot Impul. Defoc. Glass Motion Zoom Snow Frost Fog Brit. Contr. Elastic Pixel JPEG Avg. / NoAdapt 23.2 23.8 23.3 19.1 10.9 21.0 24.5 38.5 47.5 38.6 68.4 32.3 17.9 28.2 53.0 31.3 BP-based TENT 22.2 24.4 24.1 20.0 13.3 23.6 25.4 40.5 42.7 38.1 67.5 38.5 17.0 36.9 52.0 32.4 SAR 39.8 48.3 47.8 9.1 19.6 13.9 41.0 48.3 50.7 56.3 70.1 50.6 10.1 11.0 57.7 38.3 EATA 40.0 43.1 41.0 26.1 31.2 35.0 42.0 45.8 47.8 53.9 66.6 47.5 43.4 49.7 55.5 44.6 DeYO 25.3 33.8 36.8 19.5 16.9 22.6 24.1 36.4 39.4 40.1 62.7 37.7 16.8 38.0 48.4 33.2 BP-free LAME 21.8 22.8 21.8 19.6 11.1 21.1 24.7 39.4 46.8 25.0 68.6 35.9 17.5 29.0 52.3 30.5 T3A 20.9 22.2 20.0 10.9 8.1 11.0 19.4 33.2 39.7 28.1 65.9 35.0 15.4 27.0 50.9 27.2 FOA 15.8 4.0 0.1 0.1 0.1 0.1 0.1 0.2 1.3 0.1 4.4 0.1 0.2 0.4 0.8 1.9 Ours 30.5 36.3 35.5 22.5 25.6 36.4 43.7 45.4 48.7 55.3 69.7 45.3 43.6 52.7 51.8 42.9 
+
+TABLE XII: Comparisons with state-of-the-arts methods on CIFAR100-C with ViT-Base w.r.t Acc.(%). 
+
+Noise Blur Weather Digital Type Method Gauss. Shot Impul. Defoc. Glass Motion Zoom Snow Frost Fog Brit. Contr. Elastic Pixel JPEG Avg. / NoAdapt 44.5 47.0 34.0 76.6 46.0 72.5 80.8 76.6 75.2 60.4 86.1 53.8 66.3 53.2 66.6 62.6 BP-based TENT 46.0 52.2 37.4 76.8 47.6 73.9 81.8 76.5 77.5 63.8 85.7 61.2 66.8 57.8 68.0 64.9 SAR 44.6 50.8 35.1 75.3 43.5 72.1 80.4 73.9 75.0 61.0 84.9 53.6 64.9 53.8 66.8 62.4 EATA 62.8 65.9 61.9 80.6 65.1 78.1 84.1 79.0 80.0 71.4 87.3 76.5 73.4 76.9 69.6 74.2 DeYO 63.2 66.2 64.0 81.7 67.0 79.7 84.5 80.6 81.1 74.3 88.0 79.1 73.8 77.8 71.1 75.5 BP-free LAME 42.2 44.8 29.7 75.7 43.8 71.6 80.1 75.7 74.3 58.3 85.5 50.9 64.9 51.4 65.9 61.0 T3A 46.4 49.9 38.5 77.6 53.6 73.9 81.3 77.5 76.7 63.6 86.6 59.2 69.1 58.3 68.5 65.4 FOA 44.6 46.9 35.0 76.5 49.0 72.4 80.6 76.7 74.8 60.7 85.9 54.1 66.6 56.9 66.2 63.1 Ours 52.4 56.3 51.9 78.0 59.5 74.6 82.3 77.3 77.5 65.7 86.7 63.2 69.5 71.0 67.4 68.9 
+
+TABLE XIII: Comparisons with state-of-the-arts methods on CIFAR100-C with ResNet50-GN w.r.t Acc.(%). 
+
+Noise Blur Weather Digital Type Method Gauss. Shot Impul. Defoc. Glass Motion Zoom Snow Frost Fog Brit. Contr. Elastic Pixel JPEG Avg. / NoAdapt 17.8 19.9 7.2 68.0 20.4 63.0 73.2 67.8 60.3 58.3 79.1 67.7 49.6 32.2 50.4 49.0 BP-based TENT 14.3 16.6 5.7 69.5 19.1 64.1 73.7 68.6 61.3 60.1 79.3 69.4 50.7 33.1 50.7 49.1 SAR 16.2 18.2 7.1 69.0 19.5 63.8 73.7 68.1 60.9 59.8 79.2 68.9 50.6 33.0 50.5 49.2 EATA 41.1 42.2 22.3 72.3 41.8 69.1 77.1 69.8 68.0 66.8 79.9 74.7 56.8 67.9 53.5 60.2 DeYO 11.9 12.5 3.6 73.0 9.1 69.5 77.3 70.5 66.9 65.9 80.3 75.8 55.3 62.5 52.1 52.4 BP-free LAME 15.8 18.1 6.5 67.0 18.0 60.9 71.7 65.1 56.1 50.4 78.8 65.6 46.6 29.4 49.1 46.6 T3A 19.1 21.7 6.8 66.6 22.8 61.9 71.5 64.7 57.1 52.3 77.2 66.3 50.7 36.5 49.2 48.3 FOA 3.8 3.8 2.0 54.6 1.4 3.0 4.1 5.1 4.5 1.9 7.3 1.1 2.5 4.1 5.7 7.0 Ours 43.5 44.0 22.8 72.9 42.0 69.3 76.0 69.1 67.2 63.3 80.3 76.2 56.4 68.7 53.3 60.3 
+
+F. Comparison Analysis with FOA 
+
+Both our proposed method and FOA are BP-free methods with a learning objective, suitable for resource-constrained edge devices. Compared to FOA, our method has two main ad-vantages: (1) Wider applicability . FOA adapts input prompts which is specifically designed for ViT models. This design limits its generalizability and makes it difficult to apply to CNN architectures. In contrast, our method can be easily applied to various network architectures. (2) Fewer dimen-sional constraints . FOA uses the covariance matrix adaptation (CMA) method to optimize low-dimensional input prompts, which restricts its ability to directly optimize high-dimensional model parameters across layers and scales. In contrast, the ZOO method we adopt can handle higher-dimensional opti-mization, offering greater flexibility for adapting to complex models. 
+
+G. More Results of Clustering Purity Analysis 
+
+Prior to TTA, to analyze the robustness of each model layer to different data distributions, we collect a limited number of samples (e.g., 64 instances) from both the source domain and the speckle noise subset of ImageNet-C (which differs from the test domain) for clustering analysis. These sam-ples comprise both in-distribution (ID) and out-of-distribution 11 0.50     
+
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> 01234
+> Clustering Purity
+
+Layer Index 
+
+图表标题 
+
+Fig. 11: Per-layer clustering purity of ResNet50-GN. 0.50            
+
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> 0246810 12 14 16 18 20 22
+> Clustering Purity
+
+Layer Index 
+
+图表标题 
+
+Fig. 12: Per-layer clustering purity of ViT-Large. TABLE XIV: Results of updating different layers on ImageNet-C with ViT-Base w.r.t Acc.(%). Underlined entries denote results surpassing full-layer update.                                                  
+
+> Adapt Layers Acc. Adapt Layers Acc. Adapt Layers Acc. Adapt Layers Acc. 057.9 0,1 59.7 0,1,2 60.4 0,1,2,3 62.2 160.0 1,2 61.6 1,2,3 65.4 1,2,3,4 65.6 264.5 2,3 66.1 2,3,4 66.4 2,3,4,5 66.7
+> 364.8 3,4 66.2 3,4,5 66.6 0,1,2,3,4 62.9 464.9 4,5 65.9 4,5,6 65.7 1,2,3,4,5 66.1 563.8 5,6 64.7 5,6,7 64.8 All 63.7
+
+(OOD) data. Figure 5 presents the clustering analysis results for ViT-Base model. We further extend this analysis to include ResNet50-GN (comprising 5 stages/layers) and ViT-Large (containing 24 layers), with results depicted in Figure 11 and Figure 12, respectively. While the curve trends in these figures exhibit minor variations due to architectural differences between models, they consistently demonstrate a declining trend in clustering purity. In later layers, purity falls below 0.6, approaching the theoretical minimum of 0.5. This indicates that these layers map features from different distributions into a shared feature space, effectively extracting distribution-invariant characteristics. Consequently, during TTA, we ex-clude these layers from updates and instead select alternative layers for adaptation. 
+
+H. More Results of Updating Different Layers 
+
+The convergence speed of Zeroth-Order Optimization (ZOO) is influenced by the volume of parameters updated. To accelerate ZOO convergence, we propose the Distribution-Robust Layer Selection (DRLS) method. This approach freezes layers capable of mapping different distributions to a homogeneous feature space while updating the remaining layers, based on each layer’s distribution-discriminative ca-pacity—quantified by its clustering purity. We set the clus-tering purity threshold τ to 0.6. layers with purity below this threshold are frozen. For the ViT-Base model, Layers 6 to 11 were frozen accordingly. Updating only Layers 1 to 5 yielded a marked performance improvement (66.1% vs. 63.7%) compared to full-model updates, validating the efficacy of our method. To explore whether further reducing updated layers within the threshold-defined range could enhance ZOO convergence, experiments were conducted on ImageNet-C. Table XIV presents results for updating varying numbers of layers, re-vealing three key observations: (1) Updating either single or multiple layers within the purity-filtered range consistently outperformed full-layer updates, confirming the validity of our layer selection strategy. (2) Optimal results varied with the number of updated layers: Performance peaked at 66.6% when updating 3 or 4 layers, whereas updating only 1 layer yielded a maximum of 64.9%. This indicates a trade-off—excessive layers slow convergence, while insufficient layers limit adapta-tion capacity. (3) Shallow layers (notably Layer 0) empirically exhibited poorer performance when updated. This is likely attributable to their role in extracting low-dimensional, general features (e.g., edges, contours), which exhibit high transfer-ability but are less amenable to adaptation and should remain frozen. 
+
+I. Visual Analysis of Cross-Distribution Feature after Model Adaptation 
+
+To investigate the transformations induced by our approach, we conducted a visualization experiment analyzing layer-wise outputs of the model before and after adaptation. Specifically, we sampled 128 in-distribution (ID) samples from the source domain and 128 out-of-distribution (OOD) samples from ImageNet-C’s Gaussian noise corruption, combining them as input to both the standard ViT-Base model and its adapted counterpart. For the CLS token features extracted from each layer, we applied K-Means clustering (K=2) to examine the model’s evolving capacity to distinguish ID/OOD samples across depths. The visualization of clustering results (using PCA for dimensionality reduction) is presented in figure 13 for both pre- and post-adaptation models. In the unadapted baseline model, CLS token features across nearly all layers—from shallow to deep—exhibited clear sep-aration between ID and OOD samples. This indicates that the original model inherently extracts features capable of discriminating between distinct data distributions at every hier-archical level. After adaptation with our method, two primary observations emerge: (1) Preservation of Discriminability in Shallow Layers (Layers 0–5): In early layers, the clustering results for ID and OOD features remain comparable to those before adaptation, maintaining well-separated groupings. This suggests that shallow-layer features predominantly capture low-level, generalizable image structural information. (2) Pro-gressive Feature Convergence in Deep Layers (Layers 12 Model  Layer 3       
+
+> Before
+> Adaptation
+> After
+> Adaptation
+> Before
+> Adaptation
+> After
+> Adaptation
+> Before
+> Adaptation
+> After
+> Adaptation
+> Layer 0 Layer 1 Layer 2
+> Model
+> Model
+> Layer 7 Layer 4 Layer 5 Layer 6
+> Layer 11 Layer 8 Layer 9 Layer 10
+
+Fig. 13: Per-layer clustering results of CLS token for model before and after adaptation on ImageNet-C gaussian noise using ViT-Base. 6–11): From approximately Layer 6 onward, a pronounced trend emerges: the feature clusters of ID and OOD samples gradually converge. This implies that during mid-to-deep layer processing, the model is guided to disregard factors inducing 13 
+
+distribution shifts. Notably, at the final output layer (Layer 11), the CLS token features of ID and OOD samples become nearly indistinguishable after adaptation, forming a single dense cluster that cannot be separated through simple clustering. These experimental results demonstrate that the feature overlap in deep layers does not indicate performance degra-dation. Rather, it reveals the model’s successful acquisition of distribution-invariant feature representations. Our approach effectively maps features from divergent distributions into a unified embedding space—preserving semantic information essential to the core task (e.g., image classification) while filtering out domain-specific perturbations. Consequently, this visualization study not only verifies our method’s efficacy in driving models to learn distribution-invariant features but also elucidates the evolutionary trajectory of this learning process across the model hierarchy: from discriminability preservation in shallow layers to feature alignment in deep layers. This provides profound insights into the methodological validity. VII. C ONCLUSION 
+
+We have proposed ZOTTA, a practical backpropagation-free test-time adaptation framework that enables online, unlabeled adaptation using forward passes only. In making ZOO effective for TTA, we have identified two key challenges—slow con-vergence under high-dimensional updates and instability from noisy unsupervised objectives—and have addressed them with two complementary components. Distribution-Robust Layer Selection (DRLS) has reduced the effective optimization di-mensionality, while Spatial Feature Aggregation Alignment (SFAA) has provided a smooth, low-variance supervisory signal tailored to ZOO, jointly ensuring efficient and stable adaptation across architectures. ZOTTA has achieved superior performance across ImageNet-C/R/Sketch/A and CIFAR100-C on both ViTs and CNNs, surpassing prior BP-free methods and rivaling BP-based baselines with much lower cost, making it a scalable and deployment-ready solution for real-world TTA. REFERENCES [1] Y. Sun, X. Wang, Z. Liu, J. Miller, A. Efros, and M. Hardt, “Test-time training with self-supervision for generalization under distribution shifts,” in Proceedings of the International Conference on Machine Learning , 2020, pp. 9229–9248. 1, 2 [2] D. Wang, E. Shelhamer, S. Liu, B. Olshausen, and T. Darrell, “Tent: Fully test-time adaptation by entropy minimization,” in Proceedings of the International Conference on Learning Representations , 2021. 1, 2, 5[3] M. Zhang, S. Levine, and C. Finn, “Memo: Test time robustness via adaptation and augmentation,” in Advances in Neural Information Processing Systems , 2022, pp. 38 629–38 642. 1, 2, 5 [4] S. Niu, J. Wu, Y. Zhang, Z. Wen, Y. Chen, P. Zhao, and M. Tan, “Towards stable test-time adaptation in dynamic wild world,” in Proceedings of the International Conference on Learning Representations , 2023. 1, 2, 5, 9 [5] S. Niu, J. Wu, Y. Zhang, Y. Chen, S. Zheng, P. Zhao, and M. Tan, “Efficient test-time model adaptation without forgetting,” in Proceedings of the International Conference on Machine Learning , 2022, pp. 16 888– 16 905. 1, 2, 4, 5 [6] C. Louizos, M. Reisser, T. Blankevoort, E. Gavves, and M. Welling, “Relaxed quantization for discretized neural networks,” in 7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019 . OpenReview.net, 2019. [Online]. Available: https://openreview.net/forum?id=HkxjYoCqKX 1 [7] S. Schneider, E. Rusak, L. Eck, O. Bringmann, W. Brendel, and M. Bethge, “Improving robustness against common corruptions by co-variate shift adaptation,” in Advances in Neural Information Processing Systems , 2020, pp. 11 539–11 551. 1 [8] Y. Iwasawa and Y. Matsuo, “Test-time classifier adjustment module for model-agnostic domain generalization,” in Advances in Neural Information Processing Systems , vol. 34, 2021, pp. 2427–2440. 1, 2, 5[9] S. Niu, C. Miao, G. Chen, P. Wu, and P. Zhao, “Test-time model adaptation with only forward passes,” in Proceedings of the International Conference on Machine Learning , 2024. 1, 2, 3, 5, 9 [10] Y. Nesterov and V. Spokoiny, “Random gradient-free minimization of convex functions,” Foundations of Computational Mathematics , vol. 17, no. 2, pp. 527–566, 2017. 1, 3, 4 [11] S. Liu, P.-Y. Chen, B. Kailkhura, G. Zhang, A. O. Hero III, and P. K. Varshney, “A primer on zeroth-order optimization in signal processing and machine learning: Principals, recent advances, and applications,” 
+
+IEEE Signal Processing Magazine , vol. 37, no. 5, pp. 43–54, 2020. 1 [12] J. C. Spall, “Multivariate stochastic approximation using a simultaneous perturbation gradient approximation,” IEEE transactions on automatic control , vol. 37, no. 3, pp. 332–341, 2002. 1 [13] ——, “A one-measurement form of simultaneous perturbation stochastic approximation,” Automatica , vol. 33, no. 1, pp. 109–112, 1997. 1 [14] Z. Nado, S. Padhy, D. Sculley, A. D’Amour, B. Lakshminarayanan, and J. Snoek, “Evaluating prediction-time batch normalization for robustness under covariate shift,” arXiv preprint arXiv:2006.10963 , 2020. 2 [15] A. Khurana, S. Paul, P. Rai, S. Biswas, and G. Aggarwal, “Sita: Single image test-time adaptation,” arXiv preprint arXiv:2112.02355 , 2021. 2 [16] M. Boudiaf, R. Mueller, I. Ben Ayed, and L. Bertinetto, “Parameter-free online test-time adaptation,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2022, pp. 8344–8353. 2 [17] R. Zeng, Q. Deng, H. Xu, S. Niu, and J. Chen, “Exploring motion cues for video test-time adaptation,” in Proceedings of the International Conference on Multimedia , 2023, pp. 1840–1850. 2 [18] G. Chen, S. Niu, D. Chen, S. Zhang, C. Li, Y. Li, and M. Tan, “Cross-device collaborative test-time adaptation,” in Advances in Neural Information Processing Systems , 2024. 2 [19] Y. Chen, S. Niu, Y. Wang, S. Xu, H. Song, and M. Tan, “Towards robust and efficient cloud-edge elastic model adaptation via selective entropy distillation,” in Proceedings of the International Conference on Learning Representations , 2024. 2 [20] Z. Wen, S. Niu, G. Li, Q. Wu, M. Tan, and Q. Wu, “Test-time model adaptation for visual question answering with debiased self-supervisions,” IEEE Transactions on Multimedia , 2023. 2 [21] Y. Liu, P. Kothari, B. Van Delft, B. Bellot-Gurlet, T. Mordan, and A. Alahi, “Ttt++: When does self-supervised test-time training fail or thrive?” in Advances in Neural Information Processing Systems , 2021, pp. 21 808–21 820. 2 [22] J. Lee, D. Jung, S. Lee, J. Park, J. Shin, U. Hwang, and S. Yoon, “Entropy is not enough for test-time adaptation: From the perspective of disentangled factors,” in Proceedings of the International Conference on Learning Representations , 2024. 2, 5 [23] J. Song, J. Lee, I. S. Kweon, and S. Choi, “Ecotta: Memory-efficient continual test-time adaptation via self-distilled regularization,” in Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 11 920–11 929. 2 [24] J. Hong, L. Lyu, J. Zhou, and M. Spranger, “Mecta: Memory-economic continual test-time model adaptation,” in 2023 International Conference on Learning Representations , 2023. 2 [25] M. Boudiaf, R. Mueller, I. Ben Ayed, and L. Bertinetto, “Parameter-free online test-time adaptation,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2022, pp. 8344–8353. 2, 5 [26] S.-i. Amari, “Backpropagation and stochastic gradient descent method,” 
+
+Neurocomputing , vol. 5, no. 4-5, pp. 185–196, 1993. 2 [27] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,” 
+
+arXiv preprint arXiv:1412.6980 , 2014. 2 [28] A. D. Flaxman, A. T. Kalai, and H. B. McMahan, “Online convex optimization in the bandit setting: gradient descent without a gradient,” 
+
+arXiv preprint cs/0408007 , 2004. 2 [29] S. Ghadimi and G. Lan, “Stochastic first-and zeroth-order methods for nonconvex stochastic programming,” SIAM journal on optimization ,vol. 23, no. 4, pp. 2341–2368, 2013. 2 [30] J. C. Duchi, M. I. Jordan, M. J. Wainwright, and A. Wibisono, “Optimal rates for zero-order convex optimization: The power of two function evaluations,” IEEE Transactions on Information Theory , vol. 61, no. 5, pp. 2788–2806, 2015. 2, 3 14 
+
+[31] Y.-Y. Tsai, P.-Y. Chen, and T.-Y. Ho, “Transfer learning without know-ing: Reprogramming black-box machine learning models with scarce data and limited resources,” in International Conference on Machine Learning (ICML) . PMLR, 2020, pp. 9614–9624. 2 [32] A. Dhurandhar, T. Pedapati, A. Balakrishnan, P.-Y. Chen, K. Shan-mugam, and R. Puri, “Model agnostic contrastive explanations for structured data,” arXiv preprint arXiv:1906.00117 , 2019. 2 [33] X. Lian, H. Zhang, C.-J. Hsieh, Y. Huang, and J. Liu, “A comprehensive linear speedup analysis for asynchronous stochastic parallel optimization from zeroth-order to first-order,” vol. 29, 2016. 2 [34] S. Liu, B. Kailkhura, P.-Y. Chen, P. Ting, S. Chang, and L. Amini, “Zeroth-order stochastic variance reduction for nonconvex optimization,” vol. 31, 2018. 2 [35] S. Cheng, G. Wu, and J. Zhu, “On the convergence of prior-guided zeroth-order optimization algorithms,” vol. 34, 2021, pp. 14 620–14 631. 2[36] H. Cai, D. McKenzie, W. Yin, and Z. Zhang, “Zeroth-order regular-ized optimization (zoro): Approximately sparse gradients and adaptive sampling,” SIAM Journal on Optimization , vol. 32, no. 2, pp. 687–714, 2022. 2 [37] S. Malladi, T. Gao, E. Nichani, A. Damian, J. D. Lee, D. Chen, and S. Arora, “Fine-tuning language models with just forward passes,” in 
+
+Advances in Neural Information Processing Systems (NIPS) , vol. 36, 2023, pp. 53 038–53 075. 2 [38] C. Berger, M. Paschali, B. Glocker, and K. Kamnitsas, “Confidence-based out-of-distribution detection: a comparative study and analysis,” in 
+
+International Workshop on Uncertainty for Safe Utilization of Machine Learning in Medical Imaging . Springer, 2021, pp. 122–132. 4 [39] F. Fleuret et al. , “Test time adaptation through perturbation robustness,” in NeurIPS 2021 Workshop on Distribution Shifts: Connecting Methods and Applications , 2021. 5 [40] D. Hendrycks and T. Dietterich, “Benchmarking neural network robust-ness to common corruptions and perturbations,” in Proceedings of the International Conference on Learning Representations , 2019. 5 [41] A. Krizhevsky, G. Hinton et al. , “Learning multiple layers of features from tiny images,” 2009. 5 [42] D. Hendrycks, S. Basart, N. Mu, S. Kadavath, F. Wang, E. Dorundo, R. Desai, T. Zhu, S. Parajuli, M. Guo et al. , “The many faces of robustness: A critical analysis of out-of-distribution generalization,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 2021, pp. 8340–8349. 5 [43] H. Wang, S. Ge, Z. Lipton, and E. P. Xing, “Learning robust global representations by penalizing local predictive power,” in Advances in Neural Information Processing Systems , 2019, pp. 10 506–10 518. 5 [44] D. Hendrycks, K. Zhao, S. Basart, J. Steinhardt, and D. Song, “Natural adversarial examples,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021, pp. 15 262–15 271. 5 [45] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly et al. ,“An image is worth 16x16 words: Transformers for image recognition at scale,” in Proceedings of the International Conference on Learning Representations , 2021. 5 [46] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image recognition,” in Proceedings of the IEEE conference on computer vision and pattern recognition (CVPR) , 2016, pp. 770–778. 5 [47] Y. Wu and K. He, “Group normalization,” in Proceedings of the European conference on computer vision (ECCV) , 2018, pp. 3–19. 5 [48] Q. Wang, O. Fink, L. Van Gool, and D. Dai, “Continual test-time domain adaptation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 7201–7211. 5, 9 [49] J. N. Paranjape, S. Sikder, S. S. Vedula, and V. M. Patel, “Black-box adaptation for medical image segmentation,” in International Conference on Medical Image Computing and Computer-Assisted Intervention .Springer, 2024, pp. 454–464. 5 [50] S. Bai, K. Chen, X. Liu, J. Wang, W. Ge, S. Song, K. Dang, P. Wang, S. Wang, J. Tang et al. , “Qwen2. 5-vl technical report,” arXiv preprint arXiv:2502.13923 , 2025. 8 [51] P. Lu, H. Bansal, T. Xia, J. Liu, C. Li, H. Hajishirzi, H. Cheng, K.-W. Chang, M. Galley, and J. Gao, “Mathvista: Evaluating mathematical reasoning of foundation models in visual contexts,” in International Conference on Learning Representations (ICLR) , 2024. 8
