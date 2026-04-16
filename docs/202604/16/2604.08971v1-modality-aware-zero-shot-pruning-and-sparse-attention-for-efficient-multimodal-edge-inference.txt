@@ -1,0 +1,714 @@
+Title: Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference
+
+URL Source: https://arxiv.org/pdf/2604.08971v1
+
+Published Time: Mon, 13 Apr 2026 00:29:31 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference 
+
+# Yueyuan Sui ∗
+
+yueyuansui@u.northwestern.edu Northwestern University Evanston, Illinois, USA 
+
+# Payal Mohapatra ∗
+
+payal.mohapatra@u.northwestern.edu Northwestern University Evanston, Illinois, USA 
+
+# Doğaç Eldenk 
+
+Northwestern University Evanston, Illinois, USA 
+
+# Haodong Yang 
+
+Northwestern University Evanston, Illinois, USA 
+
+# Yiting Zhang 
+
+Northwestern University Evanston, Illinois, USA 
+
+# Haoyan Zhang 
+
+Northwestern University Evanston, Illinois, USA 
+
+# Qi Zhu 
+
+Northwestern University Evanston, Illinois, USA 
+
+# Stephen Xia 
+
+Northwestern University Evanston, Illinois, USA 
+
+## Abstract 
+
+Edge devices increasingly run multimodal sensing pipelines that must remain accurate despite fluctuating power bud-gets and unpredictable sensor dropout. Existing pruning methods fail under these conditions: they generally require fine-tuning after compression, consuming over 10 × the de-ployment energy, and they assign static importance scores that are blind to which sensors are present. We present the 
+
+SentryFuse framework, which addresses both challenges jointly through two key components. First, SentryGate learns modality-conditioned importance scores during training via first-order saliency supervision and then prunes attention heads and feed-forward channels at deployment without fine-tuning. Second, SentryAttend replaces dense self-attention, a key bottleneck in contemporary multimodal architectures, with sparse grouped-query attention, yielding a net 15% re-duction in GFLOPs across three different multimodal archi-tectures. Across three applications and multimodal back-bones, SentryGate achieves a 12.7% average accuracy im-provement over the strongest pruning baseline, and upto to 18% under modality dropout conditions. Together, Sentry-Fuse reduces memory by 28.2% and lowers latency by up to 1.63 × without further fine-tuning, establishing modality-aware zero-shot compression as a practical path to multi-modal intelligence on heterogeneous edge hardware. 
+
+## CCS Concepts 
+
+• Computing methodologies → Machine learning ; •
+
+Computer systems organization → Embedded and cyber-physical systems .
+
+> ∗Both authors contributed equally to this research.
+
+## Keywords 
+
+edge inference, mobile sensing, multimodal time-series learn-ing, model compression, structured pruning, sensor dropout, energy-constrained deployment, efficient attention 
+
+## 1 Introduction 
+
+Edge-based continuous sensing systems are now ubiquitous due to rapid advances in IoT frameworks and sensing instru-mentation [ 2 , 8 , 31 ]. Devices such as smartwatches incorpo-rate numerous sensors that capture heterogeneous physio-logical and behavioral signals, such as heart rate, respiration, motion, and temperature, often at different sampling rates and possessing inherently diverse characteristics. Leverag-ing these complementary signals enables a wide range of applications such as activity recognition, stress monitoring, sleep quality estimation, and more [ 6 , 12 , 22 , 31 ]. Conse-quently, recent research has increasingly focused on multi-modal time-series learning frameworks that explicitly model both intra-modal temporal dynamics and inter-modal inter-actions [ 14 , 21 ]. These recent approaches go beyond heuristic sensor fusion methods and the direct application of pairwise cross-modal learning paradigms, which can become com-binatorially expensive as the number of sensing modalities grows, especially beyond four modalities. Most smart devices today easily contain about a dozen sensors [20, 33]. While these frameworks improve predictive performance, deploying them on mobile and edge platforms remains chal-lenging. Real-world sensing systems operate under strict con-straints on compute capability, memory bandwidth, and en-ergy consumption. Mostcurrent multimodal models for tem-poral data leverage computationally-expensive transformer-based backbones. Moreover, sensing environments are inher-ently unreliable, often leading to individual sensor failures 
+
+> arXiv:2604.08971v1 [cs.LG] 10 Apr 2026 Trovato et al.
+
+during deployment due to hardware faults, power limita-tions, or communication failures. Thus, efficient multimodal models must operate under incomplete observations. Existing solutions try to address these challenges through model pruning and compression, particularly structured pruning techniques developed for transformer architectures [ 9 ,13 , 26 ]. These approaches have been effective in reducing the computational cost of large models, ranging from large lan-guage models to time-series transformers [ 5 , 19 ]. However, two critical considerations for practical multimodal deploy-ment remain underexplored. First, many pruning methods require fine-tuning after pruning [ 11 , 26 ], which is often infeasible directly on resource-limited devices. Second, exist-ing strategies typically assume the presence of all modalities during inference, ignoring the occurrence of missing sensor streams [ 17 , 18 ]. These limitations expose three key chal-lenges for deploying multimodal time-series architectures in practical edge sensing environments: 
+
+Challenge 1: Limited and variable compute resources. 
+
+Mobile and edge devices operate under strict power and memory constraints, which restrict model size, complexity, and on-device trainability. 
+
+Challenge 2: Missing modalities. Sensor failures or communication dropouts frequently lead to incomplete modal-ity sets during inference [ 17 , 18 ]. Any solution tailored for mobile and edge scenarios must be capable of dynamically adapting to whichever sensor streams are present. 
+
+Challenge 3: Lack of modality-awareness in pruning. 
+
+Existing pruning techniques [ 26 , 42 ] typically treat structural components independently of the sensing modalities they process, ignoring the cross-modal dependencies that drive representational synergy in multimodal architectures [ 14 ]. When applied naively, this can degrade cross-modal repre-sentations during compression. As we show in Figure 7, this failure compounds severely under modality missingness. These challenges also reveal two key opportunities for im-proving the efficiency and pragmatism of current multimodal time-series models. 
+
+Opportunity 1: Efficient attention mechanisms. Most multimodal time-series architectures use a transformer back-bone, and self-attention is one of the key computational bottlenecks (Section 3). Previous works have also noted its redundancy, especially in attention heads. This calls for more drop-in replacement attention variants for such multimodal time-series models to reduce the number of operations and to find ways to structurally prune attention heads to reduce memory footprint. 
+
+Opportunity 2: Modality-aware attention-head prun-ing. Incorporating modality awareness into the saliency scor-ing mechanism (assigning importance to model parameters which forms the basis of structural pruning [ 26 ]) allows prun-ing strategies to preserve structurally important cross-modal components while enabling zero-shot compression without fine-tuning. This expands the utility of these multimodal time-series models for deployment on devices with variable power constraints and limited sensing modalities, as they can be trained once and then compressed effectively based on device requirements without additional fine-tuning. Leveraging these insights, we propose SentryFuse , a ro-bust framework for task-driven multimodal time-series anal-ysis designed for mobile and edge deployment. SentryFuse 
+
+adopts a two-fold strategy. First, SentryFuse introduces a modality-aware pruning paradigm through SentryGate , a lightweight gating mecha-nism that learns adaptive importance scores for structural components conditioned on the active modality set, without propagating gradients through the base model [ 26 , 34 ]. At deployment, SentryGate enables SentryFuse to dynami-cally adjust the number of active parameters according to available power or compute constraints of the edge device in a zero-shot manner, while remaining robust to arbitrary subsets of modalities. Second, SentryFuse addresses a major computational bot-tleneck in transformer architectures [ 40 ]—the multi-head at-tention (MHA) mechanism—through SentryAttend , a Sparse Grouped-Query Attention mechanism. In contrast to stan-dard MHA, where each attention head independently gen-erates queries, keys, and values, SentryAttend shares key-value projections across groups of heads [ 1 ], exploiting the redundancy of attention patterns observed in temporal se-quences [ 48 ] and enabling substantial efficiency gains with minimal performance degradation. We summarize our key contributions below: 1. We make the case for zero-shot pruning of multi-modal time-series models as a practical deployment ne-cessity. Real-world edge sensing environments impose two simultaneous constraints, variable power budgets and unpre-dictable sensor availability, that existing pruning methods fail to address jointly. To address these challenges, we pro-pose SentryFuse , a fine-tuning-free framework that enables modality-aware pruning ( SentryGate ) and efficient atten-tion mechanisms to alleviate the self-attention bottleneck in multimodal models ( SentryAttend ). 2. We propose SentryGate , a modality-conditioned saliency gating mechanism for structured pruning with-out fine-tuning. Unlike modality-agnostic strategies that as-sign static importance scores, SentryGate learns scores con-ditioned on the active modality set, enabling on-the-fly com-pression that natively accommodates missing sensors and variable power constraints. SentryGate achieves an average of 12.7% accuracy improvement over the strongest baselines across a wide range of settings (144), with gains reaching upto 18% under modality dropout. Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference 
+
+3. We propose SentryAttend , an efficient drop-in re-placement for dense self-attention , the key computa-tional bottleneck in multimodal architectures. By combin-ing grouped-query attention with sparse query selection, 
+
+SentryAttend reduces floating-point operations by an aver-age of 15% and upto 29% while preserving predictive perfor-mance, improving inference throughput without retraining. 4. We carry out extensive evaluations demonstrating the 
+
+end-to-end practicality of SentryFuse across diverse hard-ware platforms and applications. Experiments on embedded platforms and mobile devices (Jetson TX2, iPhone 13 Pro, Google Pixel 8) show that SentryFuse simultaneously im-proves accuracy, reduces memory, and lowers latency rela-tive to state-of-the-art baselines. We further demonstrate its compatibility with post-training quantization. 
+
+## 2 Related Works 
+
+Pruning Methods. Network pruning has long been used to shrink model size and reduce computation by removing redundant parameters or structures [ 4, 9, 26 ]. Early work largely focused on unstructured magnitude pruning, zero-ing individual weights based on their norms to obtain high compression ratios [ 9 ], but such unstructured sparsity brings limited acceleration on general hardware. Subsequent meth-ods therefore moved to structured pruning of channels, ker-nels, blocks, or layers so that the resulting subnetworks can be executed efficiently [ 11 , 13 , 37 ]. For Transformers and LLMs, prior work prunes attention heads, FFN channels, or full layers using weight magnitude, gradient/Taylor saliency, Hessian-based approximations [ 26 ], data-free criteria such as SynFlow [ 38 ], or attention-based schemes like SpAttn that aggregate multi-layer attention maps into head-importance scores [ 42 ], and combines these with block- or layer-wise structured compression plus post-training quantization to further reduce memory and FLOPs [ 5, 19 ]. However, most methods still learn a single pruned structure per model un-der a fixed input distribution, without modeling modality-dependent importance or platform-level power constraints; by contrast, we use first-order saliency only during train-ing to supervise a lightweight Dynamic Task-Aware Gating module that enables modality-aware, budget-constrained structured pruning at deployment without extra fine-tuning. 
+
+Mechanistic Interpretability. Gradient-based methods have been foundational in mechanistic interpretability, enabling researchers to map functional pathways and causally link neural components to model predictions. Classic techniques such as vanilla gradients and saliency maps reveal how perturbations to inputs or activations impact outputs [ 35 ], while Grad-CAM extends these concepts to CNNs by visu-alizing class-discriminative regions [ 34 ]. Grad-SAM adapts gradient-based explanations for attention-based models [ 3 ], and gradient-based pruning strategies leverage Taylor ex-pansions to assess parameter saliency [ 27 ]. Orthogonal to gradient-based approaches, linear and shapelet decomposi-tion methods offer a complementary lens for interpretable time-series classification [ 28 , 43 ]. However, gradient compu-tation is often infeasible on resource-constrained platforms, and in this work, we design dynamic gates that predict ap-proximate importance without backpropagation, enabling zero-shot compression on edge devices. However, gradient computation is often infeasible on resource-constrained plat-forms. In this work, we design dynamic gates that predict approximate importance without backpropagation, enabling zero-shot compression on edge devices. 
+
+Learning under Missing Modalities. A fundamental chal-lenge in multimodal systems is handling arbitrary modality dropout. Two paradigms dominate: (i) reconstruction methods 
+
+that impute missing modalities [ 17 , 18 , 36 ], which become computationally prohibitive as 𝑀 increases, and (ii) transfer methods that leverage cross-modal dependencies through MoE-based routing [ 10 , 44 , 46 ], modality binding [ 7, 23 , 24 ], or shared embeddings [ 41 ]. Since arbitrary missingness is prevalent in practical deployments, in this work we pursue modality-aware joint optimization of task performance and model compression, contributing a pragmatic framework for efficient and robust multimodal time-series learning. 
+
+## 3 Preliminary Studies 
+
+Deploying multimodal time-series models on edge platforms requires robustness to two practical realities: variable com-pute budgets imposed by hardware constraints and arbitrary modality missingness arising from sensor failures, power-gating, or intermittent connectivity. We conduct four tar-geted measurements using contemporary multimodal time-series models and standard pruning techniques on the WE-SAD stress detection dataset [ 33 ], which contains ten modal-ities for a three-class classification task (dataset details are provided in Section 5), to expose limitations of existing ap-proaches and motivate our SentryFuse framework. 0% 10% 20% 30% 40%  
+
+> Missingness (%)
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> Accuracy
+> Multivariate Multimodal
+
+Figure 1: Multimodal [ 25 ] vs. Multivariate [ 40 ] model-ing of heterogeneous sensor data under missingness. 
+
+Observation 1: Multimodal Modeling of Heterogeneous Sen-sor Data Outperforms Multivariate Baselines, Especially Un-der Missingness. Classical multivariate time-series models Trovato et al. 
+
+project all sensor channels into a shared latent space and model their joint dynamics via standard self-attention [ 15 ,40 ]. While generally effective, this design relies on uniform sampling rates across signals, and the absence of even a single modality can severely deteriorate the latent representation of that time instance. Hence, contemporary multimodal for-mulations and architectures aim to address this limitation and enhance the multimodal context of the heterogenous sensors by facilitating intra-modal and cross-modal attention strategies. Figure 1 illustrates the advantages of a multimodal architecture over a multivariate one, on a stress monitoring task: the multivariate model degrades by over 7% as missing-ness increases from 0% to 40%, whereas the multimodal [ 25 ]framework—which applies disentangled per-modality en-coding followed by explicit cross-modal attention—sustains roughly 10% higher accuracy throughout. The gap widens with increasing missingness, confirming that the multimodal architectural paradigm is a suitable path forward and that concrete strategies are needed to improve its pragmatism and efficiency for real-world deployment. 0 20 40 60 80 100  
+
+> Time (%)
+> Fuse-MoE
+> MAESTRO
+> Flex-MoE
+> 86%
+> 68%
+> 23%
+> 7%
+> 6%
+> 37%
+> 8%
+> 17%
+> 18%
+> 20% Attention
+> FFN / MLP
+> LayerNorm
+> MoE Router
+> Others
+
+Figure 2: Time-spent profile during the Transformer forward pass in various multimodal architectures. 
+
+Observation 2: Self-Attention is the Dominant Bottleneck in Multimodal Architectures. Profiling different multi-modal backbones on a Jetson TX2 reveals that self-attention ac-counts for up to 83% of inference latency (Figure 2). This disproportionate cost stems from the quadratic complexity of causal attention over long time series, O( 𝑇 2𝐷 ), where 𝑇 
+
+is the sequence length and 𝐷 is the hidden dimension. Any practical compression strategy must therefore target atten-tion directly, rather than merely reducing parameter count, to yield meaningful latency reductions on edge hardware. 0 6 12 17 23 28 35 40 46 53        
+
+> Pruning Ratio (%)
+> 0.58
+> 0.64
+> 0.69
+> 0.74
+> 0.79
+> Accuracy
+> (a)
+> 0612 17 23 28 35 40 46 53
+> Pruning Ratio (%)
+> 0.31
+> 0.41
+> 0.51
+> 0.61
+> 0.71
+> Accuracy
+> (b)
+> Modality-Agnostic Pruning Modality-Aware Pruning
+
+Figure 3: Performance of modality-aware pruning (SentryGate ) and modality-agnostic pruning (Syn-Flow [ 38 ]) applied to transformer heads in a multi-modal baseline (MAESTRO [ 25 ]) (a) with all modalities present and (b) with 40% modality dropout. 
+
+Observation 3: Modality-agnostic Pruning is Suboptimal, Especially Under Sensor Missingness. Simple structured prun-ing methods, such as absolute magnitude-based scoring or advanced methods like SynFlow [ 38 ], were designed for uni-modal architectures under a fixed input distribution. Fig-ure 3 reveals their fundamental unsuitability for multimodal deployment. Even under complete modality observations, modality-agnostic pruning using SynFlow underperforms with respect to our proposed modality-aware SentryGate 
+
+scoring mechanism, and the overall performance is further exacerbated when 40% of modalities are missing. The root cause is that modality-agnostic criteria assign static impor-tance scores to attention heads, ignoring the fact that the same head may be critical under one modality configuration and redundant under another. Hence, we need to support a saliency assignment strategy conditioned on the available modalities to advance the practical integration of multimodal time-series architectures. w/ Fine-tuning Zero-shot     
+
+> 0
+> 10k
+> 20k
+> 30k
+> Total Energy (J)  28.43
+> 2.75
+> (a) w/ Fine-tuning Zero-shot
+> 0
+> 20k
+> 40k
+> 60k
+> Total Energy (J)  47.87
+> 4.14
+> (b)
+> 0.75
+> 0.80
+> Accuracy
+> 0.79
+> 0.76
+> 0.73
+> 0.75
+> 0.78
+> 0.80
+> 0.83
+> Accuracy
+> 0.77 0.76
+> Total Energy (kJ) Accuracy
+
+Figure 4: Total energy utilization in deploying a pruned model (23%) with a fine-tuning (3 epochs) and in zero-shot across (a) Jetson TX2 and (b) an NVIDIA L40 GPU. 
+
+Observation 4: Zero-Shot Pruning is Essential for Practical Edge Deployment. Standard pruning pipelines require a fine-tuning stage after compression to recover accuracy, which assumes the ability to perform backpropagation on the tar-get device. This assumption fails on power-constrained edge platforms, where retaining intermediate activations for gra-dient computation can exhaust the available RAM at typical multimodal model scales, and sustained computation draws prohibitive cumulative energy. A pilot analysis in Figure 4 demonstrates over ten times higher total energy utilization during fine-tuning of the pruned model compared to its zero-shot counterpart, while incurring only a marginal accuracy reduction ( ≤ 0.03 ). Our proposed SentryGate eliminates this overhead entirely by learning modality-conditioned impor-tance scores during training and querying them once offline, enabling the once-trained, deploy-many-times paradigm de-manded by power- and memory-constrained edge devices while remaining modality-aware. 
+
+Implications. The four observations above collectively in-spired the design of SentryFuse . First, the backbone must disentangle modalities to remain accurate under arbitrary sensor dropout. Second, pruning must be conditioned on the Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference 
+
+active modality set, since static importance scores are insuf-ficient—addressed by SentryGate . Third, compression must specifically target self-attention to address the dominant la-tency bottleneck—addressed by SentryAttend . Finally, the entire pipeline must operate zero-shot at deployment, elim-inating the fine-tuning dependency that current methods impose. Our proposed SentryFuse framework addresses all four requirements within a unified training objective. 
+
+## 4 Approach 4.1 System Overview 
+
+Encouraged by the success of recent multimodal time-series frameworks [ 25 , 45 , 47 ], we propose SentryFuse , a frame-work for efficient and robust multimodal learning under vari-able compute and modality constraints. SentryFuse com-prises two core components. First, SentryFuse introduces a plug-in SentryGate module (Sec. 4.2) trained using a cus-tom saliency alignment objective (Sec. 4.3) conditioned on the available modalities. SentryGate learns adaptive im-portance scores for structural units conditioned on the ac-tive modality set. By supervising SentryGate with first-order saliency signals and jointly optimizing task and align-ment losses, SentryFuse enables modality-aware pruning, resource-adaptive compression, and conditioned zero-shot deployment under varying energy budgets and modality availability. Second, SentryFuse replaces the dense self-attention layers of the transformer-based multimodal back-bone with SentryAttend (Sec. 4.4), a grouped sparse query attention mechanism that significantly reduces the number of operations during a forward pass while maintaining per-formance, making multimodal models more suitable for edge deployment. As illustrated in Fig. 5, during training the SentryFuse 
+
+framework is optimized using the supervised objective, while the SentryGate networks are trained using saliency and alignment objectives under a curriculum learning strategy that progressively exposes the model to missing modalities. During inference, based on the available modalities and the required compute budget, a compact subnetwork is realized on-the-fly. This enables a once-trained, deploy-many-times paradigm without any fine-tuning under different modality combinations on the deployed platform. 
+
+## 4.2 SentryGate : Modality-aware Structural Gating 
+
+Multimodal backbone [ 10 , 25 , 47 ] components consist of dense structural units—multi-head attention and feed-forward channels, including those within Sparse-MoE blocks—that may be unnecessary under specific sensing configurations. To compress the model without fine-tuning, we aim to struc-turally eliminate unimportant components such as attention heads and feed-forward neurons in a manner conditioned on which modalities are present. Designing such structural pruning requires addressing two key considerations. First, the importance of a structural unit should depend on which modalities are available at inference time: the same head or neuron may be crucial when a partic-ular sensor is present but redundant when that modality is absent. Second, we need a resource-efficient strategy to infer structural importance at deployment, enabling the model to support different FLOPs or energy budgets on demand without repeated fine-tuning. To address the first consideration, we expose the backbone to a rich space of modality configurations during training. Following recent multimodal strategies [ 25 , 45 ], we (i) encode missing modalities using symbolic tokens so the encoder can explicitly sense which channels are absent, and (ii) adopt a curriculum with progressively increasing modality dropout, allowing the model to stabilize under full-modality inputs before gradually adapting to severe missingness patterns. An alternative for the second consideration would be to score structural units by their first-order sensitivity at in-ference time. In practice, this is incompatible with resource-constrained deployment: it requires a backward pass for each input—utilizing at least 10 × the total energy to our zero-shot approach, as shown in Figure 4—as well as storing intermedi-ate activations and sometimes accessing task labels that are unavailable during inference. Moreover, such scores are tied to individual samples rather than modality patterns, making them difficult to reuse across platforms and operating points. To address this in a principled and deployment-friendly manner, we introduce Modality-aware Structural Gating (SentryGate ), a lightweight gating module that predicts per-unit importance from the current modality mask and drives a fine-tuning-free pruning procedure. During training, first-order sensitivity serves only as a teacher signal to supervise 
+
+SentryGate , which learns a compact, forward-only surro-gate that can be queried cheaply at inference. Once trained, 
+
+SentryGate outputs are evaluated offline under a target plat-form configuration and thresholded to select subnetworks meeting a desired FLOPs or energy budget. Changing bud-gets or platform masks requires no additional fine-tuning. Formally, for the 𝑖 -th structural unit in layer ℓ (an attention head or feed-forward channel, including those inside Sparse-MoE blocks), SentryGate maps the modality-availability mask 𝑚 ∈ { 0, 1}𝑀 to a scalar importance score: 
+
+𝑔 (ℓ ) 
+
+> 𝑖
+
+(𝑚 ) = 𝜎 
+
+
+
+𝜁 (ℓ ) 
+
+> 𝑖
+
++ 𝛾 (ℓ ) 𝑓 (ℓ ) 
+
+> 𝜙 𝑖
+
+(𝑚 )
+
+
+
+, (1) where 𝜁 (ℓ ) 
+
+> 𝑖
+
+is a learnable base importance, 𝑓 (ℓ ) 
+
+> 𝜙 𝑖
+
+(·) is a two-layer multi-layer perceptron (MLP) with a nonlinearity, and 
+
+𝛾 (ℓ ) is a layer-wise scaling factor. Compared to the backbone, Trovato et al. 
+
+Figure 5: Overview of the SentryFuse framework. I. During training (left), the multimodal backbone integrates 
+
+SentryAttend , replacing dense self-attention with sparse grouped-query attention for an average 13% FLOP reduc-tion. Simultaneously, SentryGate runs in observer mode, learning modality-conditioned structural importance under a curriculum of increasing modality dropout, guided by a saliency alignment loss. The backbone is optimized via the task loss Lcls , while gate parameters receive gradients only from the alignment objective. II. At inference (right), SentryGate is queried once offline to produce a subnetwork given available modalities and a target compute budget, enabling a train-once, deploy-many paradigm that adapts to (i) varying compute constraints and (ii) arbitrary sensor availability across heterogeneous edge devices. 
+
+SentryGate adds only a small parameter overhead, account-ing for 9.10%, 4.96%, and 4.97% of the total model parameters on WESAD, DaliaHAR, and DSADS, respectively, while its FLOPs overhead remains negligible. During training, SentryGate operates in an observer mode: gate outputs do not update the activations of the backbone, and the task loss Lcls does not flow through the pruning path-way. Gate parameters are optimized only via the saliency-alignment objective described in Section 4.3, which encour-ages 𝑔 (ℓ ) 
+
+> 𝑖
+
+(𝑚 ) to approximate the first-order sensitivity of each unit under the current modality pattern. In this way, 
+
+SentryGate learns a smooth, modality-conditioned impor-tance function that captures how the relevance of each head or channel changes as sensors appear or disappear. 
+
+## 4.3 Construction of Saliency Objective 
+
+SentryGate aims to provide modality-aware importance scores for structural units, but these scores are not directly observed. As discussed in Section 4.2, we cannot estimate them at inference time by backpropagating gradients, since this would require storing the full computation graph, in-termediate activations, and sometimes labels on resource-constrained platforms. Other inference-time proxies such as cumulative attention maps [ 42 ] aggregate attention weights across layers and heads, but we find them unstable under missing modalities and poorly correlated with downstream performance (see Sec. 6). Instead, we use gradient-based signals only during training to construct a robust saliency target, and train SentryGate to approximate this target with a cheap forward computation usable at deployment. To ensure that gate predictions reflect task relevance, we adopt a standard first-order saliency measure as the supervi-sion signal. Let Lcls denote the classification loss and 𝑥 𝑖 the activation associated with unit 𝑖 . For a small perturbation 
+
+𝛿𝑥 𝑖 , a first-order Taylor expansion yields, 
+
+Lcls (𝑥 + 𝛿𝑥 ) ≈ L cls (𝑥 ) + ∑︁ 
+
+> 𝑖
+
+𝜕 Lcls 
+
+𝜕𝑥 𝑖 
+
+𝛿𝑥 𝑖 . (2) Following common practice in gradient-based pruning and attribution [26, 34], we define the saliency of unit 𝑖 as 
+
+𝑠 𝑖 = 𝑥 𝑖 ⊙ 𝜕 Lcls 
+
+𝜕𝑥 𝑖 
+
+, (3) which measures the magnitude of its contribution to changes in the loss. In practice, we aggregate 𝑠 𝑖 over batch and time, and normalize it within each layer to obtain a target in [0, 1]:
+
+˜𝑠 𝑖 = Norm (𝑠 𝑖 ).
+
+Given the gate outputs 𝑔 𝑖 ∈ [ 0, 1] produced by Sentry-Gate for the same units, we encourage them to match the normalized saliency targets via a mean-squared alignment loss: Lalign = 1
+
+𝑁 ∑︁ 𝑖 
+
+ 𝑔 𝑖 − ˜𝑠 𝑖 
+
+2, (4) where 𝑁 is the number of gated units in the layer. This loss encourages 𝑔 𝑖 to preserve both the ranking and relative scale structure of ˜𝑠 𝑖 . To encourage discrete yet stable gating, we further introduce a mild binarization regularizer 
+
+Lbin = 1
+
+𝑁 ∑︁ 𝑖 
+
+𝑔 𝑖 (1 − 𝑔 𝑖 ), (5) which encourages gate outputs to move toward binary deci-sions while remaining fully differentiable during training. The saliency alignment objective is complementary to Lcls .Gate parameters are optimized using Lalign and Lbin , while backbone parameters are optimized primarily with respect to 
+
+Lcls , with gradient-based saliency treated as a detached tar-get. In this way, SentryGate learns a modality-conditioned importance predictor during training and produces pruning Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference 
+
+scores at inference time using only a lightweight forward computation. 
+
+## 4.4 SentryAttend : Sparse Grouped-Query Attention 
+
+As we showed earlier in Figure 2, self-attention is the key bottleneck across current multimodal architectures. We de-note the multimodal time-series input as X ∈ R𝑀 ×𝑇 , where 
+
+𝑀 is the number of modalities and 𝑇 is the number of time steps. A standard Transformer [ 40 ] maps X to queries, keys, and values Q, K, V ∈ R𝑇 ×𝐹 . For multi-head self-attention with 𝑛 heads, each head maintains its own 𝑄 /𝐾 /𝑉 projec-tion matrices, requiring approximately 3𝑛 · 𝑀 · 𝐹 parameters. In multimodal time-series settings, different attention heads often attend to highly correlated temporal patterns, making fully independent 𝐾 /𝑉 projections per head redundant. To address this, we propose SentryAttend , which adopts Grouped-Query Attention (GQA) [ 1], partitioning the 𝑛 heads into 𝑛 groups groups ( 𝑛 groups < 𝑛 ). Each head retains its own query projection, while all heads within the same group share a common set of 𝐾 /𝑉 projections, reducing 𝐾 /𝑉 parameters from 2𝑛 · 𝑀 · 𝐹 to 2𝑛 groups · 𝑀 · 𝐹 .We leverage the observation from Figure 6, where we take the softmax attention scores of a trained model, flatten them, and sort them in descending order. The results show that only a small fraction of positions account for the vast majority of the probability mass—the attention distribution remains strongly long-tailed, consistent with prior work [ 25 ,48 ]. Motivated by this, SentryAttend further introduces sparse groupe-query attention: within each head ℎ in group 
+
+𝑔 , we compute a sparsity score for each query [ 48 ] and retain only the 𝑈 = 𝑐 · ⌈ log 𝑇 ⌉ queries with the highest sparsity scores, where 𝑐 is a constant controlling the sparsity level (typically 𝑐 = 5). The attention output is then computed as: 
+
+Aℎ = Softmax Qtop-𝑈 ℎ (K𝑔 )⊤
+
+√𝑑 𝑘 
+
+!
+
+V𝑔 , (6) where Qtop-𝑈 ℎ ∈ R𝑈 ×𝑑 𝑘 contains only the top-𝑈 selected queries, and K𝑔 , V𝑔 are the shared key-value projections for group 𝑔 . The remaining 𝑇 − 𝑈 positions are filled with a context vector aggregated from V𝑔 , preserving output length while reducing per-head complexity from O( 𝑇 2) to 
+
+O( 𝑇 log 𝑇 ).
+
+SentryAttend thus reduces GFLOPs along two indepen-dent dimensions: subsampling queries lower the temporal attention cost, and compressing 𝐾 /𝑉 projections reduces parameter and projection overhead. For example, with 𝑛 = 8,
+
+𝑛 groups = 2, 𝑇 = 128 , and 𝑐 = 5, we have 𝑈 ≈ 25 , so the at-tention computation scales from O( 𝑛𝑇 2) to O( 𝑛𝑈𝑇 ), while the number of 𝐾 /𝑉 projection matrices is reduced from 2𝑛 
+
+to 2𝑛 groups .0 1000 2000 3000 4000 5000          
+
+> Samples
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Softmax Score
+> Head 1 @ Layer 1
+> 01000 2000 3000 4000 5000
+> Samples
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Softmax Score
+> Head 8 @ Layer 1
+> 0200 400
+> 0.0
+> 0.2
+> 0.4
+> Peak zoom
+> 0200 400
+> 0.0
+> 0.2
+> 0.4
+> Peak zoom
+
+Figure 6: Empirical long-tail self-attention patterns from two representative heads show that only a small fraction carry significant probability mass while the majority are nearly zero, motivating SentryAttend .
+
+## 4.5 Overall Optimization of SentryFuse 
+
+Training procedure. We jointly optimize the sparse mul-timodal encoder and SentryGate under a single objective. Each epoch proceeds with two coupled components. First, we update the backbone parameters to minimize Lcls under randomly sampled modality-availability patterns. Second, after a short warmup phase, we train SentryGate to align with first-order saliency while keeping it detached from the main task-loss masking path. Concretely, let 𝑚 ∈ { 0, 1}𝑀 denote the modality-availability mask. At epoch 𝑡 , we draw 𝑚 from a curriculum-style sched-ule [ 25 ] by sampling each modality as present with probabil-ity 1 − 𝑝 𝑡 , where 𝑝 𝑡 increases linearly from 0 to 𝑝 max after a warmup period. For each mini-batch (𝑥, 𝑦 ):
+
+ˆ𝑦 = 𝑓 𝜃 (𝑥, 𝑚 ; gates_apply = False ), Lcls = CE ( ˆ𝑦, 𝑦 ).
+
+During the first 𝑇 warmup epochs, SentryGate parameters are frozen and we backpropagate only Lcls . After warmup, we additionally invoke the saliency-alignment objective from Sec. 4.3: for each gate tap 𝑥 (ℓ ) 
+
+> 𝑖
+
+we compute 
+
+𝑠 (ℓ ) 
+
+> 𝑖
+
+= 𝑥 (ℓ ) 
+
+> 𝑖
+
+⊙ 𝜕 Lcls /𝜕𝑥 (ℓ ) 
+
+> 𝑖
+
+,
+
+aggregate and normalize it within the layer, and match it to the corresponding SentryGate output 𝑔 (ℓ ) 
+
+> 𝑖
+
+(𝑚 ). The to-tal loss, Ltotal = Lcls + 𝛼 
+
+
+
+Lalign (𝑔, 𝑠 ) + 𝜆 bin 
+
+Í𝑖 𝑔 𝑖 (1 − 𝑔 𝑖 )
+
+
+
+.
+
+SentryGate parameters receive gradients exclusively from the alignment term; the backbone is primarily optimized by Lcls . This conditional training schedule prevents task optimization from being dominated by early pruning deci-sions, and allows SentryGate to learn a smooth, modality-conditioned saliency field that can later be queried without backpropagation. 
+
+## 4.6 Applying SentryGate for Structured Modality-aware Pruning 
+
+Once SentryGate has been trained with the saliency align-ment objective Lalign , each structural unit is now equipped Trovato et al. 0 1 2 3 4 5 6 7              
+
+> Head Index
+> 0
+> 50
+> 100
+> Time / Tokens
+> (a)
+> 01234567
+> Head Index (b)
+> 01234567
+> Head Index (c)
+> 0
+> 100
+> 200
+
+Figure 7: Attention weight heatmaps (head index vs. time/token) for a a modality-encoder (wrist BVP from WESAD dataset [ 33 ]) at three stages. (a) Dense baseline (6.175 GFLOPs): attention is distributed uni-formly across all 8 heads with low per-head magni-tude. (b) Sparse attention prior to SentryGate pruning (5.23 GFLOPs): inter-head variation emerges, with se-lect heads becoming dominant, but all heads remain active. (c) SentryGate -pruned attention (3.81 GFLOPs, 28% head pruning): redundant heads are fully gated out (white columns), concentrating computation on salient heads and timesteps while preserving discriminative temporal structure. 
+
+with a modality-aware importance score. For a given deploy-ment scenario, we fix the modality mask and evaluate the corresponding gate outputs 𝑔 (ℓ ) 
+
+> 𝑖
+
+(𝑚 plat ) for all layers, then ap-ply a global threshold determined by a desired pruning ratio to select a compact subnetwork. Unlike the traditional three-stage pruning pipeline (train–score–fine-tune), our approach performs task learning and structural selection under a uni-fied training objective, so that once training converges, we can directly materialize a pruned model without additional fine-tuning. We apply SentryGate -driven structured pruning at three locations: (1) multi-head self-attention heads, (2) feed-forward (FFN) layers in the Transformer encoders, and (3) internal FFN layers inside Sparse-MoE experts. 
+
+Head pruning with GQA consistency. In each attention layer, let 𝐻 𝑞 denote the number of query heads and 𝐻 𝑘 the number of key/value groups in the SentryAttend topology. For a fixed platform mask, we aggregate SentryGate out-puts over time and batch to obtain a mean gating score ¯𝑔 ℎ for each query head ℎ. We then apply a global threshold to ob-tain the retained head set 𝐻 keep ⊆ { 0, . . . , 𝐻 𝑞 − 1}. Given the query projection 𝑊 𝑄 ∈ R𝑑 model ×𝐻 𝑞 𝑑 ℎ , we keep only the col-umn blocks associated with 𝐻 keep . To preserve the Sentry-Attend structure, we derive the set of key/value groups to keep via the head-to-group mapping, 𝐾 keep =
+
+j 𝐻 keep  
+
+> 𝐻 𝑞 /𝐻 𝑘
+
+k
+
+, and apply analogous block filtering to 𝑊 𝐾 and 𝑊 𝑉 . If a key/value group is not referenced by any retained head, the entire group is removed. 
+
+Feed-forward (FFN) pruning. Each Transformer encoder layer contains a feed-forward sublayer with two linear map-pings 𝑊 1 ∈ R𝑑 model ×𝑑 ff and 𝑊 2 ∈ R𝑑 ff ×𝑑 model . SentryGate pro-vides an importance score for each hidden unit; we threshold these scores to obtain a retained unit set 𝑁 keep , and sym-metrically reconstruct both weight matrices as, 𝑊 ′ 
+
+> 1
+
+= 𝑊 1 [:
+
+, 𝑁 keep ], 𝑊 ′ 
+
+> 2
+
+= 𝑊 2 [𝑁 keep , :]. This reduces the hidden di-mension from 𝑑 ff to 𝑑 ′ 
+
+> ff
+
+= |𝑁 keep |, conditioned on the active modalities. 
+
+Sparse-MoE FFN pruning. In the Sparse-MoE blocks, the total number of experts and Top-𝑘 routing policy remain fixed. Each expert contains its own internal FFN; we reuse the 
+
+SentryGate scores associated with expert-internal channels to prune these FFNs in the same symmetric manner, 𝑊 ′ 
+
+> 1,𝑒
+
+=
+
+𝑊 1,𝑒 [:, 𝑁 keep ,𝑒 ], 𝑊 ′ 
+
+> 2,𝑒
+
+= 𝑊 2,𝑒 [𝑁 keep ,𝑒 , :], where 𝑁 keep ,𝑒 is the retained unit set for expert 𝑒 . Each expert independently shrinks its hidden width according to its learned saliency profile, while the global expert routing topology and Top-𝑘 
+
+sparsity pattern remain intact. Figure 7 illustrates the effect of SentryGate -driven head pruning on a representative wrist-BVP attention layer. The left panel (Dense) shows the multi-head attention heatmap at 6.18 GFLOPs. The middle panel (Sparse) corresponds to 
+
+SentryAttend before pruning, already reducing the layer cost to 5.23 GFLOPs. The right panel (Pruned) shows the same layer after SentryGate -based head pruning at 28% ,further reducing the cost to 3.81 GFLOPs, while preserving salient temporal patterns. 
+
+## 5 Experimental Setup 
+
+Backbones and datasets. We evaluate SentryFuse on three multimodal time-series benchmarks: WESAD [ 33 ], Dalia-HAR [ 32 ], and DSADS [ 2], using three representative multi-modal backbones: FlexMoE [ 47 ], FuseMoE [ 10 ], and MAE-STRO [ 25 ]. All backbones are trained and deployed with their official default settings, and SentryGate is trained on an NVIDIA L40. 
+
+Baselines. For structured pruning, we compare SentryGate 
+
+against three baselines: Random (uniform random removal), Magnitude (pruning smallest-magnitude units), and Syn-Flow [ 38 ] (data-free synaptic saliency scoring). For efficient attention, we compare each backbone against its Sentry-Attend variant, in which dense self-attention is replaced by 
+
+SentryAttend . For end-to-end evaluation, we assess three configurations: the original backbone, the backbone with 
+
+SentryGate , and the full SentryFuse framework combin-ing both SentryGate and SentryAttend .
+
+Comparison settings. We conduct several sets of exper-iments. First, we compare the four pruning methods men-tioned above under full-modality and modality-dropout set-tings across all backbone-dataset combinations. Next, we evaluate SentryAttend on two standard time-series back-bones, Transformer [ 40 ] and iTransformer [ 15 ], as well as the three multimodal backbones, assessing predictive perfor-mance and computational efficiency. We then evaluate the Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference 
+
+integrated SentryFuse design on the best backbone through cross-platform hardware deployment and post-training quan-tization. Finally, we perform ablations on the saliency teacher and grouped-query attention configuration. 
+
+Evaluation metrics. We report accuracy on the evaluation split. We report GFLOPs as the forward-pass floating-point operation count per inference. FLOP statistics are measured primarily with fvcore [39 ] and, where needed, THOP [ 16 ]. For deployment experiments, we report memory as serial-ized checkpoint size and latency as end-to-end wall-clock inference time. For post-training quantization, we addition-ally compare accuracy and model storage across numeric precisions. 
+
+Platforms. We benchmark all configurations on heteroge-neous hardware, including an NVIDIA L40 GPU, a CPU platform, a Jetson TX2, a Google Pixel 8, and an iPhone 13 Pro Max. Server experiments run in PyTorch 2.5.1 with CUDA 12.1 [ 29 ], whereas Jetson TX2 experiments use Py-Torch 1.8.0. Mobile deployment uses ExecuTorch 1.1 [30]. 
+
+## 6 Evaluation 6.1 Modality-aware Pruning under Missingness 
+
+We evaluate modality-aware pruning under missingness both before and after structured pruning. Figure 8 reports the accu-racy of the unpruned backbones equipped with SentryGate ,and Tables 1–3 report accuracy after structured pruning us-ing SentryGate -predicted importance scores across pruning ratios and modality-dropout settings. 0 1 2 4          
+
+> 0.5
+> 1.0
+> Accuracy
+> (a) 0124
+> (b) 0124
+> (c)
+> Missing Modalities
+> FlexMoE FuseMoE MAESTRO
+
+Figure 8: Accuracy of FlexMoE+ SentryGate , Fuse-MoE+ SentryGate , and MAESTRO+ SentryGate under different numbers of missing modalities (0, 1, 2, and 4), on (a) WESAD, (b) DaliaHAR, and (c) DSADS. 
+
+Across the 144 backbone–dataset–pruning–missingness combinations in Tables 1–3, SentryGate matches or out-performs the strongest modality-agnostic baseline in 133 cases (92.4%). Averaged over all backbones, datasets, pruning ratios, and missingness settings, SentryGate achieves 0.68 accuracy, compared with 0.60 for the strongest competing pruning baseline on average (SynFlow), corresponding to a 12.7% relative improvement. The gain appears on both strong and weak backbones. For example, on MAESTRO over DaliaHAR at 23% pruning with four missing modali-ties, SentryGate improves accuracy from 0.61 to 0.79; on FlexMoE over DSADS at 17% pruning with full modalities, it improves accuracy from 0.18 to 0.57, yielding a 3.2 × gain over the strongest baseline. These results show that the modality-conditioned importance scores generated by SentryGate 
+
+preserve accuracy more effectively than static pruning rules. The improvement becomes even larger under severe miss-ingness. With four modalities dropped, the average accuracy of SentryGate across all backbones, datasets, and pruning ratios is 0.57, compared with 0.50 for the second-best pruning baseline on average, yielding a 13.4% relative improvement. The same trend is visible in the hardest per-dataset settings: at 23% pruning with four missing modalities, SentryGate 
+
+improves accuracy from 0.61 to 0.79 on DaliaHAR and from 0.65 to 0.72 on DSADS. As sensing conditions become more adverse, the benefit of modality-aware pruning becomes in-creasingly pronounced. Figure 8 further shows that the benefit of SentryGate 
+
+can be amplified when it is paired with a stronger multi-modal backbone. Across missingness levels from 0 to 4, MAE-STRO+ SentryGate maintains accuracy of 0.85/0.85/0.85/0.80 on DaliaHAR and 0.98/0.98/0.95/0.75 on DSADS before prun-ing, while FlexMoE+ SentryGate and FuseMoE+ SentryGate 
+
+degrade more noticeably. Together, these results indicate that 
+
+SentryGate consistently improves robustness under miss-ingness, and that stronger multimodal backbones can further extend this gain. 
+
+## 6.2 Efficiency Gains Using SentryAttend 
+
+Table 4 evaluates the effect of replacing dense self-attention with SentryAttend across different backbones and datasets. We compare the original models and their SentryAttend 
+
+variants in terms of predictive performance and computa-tional cost measured by GFLOPs. A first clear trend is that SentryAttend consistently re-duces model GFLOPs, confirming its effectiveness as an effi-cient attention replacement. Across all evaluated backbones, applying SentryAttend lowers GFLOPs on WESAD, Dalia-HAR, and DSADS, with the largest reductions observed on Transformer, where GFLOPs decrease from 22.25 to 15.81 on WESAD, from 22.23 to 15.79 on DaliaHAR, and from 11.02 to 7.84 on DSADS, corresponding to about 29.0% sav-ings. Similar trends also hold for multimodal backbones. For example, MAESTRO reduces GFLOPs from 6.15 to 5.23 on WESAD, from 3.07 to 2.60 on DaliaHAR, and from 1.53 to 1.30 on DSADS, yielding a stable ∼15% reduction. Moreover, 
+
+SentryAttend can improve efficiency without sacrificing predictive performance, and in some cases even improves both. On WESAD, FlexMoE improves accuracy from 0.65 to Trovato et al. 
+
+Table 1: WESAD accuracy under modality dropout and pruning ratios of 6%, 12%, 17%, and 23%. Orange marks backbone-wise local best; bold orange marks global best. 
+
+Backbone Strategy Full Drop 1 Drop 2 Drop 4 6 12 17 23 6 12 17 23 6 12 17 23 6 12 17 23 FlexMoE Random 0.62 0.62 0.59 0.63 0.62 0.62 0.58 0.59 0.61 0.61 0.56 0.55 0.53 0.49 0.43 0.37 Magnitude 0.61 0.61 0.56 0.55 0.61 0.61 0.56 0.55 0.59 0.59 0.56 0.55 0.51 0.51 0.46 0.46 Synflow 0.56 0.56 0.54 0.54 0.56 0.56 0.54 0.55 0.53 0.54 0.38 0.38 0.55 0.52 0.49 0.49 
+
+SentryGate 0.61 0.61 0.62 0.65 0.61 0.61 0.62 0.65 0.59 0.59 0.60 0.63 0.52 0.52 0.52 0.54 FuseMoE Random 0.59 0.59 0.57 0.57 0.59 0.59 0.57 0.57 0.51 0.48 0.49 0.46 0.61 0.58 0.59 0.53 Magnitude 0.59 0.57 0.57 0.57 0.59 0.57 0.57 0.57 0.57 0.58 0.57 0.57 0.53 0.53 0.53 0.53 Synflow 0.60 0.59 0.59 0.59 0.59 0.58 0.58 0.58 0.59 0.57 0.57 0.57 0.61 0.60 0.60 0.60 
+
+SentryGate 0.61 0.61 0.62 0.65 0.62 0.62 0.61 0.61 0.62 0.62 0.62 0.62 0.62 0.62 0.62 0.62 
+
+MAESTRO Random 0.74 0.73 0.63 0.52 0.74 0.73 0.64 0.54 0.73 0.71 0.63 0.55 0.61 0.60 0.55 0.51 Magnitude 0.75 0.70 0.64 0.59 0.74 0.70 0.64 0.59 0.72 0.68 0.62 0.59 0.61 0.59 0.58 0.56 Synflow 0.75 0.75 0.71 0.72 0.75 0.75 0.71 0.71 0.73 0.72 0.72 0.71 0.61 0.61 0.62 0.62 
+
+SentryGate 0.75 0.75 0.74 0.75 0.75 0.75 0.74 0.75 0.73 0.72 0.73 0.73 0.61 0.61 0.61 0.61 
+
+Table 2: DaliaHAR accuracy under modality dropout and pruning ratios of 6%, 12%, 17%, and 23%. Orange marks backbone-wise local best; bold orange marks global best. 
+
+Backbone Strategy Full Drop 1 Drop 2 Drop 4 6 12 17 23 6 12 17 23 6 12 17 23 6 12 17 23 FlexMoE Random 0.58 0.47 0.43 0.22 0.57 0.49 0.47 0.23 0.57 0.48 0.46 0.22 0.39 0.30 0.30 0.40 Magnitude 0.47 0.36 0.28 0.18 0.48 0.38 0.31 0.19 0.47 0.36 0.30 0.19 0.41 0.38 0.28 0.17 Synflow 0.61 0.57 0.35 0.17 0.62 0.58 0.37 0.17 0.61 0.58 0.38 0.16 0.58 0.53 0.32 0.16 
+
+SentryGate 0.72 0.68 0.57 0.24 0.71 0.68 0.56 0.23 0.71 0.66 0.56 0.34 0.61 0.55 0.44 0.36 FuseMoE Random 0.49 0.60 0.47 0.44 0.50 0.61 0.46 0.43 0.47 0.56 0.42 0.39 0.40 0.22 0.34 0.31 Magnitude 0.66 0.54 0.50 0.47 0.67 0.54 0.50 0.67 0.66 0.52 0.49 0.45 0.58 0.51 0.35 0.33 Synflow 0.65 0.57 0.55 0.52 0.65 0.51 0.50 0.48 0.65 0.55 0.54 0.53 0.49 0.49 0.50 0.51 
+
+SentryGate 0.72 0.72 0.72 0.71 0.71 0.71 0.71 0.68 0.71 0.71 0.70 0.67 0.58 0.59 0.60 0.58 MAESTRO Random 0.83 0.83 0.80 0.64 0.84 0.83 0.79 0.63 0.83 0.83 0.79 0.64 0.77 0.75 0.66 0.48 Magnitude 0.80 0.79 0.74 0.73 0.80 0.78 0.75 0.74 0.80 0.78 0.74 0.73 0.73 0.68 0.55 0.53 Synflow 0.85 0.78 0.75 0.74 0.85 0.79 0.77 0.73 0.85 0.80 0.78 0.74 0.79 0.73 0.67 0.61 
+
+SentryGate 0.85 0.85 0.85 0.85 0.85 0.85 0.85 0.85 0.85 0.85 0.85 0.85 0.79 0.79 0.80 0.79 
+
+0.67 while reducing GFLOPs from 16.68 to 16.35. On Dalia-HAR, FuseMoE improves accuracy from 0.70 to 0.73 while lowering GFLOPs from 12.26 to 11.44. On DSADS, Trans-former improves accuracy from 0.78 to 0.83 while reducing GFLOPs from 11.02 to 7.84. These results show that Sentry-Attend improves attention efficiency across both vanilla Transformer-style models and multimodal backbones. MAESTRO remains the strongest backbone after introduc-ing SentryAttend , delivering the best overall accuracy while maintaining the lowest or near-lowest GFLOPs among the compared models. With SentryAttend , MAESTRO achieves 0.76 accuracy at 5.23 GFLOPs on WESAD, 0.82 accuracy at 2.60 GFLOPs on DaliaHAR, and 0.88 accuracy at 1.30 GFLOPs on DSADS. Compared with the best baseline equipped with 
+
+SentryAttend , MAESTRO improves accuracy by 13.4% on WESAD (0.76 vs. 0.67), 12.3% on DaliaHAR (0.82 vs. 0.73), and 6.0% on DSADS (0.88 vs. 0.83), while requiring 3.1 ×, 4.4 ×,and 6.0 × fewer GFLOPs, respectively. Although MAESTRO incurs some accuracy loss on DaliaHAR and DSADS relative to its original version (0.85 to 0.82 and 0.98 to 0.88), it still remains the highest-accuracy SentryAttend backbone by a clear margin while being substantially more efficient than the alternatives. Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference 
+
+Table 3: DSADS accuracy under modality dropout and pruning ratios of 6%, 12%, 17%, and 23%. Orange marks backbone-wise local best; bold orange marks global best. 
+
+Backbone Strategy Full Drop 1 Drop 2 Drop 4 6 12 17 23 6 12 17 23 6 12 17 23 6 12 17 23 FlexMoE Random 0.81 0.13 0.09 0.07 0.78 0.12 0.11 0.09 0.64 0.14 0.11 0.10 0.41 0.08 0.08 0.08 Magnitude 0.84 0.55 0.16 0.11 0.82 0.52 0.19 0.14 0.73 0.34 0.14 0.12 0.46 0.22 0.16 0.10 Synflow 0.84 0.52 0.18 0.13 0.80 0.60 0.14 0.12 0.71 0.44 0.16 0.14 0.40 0.30 0.11 0.09 
+
+SentryGate 0.86 0.86 0.57 0.23 0.83 0.81 0.49 0.19 0.78 0.75 0.42 0.12 0.49 0.45 0.21 0.16 FuseMoE Random 0.81 0.49 0.77 0.74 0.75 0.73 0.71 0.70 0.70 0.66 0.63 0.55 0.46 0.39 0.36 0.31 Magnitude 0.83 0.81 0.81 0.81 0.81 0.81 0.80 0.80 0.68 0.66 0.66 0.66 0.45 0.41 0.40 0.41 Synflow 0.83 0.81 0.81 0.80 0.80 0.78 0.78 0.77 0.70 0.62 0.62 0.62 0.36 0.33 0.31 0.31 
+
+SentryGate 0.83 0.83 0.83 0.83 0.81 0.81 0.81 0.81 0.72 0.72 0.71 0.71 0.47 0.46 0.46 0.45 MAESTRO Random 0.98 0.98 0.98 0.97 0.97 0.96 0.94 0.88 0.92 0.90 0.85 0.82 0.71 0.68 0.63 0.60 Magnitude 0.97 0.98 0.97 0.97 0.97 0.94 0.92 0.90 0.95 0.92 0.89 0.89 0.74 0.72 0.68 0.65 Synflow 0.98 0.97 0.96 0.95 0.97 0.97 0.96 0.92 0.95 0.94 0.91 0.87 0.75 0.67 0.62 0.60 
+
+SentryGate 0.98 0.98 0.98 0.97 0.98 0.98 0.97 0.97 0.95 0.94 0.94 0.91 0.75 0.73 0.73 0.72 Table 4: Accuracy and GFLOPs before and after Sentry-Attend on WESAD, DaliaHAR, and DSADS. Higher ac-curacy and lower GFLOPs are better; best and second-best values are shown in bold orange and underlined, respectively. 
+
+Dataset Backbone Orig. +SentryAttend 
+
+Acc ↑ GFLOPs ↓ Acc ↑ GFLOPs ↓
+
+WESAD MAESTRO 0.75 6.15 0.76 5.23 Transformer 0.67 22.25 0.65 15.81 iTransformer 0.61 5.76 0.62 5.06 
+
+FlexMoE 0.65 16.68 0.67 16.35 FuseMoE 0.68 12.28 0.65 11.47 DaliaHAR MAESTRO 0.85 3.07 0.82 2.60 
+
+Transformer 0.71 22.23 0.71 15.79 iTransformer 0.63 3.70 0.64 3.25 FlexMoE 0.70 8.35 0.71 8.17 FuseMoE 0.70 12.26 0.73 11.44 DSADS MAESTRO 0.98 1.53 0.88 1.30 
+
+Transformer 0.78 11.02 0.83 7.84 iTransformer 0.51 18.44 0.51 16.18 FlexMoE 0.84 12.11 0.80 11.44 FuseMoE 0.83 5.99 0.82 5.59 Overall, these results support two conclusions. First, Sentry-Attend consistently improves computational efficiency by reducing attention-related GFLOPs across diverse backbones, and can even improve accuracy in several cases. Second, MAESTRO remains the strongest backbone for this efficient-attention mechanism, which motivates our use of MAESTRO as the backbone in the subsequent integrated evaluation. 
+
+## 6.3 Performance Gains Across Various Hardware Using SentryFuse 
+
+Table 5 compares the original MAESTRO model, MAESTRO equipped with SentryGate , and then MAESTRO with the full SentryFuse framework, i.e., MAESTRO + SentryGate 
+
++ SentryAttend with 23% pruning, across heterogeneous hardware platforms. There are two distinct trends. First, the complete SentryFuse configuration consistently im-proves predictive performance while further reducing deployment cost. Relative to the original MAESTRO back-bone, SentryFuse reduces model memory from 6.07 MB to 4.36 MB and GFLOPs from 6.83 to 4.41, correspond-ing to 28.2% and 35.4% reductions, respectively, while increasing accuracy from 0.75 to 0.77 on GPU and to 0.76 on CPU, Jetson, iPhone 13 Pro, and Google Pixel 8. 
+
+Even compared with the already pruned MAESTRO+ Sentry-Gate variant, SentryFuse further reduces memory by 9.2% and GFLOPs by 13.0%, while improving accuracy by 0.02 on every evaluated platform. This result shows that integrating 
+
+SentryAttend on top of SentryGate yields a strictly better accuracy-efficiency trade-off than pruning alone. Trovato et al. 
+
+Table 5: WESAD hardware deployment (MAESTRO; latter two use 23% pruning; SentryFuse =Sentry-Gate +SentryAttend ). 
+
+Metric MAESTRO + SentryGate +SentryFuse 
+
+Mem. (MB) ↓ 6.07 4.80 4.36 GFLOPs ↓ 6.83 5.07 4.41 Accuracy / Latency (ms) ↓
+
+GPU 0.75/24.50 0.75/24.35 0.77/24.32 CPU 0.74/60.19 0.74/43.96 0.76/42.72 Jetson 0.74/295.87 0.74/257.82 0.76/254.77 iPhone 13 0.75/167.82 0.74/121.07 0.76/113.32 Pixel 8 0.75/256.28 0.74/169.96 0.76/157.43 
+
+Compatibility with quantization. We apply FP32, FP16, and FP8 post-training quantization on top of SentryFuse -pruned models, treating precision and pruning ratio as two independent compression axes. Figure 9 shows the resulting Pareto frontier of accuracy versus storage across all three datasets. Three observations stand out. First, FP8 dominates the storage-constrained regime: across all datasets, FP8 at moderate pruning sits on or near the Pareto frontier, match-ing unpruned FP32 accuracy at up to 5× lower storage on WESAD. Second, quantization precision has negligible im-pact on accuracy below 28% pruning. Third, the accuracy drop at high pruning ratios (e.g., 50%) is consistent across all three precisions, indicating the bottleneck is structural rather than numerical. Figure 10 shows that FP16 quantiza-tion reduces latency, power, and energy by up to 35% relative to FP32, with gains compounding at higher pruning ratios showing the compatibility of SentryFuse with other model compression techniques. 2 4      
+
+> Storage (MB)
+> 0.70
+> 0.73
+> 0.75
+> Accuracy
+> (a)
+> 0%
+> 53%
+> 0%
+> 53%
+> 0%
+> 53%
+> 123
+> Storage (MB)
+> 0.80
+> 0.83
+> 0.85
+> 0.88
+> Accuracy
+> (b)
+> 0%
+> 53%
+> 0%
+> 53%
+> 0%
+> 53%
+> 123
+> Storage (MB)
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> Accuracy
+> (c)
+> 0%
+> 53%
+> 0%
+> 53%
+> 0%
+> 53%
+> FP32 FP16 FP8
+
+Figure 9: Accuracy–storage Pareto trade-offs for 
+
+SentryFuse under post-training quantization on (a) WESAD, (b) DSADS and (c) DaliaHAR. Each point rep-resents a model with a specific pruning ratio and nu-merical precision (FP32, FP16, FP8). The dashed line indicates the Pareto frontier across all configurations. 
+
+## 6.4 Ablation Study 
+
+We ablate SentryFuse from two perspectives. First, we test whether the importance scores learned by SentryGate can approximate a strong gradient-based saliency teacher. Sec-ond, we study how the number of groups in SentryAttend 
+
+affects robustness under joint pruning and modality miss-ingness. 0% 12% 23% 35% 46%          
+
+> Prune Ratio
+> 30
+> 40
+> 50
+> Latency (ms)
+> (a)
+> 0% 12% 23% 35% 46%
+> Prune Ratio
+> 125
+> 150
+> Avg Power (W)
+> (b)
+> 0% 12% 23% 35% 46%
+> Prune Ratio
+> 5.0
+> 7.5
+> Energy (J)
+> (c)
+> FP32 FP16
+
+Figure 10: Latency, average power draw, and total en-ergy consumption of SentryFuse under FP32 and FP16 quantization across pruning ratios. 0 6 12 17 23 28 35 40 46 53             
+
+> 0.4
+> 0.6
+> 0.8
+> Accuracy
+> (a) 0612 17 23 28 35 40 46 53
+> (b)
+> Pruning Ratio (%)
+> Random Pruning SentryFuse Taylor-based Saliency Teacher
+
+Figure 11: Accuracy of random pruning, our Sentry-Fuse , and a Taylor-based saliency teacher across prun-ing ratios on DaliaHAR under (a) full modalities and (b) 4-modality dropout. 0 6 12 17 23 28 35 40 46 53             
+
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> (a) 0612 17 23 28 35 40 46 53
+> (b)
+> Pruning Ratio (%)
+> 1 Group 2 Groups 8 Groups
+
+Figure 12: Accuracy of SentryFuse under different grouped-query attention configurations (1, 2, and 8 key-value groups) across pruning ratios on DaliaHAR under (a) full modalities and (b) 4-modality dropout. Amortizing Taylor-based saliency with SentryGate . We compare the MAESTRO-based instantiation of SentryFuse 
+
+on DaliaHAR against two references: random pruning and a Taylor-based saliency teacher. Taylor saliency provides strong first-order supervision during training, but it is im-practical at deployment because it requires gradient computa-tion and re-estimation when the input condition or modality availability changes. In contrast, SentryGate amortizes this process into a lightweight forward-pass importance predic-tor. Figure 11 shows that SentryFuse remains consistently close to the Taylor-based teacher while staying well above random pruning across pruning ratios and modality-dropout settings. Under full modalities, SentryFuse achieves 0.80/0.78 accuracy at 28%/40% pruning, compared with 0.81/0.79 for the Taylor teacher and 0.54/0.45 for random pruning. Under Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference 
+
+4-modality dropout, SentryFuse reaches 0.72 at 28% prun-ing and 0.71 at 46%, compared with 0.73 and 0.72 for the teacher. Overall, SentryFuse recovers 95–98% of teacher performance across the evaluated settings without requiring gradient-based saliency estimation at inference time, remain-ing close to a strong Taylor-based reference. 
+
+Sensitivity to the number of GQA groups. We next vary the number of grouped-query attention groups in Sentry-Attend to study the trade-off between parameter sharing and robustness. Specifically, we evaluate 1, 2, and 8 groups, where 1 group corresponds to the strongest sharing. Fig-ure 12 shows that the difference is small at light pruning but becomes more visible as pruning and missingness intensify. Under full modalities at 53% pruning, the 1-group configura-tion achieves 0.78 accuracy, compared with 0.75 for 8 groups. Under 4-modality dropout, the gap becomes larger: at 28% pruning, the 1-group configuration reaches 0.75 versus 0.70 for 8 groups, and at 46% pruning, 0.65 versus 0.52. Across conditions, the 2-group configuration remains con-sistently competitive and provides the most balanced trade-off between stronger parameter sharing and representational flexibility. We therefore use 2 groups as the default setting in the remainder of the paper. 
+
+## 7 Conclusion 
+
+We propose SentryFuse , a robust learning framework to enhance the deployability of multimodal models on edge devices. We posit that modality-aware pruning is necessary, especially when the observability of all modalities during in-ference is not guaranteed. Another key constraint is that fine-tuning–based pruning cannot always be applied, as backprop-agation may be infeasible on edge devices and labeled data during inference may be unavailable. To address these prac-tical limitations, we propose two innovations: SentryGate ,which enables modality-aware zero-shot pruning trained via a saliency objective, and SentryAttend , an efficient drop-in replacement for dense attention, a common performance bot-tleneck in multimodal models. Extensive evaluation across three applications, five baselines, and four compute plat-forms, from GPUs to mobile phones, demonstrates Sentry-Fuse ’s ability to maintain accuracy while substantially re-ducing parameters under extreme missingness. 
+
+## References 
+
+[1] Joshua Ainslie, James Lee-Thorp, Michiel De Jong, Yury Zemlyanskiy, Federico Lebrón, and Sumit Sanghai. 2023. Gqa: Training generalized multi-query transformer models from multi-head checkpoints. arXiv preprint arXiv:2305.13245 (2023). [2] Kerem Altun, Billur Barshan, and Orkun Tunçel. 2010. Comparative study on classifying human activities with miniature inertial and magnetic sensors. Pattern Recognition 43, 10 (2010), 3605–3620. [3] Hila Chefer, Shir Gur, and Lior Wolf. 2022. Grad-SAM: Explain-ing Transformers via Gradient Self-Attention Maps. arXiv preprint arXiv:2204.14043 (2022). [4] Jonathan Frankle and Michael Carbin. 2018. The lottery ticket hy-pothesis: Finding sparse, trainable neural networks. arXiv preprint arXiv:1803.03635 (2018). [5] Elias Frantar and Dan Alistarh. 2023. Sparsegpt: Massive lan-guage models can be accurately pruned in one-shot. In International conference on machine learning. PMLR, 10323–10337. [6] Yingchun Fu, Zhe Zhu, Liangyun Liu, Wenfeng Zhan, Tao He, Huan-feng Shen, Jun Zhao, Yongxue Liu, Hongsheng Zhang, Zihan Liu, et al . 2024. Remote sensing time series analysis: A review of data and applications. Journal of Remote Sensing 4 (2024), 0285. [7] Rohit Girdhar, Alaaeldin El-Nouby, Zhuang Liu, Mannat Singh, Kalyan Vasudev Alwala, Armand Joulin, and Ishan Misra. 2023. Im-agebind: One embedding space to bind them all. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition .15180–15190. [8] Ary L Goldberger, Luis AN Amaral, Leon Glass, Jeffrey M Hausdorff, Plamen Ch Ivanov, Roger G Mark, Joseph E Mietus, George B Moody, Chung-Kang Peng, and H Eugene Stanley. 2000. PhysioBank, Phys-ioToolkit, and PhysioNet: components of a new research resource for complex physiologic signals. circulation 101, 23 (2000), e215–e220. [9] Song Han, Jeff Pool, John Tran, and William J. Dally. 2015. Learn-ing both weights and connections for efficient neural networks. In Proceedings of the 29th International Conference on Neural Information Processing Systems (NeurIPS). 1135–1143. [10] Xing Han, Huy Nguyen, Carl Harris, Nhat Ho, and Suchi Saria. 2024. FuseMoE: Mixture-of-Experts Transformers for Fleximodal Fusion. In Advances in Neural Information Processing Systems , A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang (Eds.), Vol. 37. Curran Associates, Inc., 67850–67900. [11] Yihui He, Xiangyu Zhang, and Jian Sun. 2017. Channel pruning for accelerating very deep neural networks. In Proceedings of the IEEE international conference on computer vision. 1389–1397. [12] Joshua Jones, Oier Mees, Carmelo Sferrazza, Kyle Stachowicz, Pieter Abbeel, and Sergey Levine. 2025. Beyond sight: Finetuning generalist robot policies with heterogeneous sensors via language grounding. arXiv preprint arXiv:2501.04693 (2025). [13] Hao Li, Asim Kadav, Igor Durdanovic, Hanan Samet, and Hans Peter Graf. 2017. Pruning Filters for Efficient ConvNets. arXiv:1608.08710 [cs.CV] [14] Paul Pu Liang, Yiwei Lyu, Xiang Fan, Zetian Wu, Yun Cheng, Jason Wu, Leslie Chen, Peter Wu, Michelle A Lee, Yuke Zhu, et al . 2021. Multibench: Multiscale benchmarks for multimodal representation learning. Advances in neural information processing systems 2021, DB1 (2021), 1. [15] Yong Liu, Tengge Hu, Haoran Zhang, Haixu Wu, Shiyu Wang, Lin-tao Ma, and Mingsheng Long. 2023. iTransformer: Inverted Trans-formers Are Effective for Time Series Forecasting. arXiv preprint arXiv:2310.06625 (2023). Trovato et al. 
+
+[16] Lyken17. 2022. THOP: PyTorch-OpCounter. https://github.com/ Lyken17/pytorch-OpCounter. Software package, accessed: 2026-03-13. [17] Mengmeng Ma, Jian Ren, Long Zhao, Davide Testuggine, and Xi Peng. 2022. Are multimodal transformers robust to missing modality?. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. 18177–18186. [18] Mengmeng Ma, Jian Ren, Long Zhao, Sergey Tulyakov, Cathy Wu, and Xi Peng. 2021. Smil: Multimodal learning with severely missing modal-ity. In Proceedings of the AAAI Conference on Artificial Intelligence, Vol. 35. 2302–2310. [19] Xinyin Ma, Gongfan Fang, and Xinchao Wang. 2023. Llm-pruner: On the structural pruning of large language models. Advances in neural information processing systems 36 (2023), 21702–21720. [20] Mohsen Masoumian Hosseini, Seyedeh Toktam Masoumian Hosseini, Karim Qayumi, Shahriar Hosseinzadeh, and Seyedeh Saba Sajadi Tabar. 2023. Smartwatches in healthcare medicine: assistance and monitoring; a scoping review. BMC Medical Informatics and Decision Making 23, 1 (2023), 248. [21] Matthew Middlehurst, Patrick Schäfer, and Anthony Bagnall. 2024. Bake off redux: a review and experimental evaluation of recent time se-ries classification algorithms. Data Mining and Knowledge Discovery 38, 4 (2024), 1958–2031. [22] Payal Mohapatra, Vasudev Aravind, Marisa Bisram, Young-Joong Lee, Hyoyoung Jeong, Katherine Jinkins, Richard Gardner, Jill Streamer, Brent Bowers, Lora Cavuoto, et al . 2024. Wearable network for mul-tilevel physical fatigue prediction in manufacturing workers. PNAS nexus 3, 10 (2024), pgae421. [23] Payal Mohapatra, Shamika Likhite, Subrata Biswas, Bashima Islam, and Qi Zhu. 2024. Missingness-resilient Video-enhanced Multimodal Disfluency Detection. In Interspeech 2024. 5093–5097. doi:10.21437/ Interspeech.2024-1458 [24] Payal Mohapatra, Akash Pandey, Xiaoyuan Zhang, and Qi Zhu. 2025. Can LLMs Understand Unvoiced Speech? Exploring EMG-to-Text Conversion with LLMs. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers). Association for Computational Linguistics. [25] Payal Mohapatra, Yueyuan Sui, Akash Pandey, Stephen Xia, and Qi Zhu. 2025. MAESTRO: Adaptive Sparse Attention and Robust Learning for Multimodal Dynamic Time Series. arXiv preprint arXiv:2509.25278 (2025). [26] Pavlo Molchanov, Stephen Tyree, Tero Karras, Timo Aila, and Jan Kautz. 2016. Pruning convolutional neural networks for resource efficient inference. arXiv preprint arXiv:1611.06440 (2016). [27] Pavlo Molchanov, Stephen Tyree, Tero Karras, Timo Aila, and Jan Kautz. 2017. Pruning convolutional neural networks based on the Taylor expansion. In International Conference on Learning Representations (ICLR). [28] Akash Pandey, Payal Mohapatra, Wei Chen, Qi Zhu, and Sinan Keten. 2026. TimeSliver: Symbolic-Linear Decomposition for Explainable Time Series Classification. arXiv preprint arXiv:2601.21289 (2026). [29] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, et al . 2019. PyTorch: An Imperative Style, High-Performance Deep Learning Library. In Advances in Neural Information Processing Systems, Vol. 32. [30] PyTorch Team. 2025. ExecuTorch. https://docs.pytorch.org/ executorch/stable/. Version 1.1 (stable), accessed: 2026-03-13. [31] Mohamed Ragab, Emadeldeen Eldele, Wee Ling Tan, Chuan-Sheng Foo, Zhenghua Chen, Min Wu, Chee-Keong Kwoh, and Xiaoli Li. 2023. Adatime: A benchmarking suite for domain adaptation on time series data. ACM Transactions on Knowledge Discovery from Data 17, 8 (2023), 1–18. [32] Attila Reiss, Ina Indlekofer, Philip Schmidt, and Kristof Van Laerhoven. 2019. Deep PPG: Large-scale heart rate estimation with convolutional neural networks. Sensors 19, 14 (2019), 3079. [33] Philip Schmidt, Attila Reiss, Robert Duerichen, Claus Marberger, and Kristof Van Laerhoven. 2018. Introducing wesad, a multimodal dataset for wearable stress and affect detection. In Proceedings of the 20th ACM international conference on multimodal interaction. 400–408. [34] Ramprasaath R Selvaraju, Michael Cogswell, Abhishek Das, Ramakr-ishna Vedantam, Devi Parikh, and Dhruv Batra. 2017. Grad-cam: Visual explanations from deep networks via gradient-based localization. In Proceedings of the IEEE international conference on computer vision .618–626. [35] Daniel Smilkov, Nikhil Thorat, Been Kim, Fernanda Viégas, and Martin Wattenberg. 2017. SmoothGrad: removing noise by adding noise. In ICML workshop on Visualization for Deep Learning. [36] Haoqin Sun, Shiwan Zhao, Shaokai Li, Xiangyu Kong, Xuechen Wang, Jiaming Zhou, Aobo Kong, Yong Chen, Wenjia Zeng, and Yong Qin. 2025. Enhancing Emotion Recognition in Incomplete Data: A Novel Cross-Modal Alignment, Reconstruction, and Refinement Framework. In ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). IEEE, 1–5. [37] Cheng Tai, Tong Xiao, Yi Zhang, Xiaogang Wang, et al . 2015. Convo-lutional neural networks with low-rank regularization. arXiv preprint arXiv:1511.06067 (2015). [38] Hidenori Tanaka, Daniel Kunin, Daniel L Yamins, and Surya Ganguli. 2020. Pruning neural networks without any data by iteratively con-serving synaptic flow. Advances in neural information processing systems 33 (2020), 6377–6389. [39] FAIR Computer Vision Team. 2022. fvcore: Light-weight Core Library for Computer Vision. https://github.com/facebookresearch/fvcore. [40] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. At-tention is all you need. Advances in neural information processing systems 30 (2017). [41] Hu Wang, Yuanhong Chen, Congbo Ma, Jodie Avery, Louise Hull, and Gustavo Carneiro. 2023. Multi-modal learning with missing modality via shared-specific feature modelling. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition .15878–15887. [42] Hanrui Wang, Zhekai Zhang, and Song Han. 2021. Spatten: Efficient sparse attention architecture with cascade token and head pruning. In 2021 IEEE International Symposium on High-Performance Computer Architecture (HPCA). IEEE, 97–110. [43] Yunshi Wen, Tengfei Ma, Ronny Luss, Debarun Bhattacharjya, Achille Fokoue, and Anak Agung Julius. 2025. Shedding light on time series classification using interpretability gated networks. In The Thirteenth International Conference on Learning Representations. [44] Chenwei Wu, Zitao Shuai, Zhengxu Tang, Luning Wang, and Liyue Shen. [n. d.]. Dynamic Modeling of Patients, Modalities and Tasks via Multi-modal Multi-task Mixture of Experts. In The Thirteenth International Conference on Learning Representations. [45] Maxwell A Xu, Girish Narayanswamy, Kumar Ayush, Dimitris Spathis, Shun Liao, Shyam A Tailor, Ahmed Metwally, A Ali Heydari, Yuwei Zhang, Jake Garrison, et al . 2025. LSM-2: Learning from Incomplete Wearable Sensor Data. arXiv preprint arXiv:2506.05321 (2025). [46] Sukwon Yun, Inyoung Choi, Jie Peng, Yangfan Wu, Jingxuan Bao, Qiyi-wen Zhang, Jiayi Xin, Qi Long, and Tianlong Chen. 2024. Flex-MoE: Modeling Arbitrary Modality Combination via the Flexible Mixture-of-Experts. In Advances in Neural Information Processing Systems, Vol. 37. Curran Associates, Inc., 98782–98805. Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference 
+
+[47] Sukwon Yun, Inyoung Choi, Jie Peng, Yangfan Wu, Jingxuan Bao, Qiyiwen Zhang, Jiayi Xin, Qi Long, and Tianlong Chen. 2024. Flex-moe: Modeling arbitrary modality combination via the flexible mixture-of-experts. Advances in Neural Information Processing Systems 37 (2024), 98782–98805. [48] Haoyi Zhou, Shanghang Zhang, Jieqi Peng, Shuai Zhang, Jianxin Li, Hui Xiong, and Wancai Zhang. 2021. Informer: Beyond efficient trans-former for long sequence time-series forecasting. In Proceedings of the AAAI conference on artificial intelligence , Vol. 35. 11106–11115.

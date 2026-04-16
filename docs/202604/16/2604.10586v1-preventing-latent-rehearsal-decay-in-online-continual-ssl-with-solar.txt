@@ -1,0 +1,1512 @@
+Title: Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR
+
+URL Source: https://arxiv.org/pdf/2604.10586v1
+
+Published Time: Tue, 14 Apr 2026 01:27:13 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+Giacomo Cignoni 1 Simone Magistri 2 Andrew D. Bagdanov 2 Antonio Carta 1
+
+## Abstract 
+
+This paper explores Online Continual Self-Supervised Learning (OCSSL), a scenario in which models learn from continuous streams of unlabeled, non-stationary data, where methods typically employ replay and fast convergence is a central desideratum. We find that OCSSL requires particular attention to the stability-plasticity trade-off: stable methods (e.g. replay with Reservoir sampling) are able to converge faster compared to plastic ones (e.g. FIFO buffer), but incur in performance drops under certain conditions. We explain this collapse phenomenon with the Latent Rehearsal Decay hypothesis, which attributes it to latent space degradation under excessive stabil-ity of replay. We introduce two metrics (Overlap and Deviation) that diagnose latent degradation and correlate with accuracy declines. Building on these insights, we propose SOLAR, which lever-ages efficient online proxies of Deviation to guide buffer management and incorporates an explicit Overlap loss, allowing SOLAR to adaptively man-aging plasticity. Experiments demonstrate that SOLAR achieves state-of-the-art performance on OCSSL vision benchmarks, with both high con-vergence speed and final performance. 
+
+## 1. Introduction 
+
+Continual learning (CL) addresses the fundamental chal-lenge of enabling machine learning models to acquire new knowledge from sequential tasks while preserving previ-ously learned knowledge (Parisi et al., 2019; McCloskey & Cohen, 1989; Kirkpatrick et al., 2017). In online CL (Soutif-Cormerais et al., 2023; Parisi & Lomonaco, 2020; Lopez-Paz & Ranzato, 2017), data is seen as a continuous one-pass stream of small minibatches, precluding multi-epoch training. This constraint requires rapid adaptation (Caccia  
+
+> 1Department of Computer Science, University of Pisa, Pisa, Italy 2Media Integration and Communication Center (MICC), Uni-versity of Florence, Italy. Correspondence to: Giacomo Cignoni
+> <giacomo.cignoni@phd.unipi.it >.
+> Preprint. April 14, 2026.
+
+et al., 2022; Hammoud et al., 2023) and carefully balance of average accuracy across the stream and final accuracy. Con-currently, Self-Supervised Learning (SSL) has emerged as a powerful paradigm for representation learning that does not rely on labeled data (Chen et al., 2020; He et al., 2020; Grill et al., 2020; Zbontar et al., 2021). In this paper, we focus on 
+
+Online Continual Self-Supervised Learning (OCSSL) (Yu et al., 2023; Cignoni et al., 2025b;a), a challenging scenario that combines the online temporal constraints with the label-free nature of SSL. This scenario reflects many real-world applications in which unlabeled data streams continuously arrive and storage constraints prevent retention of historical data. It is especially relevant in online CL, where it is unre-alistic to assume that labels—particularly human-provided ones—will be available for a continuous stream, e.g. satel-lite imagery (Iovine et al., 2025). Consequently, the ability to learn high-quality unsupervised representations becomes essential. The trade-off between stability (retention of past knowledge) and plasticity (adaptation to new data) is a core problem of CL: typically CL methods favor stability in order to prevent forgetting – e.g. via explicit regularization (Zenke et al., 2017; Urettini & Carta, 2025) – at the cost of plasticity. The tradeoff can be modulated by replay buffer policies: Reservoir (Vitter, 1985) emphasizes stability by maintain-ing long-term memory, whereas FIFO (Isele & Cosgun, 2018) favors plasticity by discarding older samples. In this paper, we show that existing methods struggle to achieve optimal stability-plasticity trade-off in OCSSL. Plasticity-focused approaches (FIFO) adapt more slowly during early training phases. On the other hand, contrary to the intu-ition that longer training would induce more forgetting and favor stability-focused solutions, we find that in plasticity-demanding settings such methods (e.g., Reservoir) fail under long training schedules compared to a naive FIFO base-line. We demonstrate that this unexpected result is caused by a novel collapse phenomenon: Latent Rehearsal De-cay , which arises with prolonged training on a static sub-set of data, as occurs at the limit with Reservoir buffers (Figure 1(a)). This leads to a degraded, overspecialized latent space that hinders adaptation to new tasks. This latent space degradation manifests as performance drops in longer training schedules and can be detected by two novel latent metrics Deviation and Overlap (Figure 1(b)). 1
+
+> arXiv:2604.10586v1 [cs.LG] 12 Apr 2026
+
+Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR Training Time    
+
+> Buffer Dynamics Impact
+> Latent Rehearsal Decay (a)
+> Fast Convergence
+> Slow Convergence
+> Fast Convergence
+> Latent
+> Rehearsal Decay
+> Plasticity
+> Learning Phase
+> Plasticity
+> Learning Phase
+> Reservoir
+> FIFO
+> SOLAR
+> SOLAR improves
+> Latent Metrics and performan ce (c)
+> Overlap & Deviation Metrics:
+> Signals of Latent Rehearsal Decay (b )
+> Deviation  Overlap
+
+Figure 1. Motivation and overview. (a) Reservoir buffer, traditionally considered stability-focused, converges faster than FIFO but leads to degraded latent structure, manifesting as a phenomenon we call Latent Rehearsal Decay . ( b) SSL methods can be viewed as solving an instance-discrimination problem: each sample and its augmentations form a hyperball in the embedding space. The spread of each hyperball ( Deviation ) and their pairwise Overlap are metrics that reveal the deterioration in feature space quality caused by Latent Rehearsal Decay. ( c) Our proposed SOLAR method improves both Deviation and Overlap metrics and yields better overall performance. 
+
+We introduce SOLAR (Self-supervised Online Latent-Aware Replay) , a novel strategy that applies implicit and adaptive regularization–with the aim of modulating plasticity–by enforcing the quality of the latent space with-out explicitly constraining network updates. SOLAR com-bines a Deviation-Aware Buffer and an Overlap Loss that prevent Latent Rehearsal Decay by optimizing Deviation and Overlap via efficient online proxies (Figure 1(c)). Through extensive experiments we demonstrate that our approach successfully adapts to unknown training lengths while avoiding Latent Rehearsal Decay. 
+
+## 2. Online Continual Self-Supervised Learning (OCSSL) 
+
+In SSL, an encoder network f : X → F is trained to map an input x ∈ X to a feature representation z ∈ F by solving pretext tasks requiring no labels (Ericsson et al., 2022). We employ the popular class of SSL methods using 
+
+instance discrimination pretext tasks (Gui et al., 2024). Two different augmented views, x1 and x2, are generated from the same sample, then the views are passed through f and usually through a projector network (Chen & He, 2021) that maps encoded views into a projection space P. The pretext task consists in enforcing the two projected views in 
+
+P to be close in the feature space. Following other works in continual SSL (Purushwalkam et al., 2022; Cignoni et al., 2025a; Li et al., 2022), we employ SimSiam (Chen & He, 2021) as the SSL method of choice. OCSSL is a stream learning paradigm in which unlabeled data arrive sequentially, sharing traits with online (super-vised) CL (Soutif-Cormerais et al., 2023; Mai et al., 2022), but with challenges unique to SSL. The data stream D in-duces a dual-level structure in the learning process. At a broader scale, D is divided into class-incremental distribu-tions (i.e. tasks) DT which are unknown to the model, result-ing in a task-agnostic scenario. Instead, at the granular level these tasks present themselves as streamed minibatches. The model receives a minibatch xTt ∈ D T at each timestep 
+
+t. Each xTt , characterized by a fixed, small batch size bs
+
+(usually ranging from 1 to 10), and becomes permanently inaccessible once processing advances to the next minibatch. Although multiple training passes for each streamed mini-batch are feasible, this online scenario naturally precludes multi-epoch training. Performance is commonly evaluated by training a linear classifier on frozen representations (lin-ear probing) (Alain & Bengio, 2016), as adopted in others OCSSL methods (Yu et al., 2023; Cignoni et al., 2025a; Purushwalkam et al., 2022); we follow the same protocol. 
+
+Related Work. Replay methods are the dominant paradigm in Online CL (Soutif-Cormerais et al., 2023), since small streaming minibatches are insufficient for effective learning – especially in SSL, for which large batches are crucial (Chen et al., 2020; Zbontar et al., 2021). Replay buffers alleviate this by providing additional samples. Reservoir buffer is the de facto standard (Mai et al., 2022; Buzzega et al., 2020; Wang et al., 2024; Rolnick et al., 2019), as it maintains an unbiased subset of the stream. FIFO buffers are also used, but less commonly (Cignoni et al., 2025a; Cai et al., 2021). Most continual SSL methods are designed for the offline 
+
+setting in which multi-epoch training on each experience is possible and task boundaries are known. They typically rely on distillation to mitigate forgetting and contrastive losses on multiple views, such as CaSSLe (Fini et al., 2022) and PFR (Gomez-Villa et al., 2022), and extensions like SyCON (Cha & Moon, 2023), Osiris (Zhang et al., 2025) and POCON (Gomez-Villa et al., 2024). Only a few works explicitly address the OCSSL scenario, 2Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+which is task-agnostic and restricted to single-epoch training on the stream. SCALE extends SimCLR using an InfoNCE-like loss (Oord et al., 2018). It uses distillation between old and current features and updates its buffer using the Part and Select Algorithm (PSA) (Yu et al., 2023). CMP proposes a replay-free approach, augmenting mini-batches with multi-ple patches (Cignoni et al., 2025b), while MinRed performs exemplar replay with maximally correlated samples (Pu-rushwalkam et al., 2022). CLA employs distillation through a temporal projector, using either an EMA teacher (CLA-E) or stored past latent features (CLA-R), and introduces plasticity with a FIFO buffer (Cignoni et al., 2025a). 
+
+## 3. Stability–Plasticity in OCSSL (b) (a)   
+
+> Figure 2. Impact of training length. (a) Reports the Final Accuracy for Reservoir and FIFO, on CIFAR-100, trained on an OCSSL stream with varying training length, which is expressed as number of minibatch passes (i.e. training steps) per incoming stream minibatch. Reservoir converges faster for shorter schedules, but suffers unusual performance drops for longer schedules. (b) Gives the average per-task probing accuracy on past and future tasks relative to the current task (CIFAR-100). Past task accuracy does not decrease and both FIFO and Reservoir achieve similar results, excluding final Reservoir drop (explained later), implying that forgetting has little impact.
+
+Given the necessity of replay in OCSSL, we analyze the impact of stability and plasticity by comparing different replay buffers: Reservoir, encouraging stability by providing an unbiased set of samples, and FIFO which encourages 
+
+plasticity (Kobayashi, 2025; Isele & Cosgun, 2018). We observe in certain scenarios an unexplored replay failure mode under long training. 
+
+Reservoir versus FIFO Buffers. Reservoir ensures that each incoming sample has equal probability of being in-cluded in the buffer M. Once the buffer is full, the t-th incoming sample xt is inserted with probability |M|  
+
+> t
+
+: a ran-dom index i = rand (0, t) is drawn, and if i ≤ |M| the entry M[i] is replaced by xt; otherwise xt is discarded. Reservoir buffers encourage stability by providing an unbi-ased view of the stream. Notice that the insertion probability  
+
+> |M|
+> t
+
+decays over time. As a result, it will converge to a static subset of the stream and revisit old samples more often. In contrast, FIFO retains only the |M| most recent samples, discarding the oldest as new ones arrive. This encourages 
+
+plasticity , since each training step uses only the latest sam-ples. Consequently, each sample is stored for the same duration and revisited equally often. 
+
+Failure of Reservoir under Long Training Schedules. 
+
+Given this view, one might expect Reservoir to perform better under longer training, where stability helps avoid forgetting. However, Figure 2(a) shows the opposite trend. Experimenting on CIFAR100, Reservoir seems to perform converge faster on short training, but, as training length in-creases, its accuracy drops, while FIFO steadily improves and surpasses it. Similar results can be observed in Ima-geNet100 (see Appendix A). Figure 2(b) helps disentan-gling this phenomenon from forgetting: both methods show no signs of forgetting, until Reservoir sudden degradation which also impedes generalization to future tasks. More details and per-task accuracies are provided in Appendix B. We call this unexpected global latent degradation–unrelated to forgetting– Latent Rehearsal Decay .
+
+3.1. Latent Rehearsal Decay 
+
+Can we explain the underperformance of Reservoir buffers over long training schedules? Hypothesis (Latent Rehearsal Decay ). We hypothesize that long training schedules on a limited subset of data lead to overfitting, which degrades the feature space by produc-ing overspecialized representations. These representations hinder adaptability to new tasks, resulting in degradation of probing accuracy. This hypothesis suggests that, in certain scenarios where plasticity is critical, reservoir sampling convergence to a static subset leads to suboptimal learning dynamics. Intro-ducing greater diversity in later training stages can prevent convergence to suboptimal minima. FIFO achieves this via higher plasticity (Figure 2b), though at the cost of slower convergence. Notice that prior work links collapse in SSL to feature collapse (Li et al., 2022) or lack of uniformity in the latent space (Wang & Isola, 2020). We show in Ap-pendix C.3 that these phenomena are unrelated to Latent Rehearsal Decay in OCSSL. We also argue that it also dif-fers from simple buffer overfitting in Appendix C.4, show-ing that latent space degradation happens equally for buffer samples. To verify the hypothesis, we introduce two novel metrics inspired by intra- and inter-class metrics in the supervised setting (Sui et al., 2025). Our metrics assess feature qual-ity via inter-sample relationships across different samples and intra-sample relationships across views of the same sample. Let A be the set of augmentations; then, for each sample xa in the training stream, we define its set of all possible augmented feature views in the latent space as Ta = {zia|zia = f (xia)}i∈A, where each xia is a dif-ferent augmented view of the original xa and f is the encoder network. Then, each Ta identifies a hyperball 
+
+3Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+in the feature space centered on the mean feature view 
+
+¯za = 1
+
+> |Ta|
+
+P 
+
+> zia∈Ta
+
+zia and encompassing feature views (Fig-ure 1(b)). We now propose two new metrics, the Deviation 
+
+and the Overlap which characterize Latent Rehearsal Decay. 
+
+Deviation. This intra-sample metric measures the distance in feature space between multiple views of a single sample 
+
+xa by calculating the average pairwise cosine distance of feature views zia in P. Let SC be the cosine similarity function. We define the deviation as: Dev (Ta) = 1
+
+|Ta|2
+
+X
+
+> zia,zja∈Ta
+
+ 1 − SC (zia, zja). (1) 
+
+Overlap. This inter-sample metric measures the overlap in the latent space between feature views of different samples. More precisely, for each hyperball Ta we consider its aver-age feature ¯za and the average angle of the pairwise cosine similarity ( SC ) of all feature views: 
+
+¯θa = 1
+
+|Ta|2
+
+X
+
+> zia,zja∈Ta
+
+arccos  SC (zia, zja) , (2) calculated in the encoder space F. We define the Overlap between two samples xa and xb as: 
+
+Ov (Ta, Tb) =  ¯θa + ¯θb
+
+ − θ (¯ za, ¯zb) , (3) where θ (¯ za, ¯zb) denotes the angle between average features 
+
+¯za and ¯zb. The Overlap effectively measures the distance between the two hyperballs. When Ov (Ta, Tb) > 0 we effectively have an intersection between the two samples. Since we want to count only intersecting hyperballs, given a dataset D = {T1, . . . , T|D|}, the Average Overlap Count 
+
+for the set is calculated by: Ov count (D) = 1
+
+|D|2
+
+X 
+
+> Ti,Tj∈D
+
+1 [Ov (Ti, Tj ) > 0] . (4) Our metrics, differing from existing ones, not only have a global view of the feature space, but also consider the local latent behavior relative to each sample, which is essential to capture a fine-grained view of representation quality and convergence of SSL methods. We do this by considering the hyperballs Ta, which give a local insight even for an inter-sample metric such as Overlap. 
+
+Metric Analysis and Comparisons. Figure 3 shows the probing accuracy, Deviation, and Overlap metrics during training for Reservoir and FIFO. Specifically, given the entire training stream D, we extracted Ov count (D) (Equa-tion (4)), and 1
+
+> |D|
+
+P 
+
+> Ti∈D
+
+Dev (Ti). Metrics are calculated offline by sampling 20 augmentations from each Ta, for all samples in the entire training stream D. During the initial 
+
+Convergence phase , both methods continuously improve 20%  30%  40%  50%          
+
+> 010k 20k 30k 40k 50k 60k 70k
+> tr steps
+> 20%  30%  40%  50%
+> 0.05  0.10  0.20  0.50
+> 0 5k  10k  15k  20k
+> 0.05  0.10  0.20  0.50
+> 0 5k  10k  15k  20k
+> Reservoir
+> FIFO
+> Latent Rehearsal
+> Decay phase Convergence phase
+> Plasticity Learning
+> phase Convergence phase
+> Accuracy Deviation Overlap
+
+Figure 3. Latent Rehearsal Decay . Accuracy and metrics calcu-lated on the entire training stream of ImageNet100. Both FIFO and Reservoir have an initial Convergence phase , where Accuracy in-creases and both metrics improve. After a certain point, Reservoir transitions into the Latent Rehearsal Decay phase , where the sud-den drop in accuracy is preceded by a sharp decrease in Deviation and increase in Overlap. See Appendix C.2 for further analysis. 
+
+as evidenced by the growing accuracy, decreasing Overlap, and slight decrease in Deviation. Subsequently, the behavior of the two methods diverges. Reservoir suffers from Latent Rehearsal Decay , which we observe as a sudden drop of Deviation and increase in Overlap. The degradation of the latent space is followed by a drop in the probing accuracy. Instead, FIFO continuously improve ( Plasticity Learning phase ) in probing accuracy and does not exhibit degradation of the latent space. This suggests that the reason behind the decay lies in the Reservoir strategy, where in the later train-ing stages the buffer consists of a slowly changing set of low-deviation samples. Further training on this set leads to a degraded latent space and lower generalization. Relation between training loss and metrics in Appendix C.1. 
+
+## 4. Self-supervised Online Latent-Aware Replay (SOLAR) 
+
+Our analysis reveals that an optimal OCSSL solution should be both plastic and stable, adapting the tradeoff dynamically. Our goal, therefore, is to develop an adaptive mechanism that performs well at any point during the training process, 
+
+regardless of the training length, converging fast for short training, while rivaling FIFO plasticity in longer schedules. Our method Self-supervised Online Latent-Aware Replay (SOLAR) achieves this goal by preventing Latent Rehearsal 
+
+4Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR discard lowest deviation samples  
+
+> stream
+> new samples
+> Image Encoder
+> Loss
+> 2
+> 5
+> 15
+> 23
+> Extraction Counts
+> 1 - softmax
+> Sampling
+> Augmentations
+> Top-k
+> (c)
+> (a)
+> (f)
+> (e)
+> (b)
+> Update training step
+> (d)
+
+Figure 4. Overview of SOLAR. (a) The deviation-aware buffer tracks average representation, loss, and extraction count for each sample; (b) Low-deviation representations are discarded; ( c) Sampling is inversely proportional to extraction counts; ( d) Sampled images are augmented and used for SSL training with LSSL ; ( e) The top-K samples with highest loss are extracted to compute Overlap loss Loverlap (f). 
+
+Decay . This is done via efficient online proxies for the Devi-ation and Overlap . Specifically, SOLAR has 2 components: (1) the Deviation-Aware Buffer , that controls Deviation by prioritizing high-Deviation samples in the buffer; (2) the Overlap Loss , that penalizes overlap between training samples. The full algorithm is given in Appendix D.1. 
+
+4.1. Deviation-Aware Buffer 
+
+A central objective of SOLAR is to prevent the Deviation collapse, which characterizes Latent Rehearsal Decay (see Figure 3, top). SOLAR addresses this by employing a mem-ory buffer that replays high-Deviation samples, thereby in-creasing the diversity of feature representations during train-ing and avoiding Deviation sudden drop. At first glance, this requires online monitoring of sample Deviation. However, as shown in Appendix D.2 the SSL loss itself is a good proxy since it is positively related to Deviation: 
+
+d Dev 
+
+dLSSL 
+
+= 1
+
+n2 > 0 , (5) where n is the number of augmented views. Hence, samples with higher SSL loss (i.e. less converged) correspond to higher-Deviation examples, whereas low-loss samples (i.e., already learned) correspond to lower Deviation ones. The memory buffer M is a list in which each entry stores a sample as a tuple ⟨xM 
+
+> i
+
+, ℓ M 
+
+> i
+
+, ¯zM 
+
+> i
+
+, ¯θM 
+
+> i
+
+, e M 
+
+> i
+
+⟩ (Figure 4(a)), where xM 
+
+> i
+
+is the input, ℓM 
+
+> i
+
+an estimate of the loss com-puted in previous iterations, ¯zM 
+
+> i
+
+its average representation, 
+
+¯θM 
+
+> i
+
+its average angle, and eM 
+
+> i
+
+a counter for the number of times a buffer sample is extracted for training. At time t,SOLAR trains on a batch of samples coming from the buffer 
+
+{xti}i=1 ...B tot and computes their self-supervised loss ℓti, av-erage feature representation zti across augmentations, and the corresponding average angle of the pairwise cosine sim-ilarities among augmented features views ¯θti (as defined in Equation (2)). If unseen stream samples are available, they are used for training and then inserted into the buffer. Once the maximum capacity is reached, the samples discarded are the ones with minimal loss ℓti (Figure 4(b)), a criterion that encourages replay of high-Deviation samples (see Ap-pendix D.2). When a memory sample i is extracted from the buffer, its statistics are updated using an Exponential Moving Average (EMA) with decay factor η = 0 .5:
+
+ℓM 
+
+> i
+
+← η · ℓM 
+
+> i
+
++ (1 − η) · ℓti, (6) 
+
+zM 
+
+> i
+
+← η · zM 
+
+> i
+
++ (1 − η)zti, (7) 
+
+θM 
+
+> i
+
+← η · θM 
+
+> i
+
++ (1 − η)θti. (8) EMA-updated buffer statistics have already been employed in OCSSL by (Purushwalkam et al., 2022; Cignoni et al., 2025a), the motivation being to make the statistics more robust to sudden distribution shifts of CL which could impair their reliability. Its effect is ablated in Appendix D.5. At each iteration, samples in M are replayed according to a deviation-aware extraction policy (Figure 4(c)). Let 
+
+¯eM 
+
+> i
+
+∈ [0 , 1] denote the normalized extraction counts across all buffer samples; the sampling probabilities are: 
+
+p[1 ,..., |M| ] = Softmax (−¯e[1 ,..., |M| ]).
+
+Thus, samples with lower counters (i.e., replayed fewer times) are more likely to be selected. Intuitively, these sam-ples are under-trained and thus have higher Deviation. Em-phasizing them during training enhances sample diversity and introduces a balancing effect that prevents bias toward a small subset of well-learned samples. We regard this mech-anism as complementary to the removal of minimal-loss samples; using them together promotes training on high-Deviation data. Different extraction policies are ablated in Appendix D.5. Once a sample is selected, it is augmented into multiple views and passed through the backbone (Fig-ure 4(d)) to compute LSSL and the SGD step, and then its 5Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+counter is incremented by one. In-depth comparison with other methods prioritizing “hard” samples in Appendix D.6. 
+
+4.2. Overlap Loss 
+
+Solely prioritizing higher-deviation samples during train-ing cannot prevent Latent Rehearsal Decay, as increasing Overlap also contributes. (see Figure 3, top). In order to approximate Overlap online, we leverage the average fea-tures ¯zt and cosine angles ¯θt between two augmentations of the same sample, which are readily available during SSL training on the stream at timestep t and stored in the buffer as discussed above (further analysis on online Overlap ap-proximation in Appendix D.3). During training, we minimize Overlap between the current minibatch and the top-K highest-deviation buffer samples not in the minibatch. High-deviation samples occupy more latent space and are thus more likely to overlap with others, especially newer samples. Again, we employ the per-sample loss to estimate Deviation and select the top-K highest-loss buffer samples (Figure 4(e)). The Overlap loss is: 
+
+Loverlap = 1
+
+b
+
+> b
+
+X
+
+> i=1
+
+1
+
+K
+
+> K
+
+X
+
+> k=1
+
+max  0, Ov (Ti, TM 
+
+> k
+
+) , (9) where b is the mini-batch size and Ov (Ti, T∗
+
+> k
+
+) is defined as in Equation (3) (Figure 4(f)). Each TM 
+
+> k
+
+is composed of 
+
+frozen ¯zM 
+
+> k
+
+and ¯θM 
+
+> k
+
+extracted from M, while Ti features 
+
+¯zi and ¯θi are computed online from the two views for each sample in the minibatch and thus contribute to training the backbone. The max operator ensures that only positive over-laps are penalized. In our experiments we set K = 500 . In a sense, Loverlap is like a targeted contrastive loss that pushes away samples only as much as is needed and contrasting only with the most problematic samples. This Overlap loss encourages the model to differentiate features that are overly aligned, thus preserving representational diversity across the buffer and training stream. The overall training objective of SOLAR is LSSL + ωLoverlap , where ω is a hyperparameter. Analysis on ω is provided in Appendix D.4). 
+
+## 5. Experiments 
+
+In this section we compare SOLAR with the state-of-the-art and ablate and analyze its components. 
+
+Experimental Setup. We conducted experiments on the Split CIFAR-100 (Krizhevsky et al., 2009) and Split Ima-geNet100 (Deng et al., 2009) class-incremental benchmarks with 20 experiences each, and also on CLEAR100 (Lin et al., 2021), a domain-incremental learning benchmark. Data were presented to the models as an OCSSL stream with a stream minibatch of 10 . All methods were allowed to extend the minibatch to size 138 from the buffer to maintain a fair comparison. The maximum buffer size |M| was set to 2000. Following other works (Purushwalkam et al., 2022; Cignoni et al., 2025a;b), we use SimSiam (Chen & He, 2021) as the base SSL method on ResNet-18 (He et al., 2016). In the main experiments (Table 1), we simulated a training schedule with 6 minibatch passes for each incoming stream minibatch. More training details are in Appendix E.1. 
+
+Metrics. Evaluation was conducted by linear probing on the entire dataset. Probing is performed offline, as the goal of OCSSL is representation learning , and probing on a classification task is a standard measurement of latent space quality in SSL (Ericsson et al., 2022). We report two probing metrics: F INAL ACCURACY , which is the probing accuracy at the end of the stream; and A VERAGE ACCURACY , which is the average of probing accuracies calculated at the end of each experience. Average Accuracy is a coarse measure of how good the model is throughout the training process (a proxy for Average Anytime Accuracy (Soutif-Cormerais et al., 2023)) and, for this reason, a good indication of fast convergence: a model capable of converging faster and retain knowledge will have higher Average Accuracy than a model which is slower to converge. On the other hand, Final Accuracy is a good metric for the model performance on long training schedules, as it is sensitive to the sudden drops of accuracy typical of Latent Rehearsal Decay. 
+
+5.1. Comparison with the State-of-the-art 
+
+We see in Table 1 that SOLAR achieves state-of-the-art performance on all three benchmarks. Methods that per-form explicit distillation (CLA and SCALE) fail to achieve consistently good results. SCALE, which employs both distillation and a stability-biased buffer, severely underper-forms on both ImageNet100 and CIFAR-100, underscoring the need for plasticity in OCSSL. CLA-E and CLA-R high-light the downsides of fixed explicit distillation, despite both relying on a FIFO buffer. CLA-E achieves good Final Accuracy on CIFAR and Ima-geNet, but converges very slowly with lower Average Ac-curacy and a flatter accuracy training curve (Appdx. E.2), similar to FIFO. This suggests that CLA-E regularization is too biased towards plasticity at the expense of fast con-vergence. In contrast, CLA-R converges faster and achieves Average Accuracy closer to SOLAR, but suffers from Latent Rehearsal Decay in later phases (see Appendix E.2). This is significant because even though CLA-R uses a plasticity-focused FIFO buffer it behaves as an overly stable strat-egy, demonstrating that Latent Rehearsal Decay can also be induced by excessive distillation. It seems that fixed distillation, like FIFO and Reservoir buffers, is not ideal for OCSSL as it is not capable of adapting to changing require-ments during training. MinRed is the only other method that maintain relatively high Final and Average Accuracy across all benchmarks. MinRed shows decently fast conver-6Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+Table 1. Results on streaming online CIFAR-100 (20 experiences), ImageNet-100 (20 experiences), and CLEAR100 (11 experiences). Best in bold , second best underlined. We report mean and std over 3 runs.                                                                                                                                                                                                  
+
+> CIFAR-100 (20 exps) ImageNet100 (20 exps) CLEAR100 (11 exps) METHOD BUFFER DISTILL .FINAL ACC .AVG . A CC .FINAL ACC .AVG . A CC .FINAL ACC .AVG . A CC .ER Reservoir %44 .4±1.039 .6±0.340 .5±1.539 .3±0.447 .1±0.235 .3±0.4
+> ER FIFO %49 .0±0.339 .3±0.248 .7±1.038 .9±0.345 .3±1.834 .9±0.5
+> MinRed MinRed %46 .5±0.340 .9±0.348 .0±0.342 .5±0.251 .3±0.139 .7±0.1
+> LARS LARS %47 .0±0.739 .5±0.243 .2±2.839 .2±0.244 .7±0.934 .1±0.1
+> PER PER %48 .5±0.239 .1±0.248 .8±0.638 .8±0.246 .0±0.535 .0±0.2
+> SCALE PSA !31 .9±0.327 .1±0.336 .7±0.229 .8±0.144 .2±0.341 .0±0.3
+> CLA-E FIFO !45 .6±0.434 .2±0.249 .0±0.536 .6±0.237 .7±1.829 .3±1.4
+> CLA-R FIFO !46 .7±0.542 .3±0.343 .1±4.642 .0±0.246 .7±0.435 .3±0.2
+> SOLAR Deviation-Aware %49 .5±0.542 .3±0.349 .4±1.542 .8±0.251 .5±0.841 .3±0.4
+
+gence. Like SOLAR, it leverages latent space information to manage its buffer, again demonstrating the suitability of this approach for OCSSL. CLEAR100 exhibits dynamics quite different from CIFAR-100 and ImageNet100, favoring stability-biased methods because it is not a class-incremental stream. We hypothe-size that, in a domain-incremental scenario with compara-tively weaker shift such as CLEAR, the need for plasticity to adapt to novel data is reduced. For example, FIFO unexpect-edly performs worse than Reservoir in both metrics, while CLA-E performs poorly, likely due to underfitting. On the other hand, SCALE is more competitive on CLEAR100 – especially in Average Accuracy – as it is stability-focused. Nonetheless, SOLAR is able to perform well in this scenario thanks to its adaptive plasticity capabilities. PER (Schaul et al., 2015) and LARS (Buzzega et al., 2021) are included to compare with other “hard”-sample prioritiza-tion methods. Across all three benchmarks, PER and LARS perform similarly to FIFO and Reservoir, respectively. For PER, this suggests that prioritization at extraction has lim-ited effect when the buffer composition is the same as FIFO. For LARS, although deletions are loss-based, new samples follow the Reservoir insertion rule, causing the buffer to converge to a fixed subset and mirror Reservoir behavior. Overall, the advantage of SOLAR over the other methods is simultaneously maintaining high Average and Final Accu-racy. While other methods can achieve comparable results in one of the metrics, they either fail to converge fast or suffer from Latent Rehearsal Decay. 
+
+5.2. Ablations and Analysis Changing Training Length. Figure 5 reports plots for Final and Average Accuracy when training with shorter sched-ules (i.e. reducing the number of minibatch passes). Again, SOLAR outperforms the state-of-the-art for most training lengths, except for the shortest on CIFAR; here SOLAR is almost on par with methods like Reservoir and MindRed that focus on stability (and thus converge faster). Nonethe-2 4 6         
+
+> MB passes (training length)
+> 40
+> 45
+> 50
+> Acc. (%)
+> Final Acc. CIFAR-100
+> 246
+> 32.5
+> 35.0
+> 37.5
+> 40.0
+> 42.5
+> Avg. Acc. CIFAR-100
+> 246
+> MB passes (training length)
+> 42.5
+> 45.0
+> 47.5
+> 50.0
+> Acc. (%)
+> Final Acc. ImageNet100
+> 246
+> 36
+> 38
+> 40
+> 42
+> Avg. Acc. ImageNet100
+> Reservoir FIFO Minred SOLAR
+
+Figure 5. Performance at different training lengths. SOLAR out-performs competitors independently of training length. 
+
+less, we note both those methods decrease in Final Accu-racy when training is longer, likely due to Latent Rehearsal Decay. SOLAR shows clear advantages on ImageNet100, particularly in Final Accuracy where performance remains stable across training lengths and thus demonstrating its effectiveness as a length-agnostic strategy. 
+
+Changing Buffer Size. Figure 6 plots Final and Average 500 1000 2000 5000 | |       
+
+> 30
+> 35
+> 40
+> 45
+> 50
+> Final Acc. (%)
+> Final Acc. CIFAR-100
+> 500 1000 2000 5000 ||
+> 34
+> 36
+> 38
+> 40
+> 42
+> Average Acc. (%)
+> Average Acc. CIFAR-100
+> Reservoir FIFO Minred SOLAR
+
+Figure 6. Impact of buffer size. 
+
+7Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 0 10k 20k          
+
+> tr steps
+> 20%  30%  40%  50%
+> || = 500
+> 010k 20k
+> || = 1000
+> 010k 20k
+> || = 2000
+> FIFO Reservoir SOLAR
+
+Figure 7. Training curves across buffer sizes |M| on CIFAR-100. Smaller buffer corresponds to stronger Latent Rehearsal Decay. SOLAR beats FIFO and Reservoir across the training stream. 
+
+Table 2. Ablation on buffer type and Overlap Loss Loverlap .                      
+
+> CIFAR-100 ImageNet100 BUFFER Loverlap FINAL /A VG .FINAL /A VG .Reservoir ✗44 .4/39 .640 .5/39 .3
+> Reservoir ✓46 .3/40 .335 .8/37 .6
+> FIFO ✗49 .0/39 .348 .7/38 .9
+> FIFO ✓46 .9/38 .445 .4/37 .9
+> Deviation-Aware ✗47 .7/41 .446 .9/42 .8
+> Deviation-Aware ✓49 .5/42 .349 .4/42 .8
+
+Accuracy for different buffer sizes on CIFAR-100. We see that Reservoir is penalized by reduced buffer dimensions, with particularly low Final Accuracy for the two smallest sizes. This low performance is evidence of Latent Rehearsal Decay, with the buffer size directly exacerbating this phe-nomenon for Reservoir, as shown by the training curves in Figure 7. The accuracy drop is inversely proportional to the buffer size, supporting our hypothesis that Latent Rehearsal Decay is directly linked to subset overfitting for Reservoir. As expected, FIFO is less affected by decreased buffer size due to its strong bias towards recent samples. MinRed performs well in Final Accuracy, but falls short in Average Accuracy at smaller buffer sizes ( |M| = 500 ), in-dicating difficulty in maintaining fast convergence. SOLAR achieves rapid convergence across buffer sizes, surpassing other methods by far in Average Accuracy, while keeping Final Accuracy close to FIFO. Its ability to ensure fast con-vergence regardless of buffer size makes SOLAR ideal even for OCSSL scenarios with generous buffer dimensions. We observe similar results on ImageNet (see Appendix E.3). 
+
+Ablations. In Table 2 we ablate the SOLAR components. The Deviation buffer improves convergence compared to FIFO and Reservoir, as reflected in higher Average Accu-racy. The Overlap loss, however, does not significantly improve convergence – Average Accuracy is comparable with or without it – but it substantially enhances Final Accu-racy. This indicates that the Overlap loss plays a crucial role in preventing Latent Rehearsal Decay, as it avoids sudden drops in performance and yields higher Final Accuracy. The Overlap loss combined with FIFO or Reservoir does not 
+
+Table 3. iNaturalist results.            
+
+> METHOD FINAL ACC .AVG . A CC .
+> pretrained 36 .42 −
+> Reservoir 42 .67 40 .45
+> FIFO 43 .91 40 .77
+> SOLAR 44 .11 41 .73
+
+consistently improve performance. Specifically, it does not help FIFO converge faster, but on CIFAR it helps Reser-voir avoid more severe Latent Rehearsal Decay. Unfortu-nately the same cannot be said for ImageNet, indicating that the Overlap Loss is dependent on maintaining a Deviation-Aware buffer, as it also exploits high-deviation samples in the top-K selection. We hypothesize that FIFO and Reser-voir create conditions under which the Overlap loss cannot operate as intended. Reservoir maintains a small subset of well-learned samples with low Deviation. Iteratively en-forcing low Overlap on an already learned fixed set can be redundant and even amplify the negative effects of Reser-voir in the case of more complex datasets. Instead, FIFO retains only recent samples, mostly from the same task. Con-sequently, the Overlap loss mostly pushes apart intra-task examples and does not meaningfully reduce overlap across diverse samples, limiting its effectiveness. 
+
+5.3. iNaturalist - a real world scenario starting from a pretrained network 
+
+We conducted additional OCSSL experiments on iNaturalist dataset (Van Horn et al., 2018), starting from a pretrained network instead of training from scratch. Additional details on this experimental setup in Appendix E.6. This setup is close to Continual Pretraining (Cossu et al., 2024), but online. All methods (Table 3) show a significant improve-ment over the direct use of the pretrained baseline, showing the usefulness of continuing pretraining even in an online setting. SOLAR achieves better accuracy than FIFO and Reservoir, confirming again the soundness of our method. Reservoir achieves a similar Average Accuracy to FIFO but lower Final Accuracy. This is coherent with our previous observations in which Reservoir performance are inferior especially in Final Accuracy due to its lack of plasticity. 
+
+## 6. Conclusions 
+
+In this paper we showed that OCSSL induces qualitatively different learning dynamics needing careful management of plasticity. This leads to counterintuitive outcomes, such as FIFO outperforming Reservoir sampling. We explained this through our Latent Rehearsal Decay hypothesis, which at-tributes performance drops to latent space degradation when replay buffers are small and static. To quantify this effect, we introduced Deviation and Overlap metrics that measure latent degradation and serve as early indicators of probing 8Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+accuracy decay. Building on these insights, we developed 
+
+SOLAR , which leverages efficient proxies for these metrics to manage replay buffers and preserve latent structure. Ex-periments demonstrate that SOLAR achieves state-of-the-art results on OCSSL benchmarks, balancing fast convergence (high Average Accuracy) with strong performance (high Final Accuracy), whereas other methods typically trade off one for the other. We hope this work encourages a shift of focus from preventing forgetting to continuously improving the quality of latent representations in OCSSL. 
+
+Limitations and Future Works. In this work we only examined the latent space from an unsupervised perspective, without considering metrics of representation space quality that consider task or class labels. As future work, our aim is to deepen the study of buffer behavior under large domain shifts when using pre-trained models for downstream tasks. We also hypothesize that Latent Rehearsal Decay may arise at the feature level in supervised Online CL, opening another avenue for future exploration. 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+## References 
+
+Alain, G. and Bengio, Y. Understanding intermediate layers using linear classifier probes. arXiv preprint arXiv:1610.01644 , 2016. Aljundi, R., Belilovsky, E., Tuytelaars, T., Charlin, L., Cac-cia, M., Lin, M., and Page-Caccia, L. Online continual learning with maximal interfered retrieval. Advances in neural information processing systems , 32, 2019a. Aljundi, R., Lin, M., Goujaud, B., and Bengio, Y. Gradi-ent based sample selection for online continual learning. 
+
+Advances in neural information processing systems , 32, 2019b. Buzzega, P., Boschini, M., Porrello, A., Abati, D., and Calderara, S. Dark experience for general continual learning: a strong, simple baseline. In Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M., and Lin, H. (eds.), 
+
+Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual , 2020. URL https://proceedings. neurips.cc/paper/2020/hash/ b704ea2c39778f07c617f6b7ce480e9e-Abstract. html .Buzzega, P., Boschini, M., Porrello, A., and Calderara, S. Rethinking experience replay: a bag of tricks for contin-ual learning. In 2020 25th International Conference on Pattern Recognition (ICPR) , pp. 2180–2187. IEEE, 2021. Caccia, L., Aljundi, R., Asadi, N., Tuytelaars, T., Pineau, J., and Belilovsky, E. New insights on reducing abrupt representation change in online continual learning. In 
+
+The Tenth International Conference on Learning Repre-sentations, ICLR 2022, Virtual Event, April 25-29, 2022 .OpenReview.net, 2022. URL https://openreview. net/forum?id=N8MaByOzUfb .Cai, Z., Sener, O., and Koltun, V. Online continual learning with natural distribution shifts: An empirical study with visual data. In Proceedings of the IEEE/CVF interna-tional conference on computer vision , pp. 8281–8290, 2021. Cha, S. and Moon, T. Sy-con: Symmetric contrastive loss for continual self-supervised representation learn-ing. arXiv e-prints , pp. arXiv–2306, 2023. Chen, T., Kornblith, S., Norouzi, M., and Hinton, G. E. A simple framework for contrastive learning of visual representations. In Proceedings of the 37th International Conference on Machine Learning, ICML 2020, 13-18 July 2020, Virtual Event , volume 119 of Proceedings of Machine Learning Research , pp. 1597–1607. PMLR, 2020. URL http://proceedings.mlr.press/ v119/chen20j.html .Chen, X. and He, K. Exploring simple siamese representa-tion learning. In IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2021, virtual, June 19-25, 2021 , pp. 15750–15758. Computer Vision Foundation / IEEE, 2021. doi: 10.1109/CVPR46437.2021.01549. URL https://openaccess.thecvf.com/ content/CVPR2021/html/Chen_Exploring_ Simple_Siamese_Representation_ Learning_CVPR_2021_paper.html .Cignoni, G., Cossu, A., Gomez-Villa, A., van de Wei-jer, J., and Carta, A. Cla: Latent alignment for on-line continual self-supervised learning. arXiv preprint arXiv:2507.10434 , 2025a. Cignoni, G., Cossu, A., Gomez-Villa, A., van de Weijer, J., and Carta, A. Replay-free online continual learn-ing with self-supervised multipatches. arXiv preprint arXiv:2502.09140 , 2025b. Cossu, A., Carta, A., Passaro, L., Lomonaco, V., Tuytelaars, T., and Bacciu, D. Continual pre-training mitigates for-getting in language and vision. Neural Networks , 179: 106492, 2024. 9Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+Deng, J., Dong, W., Socher, R., Li, L., Li, K., and Li, F. Imagenet: A large-scale hierarchical image database. In 
+
+2009 IEEE Computer Society Conference on Computer Vision and Pattern Recognition (CVPR 2009), 20-25 June 2009, Miami, Florida, USA , pp. 248–255. IEEE Com-puter Society, 2009. doi: 10.1109/CVPR.2009.5206848. URL https://doi.org/10.1109/CVPR.2009. 5206848 .Ericsson, L., Gouk, H., Loy, C. C., and Hospedales, T. M. Self-supervised representation learning: Introduction, ad-vances, and challenges. IEEE Signal Processing Mag-azine , 39(3):42–62, May 2022. ISSN 1558-0792. doi: 10.1109/msp.2021.3134634. URL http://dx.doi. org/10.1109/MSP.2021.3134634 .Fini, E., da Costa, V. G. T., Alameda-Pineda, X., Ricci, E., Alahari, K., and Mairal, J. Self-supervised models are continual learners. In IEEE/CVF Conference on Com-puter Vision and Pattern Recognition, CVPR 2022, New Orleans, LA, USA, June 18-24, 2022 , pp. 9611–9620. IEEE, 2022. doi: 10.1109/CVPR52688.2022.00940. URL https://doi.org/10.1109/CVPR52688. 2022.00940 .Gomez-Villa, A., Twardowski, B., Yu, L., Bagdanov, A. D., and van de Weijer, J. Continually learning self-supervised representations with projected functional reg-ularization. In IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition Workshops, CVPR Work-shops 2022, New Orleans, LA, USA, June 19-20, 2022 , pp. 3866–3876. IEEE, 2022. doi: 10.1109/CVPRW56347. 2022.00432. URL https://doi.org/10.1109/ CVPRW56347.2022.00432 .Gomez-Villa, A., Twardowski, B., Wang, K., and Van de Weijer, J. Plasticity-optimized complementary networks for unsupervised continual learning. In Proceedings of the IEEE/CVF winter conference on applications of computer vision , pp. 1690–1700, 2024. Grill, J., Strub, F., Altch ´e, F., Tallec, C., Richemond, P. H., Buchatskaya, E., Doersch, C., Pires, B. ´A., Guo, Z., Azar, M. G., Piot, B., Kavukcuoglu, K., Munos, R., and Valko, M. Bootstrap your own latent - A new approach to self-supervised learning. In Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M., and Lin, H. (eds.), 
+
+Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual , 2020. URL https://proceedings. neurips.cc/paper/2020/hash/ f3ada80d5c4ee70142b17b8192b2958e-Abstract. html .Gui, J., Chen, T., Zhang, J., Cao, Q., Sun, Z., Luo, H., and Tao, D. A survey on self-supervised learning: Algorithms, applications, and future trends. IEEE Transactions on Pattern Analysis and Machine Intelligence , 46(12):9052– 9071, 2024. Hammoud, H. A. A. K., Prabhu, A., Lim, S.-N., Torr, P. H., Bibi, A., and Ghanem, B. Rapid adaptation in online continual learning: Are we evaluating it right? In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 18806–18815. IEEE, 2023. He, K., Zhang, X., Ren, S., and Sun, J. Deep resid-ual learning for image recognition. In 2016 IEEE Conference on Computer Vision and Pattern Recogni-tion, CVPR 2016, Las Vegas, NV, USA, June 27-30, 2016 , pp. 770–778. IEEE Computer Society, 2016. doi: 10.1109/CVPR.2016.90. URL https://doi.org/ 10.1109/CVPR.2016.90 .He, K., Fan, H., Wu, Y., Xie, S., and Girshick, R. B. Mo-mentum contrast for unsupervised visual representation learning. In 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2020, Seattle, WA, USA, June 13-19, 2020 , pp. 9726–9735. IEEE, 2020. doi: 10.1109/CVPR42600.2020.00975. URL https:// doi.org/10.1109/CVPR42600.2020.00975 .Hess, T., Verwimp, E., van de Ven, G. M., and Tuytelaars, T. Knowledge accumulation in continually learned represen-tations and the issue of feature forgetting. Transactions on Machine Learning Research , 2024. Iovine, L., Ziffer, G., Proia, A., and Della Valle, E. Towards streaming land use classification of images with temporal distribution shifts. ESANN Proceedings , 2025. Isele, D. and Cosgun, A. Selective experience replay for lifelong learning. In Proceedings of the AAAI conference on artificial intelligence , volume 32, 2018. Khan, H., Rasool, G., and Bouaynaya, N. C. Adversarially diversified rehearsal memory (adrm): Mitigating memory overfitting challenge in continual learning. In 2024 Inter-national Joint Conference on Neural Networks (IJCNN) ,pp. 1–8. IEEE, 2024. Kirkpatrick, J., Pascanu, R., Rabinowitz, N., Veness, J., Des-jardins, G., Rusu, A. A., Milan, K., Quan, J., Ramalho, T., Grabska-Barwinska, A., et al. Overcoming catastrophic forgetting in neural networks. Proceedings of the national academy of sciences , 114(13):3521–3526, 2017. Kobayashi, T. Improvements of dark experience replay and reservoir sampling towards better balance between consol-idation and plasticity. arXiv preprint arXiv:2504.20932 ,2025. Krizhevsky, A., Hinton, G., et al. Learning multiple layers of features from tiny images. 2009. 10 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+Li, A. C., Efros, A. A., and Pathak, D. Understanding col-lapse in non-contrastive siamese representation learning. In European conference on computer vision , pp. 490–505. Springer, 2022. Lin, Z., Shi, J., Pathak, D., and Ramanan, D. The clear benchmark: Continual learning on real-world imagery. In 
+
+Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2021. Lopez-Paz, D. and Ranzato, M. Gradient episodic memory for continual learning. In Guyon, I., von Luxburg, U., Bengio, S., Wallach, H. M., Fergus, R., Vishwanathan, S. V. N., and Garnett, R. (eds.), Advances in Neural Information Processing Systems 30: Annual Conference on Neural Information Processing Systems 2017, December 4-9, 2017, Long Beach, CA, USA , pp. 6467– 6476, 2017. URL https://proceedings. neurips.cc/paper/2017/hash/ f87522788a2be2d171666752f97ddebb-Abstract. html .Mai, Z., Li, R., Jeong, J., Quispe, D., Kim, H., and Sanner, S. Online continual learning in image classification: An empirical survey. Neurocomputing , 469:28–51, 2022. McCloskey, M. and Cohen, N. J. Catastrophic interfer-ence in connectionist networks: The sequential learning problem. In Psychology of learning and motivation , vol-ume 24, pp. 109–165. Elsevier, 1989. Oord, A. v. d., Li, Y., and Vinyals, O. Representation learn-ing with contrastive predictive coding. arXiv preprint arXiv:1807.03748 , 2018. Parisi, G. I. and Lomonaco, V. Online continual learning on sequences. In Recent Trends in Learning From Data: Tutorials from the INNS Big Data and Deep Learning Conference (INNSBDDL2019) , pp. 197–221. Springer, 2020. Parisi, G. I., Kemker, R., Part, J. L., Kanan, C., and Wermter, S. Continual lifelong learning with neural networks: A review. Neural networks , 113:54–71, 2019. Purushwalkam, S., Morgado, P., and Gupta, A. The chal-lenges of continuous self-supervised learning. In Avidan, S., Brostow, G., Ciss ´e, M., Farinella, G. M., and Hassner, T. (eds.), Computer Vision – ECCV 2022 , pp. 702–721, Cham, 2022. Springer Nature Switzerland. ISBN 978-3-031-19809-0. Rolnick, D., Ahuja, A., Schwarz, J., Lillicrap, T., and Wayne, G. Experience replay for continual learning. 
+
+Advances in neural information processing systems , 32, 2019. Schaul, T., Quan, J., Antonoglou, I., and Silver, D. Priori-tized experience replay. arXiv preprint arXiv:1511.05952 ,2015. Soutif-Cormerais, A., Carta, A., Cossu, A., Hurtado, J., Lomonaco, V., Van de Weijer, J., and Hemati, H. Acomprehensive empirical evaluation on online continual learning. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 3518–3528, 2023. Sui, Q., Zhong, L., Ma, L., Wang, Z., Lei, Z., and Gao, S. Inter-class and intra-class relationships incorporated knowledge distillation for continual learning. IEEE Trans-actions on Artificial Intelligence , 1(01):1–10, 2025. Urettini, E. and Carta, A. Online curvature-aware re-play: Leveraging 2nd order information for online con-tinual learning. In Forty-second International Confer-ence on Machine Learning , 2025. URL https:// openreview.net/forum?id=ek5a5WC4TW .Van Horn, G., Mac Aodha, O., Song, Y., Cui, Y., Sun, C., Shepard, A., Adam, H., Perona, P., and Belongie, S. The inaturalist species classification and detection dataset. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 8769–8778, 2018. Vitter, J. S. Random sampling with a reservoir. ACM Transactions on Mathematical Software (TOMS) , 11(1): 37–57, 1985. Wang, L., Zhang, X., Su, H., and Zhu, J. A comprehen-sive survey of continual learning: Theory, method and application. IEEE transactions on pattern analysis and machine intelligence , 46(8):5362–5383, 2024. Wang, T. and Isola, P. Understanding contrastive represen-tation learning through alignment and uniformity on the hypersphere. In International conference on machine learning , pp. 9929–9939. PMLR, 2020. Yan, H., Wang, L., Ma, K., and Zhong, Y. Orchestrate la-tent expertise: Advancing online continual learning with multi-level supervision and reverse self-distillation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 23670–23680, 2024. Yu, X., Guo, Y., Gao, S., and Rosing, T. Scale: Online self-supervised lifelong learning without prior knowledge. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 2484–2495, 2023. Zbontar, J., Jing, L., Misra, I., LeCun, Y., and Deny, S. Barlow twins: Self-supervised learning via redun-dancy reduction. In Meila, M. and Zhang, T. (eds.), 
+
+Proceedings of the 38th International Conference on Machine Learning, ICML 2021, 18-24 July 2021, Vir-tual Event , volume 139 of Proceedings of Machine 
+
+11 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+Learning Research , pp. 12310–12320. PMLR, 2021. URL http://proceedings.mlr.press/v139/ zbontar21a.html .Zenke, F., Poole, B., and Ganguli, S. Continual learning through synaptic intelligence. In Precup, D. and Teh, Y. W. (eds.), Proceedings of the 34th International Con-ference on Machine Learning, ICML 2017, Sydney, NSW, Australia, 6-11 August 2017 , volume 70 of Proceedings of Machine Learning Research , pp. 3987–3995. PMLR, 2017. URL http://proceedings.mlr.press/ v70/zenke17a.html .Zhang, Y., Pfahringer, B., Frank, E., Bifet, A., Lim, N. J. S., and Jia, Y. A simple but strong baseline for online continual learning: Repeated augmented rehearsal. In Koyejo, S., Mohamed, S., Agarwal, A., Belgrave, D., Cho, K., and Oh, A. (eds.), Advances in Neural Information Processing Systems 35: Annual Conference on Neural Information Processing Systems 2022, NeurIPS 2022, New Orleans, LA, USA, November 28 - December 9, 2022 , 2022. URL http://papers. nips.cc/paper_files/paper/2022/hash/ 5ebbbac62b968254093023f1c95015d3-Abstract-Conference. html .Zhang, Y., Charlin, L., Zemel, R., and Ren, M. Integrating present and past in unsupervised continual learning. In 
+
+Conference on Lifelong Learning Agents , pp. 388–409. PMLR, 2025. 12 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+## A. Reservoir vs FIFO under Varying Training Length on ImageNet100 
+
+Figure 9 reports OCSSL accuracy on ImageNet100 across varying training lengths. Consistent with the behavior observed on CIFAR100 (Figure 2(a)), the stability-focused Reservoir achieves higher accuracy under shorter training schedules, indicating faster convergence, but its performance degrades as training length increases. In contrast, the plasticity-focused FIFO converges more slowly for short schedules, yet surpasses Reservoir under longer training regimes due to its improved plasticity. 
+
+## B. Per-Task Accuracy for FIFO and Reservoir Buffers 
+
+Figure 8 reports the probing accuracy curves for every task calculated at the end of each encountered task across CIFAR-100 training stream, for both FIFO and Reservoir. We observe for all tasks an ascending behavior in terms of accuracy, meaning that there is high cross-task transfer in this scenario, even when the model employs a FIFO buffer and thus rehearsal of earlier tasks is very limited. Nonetheless, and contrary to other papers (Hess et al., 2024), we do not consistently observe instances of feature forgetting: the highest accuracy for each task is often not reached after just finishing training said task. 
+
+## C. Additional Analysis of Latent Metrics 
+
+Here we show the relationship between the training loss and Latent Rehearsal Decay. We then complement the figure in the main paper (Figure 3) with an analysis of Latent Rehearsal Decay on CIFAR-100. Finally, we discuss other metrics proposed in the literature for measuring feature collapse or degradation and show that these phenomena are unrelated to Latent Rehearsal Decay in OCSSL. 
+
+C.1. Relationship between Training Loss and Latent Rehearsal Decay 
+
+Figure 10 relates the Self-Supervised training loss to probing accuracy and the Deviation and Overlap metrics on Ima-geNet100. We see that Reservoir has a flat loss curve, as the buffer composition changes slowly with time and is focused on stability. In later training phases, in correspondence with increasing Overlap and drop in Deviation, we suddenly switch to an instability phase for the loss. This is an indicator that, upon latent degradation, the training process is also disrupted and falls into an instable state. FIFO instead maintains a curve that is not smooth compared to Reservoir, caused by the continually shifting distribution inside the buffer. At the same time it does not suffer from loss instability. SOLAR maintains a higher training loss across the training process; this is evidence of the effect of the Deviation-Aware buffer that prioritizes high-loss samples during training. The loss curve is not as smooth as Reservoir, indicating that the internal buffer distribution changes more frequently and can thus incorporate plasticity. Nonetheless, SOLAR suffers from slight loss instability at the end of training, in correspondence with minor degradation of latent metrics in later training stages. 
+
+C.2. Latent Rehearsal Decay Metrics on CIFAR-100 
+
+Figure 11 reports the accuracy, Deviation, and Overlap metrics calculated across OCSSL training on CIFAR-100, for both Reservoir and FIFO. We see behavior similar to ImageNet (see Fig. 3), with both methods improving continuously during the initial Convergence phase , with decreasing Overlap, and slight decrease in Deviation. Again, the behavior of the two methods diverges in later training. Reservoir suffers from Latent Rehearsal Decay , which we observe as a sudden drop of Deviation and increase in Overlap. The degradation of the latent space is followed by a drop in the probing accuracy. Instead, FIFO continuously improves ( Plasticity Learning phase ) in probing accuracy and does not exhibit degradation of the latent space. However, differently from ImageNet, FIFO suffers an increase in Overlap in later phases, but still inferior to Reservoir’s increase in Overlap, and it is not accompanied by drops in accuracy or Deviation. This demonstrates that both metrics are required to degrade in order for performance to fall off and fall into Latent Rehearsal Decay. 
+
+C.3. Existing Metrics for Feature Degradation 
+
+Prior work links collapse in SSL to feature collapse (Li et al., 2022) or lack of uniformity in the latent space (Wang & Isola, 2020). In this section, we show that these phenomena are unrelated to Latent Rehearsal Decay in OCSSL. 
+
+Feature Collapse. Feature collapse in non-contrastive SSL methods (such as SimSiam) has been characterized by Li et al. 13 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 0.2 
+
+> 0.4
+> 0.6
+> 0.8
+
+Task 0 Task 1 Task 2 Task 3 Task 4 
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+
+Task 5 Task 6 Task 7 Task 8 Task 9 
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+
+Task 10 Task 11 Task 12 Task 13 Task 14    
+
+> 0510 15
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+
+Task 15    
+
+> 0510 15
+
+Task 16    
+
+> 0510 15
+
+Task 17    
+
+> 0510 15
+
+Task 18    
+
+> 0510 15
+
+Task 19 
+
+Training Task Index (i) 
+
+> Accuracy
+
+Per-Task Accuracies across Training Stream (Reservoir) 0.4 
+
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+
+Task 0 Task 1 Task 2 Task 3 Task 4 
+
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+
+Task 5 Task 6 Task 7 Task 8 Task 9 
+
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+
+Task 10 Task 11 Task 12 Task 13 Task 14    
+
+> 0510 15
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+
+Task 15    
+
+> 0510 15
+
+Task 16    
+
+> 0510 15
+
+Task 17    
+
+> 0510 15
+
+Task 18    
+
+> 0510 15
+
+Task 19 
+
+Training Task Index (i) 
+
+> Accuracy
+
+Per-Task Accuracies across Training Stream (FIFO) 
+
+Figure 8. Probing accuracy of each task at the end of each experience in the OCSSL stream (CIFAR-100) for Reservoir (top) and FIFO (bottom). The vertical dashed line indicates the point when the corresponding task just ended in the training stream. 
+
+14 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 1 2 3 4 5 6
+
+MB passes (tr. length) 
+
+42 
+
+44 
+
+46 
+
+48 
+
+> Final Acc. (%)
+
+Reservoir 
+
+FIFO 
+
+Figure 9. Reports the Final Accuracy for Reservoir and FIFO, on ImageNet100, trained on an OCSSL stream with varying training length, which is expressed as number of minibatch passes (i.e. training steps) per incoming stream minibatch. Reservoir converges faster for shorter schedules, but suffers unusual performance drops for longer schedules. 0 10k 20k 30k 40k 50k 60k 70k                    
+
+> Tr steps
+> 0.9  0.8  0.7  0.6  0.5  0.4
+> 010k 20k 30k 40k 50k 60k 70k
+> Tr steps
+> 010k 20k 30k 40k 50k 60k 70k
+> Tr steps
+> 20%  30%  40%  50%
+> 0.05  0.10  0.20  0.50
+> 0 5k  10k  15k  20k Reservoir FIFO SOLAR
+> Overlap Deviation Loss Accuracy
+
+Figure 10. The Figure shows Deviation, Overlap probing accuracy, and smoothed training SSL loss during OCSSL training on ImageNet100. We observe loss instabilities in correspondence with degradation of our metrics, especially for Reservoir. 0 5k 10k 15k 20k 25k      
+
+> tr steps
+> 20%  30%  40%  50%
+> 05k 10k 15k 20k 25k
+> tr steps
+> 0.1  0.2  0.5
+> 7k  10k  12k  15k  17k  20k  22k  25k
+
+Reservoir FIFO   
+
+> Latent Rehearsal
+> Decay phase
+> Convergence phase
+> Plasticity Learning
+> phase
+> Convergence phase
+> Accuracy Deviation Overlap
+
+Figure 11. Accuracy and Latent Rehearsal Decay metrics on CIFAR-100. Both FIFO and Reservoir have an initial Convergence phase , in which Accuracy increases and both metrics improve. After a certain point, Reservoir transitions into the Latent Rehearsal Decay phase , in which the sudden drop in accuracy is preceded by a sharp decrease in Deviation and increase in Overlap. 
+
+15 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 0 100 200 300 400 500               
+
+> Sorted singular value index
+> 10 1
+> 10 0
+> 10 1
+> 10 2
+> Singular Value
+> Reservoir
+> FIFO
+> 0100 200 300 400 500
+> Sorted singular value index
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> Normalized Singular Value  Reservoir
+> FIFO
+> 0100 200 300 400 500
+> Sorted singular value index
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Cumulative Explained Variance
+
+Figure 12. Plot showing no evidence of feature collapse for Reservoir on the CIFAR-100 test set expressed using the metrics based on analyzing SVD decompositions of feature representations (Li et al., 2022). 
+
+(2022) through the analysis of the singular value decomposition of feature representations. Following their methodology, we report three metrics. Given a feature matrix A ∈ RN ×d, we first normalize each row to unit norm and compute its singular values {σi}di=1 . (1) Singular value spectrum: the decay of {σi} as a function of their sorted index, which reflects the effective dimensionality of the learned representation. (2) Normalized singular value spectrum: the relative distribution of singular values, defined as ˜σi = σi/σ 1, where σ1 is the largest singular value. This metric shows how balanced or uneven the spread of information is across different feature directions. (3) Cumulative explained variance: the fraction of variance captured by the top-k singular values, defined as CEV (k) = Pki=1 σi/ Pdj=1 σj , which measures how quickly the singular values concentrate, with steeper curves indicating stronger collapse into a low-dimensional subspace. Figure 12 reports these three metrics on the entire test set features at the end of CIFAR-100 training for both Reservoir and FIFO. The two methods produce almost identical results, despite Reservoir having already exhibited Latent Rehearsal Decay. This indicates that Latent Rehearsal Decay is not related to feature collapse. We conduct a more fine-grained analysis of the singular value spectra of test features, extending previous results in Figure 20. Specifically, we report SVD-based feature metrics for both FIFO and Reservoir replay at three points during training – early, mid, and late – and we further disaggregate these metrics by whether the evaluated data originate from past, current, or future experiences relative to the training step. Across all settings, FIFO and Reservoir exhibit nearly identical plots on all three SVD metrics. The only notable discrepancy arises at the end of training, where FIFO shows a slightly stronger collapse in the last single singular direction; this effect appears mildly attenuated for Reservoir. Interestingly, the SVD curves for past and future experiences are nearly indistinguishable, suggesting that training on a particular distribution does not induce asymmetric distortions in the learned feature space. This observation is consistent with our OCSSL forgetting analysis, where future-task performance improves at the same pace of past-task performance (see Section 2). Even with this more detailed breakdown, we find no evidence linking feature collapse to Latent Rehearsal Decay. Finally, note that the tail of the singular value spectrum for the current experience is consistently lower than that of the aggregated past or future experiences. This is expected: the current task contains a narrower sample distribution, and thus some feature directions naturally exhibit lower variability within the current experience while remaining informative when considering broader past or future distributions. 
+
+Uniformity Loss. The uniformity loss, introduced by Wang & Isola (2020) as a measure of representation space quality, penalizes feature vectors that are not uniformly distributed on the latent hypersphere. Figure 13 correlates the uniformity loss to probing accuracy across OCSSL training on ImageNet100. After an initial drop in the loss all three methods (Reservoir, FIFO and SOLAR) show a gradual and constant increase of uniformity loss, with a similar behavior. The only difference that can be observed is slightly higher final uniformity loss for Reservoir, which may be weakly related to concurrent Latent Rehearsal Decay. Prior work links collapse in SSL to feature collapse (Li et al., 2022) or lack of uniformity in the latent space (Wang & Isola, 2020). In this section, we show that these phenomena are unrelated to Latent Rehearsal Decay in OCSSL. 16 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 0 20k 40k 60k             
+
+> tr steps
+> 20%  30%  40%  50%
+> 020k 40k 60k 020k 40k 60k
+> tr steps
+> 12
+> 10
+> 8
+> 6
+> 4
+> 2
+> 0
+> Reservoir FIFO SOLAR
+> Acc. Uniformity Past Exps Uniformity Current Exp Uniformity Future Exps
+
+Figure 13. Uniformity loss, a measure of SSL collapse (Wang & Isola, 2020), calculated on past, future and current experiences for Reservoir, FIFO and SOLAR on ImageNet100. 0 10k 20k 30k 40k 50k 60k 70k 
+
+tr steps 
+
+> 20%  30%  40%  50%
+
+0 10k 20k 30k 40k 50k 60k 70k 
+
+tr steps 
+
+> 0.05  0.10  0.20  0.50
+> 0 5k  10k  15k  20k
+> 0 1k  2k
+
+Reservoir FIFO 
+
+Accuracy Deviation Deviation Buffer Overlap Overlap Buffer 
+
+Figure 14. Probing accuracy, Deviation and Overlap metrics calculated on the entire training stream and only on buffer samples (training on ImageNet100), for both Reservoir and FIFO. We observe similar curves for metrics on the buffer and on the entire training data. 
+
+17 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+C.4. Latent Rehearsal Decay vs Buffer Overfitting 
+
+We argue that Latent Rehearsal Decay is fundamentally different from the well-studied notion of memory overfitting in supervised CL (Zhang et al., 2022; Khan et al., 2024). In particular, Yan et al. (2024) characterizes buffer overfitting as the relative performance gap between buffer and test accuracy, implicitly assuming that representations of buffer samples remain strong—with clear class boundaries—while representations for out-of-buffer samples deteriorate. Under this view, one would expect metric degradation to occur only for data outside the buffer. However, Figure 14 shows metric trajectories computed both on the full training set and on buffer samples alone, and the curves are highly aligned. For Reservoir, we observe a decrease in Deviation for both memory and non-memory samples; notably, the rise in overlap occurs in both subsets, indicating that sample discernibility declines even for the ostensibly overfit buffer items. We hypothesize that buffer overfitting acts as a contributing cause of Latent Rehearsal Decay, but it does not fully describes for the collapse we observe. 
+
+## D. Additional SOLAR Details 
+
+In this appendix we provide the full pseudocode of SOLAR. We show the relationship between the self-supervised loss and the Deviation metric, motivating the use of the SSL loss in SOLAR as an approximation of Deviation. Finally, we compare the true Overlap – which requires multiple backward passes and is infeasible in OCSSL – with the Online Overlap estimation employed by SOLAR, and we ablate the hyperparameter associated with the Overlap loss. 
+
+D.1. SOLAR Algorithm Pseudo-code 
+
+We provide the full pseudo-code of SOLAR in Algorithm 1 below. The algorithm consists of an E XTRACT function, which retrieves samples x from the Deviation-Aware buffer (accumulated in a previous time step via the U PDATE function), and forwards them through the backbone. The overlap loss Loverlap and the SSL loss ℓ are then computed, followed by backpropagation. Note that the overlap loss is computed using as targets, the average features ˆz and average angles ˆθ
+
+associated to the top-k SSL losses stored in the buffer (always via the U PDATE function). The U PDATE function is called after each backpropagation step to store current samples x, the current SSL loss ℓ, the average angle ˆθ, and the average feature representation ˆz in the Deviation Aware buffer. These are updated online for each sample j via an exponential moving average (EMA), resulting in lM 
+
+> j
+
+, zM 
+
+> j
+
+, θ M 
+
+> j
+
+. Note that higher loss samples are discarded when the maximum buffer size is reached. 
+
+D.2. Loss as a Proxy for Deviation 
+
+In this section we demonstrate that the per-sample self-supervised loss is a good proxy for estimating Deviation, as the two are positively related by: 
+
+d Dev 
+
+dLSSL 
+
+= 1
+
+n2 > 0 . . 
+
+Setup and Assumptions. Let us assume a generic (positive-only) SSL instance discrimination loss that tries to minimize the generic similarity S among feature views zi:
+
+LSSL = − X
+
+> i̸=j
+
+S(zi, zj ). (10) It is a reasonable assumption to consider S to be positively related to cosine similarity SC , thus, for simplicity, we set 
+
+S = SC .Recall the definition of Deviation from equation 1: Dev (Ta) = 1
+
+|Ta|2
+
+X
+
+> zia,zja∈Ta
+
+ 1 − SC (zia, zja) .
+
+18 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+Algorithm 1 Pseudo-code for the SOLAR training loop 
+
+Given: SSL model f , total batch size Btot , buffer M composed by entries ⟨xM 
+
+> i
+
+, ℓ M 
+
+> i
+
+, ¯zM 
+
+> i
+
+, ¯θM 
+
+> i
+
+, e M 
+
+> i
+
+⟩, buffer maximum size M .
+
+1: for bs in D do ▷ streaming minibatches 
+
+2: for p in np do 
+
+3: if p == 0 then ▷ if first minibatch pass train also on stream batch bs
+
+4: x ← EXTRACT (M, B tot − | bs|) ∪ bs
+
+5: else ▷ otherwise train only using M samples 
+
+6: x ← EXTRACT (M, B tot )
+
+7: end if 
+
+8: x1, x 2 ← Augmentations( x)
+
+9: z1, z2 ← f (x1), f (x2)
+
+10: ℓ ← L SSL (z1, z2) ▷ ℓ = [ ℓi]Btot  
+
+> i=1
+
+is the per sample SSL loss 
+
+11: Select K samples from M \ x, with highest ℓM → [TM 
+
+> K
+
+= ⟨¯zM 
+
+> k
+
+, ¯θM 
+
+> k
+
+⟩]Kk=1 
+
+12: Loverlap = 1
+
+> Btot
+
+PBtot  
+
+> i=1 1
+> K
+
+PKk=1 max(0 , Ov (Ti, TM 
+
+> k
+
+)) 
+
+13: L = ℓ.mean () + ωLoverlap 
+
+14: BACKPROP (L)
+
+15: UPDATE (M, x, ℓ, ˆz, ˆθ)
+
+16: end for 
+
+17: end for 
+
+18: function UPDATE (M, x, ℓ, ˆz, ˆθ)
+
+19: for xi ∈ x do 
+
+20: if xi ∈ M in position j then 
+
+21: ℓM 
+
+> j
+
+← 0.5 · ℓMj + 0 .5 · ℓi
+
+22: zM 
+
+> j
+
+← 0.5 · zM 
+
+> j
+
++ 0 .5 · zi
+
+23: θM 
+
+> j
+
+← 0.5 · θM 
+
+> j
+
++ 0 .5 · θi ▷ EMA update for samples already in buffer 
+
+24: else 
+
+25: M.append( ⟨xi, ℓ i, ˆzi, ˆθi, 0⟩) ▷ append for new samples 
+
+26: end if 
+
+27: end for 
+
+28: if |M| > M then 
+
+29: r ← |M| − M ▷ r is the number of samples to remove 
+
+30: Sort M in ascending order by ℓM ▷ remove lowest loss samples 
+
+31: Remove the first r samples from M
+
+32: end if 
+
+33: end function 
+
+34: function EXTRACT (M, b ) ▷ b is the number of samples to extract 
+
+35: ¯e ← MinMaxNormalization( eM)
+
+36: p ← 1 − Softmax (¯ e)
+
+37: I ← ∅ ▷ initialize extraction set 
+
+38: for j = 1 to b do ▷ sampling without replacement 
+
+39: Sample index i from {1, . . . , N } \ I with probability pi
+
+40: I ← I ∪ i
+
+41: eM 
+
+> i
+
+← eM 
+
+> i
+
++ 1 ▷ increase extraction count for sample i
+
+42: end for 
+
+43: return [xM 
+
+> i
+
+]i∈I 
+
+44: end function 
+
+19 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+Now we rewrite this formulation by sampling a fixed number of views, n, from Ta:
+
+Dev = 1
+
+n2
+
+> n
+
+X
+
+> i=1
+> n
+
+X
+
+> j=1
+
+ 1 − SC (zi, zj ) = 1 − 1
+
+n2
+
+> n
+
+X
+
+> i=1
+> n
+
+X
+
+> j=1
+
+SC (zi, zj )
+
+| {z }
+
+> =: ¯S
+
+, (11) where ¯S is the average (including self-pairs) cosine similarity. 
+
+Relating LSSL and Dev . We can rewrite equation 10 in terms of the double sum in equation 11: 
+
+LSSL = −
+
+> n
+
+X
+
+> i=1
+> n
+
+X
+
+> j=1
+
+SC (zi, zj ) + 
+
+> n
+
+X
+
+> i=1
+
+SC (zi, zi) = −n2 ¯S + n , 
+
+because SC (zi, zi) = 1 for every i. Thus we obtain: 
+
+n2 ¯S = n − L SSL .
+
+Plug this into equation 11 (recall Dev = 1 − ¯S) to obtain 
+
+Dev = 1 − n − L SSL 
+
+n2 = LSSL 
+
+n2 + n2 − nn2 = LSSL 
+
+n2 + n − 1
+
+n .
+
+Conclusion. The preceding identity shows that Dev is an affine (linear + constant) function of the loss LSSL :
+
+Dev = 1
+
+n2 LSSL + n − 1
+
+n .
+
+Hence we obtain our initial statement: d Dev 
+
+dLSSL 
+
+= 1
+
+n2 > 0,
+
+thus proving that Dev is positively related to LSSL : increasing LSSL increases Dev , and decreasing LSSL decreases Dev . In particular, minimizing the loss LSSL during training reduces the Deviation metric. 
+
+D.3. Online Estimation of Overlap 
+
+We compare the true Overlap – which is calculated offline requiring multiple forward passes and is infeasible in OCSSL – with the Online Overlap estimation employed by SOLAR. Figure 15 shows the true Overlap , the true overlap calculated on the buffer only – both calculated offline with a forward pass on the data – and the online Overlap, which is again calculated during training only on the buffer, employing zti and θti extracted during training. Online Overlap estimation serves as a reliable proxy for the true Overlap . In practice, we observe that Online Overlap closely matches the ground-truth Overlap computed over the buffer only. We do observe some deviation between the true Overlap and its online estimation, though both exhibit the same first-order trends. These discrepancies can be largely attributed to the buffer’s limited representativeness of the entire data stream, rather than to any intrinsic weakness of the estimation procedure itself. This distinction is important: it suggests that the quality of the buffer, rather than the quality of the estimator, ultimately governs the accuracy of the measurement. 
+
+D.4. Ablation on the ω Hyperparameter for Loverlap 
+
+Figure 16 presents an ablation study on the hyperparameter ω, which controls the strength of the overlap loss Loverlap 
+
+in SOLAR. Both Average and Final Accuracy on ImageNet100 are reported. We observe that ω has a limited effect on performance, indicating that SOLAR is relatively insensitive to the choice of this hyperparameter – an advantageous property in online settings such as OCSSL. Overall, slightly lower Final Accuracy occur at smallest values of ω, consistent with the ablation results in Table 2. This behavior aligns with expectations, as lower ω makes SOLAR closer to just the Deviation Aware buffer, which performs worse than the full SOLAR formulation in Final Accuracy. We use ω = 0 .3 only for the main experiments on ImageNet100. For all other setups we used a fixed ω = 1 .0.20 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 0 10k 20k 30k 40k 50k 60k 70k   
+
+> Online Overlap vs True Overlap
+> Online Overlap (Buffer) True Overlap (Buffer) True Overlap
+
+Figure 15. Online versus true Overlap calculated for SOLAR on ImageNet100, with |M| = 2000 . Online Overlap estimation is a good proxy for the true Overlap . Online Overlap closely matches the true Overlap calculated on the buffer only, demonstrating that the slight mismatch is only due to the buffer not being representative enough of the entire stream. 0.1 0.3 1.0 3.0 
+
+> 40
+> 42
+> 44
+> 46
+> 48
+> 50
+> 52
+> 54
+> Final Accuracy (%)
+
+Ablation: Final Accuracy    
+
+> Final Accuracy
+> 0.1 0.3 1.0 3.0
+> 38
+> 39
+> 40
+> 41
+> 42
+> 43
+> 44
+> 45
+> Average Accuracy (%)
+
+Ablation: Average Accuracy 
+
+> Average Accuracy
+
+Figure 16. Ablation on ω, the hyperparameter controlling overlap loss Moverlap strength. The mean and standard deviation of Final and Average Accuracy for ImageNet100 are reported. 
+
+Table 4. Ablation study on effect of extraction criterion (left) and use of EMA to update buffer metrics (right). 
+
+CIFAR-100 ImageNet100 EXTRACTION FINAL /A VG . FINAL /A VG .SOLAR + random extraction 48 .7/42 .2 43 .3/42 .0
+
+SOLAR + ℓM 
+
+> i
+
+extraction 49 .4/42 .0 41 .9/42 .3
+
+SOLAR + eM 
+
+> i
+
+extraction 49 .5/42 .3 49 .4/42 .8
+
+CIFAR-100 ImageNet100 EMA M STATISTICS FINAL /A VG . FINAL /A VG .SOLAR ✗ 49 .0/41 .3 49 .4/42 .0
+
+SOLAR ✓ 49 .5/42 .3 49 .4/42 .8
+
+21 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR  
+
+> Table 5. Comparison of components of methods prioritizing “hard” samples in memory replay.
+
+METHOD UPDATE POLICY EXTRACT POLICY COMPUTATIONAL SCALABILITY 
+
+MIR Reservoir Max loss interference ✗
+
+GSS Max gradient diversity Random ✗
+
+PER FIFO Soft priority on highest loss ✓
+
+LARS Reservoir + lowest-loss elimination Random ✓
+
+Deviation-Aware Lowest loss Soft priority on lowest eM 
+
+> i
+
+✓
+
+D.5. Additional Ablations on SOLAR 
+
+Table 4 analyzes the effects of different sample extraction strategies in the Deviation Aware Buffer (left) and the use of EMA-updated metrics for updating online buffer statistics (namely ℓM 
+
+> i
+
+, zM 
+
+> i
+
+, θM 
+
+> i
+
+). On CIFAR-100, the extraction strategy has minimal impact, with a slight advantage for using softmax of the extraction count ( eM 
+
+> i
+
+). Instead, on ImageNet100, using random or extraction based on the softmax of normalized per-sample loss ( ℓM 
+
+> i
+
+) yields far inferior results in final accuracy. This demonstrates the need for this element in our method, especially for more complex datasets such as ImageNet in which an additional component is needed to enhance diversity and thus Deviation. In particular, we hypothesize that the loss-based extraction is redundant with the loss-based criterion for sample storage in the buffer, causing too strong of a bias towards high-loss samples during training, which negatively impacts diversity. Instead, the use of EMA metrics has limited impact on Final Accuracy, favoring more Average Accuracy. Coherently with previous studies (Cignoni et al., 2025a; Purushwalkam et al., 2022), the use of EMA statistics enhances their reliability across all stream training. 
+
+D.6. Comparison with Other Methods Prioritizing “Hard” Buffer Samples. 
+
+In this section, we provide a theoretical comparison of our novel Deviation-Aware buffer and existing memory replay strategies prioritizing “hard” samples. This kind of approach has been widely studied in the literature (Schaul et al., 2015), including in CL (Aljundi et al., 2019b;a; Buzzega et al., 2021). We note that existing methods differ in their underlying motivations for prioritizing “hard” samples, which in turn leads to implementations that substantially differ from our deviation-aware buffer and are often ill-suited for OCSSL. MIR (Aljundi et al., 2019a) replays buffer samples that induce the largest loss interference, while GSS (Aljundi et al., 2019b) maintains a buffer of samples with maximally diverse gradients. Although effective, both approaches are prohibitively expensive in the OCSSL setting: MIR requires an additional forward pass over the entire buffer at each step, and GSS repeatedly estimates gradients for buffer samples at each step. A seemingly more efficient alternative is PER (Schaul et al., 2015), which uses a FIFO buffer combined with prioritized sampling based on TD-error. In OCSSL, this mechanism can be instantiated by replacing TD-error with SSL loss. However, our Deviation-Aware buffer fundamentally differs from PER. PER biases only the extraction policy toward hard samples, while leaving the buffer update mechanism untouched—thus failing to control which samples populate the buffer over time. As a result, PER performs on par with FIFO in our experiments (Table 1), underscoring the importance of managing the buffer composition rather than only its sampling distribution. LARS (Buzzega et al., 2021) also adopts a loss-based criterion, but only for deciding which sample to evict upon insertion. Despite this modification, its dynamics remain close to Reservoir: insertion probabilities monotonically shrink, causing the buffer to converge toward a fixed subset. Consequently, its performance closely mirrors that of Reservoir (Table 1). In contrast, our Deviation-Aware buffer jointly addresses both update and extraction policies, explicitly promoting hard samples while maintaining diversity throughout training. This design is grounded in OCSSL-specific insights—namely, our new deviation metrics and the Latent Rehearsal Decay analysis—which together provide principled motivation for the proposed approach. Table 5 summarizes the key differences among the methods reviewed in this section. 22 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 0 10k 20k 30k 40k 50k 60k 70k    
+
+> tr steps
+> 20%  30%  40%  50%
+> SOLAR CLA-R CLA-E
+> Figure 17. Dynamic regularization versus fixed distillation. These training curves on ImageNet100 show that CLA-E converges slowly when compared to SOLAR, while CLA-R, despite fast convergence, suffers from Latent Rehearsal Decay.
+
+## E. More on Experiments 
+
+In this appendix we provide additional details on the experimental setup used in the main paper, analyze the distillation regularization employed by CLA-R and its relationship to Latent Rehearsal Decay, and extend the analysis of buffer size introduced in the main paper with experiments on ImageNet100. 
+
+E.1. Additional Details on Experimental Setup Backbone. We chose ResNet-18 as backbone, initialized from scratch, as it is a lightweight encoder network, widely tested in CL (Soutif-Cormerais et al., 2023; Urettini & Carta, 2025), and especially in OCSSL (Yu et al., 2023; Cignoni et al., 2025a). As commonly done in the literature, for CIFAR-100 we substituted the first 7x7 convolutional layer with a 3x3 convolutional layer and removed the first MaxPool. 
+
+Optimization. We employ plain SGD, with momentum = 0.9 and weight decay = 1e-4. We employed a different learning rate for each of the 3 benchmarks, respectively 0.05, 0.02 and 0.01 respectively for CIFAR-100, ImageNet100 and CLEAR100. All methods use these same learning rates for the corresponding benchmarks. All other hyperparameters of the methods were kept fixed as in their original implementation. 
+
+Probing. Probing is performed with a linear probe trained with a minibatch size of 256 and initial learning rate of 0.05, which decreases by a factor of 3 whenever the validation accuracy stops improving. Training of the probe stops when a minimum learning rate or 100 epochs are reached. We reserve 10% of each training split as validation data. 
+
+Augmentations. Extraction of multiple views from a single image is performed in two ways: first, to obtain the two views used for the SSL instance discrimination training; secondly, to extract 20 views for calculating overlap and deviation metrics offline. We employ the same set of augmentations for all methods: RandomCrop , RandomHorizontalFlip , randomly applied ColorJitter and RandomGrayscale .
+
+SCALE. SCALE is the only tested strategy that does not employ SimSiam as the underlying SSL method, as it has its own contrastive loss Lcont . Additionally, the original implementation of the PSA buffer would require a forward pass to calculate features of the buffer that are as recent as possible; this would be not only computationally burdensome, but would also break OCSSL assumptions of lightweight training. For this reason, we estimate buffer features via an EMA instead, similarly as done in SOLAR for ¯zM 
+
+> i
+
+; this EMA update of buffer features is exploited also by other OCSSL strategies (Purushwalkam et al., 2022; Cignoni et al., 2025a). 
+
+E.2. Further Anlaysis of CLA 
+
+Figure 17 shows the training curves for CLA-E, CLA-R, and SOLAR on ImageNet100. In the early phases, CLA-R achieves accuracy comparable to SOLAR, highlighting its fast convergence. However, towards the end of training, its accuracy drops – imilarly to Reservoir in Figure 3 – a phenomenon that can be attributed to Latent Rehearsal Decay. In contrast, CLA-E 23 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 500 1000 2000        
+
+> ||
+> 32.5
+> 35.0
+> 37.5
+> 40.0
+> 42.5
+> 45.0
+> 47.5
+> 50.0
+> Final Acc. (%)
+> Final Acc. ImageNet100
+> 500 1000 2000
+> ||
+> 36
+> 37
+> 38
+> 39
+> 40
+> 41
+> 42
+> 43
+> Average Acc. (%)
+> Average Acc. ImageNet100
+> Reservoir FIFO Minred SOLAR
+
+Figure 18. Changing buffer sizes on ImageNet100. We note that MinRed performance is greatly impacted by the reduced buffer size. 
+
+exhibits much higher plasticity: its accuracy remains almost flat throughout training, with weaker performance in the initial stages. Nevertheless, akin to FIFO (see Figure 3), its plasticity prevents accuracy degradation over time. 
+
+E.3. Changing Buffer Size on ImageNet100 
+
+Figure 18 reports Final and Average Accuracy on ImageNet100 when the maximum dimension of the buffer |M| is changed. Similar to CIFAR-100, the final accuracy of Reservoir sampling is strongly affected by a reduced buffer size, whereas FIFO remains comparatively more stable. In contrast to CIFAR-100 (see Figure 6), however, the performance of MinRed also degrades under reduced buffer capacity, suggesting that constructing a maximally representative set of samples is impractical for complex datasets when the available buffer is too small. SOLAR, on the other hand, remains largely unaffected by buffer size reductions and continues to outperform other methods in terms of Average Accuracy. 
+
+E.4. Training Times 
+
+Table 6. Training times (in seconds) of compared methods calculated on a single task on ImageNet100. 
+
+METHOD Time ( s)Reservoir 2146 FIFO 2133 MinRed 2061 LARS 2150 PER 2215 SCALE 4288 CLA-E 2235 CLA-R 2126 SOLAR 2409 Table 6 reports the traininig times of different methods calculated on a single task while training on an OCSSL stream of ImageNet100, using the same setup as the main experiments (Sec. 5). We exclude from time calculations the probing and the offline calculation of the metrics, as they are not used in training but only needed for evaluation purposes. All methods exhibit comparable runtimes, with the exception of SCALE, which incurs a substantial overhead due to the PSA buffer. SOLAR requires slightly longer runtime than the other methods, likely because it introduces both an additional loss term and non-trivial buffer policies. 24 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR  
+
+> Table 7. Results on streaming online CIFAR-100 (20 experiences) and ImageNet-100 (20 experiences), with SimCLR backbone. Best in
+> bold , second best underlined.
+
+CIFAR-100 (20 exps) ImageNet100 (20 exps) METHOD BUFFER DISTILL . FINAL ACC . AVG . A CC . FINAL ACC . AVG . A CC .ER Reservoir ✗ 45 .16 42 .03 47 .90 43 .02 
+
+ER FIFO ✗ 46 .35 41 .81 49 .38 42 .12 
+
+MinRed MinRed ✗ 43 .92 43 .05 45 .54 43 .30 
+
+SCALE PSA ✓ 32 .15 27 .28 36 .45 31 .48 
+
+SOLAR Deviation-Aware ✗ 46 .62 43 .35 49 .10 43 .53 0 5k 10k 15k 20k 25k    
+
+> tr steps
+> 25
+> 30
+> 35
+> 40
+> 45
+> Acc. (%)
+> Reservoir FIFO SOLAR
+> Figure 19. Probing accuracies during training on CIFAR100 with SimCLR.
+
+E.5. SimCLR Experiments 
+
+We replicated experiments with the main experimental setup (see Section 5), but using SimCLR (Chen et al., 2020) instead of SimSiam as the underlying SSL method. Even drastically changing the SSL loss, and similar insights can be deducted. Again, FIFO scores very well in Final accuracy, but falls slightly behind in Average Accuracy. On the other hand, we still have Reservoir underperforming in Final accuracy but scoring a competitive Average Accuracy. The effect of Latent Rehearsal Decay for Reservoir seems less damaging, while MinRed instead seems still impacted by it, with lower Final Accuracy. SCALE, again, underfits on both datasets. SOLAR performs best, except for Final Accuracy on ImageNet100, falling slightly behind FIFO. Figure 19 presents probing accuracies during OCSSL training on CIFAR100 with SimCLR. As expected, FIFO is outperformed by Reservoir at the beginning of training, while the situation reverses in later stages and SOLAR stays on top most of the time. Unlike SimSiam, Reservoir does not present a sudden drop of accuracy, but rather a small inflection of the curve. In general, we hypothesize that SimCLR contrastive SSL loss has a similar effect to SOLAR Loverlap as they minimize conceptually similar losses. 
+
+E.6. iNaturalist setup 
+
+iNaturalist (Van Horn et al., 2018) is a large dataset with natural images and hierarchical unbalanced labels. Labels are hierarchical in the sense that they reflect the biological taxonomy (e.g., genus, family, order) of the species depicted in each image. We employ this dataset to simulate a real world scenario with long OCSSL training runs starting from a pretrained network. Hierarchical labels are employed both to define task identities when constructing the continual learning stream and to provide target labels for prediction during probing, with task identities and prediction targets drawn from different levels of the taxonomic hierarchy. Specifically, we start by pretraining a ResNet-18 backbone with SimSiam, using multi-epoch offline training on the Plantae category, consisting of a total of 213550 images. We train the model for 100 epochs, using SGD with a cosine annealing scheduler with warmup, having an initial learning rate of 0.01. Then, the pretrained model is used as basis for further training in an OCSSL scenario, instead of starting from scratch as in previous experiments. We use 25 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 
+
+the Animalia iNaturalist category for stream training and evaluation, having a total of 269400 training samples. Each task in the OCSSL stream corresponds to each of Class categories present in Animalia , while 152 different Order categories are used as labels for probing, resulting in unbalanced tasks each containing similar classes. This setup allowed us to simulate a real-world scenario, with large distribution shifts and a pretrained network – whose performance we would like to improve – already available. 26 Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR 0 100 200 300 400 500 
+
+Sorted singular value index 
+
+10 3
+
+10 2
+
+10 1
+
+10 0
+
+10 1
+
+10 2
+
+> Singular Value
+
+Train up to exp. 0 - SVD 
+
+0 100 200 300 400 500 
+
+Sorted singular value index 
+
+10 4
+
+10 3
+
+10 2
+
+10 1
+
+10 0
+
+> Normalized Singular Value
+
+Train up to exp. 0 - Normalized SVD 
+
+0 100 200 300 400 500 
+
+Sorted singular value index 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Cumulative Explained Variance
+
+Train up to exp. 0 - Cum. Variance SVD 
+
+0 100 200 300 400 500 
+
+Sorted singular value index 
+
+10 2
+
+10 1
+
+10 0
+
+10 1
+
+10 2
+
+> Singular Value
+
+Train up to exp. 9 - SVD 
+
+0 100 200 300 400 500 
+
+Sorted singular value index 
+
+10 4
+
+10 3
+
+10 2
+
+10 1
+
+10 0
+
+> Normalized Singular Value
+
+Train up to exp. 9 - Normalized SVD 
+
+0 100 200 300 400 500 
+
+Sorted singular value index 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Cumulative Explained Variance
+
+Train up to exp. 9 - Cum. Variance SVD 
+
+0 100 200 300 400 500 
+
+Sorted singular value index 
+
+10 2
+
+10 1
+
+10 0
+
+10 1
+
+10 2
+
+> Singular Value
+
+Train up to exp. 19 - SVD 
+
+0 100 200 300 400 500 
+
+Sorted singular value index 
+
+10 4
+
+10 3
+
+10 2
+
+10 1
+
+10 0
+
+> Normalized Singular Value
+
+Train up to exp. 19 - Normalized SVD 
+
+0 100 200 300 400 500 
+
+Sorted singular value index 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Cumulative Explained Variance
+
+Train up to exp. 19 - Cum. Variance SVD      
+
+> Reservoir current Reservoir past Reservoir future FIFO current FIFO past FIFO future
+
+Figure 20. Figure reports metrics based on analyzing SVD decompositions of feature representations (Li et al., 2022) for Reservoir and FIFO. Features are extracted at the beginning, middle and end of OCSSL training on CIFAR100 (each row of plots shows metrics for each training checkpoint). We include lines for features SVD on current, past and future experiences, relative to the training checkpoint experience. 
+
+27

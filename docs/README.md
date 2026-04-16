@@ -6,88 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-15
-- 运行时间：2026-04-15 20:36:38 UTC
+- 最新运行日期：2026-04-16
+- 运行时间：2026-04-16 20:09:27 UTC
 - 运行状态：成功
-- 本次总论文数：22
-- 精读区：10
-- 速读区：12
+- 本次总论文数：17
+- 精读区：6
+- 速读区：11
 
 ### 今日简报（AI）
-今日深度研读 22 篇视觉分割前沿论文，重点攻克视频语义理解与医疗影像的跨域泛化难题。
-满分论文提出的蒸馏辅助测试时自适应（TTA）技术，为视频分割模型在未知环境下的性能飞跃提供了新范式。
-建议开发者关注轻量化 T-Gated Adapter 等技术，在保证医疗分割精度的同时实现高效的模态适配。
-- 详情：[/202604/15/README](/202604/15/README)
+今日深度复盘 17 篇顶尖论文，聚焦测试时自适应（TTA）在视频分割与大语言模型中的革命性应用。
+核心结论指出，无需训练的对比学习与蒸馏辅助适配正显著提升模型在复杂动态场景下的推理表现。
+推荐普通读者关注“从权重到激活”的操控技术，探索模型动态适配的下一个前沿。
+- 详情：[/202604/16/README](/202604/16/README)
 
 ### 精读区论文标签
-1. [Bootstrapping Video Semantic Segmentation Model via Distillation-assisted Test-Time Adaptation](/202604/15/2604.10950v1-bootstrapping-video-semantic-segmentation-model-via-distillation-assisted-test-time-adaptation)  
-   标签：评分：10.0/10、query:tta-seg
-   evidence：用于视频语义分割的蒸馏辅助测试时间自适应
-2. [Bootstrapping Video Semantic Segmentation Model via Distillation-assisted Test-Time Adaptation](/202604/15/2604.10950v2-bootstrapping-video-semantic-segmentation-model-via-distillation-assisted-test-time-adaptation)  
-   标签：评分：10.0/10、query:tta-seg
-   evidence：提出了用于视频语义分割的蒸馏辅助测试时间自适应
-3. [Dual-Modality Anchor-Guided Filtering for Test-time Prompt Tuning](/202604/15/2604.12403v1-dual-modality-anchor-guided-filtering-for-test-time-prompt-tuning)  
+1. [Bootstrapping Video Semantic Segmentation Model via Distillation-assisted Test-Time Adaptation](/202604/16/2604.10950v2-bootstrapping-video-semantic-segmentation-model-via-distillation-assisted-test-time-adaptation)  
    标签：评分：10.0/10、query:tta
-   evidence：视觉语言模型的测试时间提示微调
-4. [LightTune: Lightweight Forward-Only Online Fine-Tuning with Applications to Link Adaptation](/202604/15/2604.12406v1-lighttune-lightweight-forward-only-online-fine-tuning-with-applications-to-link-adaptation)  
+   evidence：视频语义分割的高效测试时间自适应 (TTA)
+2. [Training-Free Test-Time Contrastive Learning for Large Language Models](/202604/16/2604.13552v1-training-free-test-time-contrastive-learning-for-large-language-models)  
    标签：评分：10.0/10、query:tta
-   evidence：使用实时测试时间数据的轻量级在线微调
-5. [Action Images: End-to-End Policy Learning via Multiview Video Generation](/202604/15/2604.06168v1-action-images-end-to-end-policy-learning-via-multiview-video-generation)  
+   evidence：大语言模型的免训练测试时间对比学习
+3. [Bootstrapping Video Semantic Segmentation Model via Distillation-assisted Test-Time Adaptation](/202604/16/2604.10950v1-bootstrapping-video-semantic-segmentation-model-via-distillation-assisted-test-time-adaptation)  
    标签：评分：9.0/10、query:tta
-   evidence：通过视频生成的机器人策略学习统一世界动作模型 (WAM)
-6. [Vision-Language-Action Model, Robustness, Multi-modal Learning, Robot Manipulation](/202604/15/2604.10055v1-vision-language-action-model-robustness-multi-modal-learning-robot-manipulation)  
+   evidence：无需标注视频的视频语义分割高效测试时间自适应 (TTA)
+4. [Adaptive Test-Time Scaling for Zero-Shot Respiratory Audio Classification](/202604/16/2604.12647v1-adaptive-test-time-scaling-for-zero-shot-respiratory-audio-classification)  
    标签：评分：9.0/10、query:tta
-   evidence：视觉-语言-动作（VLA）模型鲁棒性的解耦微调
-7. [Generative Data-engine Foundation Model for Universal Few-shot 2D Vascular Image Segmentation](/202604/15/2604.10737v1-generative-data-engine-foundation-model-for-universal-few-shot-2d-vascular-image-segmentation)  
-   标签：评分：9.0/10、query:tta-seg
-   evidence：通用少样本二维血管图像分割
-8. [EviRCOD: Evidence-Guided Probabilistic Decoding for Referring Camouflaged Object Detection](/202604/15/2604.10894v1-evircod-evidence-guided-probabilistic-decoding-for-referring-camouflaged-object-detection)  
-   标签：评分：9.0/10、query:tta-seg
-   evidence：专注于使用证据引导的概率解码来分割伪装目标。
-9. [HyperLiDAR: Adaptive Post-Deployment LiDAR Segmentation via Hyperdimensional Computing](/202604/15/2604.12331v1-hyperlidar-adaptive-post-deployment-lidar-segmentation-via-hyperdimensional-computing)  
+   evidence：零样本推理的自适应测试时间缩放框架
+5. [Learning Inference Concurrency in DynamicGate MLP Structural and Mathematical Justification](/202604/16/2604.13546v1-learning-inference-concurrency-in-dynamicgate-mlp-structural-and-mathematical-justification)  
    标签：评分：9.0/10、query:tta
-   evidence：边缘设备流式数据的自适应部署后LiDAR分割
-10. [Modality-Agnostic Prompt Learning for Multi-Modal Camouflaged Object Detection](/202604/15/2604.12380v1-modality-agnostic-prompt-learning-for-multi-modal-camouflaged-object-detection)  
-   标签：评分：9.0/10、query:tta-seg
-   evidence：多模态伪装目标检测的参数高效自适应
+   evidence：在线自适应学习与推理并发的数学证明
+6. [STRONG-VLA: Decoupled Robustness Learning for Vision-Language-Action Models under Multimodal Perturbations](/202604/16/2604.10055v2-strong-vla-decoupled-robustness-learning-for-vision-language-action-models-under-multimodal-perturbations)  
+   标签：评分：8.0/10、query:tta
+   evidence：视觉-语言-动作 (VLA) 模型在多模态扰动下仍然非常脆弱
 
 ### 速读区论文标签
-1. [LUMOS: Universal Semi-Supervised OCT Retinal Layer Segmentation with Hierarchical Reliable Mutual Learning](/202604/15/2604.05388v1-lumos-universal-semi-supervised-oct-retinal-layer-segmentation-with-hierarchical-reliable-mutual-learning)  
-   标签：评分：8.0/10、query:tta-seg
-   evidence：利用深度学习和半监督学习进行医学视网膜分层分割
-2. [CRISP: Rank-Guided Iterative Squeezing for Robust Medical Image Segmentation under Domain Shift](/202604/15/2604.05409v1-crisp-rank-guided-iterative-squeezing-for-robust-medical-image-segmentation-under-domain-shift)  
-   标签：评分：8.0/10、query:tta-seg
-   evidence：利用秩稳定性在领域偏移下进行鲁棒医学图像分割
-3. [T-Gated Adapter: A Lightweight Temporal Adapter for Vision-Language Medical Segmentation](/202604/15/2604.08167v1-t-gated-adapter-a-lightweight-temporal-adapter-for-vision-language-medical-segmentation)  
-   标签：评分：8.0/10、query:tta-seg
-   evidence：用于解剖结构视觉语言医学分割的轻量级时间适配器。
-4. [Adaptive Dual Residual U-Net with Attention Gate and Multiscale Spatial Attention Mechanisms (ADRUwAMS)](/202604/15/2604.08893v1-adaptive-dual-residual-u-net-with-attention-gate-and-multiscale-spatial-attention-mechanisms-adruwams)  
-   标签：评分：8.0/10、query:tta-seg
-   evidence：使用深度学习进行神经胶质瘤脑肿瘤的自动分割
-5. [Few-Shot Semantic Segmentation Meets SAM3](/202604/15/2604.05433v1-few-shot-semantic-segmentation-meets-sam3)  
-   标签：评分：7.0/10、query:tta-seg
-   evidence：使用 SAM3 处理分布偏移的语义分割免训练解决方案
-6. [Unifying VLM-Guided Flow Matching and Spectral Anomaly Detection for Interpretable Veterinary Diagnosis](/202604/15/2604.05482v1-unifying-vlm-guided-flow-matching-and-spectral-anomaly-detection-for-interpretable-veterinary-diagnosis)  
-   标签：评分：7.0/10、query:tta-seg
-   evidence：VLM引导的兽医诊断病灶分割
-7. [Semantic-Topological Graph Reasoning for Language-Guided Pulmonary Screening](/202604/15/2604.05620v1-semantic-topological-graph-reasoning-for-language-guided-pulmonary-screening)  
-   标签：评分：7.0/10、query:tta-seg
-   evidence：利用基础模型进行语言引导的肺部筛查和医学病灶分割
-8. [Leveraging Image Editing Foundation Models for Data-Efficient CT Metal Artifact Reduction](/202604/15/2604.05934v1-leveraging-image-editing-foundation-models-for-data-efficient-ct-metal-artifact-reduction)  
-   标签：评分：7.0/10、query:tta-seg
-   evidence：利用视觉语言基础模型进行医学图像伪影去除和领域自适应。
-9. [Region-R1: Reinforcing Query-Side Region Cropping for Multi-Modal Re-Ranking](/202604/15/2604.05268v2-region-r1-reinforcing-query-side-region-cropping-for-multi-modal-re-ranking)  
+1. [Learning to Adapt: In-Context Learning Beyond Stationarity](/202604/16/2604.10946v1-learning-to-adapt-in-context-learning-beyond-stationarity)  
+   标签：评分：8.0/10、query:tta
+   evidence：非平稳分布下上下文学习的理论分析
+2. [POINTS-Long: Adaptive Dual-Mode Visual Reasoning in MLLMs](/202604/16/2604.11627v1-points-long-adaptive-dual-mode-visual-reasoning-in-mllms)  
+   标签：评分：8.0/10、query:tta
+   evidence：多模态大模型在流式场景下的自适应双模式视觉推理
+3. [From Weights to Activations: Is Steering the Next Frontier of Adaptation?](/202604/16/2604.14090v1-from-weights-to-activations-is-steering-the-next-frontier-of-adaptation)  
+   标签：评分：8.0/10、query:tta
+   evidence：将激活转向作为模型自适应形式的理论框架比较
+4. [WOMBET: World Model-based Experience Transfer for Robust and Sample-efficient Reinforcement Learning](/202604/16/2604.08958v2-wombet-world-model-based-experience-transfer-for-robust-and-sample-efficient-reinforcement-learning)  
+   标签：评分：7.0/10、query:tta
+   evidence：机器人中基于世界模型的经验迁移与在线微调
+5. [Drift-Aware Online Dynamic Learning for Nonstationary Multivariate Time Series: Application to Sintering Quality Prediction](/202604/16/2604.09358v1-drift-aware-online-dynamic-learning-for-nonstationary-multivariate-time-series-application-to-sintering-quality-prediction)  
+   标签：评分：7.0/10、query:tta
+   evidence：非平稳多变量时间序列的在线自适应机制
+6. [ProGAL-VLA: Grounded Alignment through Prospective Reasoning in Vision-Language-Action Models](/202604/16/2604.09824v1-progal-vla-grounded-alignment-through-prospective-reasoning-in-vision-language-action-models)  
+   标签：评分：7.0/10、query:tta
+   evidence：具有前瞻性推理和接地对齐的视觉-语言-动作模型
+7. [Preventing Latent Rehearsal Decay in Online Continual SSL with SOLAR](/202604/16/2604.10586v1-preventing-latent-rehearsal-decay-in-online-continual-ssl-with-solar)  
+   标签：评分：7.0/10、query:tta
+   evidence：针对非平稳数据流的在线持续自监督学习
+8. [BridgeSim: Unveiling the OL-CL Gap in End-to-End Autonomous Driving](/202604/16/2604.10856v1-bridgesim-unveiling-the-ol-cl-gap-in-end-to-end-autonomous-driving)  
+   标签：评分：7.0/10、query:tta
+   evidence：弥合自动驾驶中开环预训练与闭环部署差距的自适应技术
+9. [Toward Hardware-Agnostic Quadrupedal World Models via Morphology Conditioning](/202604/16/2604.08780v1-toward-hardware-agnostic-quadrupedal-world-models-via-morphology-conditioning)  
    标签：评分：6.0/10、query:tta
-   evidence：多模态检索重排序过程中的区域选择决策问题
-10. [LLM-as-Judge for Semantic Judging of Powerline Segmentation in UAV Inspection](/202604/15/2604.05371v1-llm-as-judge-for-semantic-judging-of-powerline-segmentation-in-uav-inspection)  
-   标签：评分：6.0/10、query:tta-seg
-   evidence：大语言模型作为真实环境下分割可靠性的评判者
-11. [Learning to Synergize Semantic and Geometric Priors for Limited-Data Wheat Disease Segmentation](/202604/15/2604.05415v1-learning-to-synergize-semantic-and-geometric-priors-for-limited-data-wheat-disease-segmentation)  
-   标签：评分：6.0/10、query:tta-seg
-   evidence：利用语义和几何先验处理外观偏移下的分割
-12. [Thinking Diffusion: Penalize and Guide Visual-Grounded Reasoning in Diffusion Multimodal Language Models](/202604/15/2604.05497v1-thinking-diffusion-penalize-and-guide-visual-grounded-reasoning-in-diffusion-multimodal-language-models)  
+   evidence：机器人领域的可泛化四足世界模型
+10. [Modality-Aware Zero-Shot Pruning and Sparse Attention for Efficient Multimodal Edge Inference](/202604/16/2604.08971v1-modality-aware-zero-shot-pruning-and-sparse-attention-for-efficient-multimodal-edge-inference)  
    标签：评分：6.0/10、query:tta
-   evidence：扩散多模态大语言模型中的视觉落地推理
+   evidence：多模态推理中无需微调的部署时模态感知剪枝
+11. [MedLVR: Latent Visual Reasoning for Reliable Medical Visual Question Answering](/202604/16/2604.09757v1-medlvr-latent-visual-reasoning-for-reliable-medical-visual-question-answering)  
+   标签：评分：6.0/10、query:tta
+   evidence：用于医疗视觉问答的潜视觉推理框架
 
 
 <div class="dpr-home-promo-card">
