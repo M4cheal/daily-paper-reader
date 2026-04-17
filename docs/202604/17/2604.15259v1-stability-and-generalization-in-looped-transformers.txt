@@ -1,0 +1,2413 @@
+Title: Stability and Generalization in Looped Transformers
+
+URL Source: https://arxiv.org/pdf/2604.15259v1
+
+Published Time: Fri, 17 Apr 2026 01:22:08 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# Stability and Generalization in Looped Transformers 
+
+## Asher Labovich February 2026 
+
+Abstract 
+
+Looped transformers promise test-time compute scaling by spending more iterations on harder prob-lems, but it remains unclear which architectural choices let them extrapolate to harder problems at test time rather than memorize training-specific solutions. We introduce a fixed-point based framework for analyzing looped architectures along three axes of stability – reachability, input-dependence, and geome-try – and use it to characterize when fixed-point iteration yields meaningful predictions. Theoretically, we prove that looped networks without recall have countable fixed points and cannot achieve strong input-dependence at any spectral regime, while recall combined with outer normalization reliably produces a regime in which fixed points are simultaneously reachable, locally smooth in the input, and supported by stable backpropagation. Empirically, we train single-layer looped transformers on chess, sudoku, and prefix-sums and find that downstream performance tracks the framework’s predictions across tasks and architectural configurations. We additionally introduce internal recall, a novel recall placement variant, and show that it becomes competitive with – and on sudoku, substantially better than – standard recall placement once outer normalization is applied. 
+
+# 1 Introduction 
+
+Recent progress in reasoning with large language models has come largely from chain-of-thought (CoT) methods, in which models produce a hidden scratchpad of tokens before responding [Wei et al., 2023, Guo et al., 2025]. CoT has several structural limitations: it requires autoregressive decoding that scales poorly in latency and energy, it forces intermediate computation to reside in discrete tokens, and its reasoning depth is bounded by the token budget the model was trained on. Looped transformers offer an alternative path to test-time compute scaling by instead training a single weight-tied network whose iteration count can, in principle, be scaled with problem difficulty. Recent work has shown that such models can match or exceed much larger fixed-depth transformers on reasoning benchmarks [Geiping et al., 2025, Wang et al., 2025, Jolicoeur-Martineau, 2025], and that weight-tying itself induces useful inductive biases towards algorithmic reasoning [Saunshi et al., 2024, 2025]. Beyond matching fixed-depth performance with few parameters, looped transformers offer a capability unavailable to fixed-depth models: a model that has learned a stable algorithm may be able to extrapolate beyond its training iteration depth, solving problems harder than any it was trained on simply by iterating more. Whether looped transformers actually achieve this extrapolation remains unclear. Empirical work has con-verged on two architectural ingredients – recall (conditioning each iterate on the original input) and outer normalization – as apparently necessary for stable looped computation [Bansal et al., 2022, Anil et al., 2022, Geiping et al., 2025]. However, neither is theoretically justified, and generalization results across tasks and scales remain inconsistent [Yang et al., 2024]. It is not obvious why recall should be necessary rather than merely helpful, why outer normalization (typically disliked in fixed-depth transformers due to gradient insta-bility [Xiong et al., 2020]) becomes beneficial in looped settings, or how these ingredients interact to enable stable computation. This paper 1 provides a unified account of why these choices matter, framed around a fixed-point analysis of the looped architecture. We argue that a looped model can be trusted to run for arbitrarily many iterations without degrading (avoiding the problem known as “overthinking”) only if it has fixed points which are  
+
+> 1Code available at https://github.com/ashlab11/generalization
+
+1
+
+> arXiv:2604.15259v1 [cs.LG] 16 Apr 2026
+
+reachable, input-dependent, and geometrically robust in parameter space – three properties we call the ”axes of stability”. We show that each architectural choice – recall existence, recall placement, and outer normalization – affects a distinct subset of the axes in ways that directly predict downstream performance. Our key theoretical result is that recall combined with outer normalization reliably yields a regime in which all three axes are simultaneously satisfied. We validate this framework empirically by training single-layer looped transformers on chess, sudoku, and prefix-sums across a grid of normalization and recall choices, and find that downstream performance – both on the training distribution and harder OOD problems – tracks the framework’s predictions across tasks and configurations. Over the course of this analysis, we also introduce 
+
+internal recall , a novel placement variant whose narrow stability region without outer normalization provides direct empirical support for the geometry axis of our framework. 
+
+# 2 Related Work 
+
+In this section, we contextualize our work on looped transformers among the many different architecture, training, and benchmarking choices made in previous work. 
+
+Inductive Biases. Recent work studying weight-tied architectures against non-looped models has con-sistently found that weight sharing exhibits useful inductive biases toward reasoning. Comparing FLOP-matched models on memorization tasks (e.g., closed-book QA) and reasoning tasks (e.g., mathematics), Saunshi et al. [2024] and Saunshi et al. [2025] find that weight-tied models trade off memorization capacity in favor of stronger reasoning ability. From a theoretical standpoint, Merrill and Sabharwal [2025] show that looped transformers with padding efficiently solve parallelizable problems in a manner unavailable to fixed-depth transformers. While these results collectively establish weight-tied architectures as a compelling alternative to standard transformers, they are largely orthogonal to the present work: all consider models run for a fixed number of loops, and none address whether additional test-time iterations can solve problems harder than those seen during training. 
+
+Extrapolation in Looped Transformers. Several works have studied whether looped models can solve harder problems at test time by running more iterations. Bansal et al. [2022] first study this systematically for CNNs, finding that recall (Definition 3.3) is empirically necessary to avoid degradation under repeated iterations, and introduce the progressive loss mechanism used in this work. Geiping et al. [2025] scale this to a large transformer, finding that outer normalization is additionally necessary for stability, though performance plateaus beyond the number of loops seen in training. Yang et al. [2024] corroborate that stable, recall looped transformers can nonetheless fail to generalize to OOD problems. Across all three, recall is consistently identified as necessary but never theoretically justified, and generalization results are mixed with no consistent picture across tasks or scales. Our work addresses both: we prove theoretically why recall is necessary for input-dependent stability, and provide theoretical clarity on the role of outer normalization in enabling generalization – while confirming empirically that no single architecture dominates across tasks. 
+
+Deep Equilibrium Models. Deep Equilibrium Models [Bai et al., 2019] reframe the forward pass of a looped network as finding the fixed point of a learned function, solved implicitly via root-finding rather than via iteration. This fixed-point framing directly motivates our stability analysis: a model that converges to a fixed point necessarily avoids degradation upon additional iterations, preventing overthinking. However, unlike DEQ, which treats convergence as a design objective enforced by the solver, we study fixed points as a property of the model itself, analyzing when and why it arises based on architectural choices. 
+
+Adaptive Computation. Several works have explored dynamically reducing the number of looping iter-ations at inference time. Graves [2017] introduces ACT, allowing recurrent networks to halt early based on a learned differentiable output head. Dehghani et al. [2018] apply this to transformers via the Universal Trans-former, using ACT to allocate less compute to easier tokens. Banino et al. [2021] advances these methods by introducing a KL-divergence regularization term to incentivize a geometric distribution over loops, improving hyperparameter stability while retaining the differentiability of ACT. Unlike our work, these models aim to 2reduce unnecessary computation rather than increase iterations to solve harder problems – i.e. the halting mechanism is a tool for efficiency, not generalization. 
+
+Deep Supervision in Looped Transformers. Wang et al. [2025] and Jolicoeur-Martineau [2025] propose training looped models with “deep supervision” – applying loss at intermediate iterations similarly to Bansal et al. [2022]’s progressive loss scheme – and find that these models outperform compute-matched transformers on common reasoning tasks. However, as both works evaluate only up to their training iteration depth and never on harder problems than in training, it remains unclear to what extent these gains reflect the inductive biases of weight-tied architectures versus an ability to extrapolate with additional iterations. 
+
+# 3 Preliminaries 
+
+## 3.1 Definitions 
+
+This section provides a short description of looped architectures from a mathematical perspective, and is useful for the propositions proven in the upcoming sections. 
+
+Definition 3.1 (Looped Network) . Given parameters θ ∈ Rp, embedding dimension d, and sequence length 
+
+L, a looped network is a discrete dynamical system on the state space Rd×L defined by the recurrence 
+
+xt+1 = fθ
+
+ xt, {xi}t−1
+
+> i=0
+
+ t = 1 , . . . , T 
+
+where fθ is some network parameterized by θ and xt ∈ Rd×L is the hidden state at time t. We call T the 
+
+iteration depth . The network is initialized with x1 = fθ (e, x 0) where e is a free parameter often chosen to be zero, x0, or Gaussian noise. This formulation of looped networks is quite broad; the following definitions narrow this to the two cases studied in this paper. 
+
+Definition 3.2 (Autonomous Network) . A looped network is autonomous if fθ depends only on the current state, i.e., 
+
+xt+1 = fθ (xt).
+
+We choose the term “autonomous” to mimic autonomous systems in differential equations theory, which arise when the rate of change depends only on the current state. 
+
+Definition 3.3 (Recall Network) . A looped network is a recall network if fθ depends on only the current state and the initial input, i.e., 
+
+xt+1 = fθ (xt, x 0). t = 1 , . . . , T 
+
+Recall models are initialized at x1 equivalently to Definition 3.1. A recall network can be thought of as “middle ground” between autonomous and the more general looped models, taking in a second parameter (unlike autonomous models) but limiting that parameter to only the initial state (unlike general looped models). Figure 1 compares autonomous and recall models visually.               
+
+> Autonomous
+> x0fθx1fθx2fθx3fθxT
+> . . .
+> Recall
+> x0
+> x1x2x3fθfθfθfθxT
+> . . .
+> e
+
+Figure 1: Comparison of autonomous and recall networks. In the former, the network only depends on the previous state xt−1; in the latter, it also depends on the initial state x0.3Definition 3.4 (Outer Normalization) . A looped network uses outer normalization if some normalizing function is applied to the output of each iteration: 
+
+xt+1 = ϕθ
+
+ fθ
+
+ xt, {xi}t−1
+
+> i=0
+
+ 
+
+where fθ may itself contain arbitrary internal normalization. 
+
+Remark 1. Practitioners have considerable flexibility in their choice of ϕ; in this paper, we consider RM-SNorm and GRU normalization. When ϕθ is RMSNorm or LayerNorm, outer normalization represents what the standard transformer literature calls post-norm , and we use that term in this setting; the GRU case has no analogous name and we refer to it simply as GRU (outer) normalization. In fixed-depth (non-looped) transformer literature, pre-norm – in which normalization is applied only inside fθ , along with an unnor-malized identity residual term – is more common, largely due to gradient instability problems associated with post-norm [Xiong et al., 2020]. We show in Section 5.2 that recall architectures create a stability regime which benefits from outer normalization in a manner unlike fixed-depth transformers. In addition, post-norm in particular constrains each token independently to a compact, convex set: under RMSNorm, 
+
+xt ∈  Bd(βθ , γ θ )L, and under LayerNorm, xt ∈  Bd−1(βθ , γ θ )L (where the ϵ term ensures continuity and allows points to lie in the interior), both of which are compact and convex for fixed θ. We exploit these facts in Sections 4 and 5.2. 
+
+Smoothness Assumption. Separately from our definitions, we also note that throughout this paper, we assume all models are smooth , which can be guaranteed by using smooth activations only 2. This assumption is necessary for multiple key proofs. 
+
+## 3.2 Axes of Stability 
+
+Throughout this paper, we discuss architectural choices that improve or harm the ability of looped trans-formers to learn algorithms rather than memorize solutions. To make this analysis precise, we first need a vocabulary for the distinct ways such a model can succeed or fail. We emphasize here that our analysis focuses on fixed points of the looped computation. In practice, we want looped models we can trust to run for any number of iterations without overthinking or degrading. Only fixed points offer this guarantee, so we take reaching a correct fixed point as our criterion for success. For each task, we separate easy data (matching the training distribution) from hard data (out-of-distribution along the generalization axis of interest – longer sequences, harder instances). We identify three properties (“axes”) of a looped model that jointly determine its success on easy and/or hard data: reachability, input-dependence, and geometry . We describe each in turn below. 
+
+Reachability. A looped model has good reachability if repeated iteration converges to a fixed point rather than diverging or cycling. In practice, this means running the model for more iterations moves it toward a stable answer rather than away from one. Reachability is the most basic dynamical requirement for looped computation. 
+
+Input-dependence. It is trivial to build a model with perfect reachability by ensuring a contraction map and relying on the Banach fixed point theorem. Such a map is, of course, useless as an algorithm – its output is the same regardless of input. A useful looped model must therefore have fixed points that vary meaningfully with the input. Architectures differ in how they achieve this, and as we will see, the mechanism matters as much as whether input-dependence exists at all. 
+
+Geometry. Even among models that have parameter regimes of fixed-point reachability and input-dependence, the shape of that regime matters. Stability regions that are highly direction-dependent – narrow slivers in parameter space rather than round, broad neighborhoods – force stable configurations into a narrow band of the parameter space, making training outcomes fragile and hyperparameter-sensitive. We refer to this   
+
+> 2Many modern transformers use GeLU or SwiGLU activations, both of which are smooth. In addition, RMSNorm/LayerNorm are both smooth as long as the denominator contains a ϵterm.
+
+4directional bias as anisotropy, and show in Section 5.1 and Appendix B.2 that internal and external recall without outer normalization differ sharply along this axis. Having defined the axes of stability, we now examine how specific architectural choice – recall existence, recall placement, and outer normalization – succeed or fail along each axis, and its effect on downstream performance. 
+
+# 4 Why Autonomous Networks Fail 
+
+Much of the looped model literature notes the flaws of autonomous networks. Bansal et al. [2022] find it achieves low accuracy on a variety of tests while degrading upon repeated iterations, while Yang et al. [2024] observe that networks lacking input injection (autonomous) produce solutions that are “essentially random or unpredictable”. Yet despite this empirical consensus, there is little direct theoretical analysis of why 
+
+autonomous networks exhibit these problems – and, crucially, whether they are an inherent limitation or merely an artifact of poor design choices . In this section, we argue for the former: under mild assumptions on the underlying model architecture, we prove that autonomous networks exhibit extremely weak input-dependence, suggesting these failures are not incidental but structural. We make one key assumption throughout this section to help in proving key measure-theoretic statements: 
+
+Assumption 1. Consider function g(xt, θ ) : Rd×L × Rp := fθ (xt) − xt chosen so that g(xt, θ ) = 0 ⇔ xt is a fixed point of fθ . We assume that at all points where g(xt, θ ) = 0, 
+
+h ∂g (xt,θ )
+
+> ∂x t
+> ∂g (xt,θ )
+> ∂θ
+
+i
+
+spans Rd×L (i.e. g is transversal to {0}). This assumption is quite mild in practice. As a concrete illustration, consider a linear network f : Rd → Rd
+
+defined as f (x) = Ax + b. Then ∂f ∂b = I, which is full-rank regardless of A or x, so transversality applies trivially. In Appendix A.1 we prove that a similar argument on A extends this result to length-L inputs whenever the tokens are linearly independent and L ≤ d. This assumption only becomes easier to fulfill as models gain flexibility and parameter count; it only fails when the partial derivatives with respect to all 
+
+p + dL variables conspire to lose rank at a fixed point, which is an extreme coincidence. Despite the weakness of this assumption, it helps us prove powerful results for autonomous networks. In particular: 
+
+Proposition 1 (Restrictions on the Jacobian of fθ at fixed points) . For almost all parameter vectors θ ∈ Rp,
+
+Jfθ (x∗) = ∂f θ (x∗) 
+
+> ∂x ∗
+
+contains no eigenvalues equal to 1 for any fixed points x∗.Proof. Since g is smooth and transversal to {0} (Assumption 1), we can apply the transversality theorem ([Guillemin and Pollack, 1974, p. 68]) to get that for almost all θ, gθ is transversal to 0. By definition of a transversal, we have that Jgθ together with T0{0} = {0} span Rd×L and thus Jgθ is non-singular at g−1 
+
+> θ
+
+(0). However, 
+
+Jgθ = ∂g θ (x)
+
+∂x = ∂f θ (x) − x∂x = Jfθ − I (1) (1) implies that Jfθ = Jgθ + I. Since Jgθ is non-singular, Jfθ has no eigenvalues of 1 at g−1 
+
+> θ
+
+(0) (the fixed points of fθ ). With this, we can characterize the fixed-point structure of autonomous networks. 
+
+Proposition 2 (Fixed points are a dimension-zero manifold) . Let fθ : Rd×L → Rd×L be an autonomous looped network. Let S = {x∗ : fθ (x∗) = x∗} be the set of fixed points of fθ . Then, for almost all parameteri-zations θ, S is a dimension-zero manifold. Proof. From Proposition 1, we know that for almost all θ, Jgθ = Jfθ (x)−x is non-singular at points x∗ where 
+
+gθ (x∗) = 0. Thus, 0 is a regular value and thus g−1 
+
+> θ
+
+(0) is a manifold of dimension dL − dL = 0 [Milnor, 1965, p. 11]. Since g−1 
+
+> θ
+
+(0) represents the set of all fixed points of fθ the fixed points are a manifold of dimension 0 (countable). 5Proposition 2 bounds the number of fixed points an autonomous network can have: for almost all parameters, the set is countable, and finite when xθ is confined to a compact set (as under post-norm; see Remark 1). This limits the input-dependence of an autonomous model to simple basin selection, where the network simply chooses which of its predetermined isolated fixed points to output given an input. Recall networks, which condition each step on x0, are not subject to this constraint. We note that this argument extends naturally to joint fixed points — points where the output of a final readout head wθ is unchanged by one application of fθ even if the hidden state is not – with an analogous transversality assumption; see Appendix A.2 for details. The previous proposition argues that autonomous networks have severely limited input-dependence in theory. The following proposition shows that even within this limited regime, the gradient dynamics at autonomous fixed points make it difficult for training to learn which basin to route each input to: every spectral regime either starves the model of input-gradient signal, prevents the fixed point from being reached, or destabilizes the parameter gradients. 
+
+Proposition 3 (Gradient Instability of Autonomous Looped Networks) . Let fθ be an autonomous looped network. Suppose that for some K < T , the hidden state converges to a fixed point x∗ = fθ (x∗), and so 
+
+xt = x∗ for all t ≥ K. Then: ∂x T
+
+∂x 0
+
+= ( Jfθ (x∗)) T −K A(x0,θ ) (2) 
+
+where A(x0,θ ) is a matrix depending only on θ and x0, and Jfθ = ∂f θ (x) 
+
+> ∂x x=x∗
+
+is the Jacobian of fθ at the fixed point. Proof. See Appendix A.3 for details.            
+
+> x
+> y
+> x∗
+> (a) |λx|,|λy|<1
+> x
+> y
+> stable mfd. x∗
+> (b) |λx|<1<|λy|
+
+Figure 2: Phase portraits for the map ( x, y ) 7 → (λxx, λ y y), corresponding to a 2 × 2 matrix with eigenvectors along the coordinate axes. 
+
+(a) Both eigenvalues satisfy |λ| < 1: every trajectory converges to x∗. This is input-gradient vanishing. 
+
+(b) One eigenvalue exceeds 1 in magnitude: only the stable manifold (the x-axis, shown in red) converges to x∗; all other trajectories diverge .This representation provides a stronger understanding of the dynamics of the gradient at a fixed point of 
+
+fθ . We note that the behavior of ∂x T 
+
+> ∂x 0
+
+depends strongly on the value of ρ(Jfθ (x∗)), the spectral radius of the Jacobian of fθ at the fixed point. As such, we split the dynamics of ∂x T 
+
+> ∂x 0
+
+into three parts depending on ρ(Jfθ (x∗)). We find that no regime provides useful training signal: ρ(J) < 1 causes the input-gradient to vanish exponentially, ρ(J) > 1 fails reachability, and ρ(J) = 1 induces exploding parameter gradients. Appendix A.4 provides a more detailed mathematical foundation for these findings. Figure 2 illustrates the 6Accuracy of Autonomous Networks 
+
+Figure 3: We consider the best (hard accuracy) autonomous norm + LR configuration across each task, and plot its performance as a function of iteration count. The gray zone on each plot represents the maximum loops used in training. Our α = 1 progressive loss training largely prevents overthinking, with accuracy mostly conserved beyond the training iteration depth. contrast between the cases where ρ(J) < 1 versus ρ(J) > 1: when all eigenvalues have modulus less than 1, every trajectory converges to x∗; when any eigenvalue exceeds 1 in magnitude, trajectories almost always escape the neighborhood, and the fixed point fails reachability. Together with Proposition 2, this paints a difficult picture for autonomous networks: their expressible outputs are countable, and reaching those fixed points trades off against the quality of the training signal. This helps explain the empirical observations of Bansal et al. [2022], where autonomous networks fail to reach fixed points and substantially degrade under repeated iterations. Our own autonomous models exhibit a milder failure mode. Unlike Bansal et al. [2022], our best runs largely do not overthink (Figure 3), because we use a larger progressive-loss weight α to force fixed-point convergence 3 But the bottleneck remains: avoiding overt degradation under extra iterations is easier than having reachable, input-dependent fixed points. Consistent with this, our autonomous models (Appendix B.5, “none” rows) achieve non-trivial validation accuracy in some configurations, but still exhibit substantial val-to-hard degradation and never approach the hard accuracy of recall variants on the same task. Notably, prefix-sums is the only problem on which autonomous networks achieve 0% accuracy across all configurations. It is also the only problem whose input dimensionality changes between training and testing: the train distribution is 32-bit sequences and the test distribution is 512-bit. Since the set of fixed points depends on the state dimension, basin-selection learned at training dimension largely cannot transfer to test dimension. Sudoku and chess preserve input dimensionality across train and test, so basin-selection can at least partially transfer – consistent with the non-trivial val and hard accuracies we observe there. Recall networks aim to fix this by providing additional paths from xT → x0 by adding it as an input at every step. However, simply introducing recall is not sufficient for fixed-point stability – the placement of recall, as well as the presence of outer normalization, critically determines where on the axes of stability a given recall architecture lies. We analyze this in the following section. 
+
+# 5 Stability and Generalization of Recall Networks 
+
+Although the formal definition of recall is simple – merely conditioning each iterate on the original input – practitioners have considerable flexibility in exactly how this conditioning is applied. This flexibility is compounded in models with multiple sublayers, where a nontrivial additional question arises: where in the network is the initial state injected? Below, we define two architecturally distinct recall variants, one standard in the literature and one novel, whose fixed-point structures differ in ways that directly determine stability and downstream performance. Our formal definitions assume a two-sublayer model for generality (e.g. Attention and MLP); Figure 4 gives a visual explanation of both variants under such a model.       
+
+> 3We use α= 1 throughout; Bansal et al. [2022] use α= 1 on prefix sums (where neither ours nor theirs overthink), α= 0 .5on chess, and do not test on sudoku.
+
+7External Recall  
+
+> xtg
+> x0
+
++
+
+> h1
+> ϕ1
+> h2
+
++ ϕ2
+
+> ×T
+> Internal Recall
+> xt
+> gx0
+
++
+
+> h1
+> ϕ1
+> ×T
+> gx0
+
++
+
+> h2
+> ϕ2
+
+Figure 4: Comparison of two-layer autonomous, external recall, and internal recall architectures. In external recall, the recalled representation replaces the residual stream; in internal recall, the current state remains on the residual path and recall only affects the update. For notational simplicity, we assume all functions in this section depend on parameters θ, but do not directly write θ as an input. In addition, for both architectures, ϕi acts as an outer normalization function, and may be present or absent depending on architecture choice. 
+
+Definition 5.1 (External Recall) . An external recall network is one such that for t > 1, 
+
+xt+1 = ϕ2(zt + h2(zt)) 
+
+zt = ϕ1(g(xt, x 0) + h1(g(xt, x 0))) External recall is the most common architectural choice in the literature, as in Bansal et al. [2022], Geiping et al. [2025], Wang et al. [2025], Jolicoeur-Martineau [2025]. Common choices for g are pointwise addition [Wang et al., 2025, Jolicoeur-Martineau, 2025] or a linear combination with trainable matrices W1, W 2 [Bansal et al., 2022, Geiping et al., 2025]. We note that recall only enters in the first sublayer, with all layer sublayers acting as pseudo-autonomous layers. We now introduce internal recall, a novel alternative architecture that exhibits qualitatively different opti-mization and fixed-point structures than that of external recall. 
+
+Definition 5.2 (Internal Recall) . An internal recall network is one such that for t > 1, 
+
+xt+1 = ϕ2(zt + h2(g(zt, x 0))) 
+
+zt = ϕ1(xt + h1(g(xt, x 0))) In internal recall, the recall function g never enters into the residual directly, only ever affecting the update to the residual. For a two-sublayer model, internal and external recall use the same parameter count and nearly identical compute (internal applies g once more per iteration, but g is generally inexpensive). This allows for controlled comparisons between the two architectures in the remainder of Section 5. 
+
+## 5.1 Recall Without Outer Normalization 
+
+In Proposition 4, we discuss the stability of these models in the scenario where outer normalization is not applied; i.e. ϕi = I.
+
+Proposition 4 (Reachability conditions for a recall model without outer normalization) . Let x∗ be a fixed point of a recall model for a fixed input x0.
+
+External Recall: Define 
+
+Mext =
+
+
+
+I + dh2(z∗)dz∗
+
+  
+
+I + dh1(g(x∗, x 0)) dg(x∗, x 0)
+
+ ∂g (x∗, x 0)
+
+∂x ∗
+
+8−10 −5 5 10 
+
+−6
+
+−4
+
+−2
+
+2
+
+4
+
+6
+
+|1 + λJg λJh | < 1
+
+|(1 + λJh )λJg | < 1
+
+Jg
+
+Jh
+
+Stability Regions of Simple Model 
+
+Figure 5: Stability regions for a simplistic (single-layer, equivalent eigenvectors) model of external (blue) and internal (red) recall models. In this figure, we shade the regions for which the two eigenvalues produce a stable fixed point. 
+
+Then, x∗ is an attracting fixed point (and thus practically reachable) if and only if ρ(Mext ) < 1.
+
+Internal Recall: Define 
+
+Mint =
+
+
+
+I + dh2(g(z∗, x 0)) dg(z∗, x 0)
+
+∂g (z∗, x 0)
+
+∂z ∗
+
+  
+
+I + dh1(g(x∗, x 0)) dg(x∗, x 0)
+
+∂g (x∗, x 0)
+
+∂x ∗
+
+
+
+Then, x∗ is an attracting fixed point if and only if ρ(Mint ) < 1.Proof. See Appendix A.5. We note that while recall models do indeed add an additional path from xt → x0, improving input-dependence, without outer normalization they are harder to stabilize than it may first appear. In particular, the geometry of the reachable, input-dependent fixed-point regimes change drastically depending on whether the chosen architecture uses internal or external recall. Figure 5 visualizes this for a simplified single-layer model in which the eigenvectors of Jh = dh(g(x∗,x 0)) dg(x∗,x 0) and Jg = ∂g (x∗,x 0) 
+
+> ∂x ∗
+
+align, so that the stability condition reduces to a simple multiplication of scalar values. In the case where ∂g (x∗,x 0) 
+
+> ∂x ∗
+
+is strongly contractive, Mext allows substantial flexibility on the other terms while retaining stability. The same is not true for internal recall, whose identity shifts require a careful balancing of ∂h 2(g(z∗,x 0))  
+
+> ∂g (z∗,x 0)
+
+and ∂h 1(g(x∗,x 0))  
+
+> ∂g (x∗,x 0)
+
+to retain stability even under a contractive recall Jacobian. Appendix B.2 sharpens this further: a randomized projection experiment over the regions of Figure 5 shows that internal recall’s stable region is substantially more anisotropic than external’s, with median log-range at least 3 × larger across all tested variances. Thus, while internal recall admits a stable region, it occupies only a small, axis-hugging region of it, making it harder for training to land in a strong configuration even when the recall Jacobian is contractive. Appendix B.3 shows that lower learning rates keep ρ( ∂g (x∗,x 0) 
+
+> ∂x ∗
+
+)small throughout training, placing both architectures in this contractive-recall regime. Consistent with this asymmetry, external recall outperforms internal recall on both low and medium lr runs without outer normalization, on both validation and hard data (Tables 4, 5) 4.By contrast, in the case where ∂g (x∗,x 0) 
+
+> ∂x ∗
+
+is expansive , the balance becomes more mixed. Figure 5 visually showcases how, for Jg large, external recall must actively shift the eigenvalues of Jh towards -1, whereas internal recall must merely keep its eigenvalues small and negative. The empirical results in this scenario are 
+
+> 4The only exception is medium-lr pre-norm prefix-sums on val data.
+
+9substantially more task-dependent than the contractive recall scenario; external fails to find any fixed points whatsoever for chess with pre-norm (seeing 0% accuracy), but is able to find more usable fixed points than internal recall in sudoku with peri-norm. Overall, as ρ(Wx) grows –which Appendix B.3 shows is driven by learning rate – both architectures move into the expansive-Jacobian regime predicted by Proposition 4 to be unstable, and both degrade accordingly. In several configurations, this expansiveness eliminates usable fixed points entirely. Taken together, while recall improves input-dependence and thus generalization capacity – both models beat autonomous models across all norm/lr pairs on hard data – it is not sufficient to ensure a favorable geometry, especially in higher-lr regimes where ρ(Wx) > 15. In the next section, we consider outer normalization, which broadens the geometrically-stable regime and, in doing so, enables stronger generalization behavior for both internal and external recall models. 
+
+## 5.2 Recall with Outer Normalization 
+
+Section 5.1 showed that without outer normalization, the stable regime is narrow for both recall architectures and especially restrictive for internal recall. Outer normalization changes this picture in two ways. First, the outer normalization Jacobians appear as factors throughout the fixed-point Jacobian (see Appendix A.7 for the explicit two-sublayer form), so a contractive ϕ shrinks the overall spectral radius and adds reachable, more geometrically stable fixed points. Second, if the chosen outer normalization bounds the state to a compact, convex set K (as in post-norm; see Remark 1), the map fθ : K → K containing ϕθ is a continuous self-map, so Brouwer’s fixed-point theorem immediately guarantees the existence of a fixed-point in K (which can then vary locally with x0, as we will see). In addition to the qualities described above, we also require the fixed point to depend non-trivially on x0 –that is, not merely as basin selection among a discrete set (a key problem of autonomous networks as proven in Proposition 2) but with a well-defined, nonzero local sensitivity ∂x ∗ 
+
+> ∂x 0
+
+. The following proposition shows that the same outer normalization that shrinks the fixed-point Jacobian in the forward pass simultaneously yields exactly this benefit. 
+
+Proposition 5. Suppose we have a generic recall model xt+1 = f (xt, x 0) with fixed starting iterate e. Say that xT converges to x∗, a fixed point of the model, with ρ
+
+ ∂f (x∗,x 0)
+
+> ∂x ∗
+
+
+
+< 1. Then, the input-gradient of the iterates converges to the input-gradient of the limiting fixed-point, a finite, non-zero value. Formally: 
+
+lim  
+
+> T→∞
+
+dxT
+
+dx0
+
+= ddx0
+
+
+
+lim  
+
+> T→∞
+
+xT
+
+
+
+= dx∗
+
+dx0
+
+=
+
+
+
+I − ∂f (x∗, x 0)
+
+∂x ∗
+
+−1 ∂f (x∗, x 0)
+
+∂x 0
+
+Proof. See Appendix A.6 for proof details, and Appendix A.7 for explicit Jacobian forms for external and internal models with outer normalization. Together, Propositions 4 and 5 identify a regime that does not exist for autonomous networks. When 
+
+ρ
+
+ ∂f (x∗,x 0)
+
+> ∂x ∗
+
+
+
+< 1, the limit of gradients dxT 
+
+> dx0
+
+converges to the gradient at the fixed point, a finite, nonzero value. Thus, fixed points are reachable and vary smoothly with the input x0, unlike autonomous models which merely choose which of a predetermined set of fixed points to output. The explicit forms in Appendix A.7 show that the outer-normalization Jacobians of ϕ1 and ϕ2 appear in ∂f (x∗,x 0) 
+
+> ∂x ∗
+
+, so contractive outer normalization can shrink the spectral radius and keep the model within this stable regime – a mechanism that unnormalized models lack a direct lever for. In addition, a further consequence of this regime is that the fixed point is locally independent of e, the initial recall iterate (Definition 3.3), as proven in Appendix A.8. This initialization-independence is both intuitively helpful ( e is problem-independent, so it should not affect the final result) and empirically beneficial: Anil et al. [2022] find that path-independence improves reasoning performance on a wide range of problems.   
+
+> 5While we only discuss large ρ(Wx) in the context of high learning rates, it can also occur under poor initializations of the
+> Wxmatrix.
+
+10 All of these benefits result in improved performance across all tasks as compared to un-normalized models and autonomous models. The best normalized model performs 12 and 2 percentage points better on hard data than the best un-normalized model on sudoku and chess, respectively; on prefix sums, normalized models are the only models to achieve non-zero hard accuracy at the largest learning rate, confirming their stronger stability. We note that although normalized models do generally outperform un-normalized models across tasks, the exact architectural choices – post vs gru norm, internal vs external recall – that perform best differ. We believe this is due to two phenomena that the axes framework does not capture, both arising once models reach stability along all three axes. First, some outer normalization mechanisms (e.g. post-norm) can induce exponential token clustering in the forward pass [Karagodin et al., 2025] independent of gradient stability; if the recall term fails to perturb individual tokens enough, post-norm models can see the representation collapse observed in Geiping et al. [2025]. Second, internal and external recall differ substantially in how they represent their fixed points, even when both are stable. Internal recall admits a fixed point whenever 
+
+ϕi(x∗) = x∗ and h1(g(x∗, x 0)) = h2(g(z∗, x 0)) = 0; external recall additionally requires ϕ1(g(x∗, x 0)) = x∗,resulting in qualitatively different fixed-point structures across tasks. All of this is to say that the axes of stability act far closer to necessary conditions rather than sufficient; models without them should expect substantial performance degradation on either validation and/or hard data, but models with them do not necessarily succeed across all tasks. It remains to discover whether there exist any sufficient conditions for looped models to generalize to harder-than-seen problems across tasks. 
+
+# 6 Conclusion 
+
+This paper introduced a framework for understanding when looped transformers learn generalizable, scalable algorithms rather than memorize training-depth solutions, organized around three axes of stability: reacha-bility, input-dependence, and geometry. We analyzed three architectural choices – the existence of recall, the placement of recall, and the presence of outer normalization – and found that each affects a distinct subset of the axes in ways that predict downstream performance. Our central theoretical result is that recall combined with outer normalization is the most reliable route to a regime in which fixed points are simultaneously reachable, input-dependent, and geometrically robust. Autonomous networks succeed on reachability but exhibit extremely weak input-dependence: their fixed points form a countable set, limiting them to basin selection (Propositions 1 - 3). Recall without outer nor-malization possesses input-dependent fixed points but suffers from a narrow, anisotropic stability geometry (Figure 5, Proposition 4). Outer normalization broadens the stable regime and improves stability across all three axes. Our theoretical argument matches our empirical results: outer normalized recall models perform substantially better than non-outer-normalized recall models, which in turn perform substantially better than autonomous models. In addition, we introduced internal recall as a novel architectural variant and showed that, while it suffers from poor geometric stability without outer normalization, it becomes competitive – and on sudoku, sub-stantially better – once outer normalization is added. We argue this is due to an asymmetry in fixed-point representations, wherein internal models allow x∗ to host only the final answer, whereas external models require it also to represent its relationship with x0.This paper opens up multiple directions for future work. Our framework predicts which architectures can 
+
+reach the stable regime, but not which ones will be best for a given task; the relative ranking of internal and external models differ across tasks in ways our current theory does not resolve. More broadly, our empirical analysis uses small, single-layer transformers; whether our findings will naturally extend to much larger models is an object for future work. 11 A Proofs 
+
+Notation. Unless stated otherwise, throughout this appendix we treat the parameters θ fixed as a constant of the problem. We write ddx0 for total derivatives that consider all dependencies of x0 through the unrolled recurrence. For derivatives of single-argument functions, we similarly use total derivatives: for example,  
+
+> dh(g(xt,x 0)) dg(xt,x 0)
+
+denotes the derivative of h with respect to its argument. We reserve ∂ for multi-argument functions: for example, ∂g (xt,x 0) 
+
+> ∂x 0
+
+denotes the partial derivative of g with respect to the second slot, holding 
+
+xt constant. This distinction matters because several proofs below involve chain rule computations where the same variable appears as both a direct argument of a function and an indirect dependency through earlier states. We specify notation here to provide an unambiguous meaning throughout algebra-heavy proofs. 
+
+## A.1 Transversality for Length-L Input 
+
+Proposition 6. Consider a network f : Rd×L × Rd×d × Rd → Rd×L, linear in its first argument, defined as 
+
+f (X, A, b ) = AX + b1T . Assume that L ≤ d and that the columns of X are linearly independent (rank L). Then, ∂f (X,A,b ) 
+
+> ∂A
+
+, a dL × d2 matrix, is full-rank. Proof. Fix X and b. We note that f (X, A + T, b ) = AX + T X + b1T . Thus, lim  
+
+> T→0
+
+f (X, A + T, b ) − f (X, A, b ) − T X 
+
+∥T ∥ =lim  
+
+> T→0
+
+AX + T X + b1T − AX − b1T − T X 
+
+∥T ∥ =0And thus Df (T ) = T X is the partial derivative of f with respect to A (though, it does not depend on A). Rather than directly analyze the dL × d2 matrix, we instead show this map Df : Rd×d → Rd×L is surjective. Consider arbitrary Y ∈ Rd×L. Since X has full column rank, XT X is invertible. Then, let T =
+
+Y (XT X)−1XT ∈ Rd×d so that Df (T ) = Y (XT X)−1XT X = Y . Since Y was arbitrary, we have that the partial derivative is surjective, and thus ∂f (X,A,b ) 
+
+> ∂A
+
+is full-rank regardless of the starting matrix A. Thus, the transversality assumption holds at fixed points X with linearly independent columns and L ≤ d.
+
+## A.2 Joint Fixed Points in Autonomous Networks 
+
+Proposition 2 proves that for almost all parameterizations θ, the set of fixed points of fθ is a dimension-zero manifold (finite if xt is compact). However, many looped models include a final “head” layer after concluding the looped layers, which may map multiple distinct values to the same value. For example, applying a normalization after the looped layers maps all λx t to the same point. Thus, it is possible for there to exist points xt wherein fθ (xt)̸ = xt, but wθ (fθ (xt)) = wθ (xt) for some head wθ : Rd×L → Rd×L. We call these points “joint fixed points”. As before we define hθ = wθ (fθ (xt)) −wθ (xt) such that hθ (xt) = 0 ↔ xt
+
+is a joint fixed point. If we augment Assumption 1 so that h is transversal to 0 instead, we get that h−1 
+
+> θ
+
+(0) (the set of all joint fixed points) is a dimension-zero set (finite if xt is bounded). This proves that, while head layers may be useful in some formulations of looped models, for autonomous models, they do not change the dimension of the set of fixed points prior to applying the loss. 
+
+## A.3 Gradient Instability for Autonomous Looped Networks 
+
+Proof. Since the network is autonomous, each iterate satisfies xt+1 = fθ (xt). By the chain rule, dxT
+
+dx0
+
+= 
+
+> T−1
+
+Y
+
+> t=0
+
+Jfθ (xt) =  
+
+> T−1
+
+Y
+
+> t=K
+
+Jfθ (xt)
+
+| {z }
+
+> post-convergence
+> K−1
+
+Y
+
+> t=0
+
+Jfθ (xt)
+
+| {z }
+
+> pre-convergence
+
+12 For all t ≥ K we have that xt = x∗, so the post-convergence term simplifies:  
+
+> T−1
+
+Y
+
+> t=K
+
+Jfθ (xt) = ( Jfθ (x∗)) T −K (3) 
+
+## A.4 Stability Cases for Autonomous Looped Networks 
+
+Proposition 3 finds that the behavior of dxT 
+
+> dx0
+
+depends strongly on the spectral radius of Jfθ = ∂f θ (x∗) 
+
+> ∂x ∗
+
+. Here, we split the spectral radius into three cases and analyze the regime of each. 1. Case 1: ρ(Jfθ (x∗)) < 1. Gelfand’s formula implies that Jfθ (x∗)T −K decays exponentially with 
+
+T . In particular, ∀α ∈ (ρ(Jfθ (x∗)) , 1) , ∃Cα ∈ R+ with Jfθ (x∗)T −K ≤ CααT −K . Thus, we have that 
+
+dxT
+
+dx0
+
+≤ ∥ Jfθ (x∗)∥ A(x0,θ ) ≤ Cα,x 0,θ αT −K
+
+which decays exponentially with T . This is input-independence : as T → ∞ , dxT 
+
+> dx0
+
+→ 0 exponentially, meaning xT becomes asymptotically insensitive to the initial state x0. Since x0 is the only information provided to the model fθ , this means the model essentially “forgets” the information it was given. 2. Case 2: ρ(Jfθ (x∗)) > 1. This implies that there is at least one eigenvalue with modulus greater than 1. In this scenario, the center-stable manifold theorem ([Shub, 2010, p.65]) states the local center-stable manifold around x∗ has dimension < dL , and is thus measure zero. Thus among points in a sufficiently small neighborhood of x∗, almost every point eventually leaves the neighborhood, with at least one direction repelling away from x∗. Figure 2 provides two example systems, one with all |λ| < 1and one with an eigenvalue greater than 1; in the latter case, any starting point except the y = 0 line is repelled away from the fixed point. Unlike the ρ(Jfθ ) < 1 scenario, wherein fixed points are easily reached but fail to depend on the input, fixed points in this case are practically never reached at all. 3. Case 3: ρ(Jfθ (x∗)) = 1 . This case provides very little useful information, given that x∗ is a non-hyperbolic fixed point, of which much less can be derived. Rather than analyzing this case directly, we instead consider the requirements for this case to appear in the first place. In particular, we consider what occurs as the Jacobian approaches 1 from a reachable regime; i.e. as ρ(Jfθ (x∗)) → 1−. Under this scenario, we use the fact that ρ(Jfθ (x∗)) < 1 along with equation (1) from Proposition 1 to note that ∂g (x∗,θ ) 
+
+> ∂x ∗
+
+is nonsingular for g(x∗, θ ) = fθ (x∗) − x∗. Thus the implicit function theorem applies and we can write x∗ as a smooth function of θ nearby the zero point. Note that our gradient notation shifts at this point: here we treat θ as the key variable and let dg(x∗(θ),θ )dθ
+
+represent the total derivative with respect to θ. We can then write that the total gradient dg(x∗(θ),θ )dθ =0 at the zero point (due to the existence of a neighborhood with g(x∗(θ), θ ) = 0), so we use the chain rule to get 
+
+∂g (x∗, θ )
+
+∂x ∗
+
+dx∗(θ)dθ + ∂g (x∗, θ )
+
+∂θ = 0 →
+
+dx∗(θ)dθ = −
+
+ ∂g (x∗, θ )
+
+∂x ∗
+
+−1 ∂g (x∗, θ )
+
+∂θ →
+
+dx∗(θ)dθ = −
+
+ ∂f θ (x∗)
+
+∂x ∗ − I
+
+−1 ∂f θ (x∗)
+
+∂θ 
+
+Thus, as ρ(Jfθ (x∗)) → 1−, the smallest eigenvalue of ∂f θ (x∗) 
+
+> ∂x ∗
+
+− I → 0 and thus dx∗(θ)dθ explodes in magnitude (as long as it is not zeroed by the right-multiplication of ∂f θ (x∗) 
+
+> ∂θ
+
+). Therefore the parameter 
+
+gradient becomes arbitrarily unstable as ρ(Jfθ (x∗)) → 1−, making it much harder for the network to reach (or stay at, given floating-point perturbations) the ρ(Jfθ (x∗)) = 1 regime in this case. 13 A.5 Stability Regimes of Recall Models without Outer Normalization 
+
+Proof. For external recall, we have that dxt+1 
+
+dxt
+
+=dxt+1 
+
+dzt
+
+dzt
+
+dxt
+
+=
+
+
+
+I + dh2(zt)dzt
+
+  ∂g (xt, x 0)
+
+∂x t
+
++ dh1(g(xt, x 0)) dg(xt, x 0)
+
+∂g (xt, x 0)
+
+∂x t
+
+
+
+=
+
+
+
+I + dh2(zt)dzt
+
+  
+
+I + dh1(g(xt, x 0)) dg(xt, x 0)
+
+ ∂g (xt, x 0)
+
+∂x t
+
+Once a fixed-point is reached, this becomes 
+
+Mext =
+
+
+
+I + dh2(z∗)dz∗
+
+  
+
+I + dh1(g(x∗, x 0)) dg(x∗, x 0)
+
+ ∂g (x∗, x 0)
+
+∂x ∗
+
+As explained in Section 4 and Appendix A.4, fixed points are only locally stable (and thus practically reachable, given floating-point perturbations) if ρ
+
+ ∂f θ (x∗,x 0)
+
+> ∂x ∗
+
+
+
+< 1. Thus, the fixed point is only locally stable if ρ(Mext ) < 1. For internal recall, we have that dxt+1 
+
+dxt
+
+=dxt+1 
+
+dzt
+
+dzt
+
+dxt
+
+=
+
+
+
+I + dh2(g(zt, x 0)) dg(zt, x 0)
+
+∂g (zt, x 0)
+
+∂z t
+
+  
+
+I + dh1(g(xt, x 0)) dg(xt, x 0)
+
+∂g (xt, x 0)
+
+∂x t
+
+
+
+Once a fixed point is reached, this becomes 
+
+Mint =
+
+
+
+I + dh2(g(z∗, x 0)) dg(z∗, x 0)
+
+∂g (z∗, x 0)
+
+∂z ∗
+
+  
+
+I + dh1(g(x∗, x 0)) dg(x∗, x 0)
+
+∂g (x∗, x 0)
+
+∂x ∗
+
+
+
+The equivalent argument as in external recall requires that ρ(Mint ) < 1 for internal recall models to be locally stable. 
+
+## A.6 Stability of Recall Models with Outer Normalization 
+
+We prove this in two steps. 
+
+Step 1: dx∗ 
+
+> dx0
+
+=
+
+
+
+I − ∂f (x∗,x 0)
+
+> ∂x ∗
+
+−1 ∂f (x∗,x 0)
+
+> ∂x 0
+
+To begin with this proof, we must first show that the left term in this equation is well-defined and differen-tiable in the first place. We define the function F (xt, x 0) = f (xt, x 0) − xt so that fixed points of f are zeros of F . At a fixed point x∗, we have (by assumption) that ρ
+
+ ∂f (x∗,x 0)
+
+> ∂x ∗
+
+
+
+< 1. Then, 
+
+ρ
+
+ ∂F (x∗, x 0)
+
+∂x ∗
+
+
+
+= ρ
+
+ ∂f (x∗, x 0)
+
+∂x ∗
+
+
+
+− I
+
+is invertible, so the implicit function theorem applies. Thus, there exists a differentiable function x∗(x0) in a neighborhood of x0 such that F (x∗(x0), x 0) = 0 for all points on that neighborhood. Further, we have that dx∗
+
+dx0
+
+= −
+
+ ∂F (x∗(x0), x 0)
+
+∂x ∗
+
+−1 ∂F (x∗(x0), x 0)
+
+∂x 0
+
+14 and dx∗
+
+dx0
+
+=
+
+
+
+I − ∂f (x∗(x0), x 0)
+
+∂x ∗
+
+−1 ∂f (x∗(x0), x 0)
+
+∂x 0
+
+Step 2: lim   
+
+> T→∞
+> dxT
+> dx0
+
+=
+
+
+
+I − ∂f (x∗(x0),x 0)
+
+> ∂x ∗
+
+−1 ∂f (x∗(x0),x 0)
+
+> ∂x 0
+
+From our assumption, we have that ρ
+
+ ∂f (x∗,x 0)
+
+> ∂x ∗
+
+
+
+< 1. While useful for the prior step, here we instead need to bound the norm of the Jacobian. Horn and Johnson [1985] Lemma 5.6.10 tells us that for any ϵ > 0, matrix A, there exists a norm ∗ such that ∥A∥∗ ≤ ρ(A) + ϵ. First defining ρ = ρ
+
+ ∂f (x∗,x 0)
+
+> ∂x ∗
+
+
+
+for notational simplicity, we choose ϵ = 1−ρ 
+
+> 4
+
+, so that ∂f (x∗,x 0)
+
+> ∂x ∗
+> ∗
+
+< 1+3 ρ 
+
+> 4
+
+.We continue with two stated facts: first, that xT → x∗, and second, that f (xt, x 0) is smooth in both of its arguments. Thus, ∂f (xt,x 0) 
+
+> ∂x t
+
+is continuous in x∗, and since norms are a continuous function of a matrix, ∂f (xt,x 0) 
+
+> ∂x t∗
+
+is also continuous in xt. Applying this to the fixed point x∗, we have that for any 
+
+ϵ > 0, ∃δ > 0 s.t. ∥x′ − x∗∥ < δ =⇒ ∂f (x′,x 0)
+
+> ∂x ′
+> ∗
+
+− ∂f (x∗,x 0)
+
+> ∂x ∗
+> ∗
+
+< ϵ . We choose ϵ = 1−ρ 
+
+> 4
+
+so that  
+
+> ∂f (x′,x 0)
+> ∂x ′
+> ∗
+
+< 1+3 ρ 
+
+> 4
+
++ 1−ρ 
+
+> 4
+
+= 1+ ρ 
+
+> 2
+
+.Similarly, since xT converges to x∗, we know that for ϵ > 0, ∃N s.t. ∀n > N, ∥xn − x∗∥ < ϵ . We choose ϵ as 
+
+δ found earlier, and get that ∃N s.t. ∀n > N, ∂f (xn,x 0) 
+
+> ∂x n∗
+
+< 1+ ρ 
+
+> 2
+
+. We can follow the same argument for   
+
+> ∂f (xn,x 0)
+> ∂x 0
+
+− ∂f (x∗,x 0) 
+
+> ∂x 0
+
+< ϵ , and choose N large enough so that for small, prechosen α, we have all three conditions fulfilled: 1. ∂f (xn,x 0) 
+
+> ∂x n∗
+
+< 1+ ρ
+
+> 2
+
+2. ∂f (xn,x 0) 
+
+> ∂x 0
+
+− ∂f (x∗,x 0) 
+
+> ∂x 0∗
+
+< α 
+
+3. ∂f (xn,x 0) 
+
+> ∂x n
+
+− ∂f (x∗,x 0)
+
+> ∂x ∗
+> ∗
+
+< α 
+
+With this in mind, we consider the recurrence dxt 
+
+> dx0
+
+= ∂x t 
+
+> ∂x t−1
+> dxt−1
+> dx0
+
++ ∂x t 
+
+> ∂x 0
+
+, with xt both a direct function of x0
+
+(recall) and an indirect one through xt−1. Unrolling this to zero, we get: dxt
+
+dx0
+
+=
+
+> t
+
+Y
+
+> i=1
+
+∂x i
+
+∂x i−1
+
++
+
+> t
+
+X
+
+> i=1
+
+
+
+> t
+
+Y
+
+> j=i+1
+
+∂x j
+
+∂x j−1
+
+ ∂x i
+
+∂x 0
+
+Since we care about the result as t → ∞ , we consider what occurs as t > N . We split up the sum into before and after N: 
+
+> T
+
+Y
+
+> i=1
+
+∂x i
+
+∂x i−1
+
++
+
+> T
+
+X
+
+> i=1
+
+
+
+> T
+
+Y
+
+> j=i+1
+
+∂x j
+
+∂x j−1
+
+ ∂x i
+
+∂x 0
+
+=
+
+> N
+
+Y
+
+> i=1
+
+∂x i
+
+∂x i−1
+
+! TY 
+
+> i=N+1
+
+∂x i
+
+∂x i−1
+
++
+
+> N
+
+X
+
+> i=1
+
+
+
+> N
+
+Y
+
+> j=i
+
+∂x j
+
+∂x j−1
+
+
+
+> T
+
+Y 
+
+> j=N+1
+
+∂x j
+
+∂x j−1
+
+ ∂x i
+
+∂x 0
+
++
+
+> T
+
+X 
+
+> i=N+1
+
+
+
+> T
+
+Y
+
+> j=i+1
+
+∂x j
+
+∂x j−1
+
+ ∂x i
+
+∂x 0
+
+And since ∂x i 
+
+> ∂x i=1 ∗
+
+= f (xi,x 0) 
+
+> xi∗
+
+< 1+ ρ 
+
+> 2
+
+as long as i > N , the first two terms go to 0 as T → ∞ . We are left with only the final term. 15 We now wish to prove that lim  
+
+> T→∞
+> T
+
+X 
+
+> i=N+1
+
+
+
+> T
+
+Y
+
+> j=i+1
+
+∂x j
+
+∂x j−1
+
+ ∂x i
+
+∂x 0
+
+=
+
+
+
+I − ∂f (x∗, x 0)
+
+∂x ∗
+
+−1 ∂f (x∗, x 0)
+
+∂x 0
+
+We proceed by first naming matrices for ease of reading. At = ∂x t 
+
+> ∂x t−1
+
+, B t = ∂x t 
+
+> ∂x 0
+
+, and A∗ = ∂f (x∗,x 0) 
+
+> ∂x ∗
+
+with 
+
+B∗ = ∂f (x∗,x 0) 
+
+> ∂x 0
+
+. We now reindex the sum backwards i → T − i and substitute these names to get: 
+
+ST =  
+
+> T−N−1
+
+X
+
+> i=0
+
+
+
+> T
+
+Y 
+
+> j=T−i+1
+
+Aj
+
+ BT −i
+
+We compare this sum with the sum of the fixed-point matrices, namely 
+
+S∗ 
+
+> T
+
+=  
+
+> T−N−1
+
+X
+
+> i=0
+
+Ai
+
+> ∗
+
+B∗
+
+Note that as T → ∞ , as long as ∥A∗∥ < 1 (which we previously proved for norm ∗), S∗ 
+
+> T
+
+converges to 
+
+
+
+I − ∂f (x∗,x 0)
+
+> ∂x ∗
+
+−1 ∂f (x∗,x 0) 
+
+> ∂x 0
+
+.We wish to prove that lim T →∞ ∥S∗ 
+
+> T
+
+− ST ∥∗ = 0; i.e. the Jacobians are the same in the limit. By the triangle inequality, we have that 
+
+∥S∗ 
+
+> T
+
+− ST ∥ ≤   
+
+> T−N−1
+
+X
+
+> i=0
+
+
+
+> T
+
+Y 
+
+> j=T−i+1
+
+Aj
+
+ BT −i − Ai
+
+> ∗
+
+B∗
+
+> ∗
+
+We can add and subtract Ai
+
+> ∗
+
+BT −i and simplify to get:   
+
+> T−N−1
+
+X
+
+> i=0
+
+
+
+> T
+
+Y 
+
+> j=T−i+1
+
+Aj
+
+ BT −i − Ai
+
+> ∗
+
+B∗
+
+> ∗
+
+=  
+
+> T−N−1
+
+X
+
+> i=0
+
+
+
+> T
+
+Y 
+
+> j=T−i+1
+
+Aj
+
+ BT −i − Ai
+
+> ∗
+
+BT −i + Ai
+
+> ∗
+
+BT −i − Ai
+
+> ∗
+
+B∗
+
+> ∗
+
+=  
+
+> T−N−1
+
+X
+
+> i=0
+
+
+
+> T
+
+Y 
+
+> j=T−i+1
+
+Aj
+
+ − Ai
+
+> ∗
+
+ BT −i + Ai
+
+> ∗
+
+(BT −i − B∗)
+
+> ∗
+
+≤  
+
+> T−N−1
+
+X
+
+> i=0
+
+
+
+> T
+
+Y 
+
+> j=T−i+1
+
+Aj
+
+ − Ai
+
+> ∗
+
+
+
+> ∗
+
+∥BT −i∥∗ + ∥A∗∥i
+
+> ∗
+
+∥BT −i − B∗∥∗
+
+
+
+We now bound each of the individual norms. First, note that i goes from 0 to T − N − 1, so T − i > N 
+
+across the entire sum. Thus, ∥BT −i − B∗∥∗ < α as described earlier. Also, we have that ∥A∗∥∗ < 1+ ρ 
+
+> 2
+
+= 1+ ρ
+
+> 2
+
+(renaming), so that ∥A∗∥i 
+
+> ∗
+
+< ( 1+ ρ 
+
+> 2
+
+)i. By the triangle inequality, we have that 
+
+∥BT −i∥∗ = ∥BT −i − B∗ + B∗∥∗ ≤ ∥ BT −i − B∗∥∗ + ∥B∗∥∗ < α + ∥B∗∥∗
+
+For simplicity, we notate M = α + ∥B∗∥∗, a constant regardless of T or i. Thus, the only term left to bound is the very first term. To do so, we prove a short lemma by induction: 
+
+Lemma 1. For matrices (An)Kn=1 , B that can be multiplied, 
+
+> K
+
+Y
+
+> i=1
+
+Ai − BK =
+
+> K
+
+X
+
+> i=1
+
+
+
+> i−1
+
+Y
+
+> j=1
+
+Aj
+
+ (Ai − B)BK−i
+
+16 Proof. We prove by induction. With K = 1, we have A1 − B = I(A1 − B)B0 = A1 − B, since the product term is the identity when the bottom is less than the top. Now we suppose this is true for K. Then, for K + 1, we have 
+
+> K+1
+
+Y
+
+> i=1
+
+Ai − BK+1 =
+
+> K
+
+Y
+
+> i=1
+
+Ai
+
+!
+
+AK+1 − BK B =
+
+> K
+
+Y
+
+> i=1
+
+Ai
+
+!
+
+AK+1 −
+
+> K
+
+Y
+
+> i=1
+
+Ai
+
+!
+
+B +
+
+> K
+
+Y
+
+> i=1
+
+Ai
+
+!
+
+B − BK B =
+
+> K
+
+Y
+
+> i=1
+
+Ai
+
+!
+
+(AK+1 − B) + 
+
+> K
+
+Y
+
+> i=1
+
+Ai − BK
+
+!
+
+B =
+
+> K
+
+Y
+
+> i=1
+
+Ai
+
+!
+
+(AK+1 − B) + 
+
+> K
+
+X
+
+> i=1
+
+
+
+> i−1
+
+Y
+
+> j=1
+
+Aj
+
+ (Ai − B)BK−iB =
+
+> K
+
+Y
+
+> i=1
+
+Ai
+
+!
+
+(AK+1 − B) + 
+
+> K
+
+X
+
+> i=1
+
+
+
+> i−1
+
+Y
+
+> j=1
+
+Aj
+
+ (Ai − B)B(K+1) −i =
+
+> K+1
+
+X
+
+> i=1
+
+
+
+> i−1
+
+Y
+
+> j=1
+
+Aj
+
+ (Ai − B)B(K+1) −i
+
+We then apply Lemma 1 to the first term and get that 
+
+
+
+> T
+
+Y 
+
+> j=T−i+1
+
+Aj
+
+ − Ai
+
+> ∗
+
+
+
+> ∗
+
+=
+
+
+
+> i
+
+Y
+
+> j=1
+
+Aj+T −i
+
+ − Ai
+
+> ∗
+
+
+
+> ∗
+
+=
+
+> i
+
+X
+
+> j=1
+> j−1
+
+Y
+
+> k=1
+
+Ak+T −i
+
+!
+
+(Aj+T −i − A∗)Ai−j
+
+> ∗
+> ∗
+
+≤
+
+> i
+
+X
+
+> j=1
+> j−1
+
+Y
+
+> k=1
+
+Ak+T −i(Aj+T −i − A∗)Ai−j
+
+> ∗
+> ∗
+
+≤
+
+> i
+
+X
+
+> j=1
+> j−1
+
+Y
+
+> k=1
+
+∥Ak+T −i∥∗∥(Aj+T −i − A∗)∥∗∥A∗∥i−j
+
+> ∗
+
+Each factor in the first term has index greater than N, so we can bound ∥Ak+T −i∥∗ < 1+ ρ 
+
+> 2
+
+. The latter term is similarly bound: ∥A∗∥i−j 
+
+> ∗
+
+< ( 1+3 ρ 
+
+> 4
+
+)i−j < ( 1+ ρ 
+
+> 2
+
+)i−j . The middle term is bound by α, as it also has index 17 greater than N. Thus the entire Jacobian is bounded by 
+
+> i
+
+X
+
+> j=1
+> j−1
+
+Y
+
+> k=1
+
+1 + ρ
+
+2
+
+!
+
+α
+
+ 1 + ρ
+
+2
+
+i−j
+
+=
+
+> i
+
+X
+
+> j=1
+
+ 1 + ρ
+
+2
+
+j−1
+
+α
+
+ 1 + ρ
+
+2
+
+i−j
+
+=
+
+> i
+
+X
+
+> j=1
+
+ 1 + ρ
+
+2
+
+i−1
+
+α ≤
+
+i
+
+ 1 + ρ
+
+2
+
+i
+
+α
+
+Going back to the original series, we have that   
+
+> T−N−1
+
+X
+
+> i=0
+
+
+
+> T
+
+Y 
+
+> j=T−i+1
+
+Aj
+
+ − Ai
+
+> ∗
+
+
+
+> ∗
+
+∥BT −i∥∗ + ∥A∗∥i
+
+> ∗
+
+∥BT −i − B∗∥∗
+
+ ≤  
+
+> T−N−1
+
+X
+
+> i=0
+
+i
+
+ 1 + ρ
+
+2
+
+i−1
+
+αM 
+
+!
+
++ α
+
+ 1 + ρ
+
+2
+
+i!
+
+=
+
+α  
+
+> T−N−1
+
+X
+
+> i=0
+
+i
+
+ 1 + ρ
+
+2
+
+i−1
+
+M
+
+!
+
++
+
+ 1 + ρ
+
+2
+
+i!
+
+Both terms converge to a positive number, since the right term is a geometric series with |r| < 1 and the first is the derivative of a geometric series with converged sum equal to 1(1 −r)2 for |r| < 1. Thus, the sum is bounded by a constant, and the series is bounded by Cα .We then have by the triangle inequality that lim   
+
+> T→∞
+
+ST − (I − A∗)−1B∗ ∗ ≤ lim  
+
+> T→∞
+
+∥ST − S∗ 
+
+> T
+
+∥∗ + lim   
+
+> T→∞
+
+S∗ 
+
+> T
+
+− (I − A∗)−1B∗
+
+The first term can be made arbitrarily small by setting α → 0 (and thus choosing large T and N), and the latter term is equal to 0. Thus, lim  
+
+> T→∞
+
+dxT
+
+dx0
+
+=
+
+
+
+I − ∂f (x∗, x 0)
+
+∂x ∗
+
+−1 ∂f (x∗, x 0)
+
+∂x 0
+
+completing the proof. 
+
+## A.7 Explicit Jacobian Forms for External/Internal Recall 
+
+Here, we provide explicit forms of the Jacobians ∂x t 
+
+> ∂x t−1
+
+= ∂f (xt−1,x 0) 
+
+> ∂x t−1
+
+and ∂x t 
+
+> ∂x 0
+
+= ∂f (xt−1,x 0) 
+
+> ∂x 0
+
+for both internal and external recall. For notational simplicity, we let ˜ zt, ˜xt represent the result prior to applying ϕ1, ϕ 2
+
+respectively; i.e. zt = ϕ1(˜ zt) and xt = ϕ2( ˜ xt). Note below the presence of the outer normalization Jacobians in the explicit forms, which can shrink the spectral radius if they are small. For ease of memory, we redefine external and internal recall below: External: 
+
+xt+1 = ϕ2(zt + h2(zt)) 
+
+zt = ϕ1(g(xt, x 0) + h1(g(xt, x 0))) 18 Internal: 
+
+xt+1 = ϕ2(zt + h2(g(zt, x 0))) 
+
+zt = ϕ1(xt + h1(g(xt, x 0))) 
+
+External Recall: 
+
+dxt
+
+dxt−1
+
+=dxt
+
+d˜ xt
+
+d˜ xt
+
+dzt−1
+
+dzt−1
+
+d˜ zt−1
+
+∂ ˜zt−1
+
+∂x t−1
+
+=dϕ2(˜ xt)d˜ xt
+
+
+
+I + dh2(zt−1)dzt−1
+
+ dϕ1(˜ zt−1)d˜ zt−1
+
+ ∂g (xt−1, x 0)
+
+∂x t−1
+
++ dh1(g(xt−1, x 0)) dg(xt−1, x 0)
+
+∂g (xt−1, x 0)
+
+∂x t−1
+
+
+
+=dϕ2(˜ xt)d˜ xt
+
+
+
+I + dh2(zt−1)dzt−1
+
+ dϕ1(˜ zt−1)d˜ zt−1
+
+
+
+I + dh1(g(xt−1, x 0)) dg(xt−1, x 0)
+
+ ∂g (xt−1, x 0)
+
+∂x t−1
+
+Internal Recall: 
+
+dxt
+
+dxt−1
+
+=dxt
+
+d˜ xt
+
+∂ ˜xt
+
+∂z t−1
+
+dzt−1
+
+d˜ zt−1
+
+∂ ˜zt−1
+
+∂x t−1
+
+=dϕ2(˜ xt)d˜ xt
+
+
+
+I + dh2(g(zt−1, x 0)) dg(zt−1, x 0)
+
+∂g (zt−1, x 0)
+
+∂z t−1
+
+ dϕ1(˜ zt−1)d˜ zt−1
+
+
+
+I + dh1(g(xt−1, x 0)) dg(xt−1, x 0)
+
+∂g (xt−1, x 0)
+
+∂x t−1
+
+
+
+A.7.1 Jacobian of ∂x t
+
+> ∂x 0
+
+External Recall: 
+
+∂x t
+
+∂x 0
+
+=dxt
+
+d˜ xt
+
+d˜ xt
+
+dzt−1
+
+dzt−1
+
+d˜ zt−1
+
+∂ ˜zt−1
+
+∂x 0
+
+=dϕ2(˜ xt)d˜ xt
+
+
+
+I + dh2(zt−1)dzt−1
+
+ dϕ1(˜ zt−1)d˜ zt−1
+
+ ∂g (xt−1, x 0)
+
+∂x 0
+
++ dh1(g(xt−1, x 0)dg(xt−1, x 0)
+
+∂g (xt−1, x 0)
+
+∂x 0
+
+
+
+=dϕ2(˜ xt)d˜ xt
+
+
+
+I + dh2(zt−1)dzt−1
+
+ dϕ1(˜ zt−1)d˜ zt−1
+
+
+
+I + dh1(g(xt−1, x 0)dg(xt−1, x 0)
+
+ ∂g (xt−1, x 0)
+
+∂x 0
+
+Internal Recall: 
+
+∂x t
+
+∂x 0
+
+=dxt
+
+d˜ xt
+
+ ∂ ˜xt
+
+∂x 0
+
++ d˜ xt
+
+dzt−1
+
+dzt−1
+
+d˜ zt−1
+
+∂ ˜zt−1
+
+∂x 0
+
+
+
+=dϕ2(˜ xt)d˜ xt
+
+ dh1(g(zt−1, x 0)) dg(zt−1, x 0)
+
+∂g (zt−1, x 0)
+
+∂x 0
+
++
+
+
+
+I + dh2(g(zt−1, x 0)) dg(zt−1, x 0)
+
+∂g (zt−1, x 0)
+
+∂z t−1
+
+
+
+· dϕ1(˜ zt−1)d˜ zt−1
+
+dh1(g(xt−1, x 0)) dg(xt−1, x 0)
+
+∂g (xt−1, x 0)
+
+∂x 0
+
+
+
+## A.8 Local-Independence of e in Stable Regimes 
+
+Proof. We wish to prove that in the stable regime found in Section 5.2, the resulting fixed point is locally independent of e, the initial input to recall. Importantly, in both external and internal recall, this initial 19 iterate does not affect x0, only later xt. Thus, we have that dxt 
+
+> de
+
+= dxt 
+
+> dxt−1
+> dxt−1
+> de
+
+. We unroll this back and see that dxT
+
+de =
+
+> T
+
+Y
+
+> i=2
+
+dxt
+
+dxt−1
+
+!
+
+∂x 1
+
+∂e 
+
+As proven in Appendix A.6, we know that when ρ
+
+ ∂f (x∗,x 0)
+
+> ∂x ∗
+
+
+
+< 1 (i.e. when in the stable regime) the term 
+
+QTi=2 dxt 
+
+> dxt−1
+
+converges to 0 as T → ∞ . Thus the fixed point becomes locally-independent of the initial iterate e while remaining dependent on x0 as proven in Appendix A.6. 
+
+# B Empirical Analyses 
+
+## B.1 Experimental Setup 
+
+B.1.1 Data 
+
+We train on three datasets – prefix-sums, sudoku, and chess – each designed to test generalization along a different axis. 
+
+Prefix-sums: We obtained prefix-sum data from Bansal et al. [2022]. Each question inputs an N-bit binary sequence, and outputs a same-length sequence with each bit K the sum of all preceding input bits, mod 2. We train and validate the model on 32-bit data (8000 and 2000 points, respectively) and test on 512-bit data (10000 points). We note that this is the only problem whose difficulty is directly determined by its length ,rather than some alternative internal mechanism. 
+
+Sudoku: We obtained sudoku data from Sapient Intelligence’s sudoku-extreme dataset ([Wang et al., 2025]) that defines difficulty as the number of backtracks needed on the Tdoku solver ([Dillion, 2025]) to solve the puzzle. To separate “easy” from “hard” examples, we calculated the 80th percentile of backtracks needed throughout the dataset (38 backtracks). We then trained on 40000 sudoku puzzles with fewer than the 80th percentile of backtracks, validated on 10000 of the same difficulty, and tested on 10000 puzzles with more than the 80th percentile of backtracks. Sudoku uses 10 input channels and 10 output channels (one each from 0-9). 
+
+Chess: We train our models on data from the Lichess ([lic]) puzzles database, which provides FEN data for given chess board states as well as the corresponding best next move. We train our model on puzzles with ELO ratings less than 1600, and validate on the same; we test the model on harder puzzles with ratings between 1600-2000. Lichess puzzles remain the same size across training and testing (8 × 8) and have 12 input channels (6 pieces, 2 players) and 2 output channels (1s on the from and to spots on the board). We normalize orientation so the model always sees “white to move”. We use 40000 training examples and 10000 of both validation and testing examples. Table 1: Dataset summary. For prefix-sums, train and test use different sequence lengths (32-bit and 512-bit, respectively), as length directly determines difficulty. Note that prefix-sums and chess both use two-logit classification. 
+
+Dataset Dimensions In Channels Out Channels Train Test 
+
+Prefix-Sums 32 → 512 bits 1 2 8,000 10,000 Sudoku 9 × 9 10 10 40,000 10,000 Chess 8 × 8 12 2 40,000 10,000 20 B.1.2 Training Details 
+
+Across all datasets, we use a single-layer transformer with a hidden dimension of 256. The attention module uses 8 heads (head dimension 64), QK-normalization [Henry et al., 2020] for training stability, and multi-dimensional RoPE [limefax, 2024] to provide consistent positional structure across both 1D (prefix-sums) and 2D (sudoku, chess) inputs. For sudoku and chess, we use full bidirectional attention. For prefix-sums, RoPE causes length generalization failures, so we instead use a sliding attention window of width 5. The MLP uses a hidden dimension of 1024 with GELU activations [Hendrycks and Gimpel, 2023]. We apply RMSNorm at all normalization sites. We sweep over four RMSNorm-based normalization configurations: no outer normalization (none), pre-norm (pre), post-norm (post), and peri-norm (peri) [Kim et al., 2025], in addition to GRU outer normalization (gru). For models with GRU outer normalization, we replace the standard residual connection xt+1 = xt + hθ (xt) with xt+1 = GRU( xt, h θ (xt)), where the recurrent state is 
+
+xt and the update is hθ (xt). For recall models, we use linear recall, i.e., g(xt, x 0) = Wxxt + W0x0. Looped models with GRU had 0.98M parameters, while models without it had 1.39M. Fixed (non-looped) models used 15 layers and had 11.9M parameters without GRU and 17.8M parameters with it. Recall accounted for 0.13M parameters in models that used it. We note that while recall does add parameters, its benefits are not primarily attributable to parameter count. If they were, fixed-depth models – which have an order of magnitude more parameters – would dominate across tasks, yet they are outperformed by recall variants on sudoku and prefix-sums, and only match them on chess (the least naturally iterative of the three). Bansal et al. [2022] make a similar observation, noting that the gains from recall far exceed what additional depth or width provides in non-recall models. We train with AdamW [Loshchilov and Hutter, 2019] (weight decay 0.01) for 100 epochs with a batch size of 500. We apply an exponential warmup over the first 10 epochs, reaching 63% of the target learning rate by epoch 9, followed by a constant learning rate through epoch 60, after which we apply a 10 × cooldown. Gradients are clipped at norm 1. Within each batch, we apply the progressive loss scheme of Bansal et al. [2022]. We sample N ∼ U [0 , T − 1] and K ∼ U [1 , T − 1 − N ], where T = 30 is the maximum number of iterations. The model runs N iterations without gradients followed by K iterations with gradients; loss is computed and backpropagated only over the final K iterations. This is intended to discourage the model from learning iteration-specific shortcuts. Experiments were conducted in PyTorch [Paszke et al., 2019], and analyses used NumPy [Harris et al., 2020] and Pandas [Wes McKinney, 2010]. Table 2: Hyperparameter summary for all experiments. 
+
+Hyperparameter Value 
+
+Hidden dimension 256 Attention heads 8 (head dim 64) MLP hidden dimension 1024 Activation GELU Normalization RMSNorm Optimizer AdamW Weight decay 0.01 Batch size 500 Epochs 100 LR warmup Epochs 0–9 (exponential) LR cooldown 10 × reduction at epoch 60 Gradient clip norm 1Max iterations ( T ) 30 21 B.1.3 Compute Usage 
+
+Our final experiments used 120 NVIDIA B200 GPU-hours, which were acquired via an academic SLURM cluster. All models were trained on a single GPU. We trained all models with BF16 casting and sped up training via PyTorch’s compile feature. 
+
+## B.2 Anisotropy Analysis 
+
+Table 3: Projected-point anisotropy; n = 10000 draws per σ. Parens after means: SE (ˆ σ/ √n)                                            
+
+> log-ratio balance mean median mean median
+> σint ext int ext int ext int ext 0.5 9.3359 (0.0831) 1.1524 (0.0102) 4.6835 0.8946 0.2250 (0.0030) 0.4417 (0.0028) 0.0092 0.4088 19.6840 (0.0865) 1.2031 (0.0098) 4.6835 1.0320 0.2225 (0.0030) 0.4144 (0.0027) 0.0092 0.3563 210.1580 (0.0888) 1.4412 (0.0093) 4.9472 1.4045 0.1803 (0.0026) 0.3315 (0.0025) 0.0071 0.2455 411.1402 (0.0884) 1.9594 (0.0106) 18.1294 1.7632 0.0943 (0.0017) 0.2197 (0.0020) 0.0000 0.1715
+
+Figure 5 in Section 5.1 showcases the stability regions for a simple one-layer model with overlapping eigen-vectors. To understand how these regions affect the resulting chosen Jacobian eigenvalues, we conduct a simple projection-based experiment. In particular, we begin by sampling points from N (0 , σ 2I2×2) and then project them onto the internal and external stability regions. For each projected point, we calculate two metrics to analyze anisotropy: 
+
+• Log-range: log |x|+ϵ 
+
+> |y|+ϵ
+
+, where more isotropic points have values closer to 0. 
+
+• Balance: min( |x|,|y|)+ ϵ 
+
+> max( |x|,|y|)+ ϵ
+
+, where more isotropic points have values closer to 1. Table 3 showcases the result of this simulation. Across all choices of σ, internal recall is substantially more anisotropic, having a median log-range at least three times as large as external recall and a median balance at least 4 times as small. 
+
+## B.3 Effect of learning rates on ρ
+
+## ∂g (xt,x 0)
+
+> ∂x t
+
+## 
+
+In Section 5.1, we discuss the effects of learning rate on the spectral radius of ∂g (x∗,x 0) 
+
+> ∂x ∗
+
+. Figure 6 makes this explicit: across all problems and recall choices (averaged over pre/peri norm), higher LR corresponds to larger spectral radius for ∂g (x∗,x 0) 
+
+> ∂x ∗
+
+. We use g(xt, x 0) = Wxxt + W0x0, so ∂g (x∗,x 0) 
+
+> ∂x ∗
+
+= Wx.
+
+## B.4 Effect of ρ
+
+## ∂g (xt,x 0)
+
+> ∂x t
+
+## 
+
+## on External Recall Performance 
+
+In section 5.1, we discuss how, without outer normalization, external recall can have difficulty creating reachable fixed points when ∂g (x∗,x 0) 
+
+> ∂x ∗
+
+becomes large, as the other eigenvalues have to compensate by shifting towards a complex unit ball centered around −1. Here, we provide empirical evidence for this fact: Figure 7 compares final accuracy for external recall, pre-norm models across tasks as a function of ρ
+
+ ∂g (x∗,x 0)
+
+> ∂x ∗
+
+
+
+=
+
+ρ
+
+ ∂g (xt,x 0)
+
+> ∂x t
+
+
+
+= ρ(Wx) for linear recall mechanism g(xt, x 0) = Wxxt + W0x0. Across both validation and hard data, no model achieves non-zero accuracy when the recall Jacobian substantially exceeds 1. 
+
+## B.5 Seed-Averaged Results for All Models 
+
+Here we provide the validation and hard accuracy for all (problem, norm, lr, recall) tuples, averaged over 3 seeds. Each value is “total” accuracy; i.e. not bitwise accuracy, but rather the percent of inputs whose answer is completely correct. Sudoku consistently required higher learning rates to reach equivalent accuracy; as such, we report higher LR here and report the full LR sweep in Appendix B.6. 22 Effect of Learning Rate on Recall Spectral Radius 
+
+Figure 6: Effect of LR on non-outer-normalized internal and external recall Jacobian spectral radius. Top is external recall, bottom is internal recall. Chess and prefix sums use (0 .0001 , 0.0003 , 0.001); sudoku uses (0 .0003 , 0.001 , 0.003) 
+
+Figure 7: Validation and hard accuracy across problems. 
+
+## B.6 Sudoku Results 
+
+For transparency, we report our results on sudoku across all four learning rates. We found throughout our analysis that sudoku consistently needed larger learning rates regardless of model architecture. 23 Table 4: Accuracy on validation (easy distribution, but not trained on) data 
+
+Norm Recall Chess Sudoku Prefix sums                           
+
+> 1×10 −43×10 −41×10 −33×10 −41×10 −33×10 −31×10 −43×10 −41×10 −3
+
+gru internal 58 .59 72 .16 63 .82 26 .92 37 .45 24 .76 99 .98 86 .03 64 .97 external 69 .45 74 .70 79 .07 29 .66 39 .87 0.00 100 .00 65 .60 64 .97 none 30 .85 44 .61 33 .52 1.69 3.52 22 .31 92 .77 59 .82 12 .73 fixed 72 .36 76 .06 77 .96 2.63 2.94 0.89 5.68 0.00 0.00 peri internal 39 .61 53 .78 58 .16 15 .52 40 .24 22 .19 99 .40 97 .82 47 .57 external 65 .96 72 .51 51 .29 35 .48 51 .98 42 .65 100 .00 100 .00 0.00 none 30 .46 28 .36 19 .19 12 .33 29 .02 0.00 26 .07 0.00 0.00 fixed 71 .13 74 .29 76 .53 2.73 3.10 3.30 9.27 35 .52 0.05 post internal 27 .84 70 .88 72 .78 24 .55 57 .94 41 .65 100 .00 99 .15 31 .05 external 61 .68 73 .21 73 .33 24 .14 45 .75 26 .97 99 .65 99 .78 32 .03 none 32 .10 23 .42 0.00 25 .39 0.00 0.00 0.00 0.00 0.00 fixed 70 .29 74 .85 79 .90 2.38 3.26 0.00 25 .67 23 .78 0.00 pre internal 41 .02 52 .68 43 .57 4.99 22 .39 19 .27 97 .60 99 .82 97 .50 external 69 .52 75 .81 0.00 34 .94 53 .32 0.00 100 .00 66 .67 0.00 none 33 .37 28 .26 17 .75 2.62 15 .50 11 .07 65 .32 0.00 0.00 fixed 71 .27 75 .18 78 .24 2.58 3.06 4.30 38 .92 81 .58 10 .07 
+
+Table 5: Accuracy on hard data 
+
+Norm Recall Chess Sudoku Prefix sums                           
+
+> 1×10 −43×10 −41×10 −33×10 −41×10 −33×10 −31×10 −43×10 −41×10 −3
+
+gru internal 27 .32 36 .67 29 .64 1.53 6.88 0.73 83 .41 66 .05 64 .67 external 34 .39 37 .84 42 .22 3.13 7.82 0.00 100 .00 54 .03 64 .38 none 11 .37 17 .57 12 .72 0.01 0.15 0.34 0.02 0.00 0.00 fixed 35 .52 39 .57 40 .63 0.00 0.01 0.00 0.00 0.00 0.00 peri internal 15 .53 23 .63 25 .06 1.43 11 .66 2.04 0.00 0.02 0.00 external 31 .09 36 .80 26 .95 7.15 21 .50 9.98 99 .46 99 .96 0.00 none 11 .26 10 .56 6.85 1.11 4.05 0.00 0.00 0.00 0.00 fixed 34 .22 37 .09 38 .57 0.00 0.03 0.06 0.00 0.00 0.00 post internal 13 .69 36 .11 36 .62 4.86 35 .95 9.33 98 .16 99 .00 31 .08 external 27 .70 36 .55 36 .92 2.21 13 .91 2.12 56 .20 99 .74 1.09 none 11 .40 9.86 0.00 5.01 0.00 0.00 0.00 0.00 0.00 fixed 34 .06 37 .15 42 .16 0.00 0.06 0.00 0.00 0.00 0.00 pre internal 16 .14 22 .17 17 .21 0.02 0.67 0.01 0.00 0.05 0.00 external 34 .64 39 .29 0.00 6.46 23 .22 0.00 100 .00 66 .64 0.00 none 12 .69 10 .61 6.04 0.00 0.11 0.01 0.00 0.00 0.00 fixed 34 .76 37 .43 40 .42 0.00 0.02 0.32 0.00 0.00 0.00 
+
+24 Table 6: Validation (left) and hard (right) accuracy for sudoku across all four learning rates.                                                                                                                                                           
+
+> Norm Recall Sudoku
+> 1×10 −43×10 −41×10 −33×10 −3
+> gru internal 24 .93 28 .91 37 .45 24 .76 external 23 .96 35 .36 39 .87 0.00 none 3.39 0.00 3.52 22 .31 fixed 2.45 2.82 2.94 0.89 peri internal 2.47 28 .57 40 .24 22 .19 external 24 .88 46 .08 51 .98 42 .65 none 0.50 24 .15 29 .02 0.00 fixed 2.55 2.91 3.10 3.30 post internal 8.60 40 .50 57 .94 41 .65 external 16 .76 31 .52 45 .75 26 .97 none 10 .91 35 .04 0.00 0.00 fixed 2.09 2.67 3.26 0.00 pre internal 1.85 8.13 22 .39 19 .27 external 24 .90 44 .98 53 .32 0.00 none 0.56 4.68 15 .50 11 .07 fixed 2.34 2.82 3.06 4.30 Norm Recall Sudoku
+> 1×10 −43×10 −41×10 −33×10 −3
+> gru internal 0.13 2.93 6.88 0.73 external 0.81 5.46 7.82 0.00 none 0.02 0.00 0.15 0.34 fixed 0.00 0.00 0.01 0.00 peri internal 0.00 2.87 11 .66 2.04 external 1.00 13 .29 21 .50 9.98 none 0.00 2.22 4.05 0.00 fixed 0.00 0.00 0.03 0.06 post internal 0.59 9.12 35 .95 9.33 external 1.16 3.27 13 .91 2.12 none 0.83 7.79 0.00 0.00 fixed 0.00 0.00 0.06 0.00 pre internal 0.00 0.03 0.67 0.01 external 1.08 11 .84 23 .22 0.00 none 0.00 0.00 0.11 0.01 fixed 0.00 0.00 0.02 0.32
+
+# References 
+
+Lichess. URL https://lichess.org .Cem Anil, Ashwini Pokle, Kaiqu Liang, Johannes Treutlein, Yuhuai Wu, Shaojie Bai, Zico Kolter, and Roger Grosse. Path Independent Equilibrium Models Can Better Exploit Test-Time Computation. Advances in Neural Information Processing Systems , 35, November 2022. ISSN 9781713871088. URL https: //arxiv.org/pdf/2211.09961 .Shaojie Bai, J. Zico Kolter, and Vladlen Koltun. Deep equilibrium models, 2019. URL https://arxiv. org/abs/1909.01377 .Andrea Banino, Jan Balaguer, and Charles Blundell. Pondernet: Learning to ponder, 2021. URL https: //arxiv.org/abs/2107.05407 .Arpit Bansal, Avi Schwarzschild, Eitan Borgnia, Zeyad Emam, Furong Huang, Micah Goldblum, and Tom Goldstein. End-to-end Algorithm Synthesis with Recurrent Networks: Logical Extrapolation With-out Overthinking. Advances in Neural Information Processing Systems , 35, February 2022. ISSN 9781713871088. URL https://arxiv.org/pdf/2202.05826 .Mostafa Dehghani, Stephan Gouws, Oriol Vinyals, Jakob Uszkoreit, and Lukasz Kaiser. Universal Trans-formers. 7th International Conference on Learning Representations, ICLR 2019 , July 2018. URL 
+
+https://arxiv.org/pdf/1807.03819 .Tom Dillion. Tdoku: A fast sudoku solver and generator, 2025. URL https://t-dillon.github.io/tdoku .Jonas Geiping, Sean McLeish, Neel Jain, John Kirchenbauer, Siddharth Singh, Brian R. Bartoldson, Bhavya Kailkhura, Abhinav Bhatele, and Tom Goldstein. Scaling up Test-Time Compute with Latent Reasoning: A Recurrent Depth Approach. February 2025. URL http://arxiv.org/abs/2502.05171 .Alex Graves. Adaptive computation time for recurrent neural networks, 2017. URL https://arxiv.org/ abs/1603.08983 .V. Guillemin and A. Pollack. Differential Topology . AMS Chelsea Publishing. AMS Chelsea Pub., 1974. ISBN 978-1-4704-8112-4. URL https://bookstore.ams.org/chel-370-h .25 Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, Xiaokang Zhang, Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhihong Shao, Zhuoshu Li, Ziyi Gao, Aixin Liu, Bing Xue, Bingxuan Wang, Bochao Wu, Bei Feng, Chengda Lu, Chenggang Zhao, Chengqi Deng, Chong Ruan, Damai Dai, Deli Chen, Dongjie Ji, Erhang Li, Fangyun Lin, Fucong Dai, Fuli Luo, Guangbo Hao, Guanting Chen, Guowei Li, H. Zhang, Hanwei Xu, Honghui Ding, Huazuo Gao, Hui Qu, Hui Li, Jianzhong Guo, Jiashi Li, Jingchang Chen, Jingyang Yuan, Jinhao Tu, Junjie Qiu, Junlong Li, J. L. Cai, Jiaqi Ni, Jian Liang, Jin Chen, Kai Dong, Kai Hu, Kaichao You, Kaige Gao, Kang Guan, Kexin Huang, Kuai Yu, Lean Wang, Lecong Zhang, Liang Zhao, Litong Wang, Liyue Zhang, Lei Xu, Leyi Xia, Mingchuan Zhang, Minghua Zhang, Minghui Tang, Mingxu Zhou, Meng Li, Miaojun Wang, Mingming Li, Ning Tian, Panpan Huang, Peng Zhang, Qiancheng Wang, Qinyu Chen, Qiushi Du, Ruiqi Ge, Ruisong Zhang, Ruizhe Pan, Runji Wang, R. J. Chen, R. L. Jin, Ruyi Chen, Shanghao Lu, Shangyan Zhou, Shanhuang Chen, Shengfeng Ye, Shiyu Wang, Shuiping Yu, Shunfeng Zhou, Shuting Pan, S. S. Li, Shuang Zhou, Shaoqing Wu, Tao Yun, Tian Pei, Tianyu Sun, T. Wang, Wangding Zeng, Wen Liu, Wenfeng Liang, Wenjun Gao, Wenqin Yu, Wentao Zhang, W. L. Xiao, Wei An, Xiaodong Liu, Xiaohan Wang, Xiaokang Chen, Xiaotao Nie, Xin Cheng, Xin Liu, Xin Xie, Xingchao Liu, Xinyu Yang, Xinyuan Li, Xuecheng Su, Xuheng Lin, X. Q. Li, Xiangyue Jin, Xiaojin Shen, Xiaosha Chen, Xiaowen Sun, Xiaoxiang Wang, Xinnan Song, Xinyi Zhou, Xianzu Wang, Xinxia Shan, Y. K. Li, Y. Q. Wang, Y. X. Wei, Yang Zhang, Yanhong Xu, Yao Li, Yao Zhao, Yaofeng Sun, Yaohui Wang, Yi Yu, Yichao Zhang, Yifan Shi, Yiliang Xiong, Ying He, Yishi Piao, Yisong Wang, Yixuan Tan, Yiyang Ma, Yiyuan Liu, Yongqiang Guo, Yuan Ou, Yuduan Wang, Yue Gong, Yuheng Zou, Yujia He, Yunfan Xiong, Yuxiang Luo, Yuxiang You, Yuxuan Liu, Yuyang Zhou, Y. X. Zhu, Yanping Huang, Yaohui Li, Yi Zheng, Yuchen Zhu, Yunxian Ma, Ying Tang, Yukun Zha, Yuting Yan, Z. Z. Ren, Zehui Ren, Zhangli Sha, Zhe Fu, Zhean Xu, Zhenda Xie, Zhengyan Zhang, Zhewen Hao, Zhicheng Ma, Zhigang Yan, Zhiyu Wu, Zihui Gu, Zijia Zhu, Zijun Liu, Zilin Li, Ziwei Xie, Ziyang Song, Zizheng Pan, Zhen Huang, Zhipeng Xu, Zhongyu Zhang, and Zhen Zhang. Deepseek-r1 incentivizes reasoning in llms through reinforcement learning. Nature , 645(8081):633–638, September 2025. ISSN 1476-4687. doi: 10.1038/s41586-025-09422-z. URL http://dx.doi.org/10.1038/s41586-025-09422-z .Charles R. Harris, K. Jarrod Millman, St´ efan J. van der Walt, Ralf Gommers, Pauli Virtanen, David Cournapeau, Eric Wieser, Julian Taylor, Sebastian Berg, Nathaniel J. Smith, Robert Kern, Matti Pi-cus, Stephan Hoyer, Marten H. van Kerkwijk, Matthew Brett, Allan Haldane, Jaime Fern´ andez del R´ ıo, Mark Wiebe, Pearu Peterson, Pierre G´ erard-Marchant, Kevin Sheppard, Tyler Reddy, Warren Weckesser, Hameer Abbasi, Christoph Gohlke, and Travis E. Oliphant. Array programming with NumPy. Nature , 585(7825):357–362, September 2020. doi: 10.1038/s41586-020-2649-2. URL https: //doi.org/10.1038/s41586-020-2649-2 .Dan Hendrycks and Kevin Gimpel. Gaussian error linear units (gelus), 2023. URL https://arxiv.org/ abs/1606.08415 .Alex Henry, Prudhvi Raj Dachapally, Shubham Pawar, and Yuxuan Chen. Query-key normalization for transformers, 2020. URL https://arxiv.org/abs/2010.04245 .Roger A. Horn and Charles R. Johnson. Matrix Analysis . Cambridge University Press, 1985. Alexia Jolicoeur-Martineau. Less is More: Recursive Reasoning with Tiny Networks, October 2025. URL 
+
+http://arxiv.org/abs/2510.04871 . arXiv:2510.04871. Nikita Karagodin, Shu Ge, Yury Polyanskiy, and Philippe Rigollet. Normalization in attention dynamics, 2025. URL https://arxiv.org/abs/2510.22026 .Jeonghoon Kim, Byeongchan Lee, Cheonbok Park, Yeontaek Oh, Beomjun Kim, Taehwan Yoo, Seongjin Shin, Dongyoon Han, Jinwoo Shin, and Kang Min Yoo. Peri-ln: Revisiting normalization layer in the transformer architecture, 2025. URL https://arxiv.org/abs/2502.02732 .limefax. Rope-nd, 2024. URL https://github.com/limefax/rope-nd/tree/main .Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization, 2019. URL https://arxiv.org/ abs/1711.05101 .26 William Merrill and Ashish Sabharwal. Exact expressive power of transformers with padding, 2025. URL 
+
+https://arxiv.org/abs/2505.18948 .John Milnor. Topology from the Differentiable Viewpoint . University Press of Virginia, 1965. Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, Alban Desmaison, Andreas K¨ opf, Edward Z. Yang, Zach DeVito, Martin Raison, Alykhan Tejani, Sasank Chilamkurthy, Benoit Steiner, Lu Fang, Junjie Bai, and Soumith Chintala. Pytorch: An imperative style, high-performance deep learning library. CoRR ,abs/1912.01703, 2019. URL http://arxiv.org/abs/1912.01703 .Nikunj Saunshi, Stefani Karp, Shankar Krishnan, Sobhan Miryoosefi, Sashank J. Reddi, and Sanjiv Kumar. On the Inductive Bias of Stacking Towards Improving Reasoning. September 2024. URL http://arxiv. org/abs/2409.19044 .Nikunj Saunshi, Nishanth Dikkala, Zhiyuan Li, Sanjiv Kumar, and Sashank J. Reddi. Reasoning with Latent Thoughts: On the Power of Looped Transformers. February 2025. URL http://arxiv.org/abs/2502. 17416 .Michael Shub. Global stability of dynamical systems . Springer, New York, NY, December 2010. Guan Wang, Jin Li, Yuhao Sun, Xing Chen, Changling Liu, Yue Wu, Meng Lu, Sen Song, and Yasin Ab-basi Yadkori. Hierarchical Reasoning Model, August 2025. URL http://arxiv.org/abs/2506.21734 .arXiv:2506.21734. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large language models, 2023. URL 
+
+https://arxiv.org/abs/2201.11903 .Wes McKinney. Data Structures for Statistical Computing in Python. In St´ efan van der Walt and Jarrod Millman, editors, Proceedings of the 9th Python in Science Conference , pages 56 – 61, 2010. doi: 10.25080/ Majora-92bf1922-00a. Ruibin Xiong, Yunchang Yang, Di He, Kai Zheng, Shuxin Zheng, Chen Xing, Huishuai Zhang, Yanyan Lan, Liwei Wang, and Tie-Yan Liu. On layer normalization in the transformer architecture, 2020. URL 
+
+https://arxiv.org/abs/2002.04745 .Liu Yang, Kangwook Lee, Robert Nowak, and Dimitris Papailiopoulos. Looped transformers are better at learning learning algorithms, 2024. URL https://arxiv.org/abs/2311.12424 .27
