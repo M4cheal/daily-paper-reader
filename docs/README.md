@@ -6,73 +6,58 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-17
-- 运行时间：2026-04-17 20:33:18 UTC
+- 最新运行日期：2026-04-18
+- 运行时间：2026-04-18 20:16:52 UTC
 - 运行状态：成功
-- 本次总论文数：17
-- 精读区：6
+- 本次总论文数：12
+- 精读区：1
 - 速读区：11
 
 ### 今日简报（AI）
-今日深挖 17 篇 AI 论文，聚焦 GUI 交互精度与视频时序推理的突破性进展。
-UI-Zoomer 凭借自适应缩放显著提升 GUI 定位，而层选择性合并技术成功找回了视频模型丢失的时序推理能力。
-推荐关注 GUI 智能体优化及 VLM/VLA 模型的轻量化剪枝与量化方案。
-- 详情：[/202604/17/README](/202604/17/README)
+今日深度解析强化学习从离线到在线的高效适配理论，并同步追踪多模态大模型在空间建模与解码优化上的最新进展。
+重点关注通用函数逼近下的价值适配证明，以及视觉 Token 剪枝在多模态解码中因信息偏移导致失效的风险。
+建议开发者深入理解离线预训练向在线微调转化的理论边界，并审慎应用多模态模型的压缩策略。
+- 详情：[/202604/18/README](/202604/18/README)
 
 ### 精读区论文标签
-1. [UI-Zoomer: Uncertainty-Driven Adaptive Zoom-In for GUI Grounding](/202604/17/2604.14113v1-ui-zoomer-uncertainty-driven-adaptive-zoom-in-for-gui-grounding)  
-   标签：评分：9.0/10、query:tta
-   evidence：推理阶段的免训练自适应缩放框架
-2. [Reasoning Resides in Layers: Restoring Temporal Reasoning in Video-Language Models with Layer-Selective Merging](/202604/17/2604.11399v1-reasoning-resides-in-layers-restoring-temporal-reasoning-in-video-language-models-with-layer-selective-merging)  
+1. [Provably Efficient Offline-to-Online Value Adaptation with General Function Approximation](/202604/18/2604.13966v1-provably-efficient-offline-to-online-value-adaptation-with-general-function-approximation)  
    标签：评分：8.0/10、query:tta
-   evidence：无需训练、任务驱动的模型合并框架，用于恢复视频语言模型中的时间推理
-3. [Evolvable Embodied Agent for Robotic Manipulation via Long Short-Term Reflection and Optimization](/202604/17/2604.13533v1-evolvable-embodied-agent-for-robotic-manipulation-via-long-short-term-reflection-and-optimization)  
-   标签：评分：8.0/10、query:tta
-   evidence：利用VLM进行机器人操作的进化具身智能体，通过反思实现自我进化
-4. [Catching Every Ripple: Enhanced Anomaly Awareness via Dynamic Concept Adaptation](/202604/17/2604.14726v1-catching-every-ripple-enhanced-anomaly-awareness-via-dynamic-concept-adaptation)  
-   标签：评分：8.0/10、query:tta
-   evidence：流数据在线异常检测的动态概念自适应框架
-5. [Adaptive Test-Time Compute Allocation for Reasoning LLMs via Constrained Policy Optimization](/202604/17/2604.14853v1-adaptive-test-time-compute-allocation-for-reasoning-llms-via-constrained-policy-optimization)  
-   标签：评分：8.0/10、query:tta
-   evidence：推理过程中的自适应测试时间计算分配
-6. [Stability and Generalization in Looped Transformers](/202604/17/2604.15259v1-stability-and-generalization-in-looped-transformers)  
-   标签：评分：8.0/10、query:tta
-   evidence：测试时间计算缩放下的稳定性与泛化分析
+   evidence：具有通用函数逼近的离线到在线价值自适应
 
 ### 速读区论文标签
-1. [DIB-OD: Preserving the Invariant Core for Robust Heterogeneous Graph Adaptation via Decoupled Information Bottleneck and Online Distillation](/202604/17/2604.10882v1-dib-od-preserving-the-invariant-core-for-robust-heterogeneous-graph-adaptation-via-decoupled-information-bottleneck-and-online-distillation)  
+1. [AIM: Intent-Aware Unified world action Modeling with Spatial Value Maps](/202604/18/2604.11135v1-aim-intent-aware-unified-world-action-modeling-with-spatial-value-maps)  
    标签：评分：7.0/10、query:tta
-   evidence：针对分布偏移的鲁棒图自适应在线蒸馏技术
-2. [SVD-Prune: Training-Free Token Pruning For Efficient Vision-Language Models](/202604/17/2604.11530v1-svd-prune-training-free-token-pruning-for-efficient-vision-language-models)  
+   evidence：用于机器人控制的统一世界动作模型
+2. [Anthropogenic Regional Adaptation in Multimodal Vision-Language Model](/202604/18/2604.11490v1-anthropogenic-regional-adaptation-in-multimodal-vision-language-model)  
    标签：评分：7.0/10、query:tta
-   evidence：用于高效视觉语言模型的无需训练、即插即用的令牌剪枝方法
-3. [DA-PTQ: Drift-Aware Post-Training Quantization for Efficient Vision-Language-Action Models](/202604/17/2604.11572v1-da-ptq-drift-aware-post-training-quantization-for-efficient-vision-language-action-models)  
+   evidence：多模态视觉语言模型区域自适应的新范式。
+3. [Why and When Visual Token Pruning Fails? A Study on Relevant Visual Information Shift in MLLMs Decoding](/202604/18/2604.12358v1-why-and-when-visual-token-pruning-fails-a-study-on-relevant-visual-information-shift-in-mllms-decoding)  
    标签：评分：7.0/10、query:tta
-   evidence：视觉-语言-动作模型的训练后量化
-4. [MODIX: A Training-Free Multimodal Information-Driven Positional Index Scaling for Vision-Language Models](/202604/17/2604.12537v1-modix-a-training-free-multimodal-information-driven-positional-index-scaling-for-vision-language-models)  
+   evidence：多模态大模型解码阶段的免训练插件框架
+4. [Why and When Visual Token Pruning Fails? A Study on Relevant Visual Information Shift in MLLMs Decoding](/202604/18/2604.12358v2-why-and-when-visual-token-pruning-fails-a-study-on-relevant-visual-information-shift-in-mllms-decoding)  
    标签：评分：7.0/10、query:tta
-   evidence：视觉语言模型中位置索引的免训练动态自适应
-5. [Why Multimodal In-Context Learning Lags Behind? Unveiling the Inner Mechanisms and Bottlenecks](/202604/17/2604.13403v1-why-multimodal-in-context-learning-lags-behind-unveiling-the-inner-mechanisms-and-bottlenecks)  
+   evidence：多模态大模型解码阶段对齐视觉标记的免训练框架
+5. [Doc-V*:Coarse-to-Fine Interactive Visual Reasoning for Multi-Page Document VQA](/202604/18/2604.13731v1-doc-vcoarse-to-fine-interactive-visual-reasoning-for-multi-page-document-vqa)  
    标签：评分：7.0/10、query:tta
-   evidence：通过上下文学习实现多模态大语言模型的推理阶段自适应
-6. [Jump-Start Reinforcement Learning with Vision-Language-Action Regularization](/202604/17/2604.13733v1-jump-start-reinforcement-learning-with-vision-language-action-regularization)  
+   evidence：使用顺序证据聚合的多页文档 VQA 代理框架
+6. [Doubly Outlier-Robust Online Infinite Hidden Markov Model](/202604/18/2604.14322v1-doubly-outlier-robust-online-infinite-hidden-markov-model)  
    标签：评分：7.0/10、query:tta
-   evidence：将VLA引导与在线强化学习结合用于机器人操作
-7. [Gradient-Variation Regret Bounds for Unconstrained Online Learning](/202604/17/2604.11151v1-gradient-variation-regret-bounds-for-unconstrained-online-learning)  
+   evidence：流数据上在线无限隐马尔可夫模型的鲁棒更新规则
+7. [Think Less, Know More: State-Aware Reasoning Compression with Knowledge Guidance for Efficient Reasoning](/202604/18/2604.09150v1-think-less-know-more-state-aware-reasoning-compression-with-knowledge-guidance-for-efficient-reasoning)  
    标签：评分：6.0/10、query:tta
-   evidence：具有遗憾保证的无约束在线学习的无参数算法
-8. [Select Smarter, Not More: Prompt-Aware Evaluation Scheduling with Submodular Guarantees](/202604/17/2604.11328v1-select-smarter-not-more-prompt-aware-evaluation-scheduling-with-submodular-guarantees)  
+   evidence：推理的步骤级自适应和在线对比样本
+8. [VAG: Dual-Stream Video-Action Generation for Embodied Data Synthesis](/202604/18/2604.09330v1-vag-dual-stream-video-action-generation-for-embodied-data-synthesis)  
    标签：评分：6.0/10、query:tta
-   evidence：在线自适应测试与评估调度
-9. [VISTA: Validation-Informed Trajectory Adaptation via Self-Distillation](/202604/17/2604.12044v1-vista-validation-informed-trajectory-adaptation-via-self-distillation)  
+   evidence：用于具身数据合成和策略学习的世界动作模型
+9. [Mosaic: Cross-Modal Clustering for Efficient Video Understanding](/202604/18/2604.10060v1-mosaic-cross-modal-clustering-for-efficient-video-understanding)  
    标签：评分：6.0/10、query:tta
-   evidence：在优化轨迹上强制执行一致性的在线自适应框架
-10. [Indexing Multimodal Language Models for Large-scale Image Retrieval](/202604/17/2604.13268v1-indexing-multimodal-language-models-for-large-scale-image-retrieval)  
+   evidence：连续帧输入的流式长视频理解
+10. [Teaching the Teachers: Boosting unsupervised domain adaptation in speech recognition by ensemble update](/202604/18/2604.11256v1-teaching-the-teachers-boosting-unsupervised-domain-adaptation-in-speech-recognition-by-ensemble-update)  
    标签：评分：6.0/10、query:tta
-   evidence：在测试时利用MLLM进行无需训练的零样本重排序
-11. [SLQ: Bridging Modalities via Shared Latent Queries for Retrieval with Frozen MLLMs](/202604/17/2604.13710v2-slq-bridging-modalities-via-shared-latent-queries-for-retrieval-with-frozen-mllms)  
+   evidence：通过同步集成更新进行无监督领域自适应
+11. [Three Roles, One Model: Role Orchestration at Inference Time to Close the Performance Gap Between Small and Large Agents](/202604/18/2604.11465v1-three-roles-one-model-role-orchestration-at-inference-time-to-close-the-performance-gap-between-small-and-large-agents)  
    标签：评分：6.0/10、query:tta
-   evidence：通过共享延迟查询将冻结的多模态大模型适配于检索，无需侵入性更新
+   evidence：推理时脚手架技术，无需额外训练即可提高小模型性能
 
 
 <div class="dpr-home-promo-card">
