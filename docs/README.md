@@ -6,58 +6,70 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-18
-- 运行时间：2026-04-18 20:16:52 UTC
+- 最新运行日期：2026-04-19
+- 运行时间：2026-04-19 19:31:07 UTC
 - 运行状态：成功
-- 本次总论文数：12
-- 精读区：1
+- 本次总论文数：16
+- 精读区：5
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析强化学习从离线到在线的高效适配理论，并同步追踪多模态大模型在空间建模与解码优化上的最新进展。
-重点关注通用函数逼近下的价值适配证明，以及视觉 Token 剪枝在多模态解码中因信息偏移导致失效的风险。
-建议开发者深入理解离线预训练向在线微调转化的理论边界，并审慎应用多模态模型的压缩策略。
-- 详情：[/202604/18/README](/202604/18/README)
+今日聚焦长程任务突破，深度解析智能体并行扩展与自适应规划等 16 篇最新成果。
+重点推荐 Agentic Aggregation 与 Goal2Skill，它们在任务聚合扩展和复杂操作反射规划上均取得 9.0 分的高评价。
+建议优先研读这两篇高分佳作，探索如何利用反射机制与角色编排提升智能体在长周期任务中的表现。
+- 详情：[/202604/19/README](/202604/19/README)
 
 ### 精读区论文标签
-1. [Provably Efficient Offline-to-Online Value Adaptation with General Function Approximation](/202604/18/2604.13966v1-provably-efficient-offline-to-online-value-adaptation-with-general-function-approximation)  
+1. [Agentic Aggregation for Parallel Scaling of Long-Horizon Agentic Tasks](/202604/19/2604.11753v1-agentic-aggregation-for-parallel-scaling-of-long-horizon-agentic-tasks)  
+   标签：评分：9.0/10、query:tta
+   evidence：针对长程智能体任务的并行测试时间缩放与轨迹聚合
+2. [Goal2Skill: Long-Horizon Manipulation with Adaptive Planning and Reflection](/202604/19/2604.13942v1-goal2skill-long-horizon-manipulation-with-adaptive-planning-and-reflection)  
+   标签：评分：9.0/10、query:tta
+   evidence：VLA系统中长程操作的自适应规划与反思
+3. [From Procedural Skills to Strategy Genes: Towards Experience-Driven Test-Time Evolution](/202604/19/2604.15097v1-from-procedural-skills-to-strategy-genes-towards-experience-driven-test-time-evolution)  
+   标签：评分：9.0/10、query:tta
+   evidence：经验驱动的测试时间演化与控制
+4. [WM-DAgger: Enabling Efficient Data Aggregation for Imitation Learning with World Models](/202604/19/2604.11351v1-wm-dagger-enabling-efficient-data-aggregation-for-imitation-learning-with-world-models)  
    标签：评分：8.0/10、query:tta
-   evidence：具有通用函数逼近的离线到在线价值自适应
+   evidence：利用世界模型为机器人策略合成分布外（OOD）恢复数据
+5. [GeM-EA: A Generative and Meta-learning Enhanced Evolutionary Algorithm for Streaming Data-Driven Optimization](/202604/19/2604.12336v1-gem-ea-a-generative-and-meta-learning-enhanced-evolutionary-algorithm-for-streaming-data-driven-optimization)  
+   标签：评分：8.0/10、query:tta
+   evidence：概念漂移下流式数据驱动优化的元学习代理自适应
 
 ### 速读区论文标签
-1. [AIM: Intent-Aware Unified world action Modeling with Spatial Value Maps](/202604/18/2604.11135v1-aim-intent-aware-unified-world-action-modeling-with-spatial-value-maps)  
+1. [Three Roles, One Model: Role Orchestration at Inference Time to Close the Performance Gap Between Small and Large Agents](/202604/19/2604.11465v2-three-roles-one-model-role-orchestration-at-inference-time-to-close-the-performance-gap-between-small-and-large-agents)  
    标签：评分：7.0/10、query:tta
-   evidence：用于机器人控制的统一世界动作模型
-2. [Anthropogenic Regional Adaptation in Multimodal Vision-Language Model](/202604/18/2604.11490v1-anthropogenic-regional-adaptation-in-multimodal-vision-language-model)  
+   evidence：无需额外训练的LLM智能体推理时脚手架
+2. [ReflectCAP: Detailed Image Captioning with Reflective Memory](/202604/19/2604.12357v1-reflectcap-detailed-image-captioning-with-reflective-memory)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态视觉语言模型区域自适应的新范式。
-3. [Why and When Visual Token Pruning Fails? A Study on Relevant Visual Information Shift in MLLMs Decoding](/202604/18/2604.12358v1-why-and-when-visual-token-pruning-fails-a-study-on-relevant-visual-information-shift-in-mllms-decoding)  
+   evidence：在推理阶段，这些笔记引导描述模型
+3. [DPC-VQA: Decoupling Quality Perception and Residual Calibration for Video Quality Assessment](/202604/19/2604.12813v1-dpc-vqa-decoupling-quality-perception-and-residual-calibration-for-video-quality-assessment)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态大模型解码阶段的免训练插件框架
-4. [Why and When Visual Token Pruning Fails? A Study on Relevant Visual Information Shift in MLLMs Decoding](/202604/18/2604.12358v2-why-and-when-visual-token-pruning-fails-a-study-on-relevant-visual-information-shift-in-mllms-decoding)  
+   evidence：无需大规模重新训练即可将 MLLM 适配到视频质量评估任务
+4. [SLQ: Bridging Modalities via Shared Latent Queries for Retrieval with Frozen MLLMs](/202604/19/2604.13710v1-slq-bridging-modalities-via-shared-latent-queries-for-retrieval-with-frozen-mllms)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态大模型解码阶段对齐视觉标记的免训练框架
-5. [Doc-V*:Coarse-to-Fine Interactive Visual Reasoning for Multi-Page Document VQA](/202604/18/2604.13731v1-doc-vcoarse-to-fine-interactive-visual-reasoning-for-multi-page-document-vqa)  
+   evidence：使用共享潜查询使冻结的多模态大模型适应检索任务
+5. [MAny: Merge Anything for Multimodal Continual Instruction Tuning](/202604/19/2604.14016v1-many-merge-anything-for-multimodal-continual-instruction-tuning)  
    标签：评分：7.0/10、query:tta
-   evidence：使用顺序证据聚合的多页文档 VQA 代理框架
-6. [Doubly Outlier-Robust Online Infinite Hidden Markov Model](/202604/18/2604.14322v1-doubly-outlier-robust-online-infinite-hidden-markov-model)  
+   evidence：使用参数合并实现多模态大语言模型的序列任务自适应
+6. [CART: Context-Aware Terrain Adaptation using Temporal Sequence Selection for Legged Robots](/202604/19/2604.14344v1-cart-context-aware-terrain-adaptation-using-temporal-sequence-selection-for-legged-robots)  
    标签：评分：7.0/10、query:tta
-   evidence：流数据上在线无限隐马尔可夫模型的鲁棒更新规则
-7. [Think Less, Know More: State-Aware Reasoning Compression with Knowledge Guidance for Efficient Reasoning](/202604/18/2604.09150v1-think-less-know-more-state-aware-reasoning-compression-with-knowledge-guidance-for-efficient-reasoning)  
+   evidence：针对足式机器人的上下文感知地形自适应技术
+7. [From Attenuation to Attention: Variational Information Flow Manipulation for Fine-Grained Visual Perception](/202604/19/2604.12508v1-from-attenuation-to-attention-variational-information-flow-manipulation-for-fine-grained-visual-perception)  
+   标签：评分：6.5/10、query:tta
+   evidence：用于多模态大模型细粒度感知的变分信息流操纵
+8. [SVSR: A Self-Verification and Self-Rectification Paradigm for Multimodal Reasoning](/202604/19/2604.10228v1-svsr-a-self-verification-and-self-rectification-paradigm-for-multimodal-reasoning)  
    标签：评分：6.0/10、query:tta
-   evidence：推理的步骤级自适应和在线对比样本
-8. [VAG: Dual-Stream Video-Action Generation for Embodied Data Synthesis](/202604/18/2604.09330v1-vag-dual-stream-video-action-generation-for-embodied-data-synthesis)  
+   evidence：多模态推理和视觉理解的自我纠正范式
+9. [Preventing Safety Drift in Large Language Models via Coupled Weight and Activation Constraints](/202604/19/2604.12384v1-preventing-safety-drift-in-large-language-models-via-coupled-weight-and-activation-constraints)  
    标签：评分：6.0/10、query:tta
-   evidence：用于具身数据合成和策略学习的世界动作模型
-9. [Mosaic: Cross-Modal Clustering for Efficient Video Understanding](/202604/18/2604.10060v1-mosaic-cross-modal-clustering-for-efficient-video-understanding)  
+   evidence：自适应过程中安全保护的理论论证和约束
+10. [Enhanced Text-to-Image Generation by Fine-grained Multimodal Reasoning](/202604/19/2604.13491v2-enhanced-text-to-image-generation-by-fine-grained-multimodal-reasoning)  
    标签：评分：6.0/10、query:tta
-   evidence：连续帧输入的流式长视频理解
-10. [Teaching the Teachers: Boosting unsupervised domain adaptation in speech recognition by ensemble update](/202604/18/2604.11256v1-teaching-the-teachers-boosting-unsupervised-domain-adaptation-in-speech-recognition-by-ensemble-update)  
+   evidence：利用分解的视觉问答（VQA）进行自我反思
+11. [Knowing When Not to Answer: Evaluating Abstention in Multimodal Reasoning Systems](/202604/19/2604.14799v1-knowing-when-not-to-answer-evaluating-abstention-in-multimodal-reasoning-systems)  
    标签：评分：6.0/10、query:tta
-   evidence：通过同步集成更新进行无监督领域自适应
-11. [Three Roles, One Model: Role Orchestration at Inference Time to Close the Performance Gap Between Small and Large Agents](/202604/18/2604.11465v1-three-roles-one-model-role-orchestration-at-inference-time-to-close-the-performance-gap-between-small-and-large-agents)  
-   标签：评分：6.0/10、query:tta
-   evidence：推理时脚手架技术，无需额外训练即可提高小模型性能
+   evidence：评估多模态推理系统中的弃权机制
 
 
 <div class="dpr-home-promo-card">
