@@ -1,0 +1,936 @@
+Title: SCATR: Simple Calibrated Test-Time Ranking
+
+URL Source: https://arxiv.org/pdf/2604.16535v1
+
+Published Time: Tue, 21 Apr 2026 00:12:53 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+Preprint. Under review. 
+
+# SC ATR: Simple Calibrated Test-Time Ranking 
+
+Divya Shyamal ∗
+
+dshyamal@mit.edu 
+
+Marta Kneževi´ c∗
+
+marta.knezevic@epfl.ch 
+
+Lan Tran ∗
+
+lan.tranhuong@epfl.ch 
+
+Chanakya Ekbote †
+
+cekbote@mit.edu 
+
+Vijay Lingam †
+
+vijaylingam@utexas.edu 
+
+Paul Pu Liang †
+
+ppliang@mit.edu 
+
+Abstract 
+
+Test-time scaling (TTS) improves large language models (LLMs) by al-locating additional compute at inference time. In practice, TTS is often achieved through parallel scaling: generating multiple candidate responses and selecting the best via a Best-of-N (BoN) strategy. Its effectiveness therefore hinges on the scoring function. Learned scorers such as process reward models (PRMs) can be strong, but they are expensive to train and run. Lightweight confidence heuristics based on token log-probabilities are much cheaper, yet we find that they often perform substantially worse. To improve on lightweight confidence heuristics without incurring the full cost of stronger learned scorers, we introduce SC ATR, a simple and efficient BoN ranking method that learns a lightweight scorer from a small calibra-tion set using hidden representations from the base model. Across coding and mathematical reasoning benchmarks, SC ATR improves over prior confidence-based baselines by up to 9% . Relative to LoRA fine-tuning on the same calibration data, it achieves comparable accuracy with up to 8000 ×
+
+fewer trainable parameters and much lower compute, reducing training and inference latency by up to 150 × and 1000 ×, respectively. SC ATR is also competitive with strong PRM baselines, and in several settings improves accuracy by up to 7.8% on math and 4.2% on coding while enabling up to 
+
+1000 × faster inference. Overall, SC ATR offers a strong accuracy-efficiency trade-off for scalable test-time selection. Code is available at § this link . 
+
+1 Introduction 
+
+“Look beneath the surface; let not the several quality of a thing nor its worth escape thee.” 
+
+—Marcus Aurelius 
+
+Test-time scaling (TTS) improves language model performance at inference by allocating additional compute, for example through iterative refinement or by sampling multiple candidate responses (Snell et al., 2024; Muennighoff et al., 2025; Zhang et al., 2025). Prior work has shown that this extra compute can substantially improve performance (Fu et al., 2025; Wang et al., 2023; Chen et al., 2023a). TTS methods can be broadly divided into sequential and parallel scaling. Sequential scaling (Madaan et al., 2023; Yao et al., 2023; Chen et al., 2023b) refines a response over multiple dependent generation steps, such as revising intermediate reasoning or correcting earlier errors. While effective, this dependency structure limits throughput because refinement cannot be parallelized. Parallel scaling (Fu et al., 2025; Kang et al., 2025), by contrast, generates multiple candidates independently and selects the best one, making it a more attractive approach for scalable inference. This setting 
+
+> ∗
+
+These authors contributed equally to this work and should be regarded as co-first authors. 
+
+> †
+
+These authors jointly advised this work 
+
+1
+
+> arXiv:2604.16535v1 [cs.LG] 16 Apr 2026
+
+Preprint. Under review. HumanEval KodCode                    
+
+> 55.0
+> 57.5
+> 60.0
+> 62.5
+> 65.0
+> 67.5
+> 70.0
+> Accuracy (%)
+> 56.1
+> 59.3
+> (+3.2)
+> 61.7
+> 67.1
+> (+5.4)
+> Qwen-1.7B
+> AIME MATH-500
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> 31.1
+> 42.4
+> (+11.2)
+> 82.0
+> 91.3
+> (+9.3)
+> Qwen-30B-A3B
+> Mean Median Entropy Variance Gap Random SCaTR 02M 10M 100M 1B 20B
+> Number of parameters (log scale)
+> 55
+> 60
+> 65
+> 70
+> 75
+> 80
+> 85
+> 90
+> Accuracy (%)
+> 83.8% 84.8%
+> 82.5%
+> 85.3%
+> 61.3%
+> 68.3%
+> 64.5%
+> 67.1%
+> Efficiency - Accuracy tradeoff on KodCode
+> Confidence SCaTR (ours) PRM LoRA GPT-OSS-20B Qwen-1.7B
+
+Figure 1: Left: Performance of tail-aggregated token-level uncertainty metrics compared to random best-of-N response selection and SC ATR . Metrics include standard mean confidence ( Ci) (Fu et al., 2025), median and variance of top-k log-probabilities, probability gap between the top two tokens, and Shannon entropy (Zhu et al., 2026; Kang et al., 2025), computed from normalized top-k distributions and aggregated over the sequence tail (see App. B). SC ATR consistently outperforms all confidence-based metrics, which perform close to random selection, highlighting the limitations of fixed uncertainty measures. Right: 
+
+Selection accuracy across varying model scales (GPT-OSS-20B and Qwen3-1.7B) on the KodCode dataset. SC ATR matches or exceeds substantially larger models, demonstrating that lightweight calibration-based scoring can close the gap to higher-capacity systems, making it a compute-efficient approach for TTS. reduces TTS to a selection problem: given N sampled candidates, how can we identify the best response? Best-of-N (BoN) has emerged as a standard framework, where candidate responses are scored and the top-ranked output is returned. Existing scoring methods range from aggregation-based approaches such as self-consistency (Chen et al., 2023a) to trained reward models (Cobbe et al., 2021; Kuang et al., 2025; Zou et al., 2025; Khalifa et al., 2025) and model-based confidence or verification objectives (Kadavath et al., 2022; Chuang et al., 2025). Although effective, many of these approaches introduce additional training or deployment cost; Reward models for BoN demand curating training datasets and extensive compute. Fig. 1 (left) illustrates the gap between existing confidence based BoN methods and oracle selection. To avoid this overhead, recent work has explored lightweight confidence metrics derived from final-layer token probabilities (Kang et al., 2025; Fu et al., 2025; Chen et al., 2023a). These methods use token-level softmax confidence or log probabilities as proxies for correctness, offering an efficient alternative to reward modeling. However, such signals can be poorly calibrated: models may be overconfident in incorrect responses and underconfident in correct ones, limiting their reliability for selection (Epstein et al., 2025). This challenge is especially acute in free-form tasks such as coding or open-ended generation, where candidates often lack a shared answer form and thus do not admit simple aggregation strategies like majority voting (see Fig. 1). These limitations suggest that more informative selection signals may lie beyond output probabilities. Recent work supports this view, showing that hidden states capture rich contextual structure beyond logits alone and can support downstream tasks such as hallucination detection (Gupta et al., 2025; Chen et al., 2024). Motivated by these limitations, we propose SC ATR, a simple test-time scaling approach that uses hidden representations from the penultimate layer as a quality signal for candi-date selection. SC ATR trains a lightweight scoring model on model-generated responses labeled by objective correctness, typically using a few hundred calibration problems and their corresponding rollout-level labels, making per-model training cheap while enabling model-specific calibration. Using the last non-padding token embedding from the penulti-mate layer to rank candidates, SC ATR enables Best-of-N selection that is calibrated to the target model, with minimal overhead. Across the OLMo-2, Qwen3, and GPT-OSS model 2Preprint. Under review. families, spanning 1.7B to 30B parameters, SC ATR outperforms prior confidence-based methods by up to 9% on code generation and mathematical reasoning tasks, and matches stronger scoring models such as process reward models (PRMs), which are trained to score intermediate reasoning steps, while using up to 700 × fewer parameters. To summarize, our main contributions are: 
+
+Main Contributions. 
+
+1. We demonstrate through comprehensive experiments that existing model uncertainty metrics based on logits or token probabilities yield limited per-formance gains for test-time scaling. (Fig. 1) 2. We propose SC ATR, a simple yet effective test-time scaling method that learns a scoring model on a small calibration dataset, enabling model-and-domain-specific adaptation. (Sec. 4) 3. Extensive experiments across three model families (OLMo-2, Qwen3, GPT-OSS) and scales (1.7B–30B) on code generation and mathematical reason-ing tasks show that SC ATR achieves improvements of up to ∼ 9% over confidence-based methods and up to ∼ 7% over a strong PRM baseline, while being over 1000 × faster and requiring up to 700 × fewer parameters. (Subsec. 5.1). 
+
+2 Related Work 
+
+Recent work on test-time scaling (Snell et al., 2024; Brown et al., 2024; Wu et al., 2025) shows that additional inference-time compute can substantially improve LLM performance without further training. A central challenge that remains unsolved is how to select among multiple candidate responses. Best-of-N (BoN) typically uses fixed confidence or uncertainty heuristics derived from token probabilities (Fu et al., 2025; Fadeeva et al., 2024; Kang et al., 2025), but such signals can be unreliable across tasks and often fail to capture the semantic quality of response-level (see C.2). Alternatively, self-consistency (Wang et al., 2023) relies on majority voting to aggregate candidates. Although highly effective for tasks with a single objective answer, this method struggles in open-ended domains such as code generation, where several valid solutions can exist. Additionally, it disregards the valuable information embedded in the intermediate reasoning steps. Finally, scaling up the number of candidates yields diminishing returns for both methods (Huang et al., 2025a). Other approaches use LLMs as selectors, prompting models to evaluate or rank candidates (Chen et al., 2023a; Xiong et al., 2024; Ren et al., 2023; Huang et al., 2025b). However, this approach increases inference cost and risks inheriting biases from the selector. More broadly, recent approaches aggregate multiple responses through learned aggregation, recursive refinement, or trained scoring models (Li et al., 2025; Wang et al., 2025; Zhao et al., 2025; Venkatraman et al., 2025; Cobbe et al., 2021). These include outcome reward models that score final answers (Uesato et al., 2022; Cobbe et al., 2021), and process reward models that score intermediate reasoning steps (Lightman et al., 2023; Wang et al., 2024; Li & Li, 2025; Snell et al., 2024). While effective, such methods typically require additional supervision and expensive scoring models. In contrast, our approach is lightweight, requires minimal additional data and uses only a lightweight scoring head. 
+
+3 Background: Best-of-N Selection 
+
+Test-time scaling improves output quality by using additional inference-time compute. In the parallel setting, a language model samples multiple candidate rollouts {y1, . . . , yN }
+
+for a prompt x, and then selects or aggregates them. A common strategy is Best-of- N,which returns the rollout with the highest score under a scoring function f (·): y⋆ =
+
+arg max j=1,..., N f (yj). To define the scoring function f , recent methods (Fu et al., 2025; Kang et al., 2025) derive confidence metrics from token-level log probabilities to rank can-didate responses. A common approach is confidence-based scoring, which uses model 3Preprint. Under review. TTS Inference Pipeline SCaTR (Our Method)         
+
+> Accurate ✅
+> Eff icient ✅
+> PRM / Lora
+> Accurate ✅
+> Eff icient ❌
+> Con fidence Metrics
+> Accurate ❌
+> Eff icient ✅Scoring Models
+> Problem ( )xi
+> Response - 1
+> Response - 2
+> Response - K
+> ei1
+> ei2
+> eiK
+> Scoring Model Score - 1
+> Scoring Model
+> Scoring Model
+> Score - 2
+> Score - K
+> LLM
+> Pick Highest
+> Scoring Response
+> Extract the embeddings from
+> the penultimate layer
+> Embedding Based Scorer
+
+Figure 2: Overview of SC ATR. Given an input, the model generates K candidate responses. For each response, we extract the intermediate embedding of the last non-padding token from the penultimate layer. These embeddings are evaluated by a scoring model trained on a calibration set, and the response with the highest score is selected as the final output. probability signals (Fu et al., 2025; Kang et al., 2025). Concretely, token-level confidence at position i is defined as Ci = − 1 
+
+> k
+
+∑kj=1 log Pi(j), where Pi(j) is the probability of the j-th most likely token. A sequence-level score is then obtained by aggregating these values over a selected set of token positions: f (y; I) = 1 
+
+> |I (y)|
+
+∑i∈I (y) Ci, where I(y) denotes the included indices. Existing metrics differ mainly in the choice of I(y), for example using all tokens, a suffix of the sequence, or low-confidence token groups. We summarize several popular variants in B.1, define additional probability-based scoring functions in B.2, and defer a broader discussion to Subsec. C.2. As shown in Fig. 1, uncertainty-based metrics often fail to reliably identify correct reasoning traces and frequently perform near random selection. This limitation likely stems from poor signal calibration; models are often over-confident in incorrect responses and under-confident in correct ones, which limits their reliability for selection (Epstein et al., 2025). This motivates a different selection signal for Best-of-N. While prior uncertainty-based metrics (Fu et al., 2025; Chen et al., 2023a) succeed in structured settings that utilize majority voting, raw logits and token probabilities lack discriminatory signals for reliable BoN selection in free-form tasks such as code generation, where agreement-based aggregation is not well defined. 
+
+4 Our Method: SC ATR 
+
+Motivated by recent work showing that internal model states can support downstream decision-making (Chen et al., 2024; Gupta et al., 2025), we propose SC ATR, which uses the model’s internal representations together with a lightweight learned scorer to guide BoN selection. SC ATR operates in two phases: calibration and evaluation. In the calibration phase, a small set of rollouts labeled for correctness is used to train a model-specific scoring function. Then, in the inference / evaluation phase, the LLM generates N candidate responses for each new prompt; the scoring function evaluates these candidates, and the highest-scoring response is selected as the final output. 
+
+4.1 Calibration Phase 
+
+In the calibration phase, SC ATR trains a lightweight MLP scorer on a small labeled set of prompt-response pairs with binary labels, which we refer to as the calibration set. To predict whether a response is correct, the scorer takes as input the hidden representation of the final non-padding token from the penultimate layer of the model, extracted during generation. These representations reflect the model’s state after processing the full response, capturing contextual signals that are not directly available from token-level confidence 4Preprint. Under review. metrics. We train a separate scorer for each model M. Below, we formalize the calibration set construction and the learning procedure for the scoring function. 
+
+Calibration set. To learn the scoring function, we construct a calibration set that captures the relationship between the internal states of the model and the correctness of its outputs. Let the original dataset of reasoning tasks (i.e. prompts) be {xi}mi=1. For each task xi, we generate 
+
+N candidate responses (i.e. rollouts) using the language model M, yij ∼ M(· | xi), ∀ j ∈{1, . . . , N}. We denote X as the space of prompts and Y as the space of outputs. Note that each response is evaluated for correctness using an evaluator E : X × Y → { 0, 1 }, yielding labels rij = E (xi, yij ). The evaluator is domain-specific. For example, rij = 1 if the model’s output matches the exact solution for mathematical reasoning tasks or passes all execution tests for code generation, and rij = 0 otherwise. To leverage the internal computations of the model, we extract the hidden representation eij of the final non-padding token at the penultimate layer for each response j of every prompt i. The embedding of this final non-padding token captures the model’s aggregated state after processing the entire sequence. The resulting calibration set is defined as Dcal = (eij , rij ) | ∀ i ∈ { 1, . . . , m, } ∀ j ∈{1, . . . , N} , which provides paired examples of internal response representations and correctness labels. 
+
+Learning the scoring function. Using Dcal , we train a model-specific scoring function using the extracted embeddings from the penultimate layer: fθ : Rd → [0, 1 ], parameterized as a shallow l-layer MLP: fθ (e) = σ
+
+
+
+W (l)ϕ(· · · ϕ(W (1)e)) 
+
+
+
+, θ = {W (k)}lk=1 where ϕ is a nonlinear activation (ReLU) and σ is a sigmoid function. The parameters θ are optimized using a weighted cross-entropy loss: L(x, y) = −w · y log fθ (x) − (1 − y) log (1 − fθ (x)) ,where w = N0/N1 is the ratio of negative to positive training samples. Hyperparameter details can be found in App. A. For SC ATR , we use embeddings from the penultimate layer. We ablate on this layer choice: results can be found in App. C.3.1. By training on this calibration set, the MLP learns to map hidden states of the LLM to an estimate of correctness. 
+
+4.2 Inference / Evaluation Phase 
+
+During evaluation, given a new prompt xi, the LLM generates N candidate responses 
+
+y1, . . . , yN in parallel. For each response yj, we extract the hidden representation eij of the final non-padding token from the penultimate layer and compute its score using the learned scoring function. The final prediction is the candidate with the highest score. This is extracted during generation, implying that no additional overhead is incurred in this process. These embeddings are then passed through the learned scoring function to obtain response scores sij = f (M,D) 
+
+> θ
+
+(eij ) ∈ [0, 1 ], ∀j ∈ { 1, . . . , N}, which provide an estimate of the correctness or quality of each candidate response. For free form text generation tasks such as coding tasks, the response with the highest score is selected (Best-of-N): 
+
+y⋆ = arg max j=1,..., N sj. For tasks with a definite single correct answer, such as math tasks, we additionally apply weighted majority vote as an alternative selection strategy. For each candidate answer a ∈ A , we compute the score S(a) = ∑Nj=1 sj1{yj = a}, and select an answer a⋆ = arg max a∈A S(a). In our experiments, we train f (M,D) 
+
+> θ
+
+on one dataset and evaluate it on a different dataset from the same domain in order to assess the generalization of the calibration function. We consider this cross-dataset transfer setting more indicative of practical utility, since in realistic deployments the scorer must generalize to new but related questions rather than only to the specific dataset on which it was trained. 
+
+5 Experiments 
+
+We evaluate SC ATR along three axes: effectiveness, efficiency, and robustness. Specifically, we ask: (RQ1) does SC ATR improve Best-of-N selection over lightweight confidence heuristics, (RQ2) how does it compare with stronger learned verifiers such as PRMs and 5Preprint. Under review. C: MATH-500     
+
+> E: AIME
+> C: KodCode
+> E: HumanEval
+> C: HumanEval
+> E: KodCode
+> C: AIME
+> E: MATH-500
+> 82
+> 84
+> 86
+> 88
+> 90
+> 92
+> 94
+> 96
+> Accuracy (%)
+> 93.3
+> 91.7
+> 83.8
+> 94.6
+> 89.8
+> (-3.5)
+> 93.2
+> (+1.5)
+> 86.8
+> (+3.0)
+> 95.0
+> (+0.4)
+> GPT-OSS-20B
+> C: KodCode
+> E: HumanEval
+> C: HumanEval
+> E: KodCode
+> 25
+> 27
+> 30
+> 32
+> 35
+> 37
+> 40
+> 42
+> 45
+> 31.7
+> 27.0
+> 35.0
+> (+3.3)
+> 33.1
+> (+6.1)
+> OLMo-2-7B
+> C: KodCode
+> E: HumanEval
+> C: HumanEval
+> E: KodCode
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> 80
+> 56.1
+> 61.3
+> 59.3
+> (+3.2)
+> 67.1
+> (+5.8)
+> Qwen-1.7B
+> C: MATH-500
+> E: AIME
+> C: KodCode
+> E: HumanEval
+> C: HumanEval
+> E: KodCode
+> C: AIME
+> E: MATH-500
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 33.3
+> 90.0 87.0 85.0
+> 42.4
+> (+9.1)
+> 90.4
+> (+0.4)
+> 88.2
+> (+1.2) 91.3
+> (+6.3)
+> Qwen-30B-A3B
+> Best Confidence SCaTR (ours)
+
+Figure 3: Comparison of SC ATR with the strongest confidence-based baseline. The x-axis indicates the calibration dataset (C) and evaluation dataset (E). SC ATR consistently matches or improves upon confidence-based selection, with gains of up to 9.1 points on mathematical reasoning and 6.1 points on coding. LoRA-based selectors, and (RQ3) which design choices matter most in practice? To answer these questions, we study coding and mathematical reasoning tasks, report both accuracy and efficiency, and perform ablations on the representation, calibration budget, and scoring architecture. 
+
+Datasets. We evaluate on both code generation and mathematical reasoning. For coding, our main results use HumanEval (Chen et al., 2021) and a 1K-problem subset of Kod-Code (Xu et al., 2025), following Ekbote et al. (2025). For mathematics, we use AIME24, AIME25, and MATH-500 (Lightman et al., 2023). 
+
+Models. We study five reasoning LLMs spanning a broad range of scales and model families: Qwen3-1.7B (Team, 2025), OLMo-2-1124-7B-Instruct (OLMo et al., 2025), Qwen2.5-14B-Instruct (Qwen et al., 2025), GPT-OSS-20B (OpenAI, 2025), and Qwen3-30B-A3B (Team, 2025). Full model and implementation details, including hidden-state dimensionality and layer counts, are deferred to Appendix A. 
+
+Implementation details. Unless otherwise stated, we generate N = 16 candidate rollouts per prompt. For each model–dataset pair, we construct three different calibration sets by resampling prompts and train a separate scorer on each one. In practice, SC ATR requires only a single calibration set to operate; using three such sets here allows us to measure variability across calibration data choices. For coding tasks, we assign binary labels of 1 if the generated program passes all test cases and 0 otherwise; for math tasks, we assign 1 if the final solution is correct and 0 otherwise. From every rollout, we extract the final non-padding token embedding from the penultimate transformer layer, which serves as the input to SC ATR. We use a held-out validation split for early stopping and report mean and standard deviation across the three calibration sets. This setup intentionally keeps the scorer lightweight, but it also means that SC ATR is calibrated separately for each model. 
+
+Baselines. We compare SC ATR against random selection, majority voting for math tasks, and several confidence-based ranking rules derived from token probabilities: Average Trace Confidence ( Cavg ), Bottom-10% Group Confidence ( Cbottom-10% ), Lowest Group Confidence (Cleast ), and Tail Confidence ( Ctail ) (See App. B for more details). We also compare against learned verifiers: ReasonFlux-1.5B (Zou et al., 2025), and a LoRA-based correctness predictor obtained by fine-tuning the same base model used for rollout generation. Details of all baselines, including tail/window sizes and the LoRA setup, are provided in App. A. 
+
+5.1 Main Results RQ1: Does SC ATR outperform lightweight confidence heuristics? Fig. 3 compares SC ATR with the strongest confidence-based baseline for each setting. Overall, SC ATR consistently matches or improves upon confidence-based selection, with the largest gains reaching 9.1% on math and 6.1% on coding. For example, on Qwen-30B-A3B, SC ATR improves over the best confidence heuristic by 9.1% and 6.3% points on AIME and Math-500 6Preprint. Under review. 
+
+Dataset ReasonFlux-1.5B SC ATR ∆ Accuracy ↑
+
+AIME24 17.8 ±1.9 18.5 ±4.5 +0.7 AIME25 14.4 ±1.9 21.6 ±5.5 +7.2 MATH-500 79.2 ±0.4 80.4 ±0.7 +1.2 
+
+Table 1: Comparison with ReasonFlux-1.5B on mathematical reasoning using Qwen2.5-14B rollouts. SC ATR is trained on only 1K OpenThoughts examples (500 math and 500 code), whereas ReasonFlux is trained on the full 114K OpenThoughts dataset.                                                                                      
+
+> Model Dataset ReasonFlux-PRM-1.5B SC ATR (ours) Size Infer (ms) ↓Acc. ↑Size Infer (ms) ↓Speedup ↑Acc. ↑∆Accuracy ↑
+> GPT-OSS-20B HumanEval 1.5B 132.3 89.8 ±2.5 5.0M 0.18 717.2 ×93.2 ±0.6 +3.3 KodCode 1.5B 137.4 82.5 ±4.0 2.9M 0.20 678.6 ×86.8 ±0.7 +4.2 OLMo-2-7B HumanEval 1.5B 55.3 32.9 ±1.6 6.6M 0.16 348.6 ×35.0 ±1.7 +2.1 KodCode 1.5B 54.8 29.3 ±1.3 2.2M 0.20 279.6 ×33.1 ±0.9 +3.8 Qwen-1.7B HumanEval 1.5B 116.7 60.4 ±4.3 2.6M 0.15 757.7 ×59.3 ±8.1 -1.1 KodCode 1.5B 79.4 64.5 ±6.9 2.2M 0.18 441.3 ×67.1 ±12.2 +2.6 Qwen-30B-A3B HumanEval 1.5B 25.2 87.6 ±0.7 2.7M 0.20 111.5 ×90.4 ±0.8 +2.8 KodCode 1.5B 38.2 84.6 ±1.1 2.1M 0.20 188.7 ×88.2 ±0.6 +3.6
+
+Table 2: Efficiency and accuracy comparison of ReasonFlux-PRM-1.5B (Zou et al., 2025) and SC ATR across evaluation datasets for coding tasks. SCATR achieves comparable or higher accuracy while using orders of magnitude fewer parameters and providing substantial inference speedups of up to 1000 ×.datasets. On OLMo-2-7B, the gains are 3.3% on HumanEval and 6.1% on KodCode. Across settings, SC ATR also bridges a substantial fraction of the gap between the strongest heuristic baseline and oracle selection. These results indicate that fixed confidence scores capture useful but limited information, whereas a lightweight learned scorer can exploit richer signals from hidden representations. For mathematical reasoning, we additionally combine SC ATR with weighted majority voting (WMV). This further improves performance in several settings, suggesting that SC ATR is complementary to answer aggregation when a canonical final answer is available in Tab. 6. 
+
+RQ2: How does SC ATR compare with stronger learned verifiers? We next compare SC ATR with learned verifiers, focusing on both accuracy and latency cost. On math, Tab. 1 compares SC ATR with ReasonFlux using Qwen2.5-14B rollouts. SC ATR outperforms ReasonFlux-1.5B on all three reported benchmarks, despite being trained on only 1K OpenThoughts examples, randomly sampled as 500 math and 500 code problems, whereas ReasonFlux is trained on the full 114K-example OpenThoughts dataset. This result highlights a central advantage of SC ATR: model-specific calibration can be highly data-efficient while still matching or surpassing substantially more data-intensive PRM approaches. Even relative to ReasonFlux-7B, SC ATR remains competitive on several settings (see C.4.2) despite being vastly smaller and requiring far less supervision, making it a compelling lightweight alternative to large PRMs. Next, we next examine the accuracy–efficiency trade-off in Tab. 2 and Tab. 10. Across models and domains, SC ATR achieves competitive, and often higher, accuracy than PRM-based selectors while using up to 1 ,000 × fewer parameters and enabling up to 1 ,000 × faster inference. In several settings, SC ATR also improves absolute accuracy, with gains of up to 7.8 points on mathematical benchmarks and 4.2 points on coding datasets. These results show that the efficiency benefits of SC ATR do not come at the expense of selection quality. We also compare SC ATR against a LoRA-based correctness predictor obtained by fine-tuning the full base model. Despite its simplicity, SC ATR remains competitive with, and often outperforms, LoRA across a range of settings. For example, on GPT-OSS-20B, SC ATR matches LoRA on AIME (0.95 vs. 0.95) and improves over it on KodCode (0.93 vs. 0.92) and HumanEval (0.87 vs. 0.85). At the same time, SC ATR is substantially more efficient, 7Preprint. Under review. using up to 8 , 000 × fewer parameters and enabling up to 3 ,500 × faster inference. Additional results across more models and datasets are provided in Subsec. C.1 (Tab. 6 and Tab. 7). 2 4 8 16                     
+
+> Number of rollouts
+> 83
+> 84
+> 85
+> 86
+> Accuracy
+> GPT-OSS-20B |KodCode
+> 24816
+> Number of rollouts
+> 90
+> 91
+> 92
+> 93
+> Accuracy
+> GPT-OSS-20B |HumanEval
+> 24816
+> Number of rollouts
+> 85
+> 86
+> 87
+> 88
+> Accuracy
+> Qwen-30B-A3B |KodCode
+> 24816
+> Number of rollouts
+> 87
+> 88
+> 89
+> 90
+> Accuracy
+> Qwen-30B-A3B |HumanEval
+> Confidence LoRA PRM SCaTR
+
+Figure 4: Accuracy as a function of the number of rollouts on two models and two coding benchmarks. In each experiment, the dataset named in the figure title is the evaluation dataset, and the calibration set is taken from the other coding dataset (HumanEval or KodCode). SC ATR remains competitive across rollout budgets and improves steadily as more candidates are available. Finally, we further analyze performance as a function of the number of generated rollouts, as shown on Fig. 4. SC ATR consistently outperforms confidence-based selection, PRM, and LoRA across all rollout budgets on coding datasets across GPT-OSS and Qwen3-30B models, exhibiting steady performance gains as the number of rollouts increases, demon-strating effective usage of additional candidate solutions for improved selection. However, these gains might not generalize to all domains. We notice plateauing or degradation of performance on some math tasks, especially for smaller and less capable models, as noted in Subsec. C.1 (Fig. 6). 
+
+5.2 Ablation Studies RQ3: Which design choices matter most for SC ATR? We study three factors that most directly affect the practicality and effectiveness of SC ATR: i) the choice of hidden represen-tation, ii) the size of the calibration set, and iii) the complexity of the scoring model. We also study in-domain and cross-domain performance versions of SC ATR in Subsec. C.4. 
+
+Choice of layer. Our default choice is the final non-padding token embedding from the penultimate layer, denoted L−1. To test this choice, we compare against six alternative layers spaced throughout the network: .15 L, .3 L, .45 L, .6 L, .75 L, and .9 L, where L is the total number of transformer layers. In the experiment shown in Fig. 5 (left), we use GPT-OSS-20B calibrated on HumanEval and evaluated on KodCode. For each model–dataset pair, we train a separate MLP scorer for each layer and evaluate Best-of-N accuracy on the held-out test set. As illustrated in Fig. 5 (left), performance is similar across deeper layers, and no single layer is uniformly best across all settings. The penultimate layer is therefore not uniquely optimal, but it is a robust choice that performs well across models while exhibiting relatively low variance. This makes it a good default for the main experiments. 
+
+Size of calibration set. We next vary the size of the calibration set to measure the data efficiency of SC ATR. Using GPT-OSS-20B, we calibrate on HumanEval and evaluate on KodCode, while subsampling the HumanEval calibration set (164 problems) to 10%, 25%, and 50% of the full set, and keeping N = 16 rollouts per prompt fixed. The results in Fig. 5 (right) show that performance degrades gracefully as the calibration budget is reduced: larger calibration sets improve performance and generally reduce variance. Because the calibration source here is HumanEval, which is already relatively small, this trend is less saturated than in corresponding GPT-OSS-20B experiments using larger calibration sources such as KodCode. On larger calibration sources such as KodCode, the gains begin to plateau before using the full dataset, suggesting that SC ATR can remain effective even with substantially fewer labeled examples. Additional results are reported in Appendix C.3.2. 8Preprint. Under review. .15L .30L .45L .60L .75L .90L L-1       
+
+> (SCaTR)
+> Layer Depth
+> 80.0
+> 82.5
+> 85.0
+> 87.5
+> 90.0
+> 92.5
+> 95.0
+> Best-of-N Accuracy (%)
+> (a) Layer Depth Ablation
+> .15L
+> .30L
+> .45L
+> .60L
+> .75L
+> .90L
+> L-1 (SCaTR)
+> 10% 25% 50% 100%
+> Training Fraction
+> 75
+> 80
+> 85
+> 90
+> 95
+> Best-of-N Accuracy (%)
+> (b) Training Efficiency
+> 10% 25% 50% 100%
+
+Figure 5: Illustrative ablations for GPT-OSS-20B calibrated on HumanEval and evaluated on KodCode. Left: effect of layer choice (total layers L = 24) for the final-token embedding; the rightmost bar corresponds to SC ATR. Penultimate layer exhibits robust performance with relatively low variance. Right: effect of reducing the calibration-set size. Larger calibration set leads to improved performance with reducing variance. Additional results are reported in Appendix C.3.1 and Appendix C.3.2.                                                                                                                                           
+
+> Model Train Test Final Last-10 Special Ensemble Best Layer SC ATR ↑∆Accuracy ↑
+> Qwen-30B-A3B HumanEval KodCode 88.0 ±0.8 86.7 ±1.2 87.7 ±0.7 87.8 ±0.7 86.8 ±1.3 88.3 ±0.6 +0.3 Qwen-30B-A3B KodCode HumanEval 90.8 ±0.7 90.9 ±0.6 90.8 ±0.8 90.7 ±0.7 90.9 ±0.8 90.4 ±0.8 -0.5 GPT-OSS-20B HumanEval KodCode 86.5 ±1.2 85.7 ±1.0 85.5 ±2.0 86.4 ±2.4 85.2 ±2.9 86.8 ±0.7 +0.3 GPT-OSS-20B KodCode HumanEval 93.1 ±0.8 92.2 ±0.8 92.4 ±0.7 93.3 ±0.5 93.2 ±0.6 93.2 ±0.6 -0.1 OLMo-2-7B HumanEval KodCode 33.0 ±1.1 30.2 ±0.8 29.2 ±1.3 34.0 ±1.0 32.7 ±1.2 33.1 ±0.9 -0.9 OLMo-2-7B KodCode HumanEval 34.9 ±2.3 33.9 ±2.5 31.0 ±1.8 35.2 ±1.7 34.8 ±3.4 35.0 ±1.7 -0.2
+
+Table 3: We compare five more sophisticated scoring function design mechanisms to SC ATR. Some are transformer-based, while others use intermediate layers instead of the penultimate layer like SC ATR. We see that results are very similar across methods, all while SC ATR takes a fraction of the training cost. In particular, SC ATR shows the highest mean or is always within standard deviation of the highest mean among other methods. 
+
+Scoring function design. We finally compare SC ATR with five more complex scoring architectures: 1. single-best-layer , which trains one MLP per candidate layer and selects the layer with the best validation loss; 2. ensemble , which combines per-layer MLP predictions through a learned convex combination; 3. transformer-final , which applies a Transformer encoder to the sequence of final-token embeddings across layers; 4. transformer-last-10 , which encodes the last ten token embeddings from the final layer; and 
+
+5. transformer-special , which uses task-specific token positions such as return statements and function-definition colons in code. We tabulate our results in Tab. 3. Across these alternatives, the overall picture is clear: added architectural complexity does not deliver consistent gains. In several settings, the more complex models match SC ATR, but they do not reliably exceed it, and in others they underperform despite higher training and inference cost. This supports our central design choice: a simple scorer on a single penultimate-layer representation is already a strong operating point. 
+
+6 Conclusion & Limitations 
+
+We presented SC ATR, a simple and efficient test-time ranking method for Best-of-N selection that leverages intermediate representations instead of token-level confidence signals. Across models and tasks in code generation and mathematical reasoning, SC ATR consistently improves over confidence-based baselines and remains competitive with stronger learned verifiers while offering a favorable accuracy–efficiency trade-off. These results highlight the value of internal model states for lightweight, calibrated selection at inference time. At the same time, SC ATR requires access to intermediate hidden representations, which 9Preprint. Under review. restricts its applicability to only open-weight models. Our evaluation focuses on single-turn reasoning tasks; extending the method to multi-turn settings, where internal states evolve across interactions, remains an open direction. In addition, we restrict the scorer to a single summary representation, the final non-padding token embedding, and do not explore richer internal signals such as token-level states, attention patterns, or layer-wise dynamics, which may further improve performance on longer or more complex reasoning problems. 10 Preprint. Under review. 
+
+References 
+
+Bradley Brown, Jordan Juravsky, Ryan Ehrlich, Ronald Clark, Quoc V. Le, Christopher Ré, and Azalia Mirhoseini. Large language monkeys: Scaling inference compute with repeated sampling, 2024. URL https://arxiv.org/abs/2407.21787 .Chao Chen, Kai Liu, Ze Chen, Yi Gu, Yue Wu, Mingyuan Tao, Zhihang Fu, and Jieping Ye. Inside: Llms’ internal states retain the power of hallucination detection. 2024. Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mo-hammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saunders, Christopher Hesse, Andrew N. Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code, 2021. URL https://arxiv.org/abs/2107.03374 .Xinyun Chen, Renat Aksitov, Uri Alon, Jie Ren, Kefan Xiao, Pengcheng Yin, Sushant Prakash, Charles Sutton, Xuezhi Wang, and Denny Zhou. Universal self-consistency for large language model generation, 2023a. URL https://arxiv.org/abs/2311.17311 .Xinyun Chen, Maxwell Lin, Nathanael Schärli, and Denny Zhou. Teaching large language models to self-debug. arXiv preprint arXiv:2304.05128 , 2023b. Yu-Neng Chuang, Prathusha Kameswara Sarma, Parikshit Gopalan, John Boccio, Sara Bolouki, Xia Hu, and Helen Zhou. Learning to route llms with confidence tokens, 2025. URL https://arxiv.org/abs/2410.13284 .Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems, 2021. URL 
+
+https://arxiv.org/abs/2110.14168 .Chanakya Ekbote, Vijay Lingam, Behrooz Omidvar Tehrani, Jun Huan, sujay sanghavi, Anoop Deoras, and Stefano Soatto. Murphy: Reflective multi-turn reinforcement learning for self-correcting code generation in large language. In First Workshop on Foundations of Reasoning in Language Models , 2025. URL https://openreview.net/forum?id=x0Ir7cWEiA .Elliot L Epstein, John Winnicki, Thanawat Sornwanee, and Rajat Dwaraknath. Llms are overconfident: Evaluating confidence interval calibration with fermieval. arXiv preprint arXiv:2510.26995 , 2025. Ekaterina Fadeeva, Aleksandr Rubashevskii, Artem Shelmanov, Sergey Petrakov, Haonan Li, Hamdy Mubarak, Evgenii Tsymbalov, Gleb Kuzmin, Alexander Panchenko, Timothy Baldwin, Preslav Nakov, and Maxim Panov. Fact-checking the output of large language models via token-level uncertainty quantification, 2024. URL https://arxiv.org/abs/ 2403.04696 .Yichao Fu, Xuewei Wang, Yuandong Tian, and Jiawei Zhao. Deep think with confidence, 2025. URL https://arxiv.org/abs/2508.15260 .Nilesh Gupta, Chong You, Srinadh Bhojanapalli, Sanjiv Kumar, Inderjit S Dhillon, and Felix X. Yu. Scalable in-context ranking with generative models. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. URL https://openreview.net/ forum?id=zj45hoQhjD .Audrey Huang, Adam Block, Qinghua Liu, Nan Jiang, Akshay Krishnamurthy, and Dylan J. Foster. Is best-of-n the best of them? coverage, scaling, and optimality in inference-time alignment, 2025a. URL https://arxiv.org/abs/2503.21878 .11 Preprint. Under review. Chengsong Huang, Langlin Huang, Jixuan Leng, Jiacheng Liu, and Jiaxin Huang. Efficient test-time scaling via self-calibration, 2025b. URL https://arxiv.org/abs/2503.00031 .Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas Schiefer, Zac Hatfield-Dodds, Nova DasSarma, Eli Tran-Johnson, Scott Johnston, Sheer El-Showk, Andy Jones, Nelson Elhage, Tristan Hume, Anna Chen, Yuntao Bai, Sam Bowman, Stanislav Fort, Deep Ganguli, Danny Hernandez, Josh Jacobson, Jackson Kernion, Shauna Kravec, Liane Lovitt, Kamal Ndousse, Catherine Olsson, Sam Ringer, Dario Amodei, Tom Brown, Jack Clark, Nicholas Joseph, Ben Mann, Sam McCandlish, Chris Olah, and Jared Kaplan. Language models (mostly) know what they know, 2022. URL https://arxiv.org/abs/2207.05221 .Zhewei Kang, Xuandong Zhao, and Dawn Song. Scalable best-of-n selection for large language models via self-certainty, 2025. URL https://arxiv.org/abs/2502.18581 .Muhammad Khalifa, Rishabh Agarwal, Lajanugen Logeswaran, Jaekyeom Kim, Hao Peng, Moontae Lee, Honglak Lee, and Lu Wang. Process reward models that think, 2025. URL 
+
+https://arxiv.org/abs/2504.16828 .Peng Kuang, Yanli Wang, Xiaoyu Han, Yaowenqi Liu, Kaidi Xu, and Haohan Wang. Optimal aggregation of llm and prm signals for efficient test-time scaling, 2025. URL https: //arxiv.org/abs/2510.13918 .Wendi Li and Yixuan Li. Process reward model with q-value rankings, 2025. URL https: //arxiv.org/abs/2410.11287 .Zichong Li, Xinyu Feng, Yuheng Cai, Zixuan Zhang, Tianyi Liu, Chen Liang, Weizhu Chen, Haoyu Wang, and Tuo Zhao. Llms can generate a better answer by aggregating their own responses, 2025. URL https://arxiv.org/abs/2503.04104 .Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let’s verify step by step, 2023. URL https://arxiv.org/abs/2305.20050 .Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, et al. Self-refine: Iterative refinement with self-feedback. Advances in neural information processing systems , 36:46534– 46594, 2023. Niklas Muennighoff, Zitong Yang, Weijia Shi, Xiang Lisa Li, Li Fei-Fei, Hannaneh Hajishirzi, Luke Zettlemoyer, Percy Liang, Emmanuel Candès, and Tatsunori Hashimoto. s1: Simple test-time scaling, 2025. URL https://arxiv.org/abs/2501.19393 .Team OLMo, Pete Walsh, Luca Soldaini, Dirk Groeneveld, Kyle Lo, Shane Arora, Akshita Bhagia, Yuling Gu, Shengyi Huang, Matt Jordan, Nathan Lambert, Dustin Schwenk, Oyvind Tafjord, Taira Anderson, David Atkinson, Faeze Brahman, Christopher Clark, Pradeep Dasigi, Nouha Dziri, Allyson Ettinger, Michal Guerquin, David Heineman, Hamish Ivison, Pang Wei Koh, Jiacheng Liu, Saumya Malik, William Merrill, Lester James V. Miranda, Jacob Morrison, Tyler Murray, Crystal Nam, Jake Poznanski, Valentina Pyatkin, Aman Rangapur, Michael Schmitz, Sam Skjonsberg, David Wadden, Christopher Wilhelm, Michael Wilson, Luke Zettlemoyer, Ali Farhadi, Noah A. Smith, and Hannaneh Hajishirzi. 2 olmo 2 furious, 2025. URL https://arxiv.org/abs/2501.00656 .OpenAI. gpt-oss-120b and gpt-oss-20b model card, 2025. URL https://arxiv.org/abs/ 2508.10925 .Qwen, :, An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jingren Zhou, Junyang Lin, Kai Dang, Keming Lu, Keqin Bao, Kexin Yang, Le Yu, Mei Li, Mingfeng Xue, Pei Zhang, Qin Zhu, Rui Men, Runji Lin, Tianhao Li, Tianyi Tang, Tingyu Xia, Xingzhang Ren, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yu Wan, Yuqiong Liu, Zeyu Cui, Zhenru Zhang, and Zihan Qiu. Qwen2.5 technical report, 2025. URL https://arxiv.org/abs/2412.15115 .12 Preprint. Under review. Jie Ren, Yao Zhao, Tu Vu, Peter J. Liu, and Balaji Lakshminarayanan. Self-evaluation improves selective generation in large language models, 2023. URL https://arxiv.org/ abs/2312.09300 .Charlie Snell, Jaehoon Lee, Kelvin Xu, and Aviral Kumar. Scaling llm test-time compute optimally can be more effective than scaling model parameters, 2024. URL https:// arxiv.org/abs/2408.03314 .Qwen Team. Qwen3 technical report, 2025. URL https://arxiv.org/abs/2505.09388 .Jonathan Uesato, Nate Kushman, Ramana Kumar, Francis Song, Noah Siegel, Lisa Wang, Antonia Creswell, Geoffrey Irving, and Irina Higgins. Solving math word problems with process- and outcome-based feedback, 2022. URL https://arxiv.org/abs/2211.14275 .Siddarth Venkatraman, Vineet Jain, Sarthak Mittal, Vedant Shah, Johan Obando-Ceron, Yoshua Bengio, Brian R. Bartoldson, Bhavya Kailkhura, Guillaume Lajoie, Glen Berseth, Nikolay Malkin, and Moksh Jain. Recursive self-aggregation unlocks deep thinking in large language models, 2025. URL https://arxiv.org/abs/2509.26626 .Peiyi Wang, Lei Li, Zhihong Shao, R. X. Xu, Damai Dai, Yifei Li, Deli Chen, Y. Wu, and Zhifang Sui. Math-shepherd: Verify and reinforce llms step-by-step without human annotations, 2024. URL https://arxiv.org/abs/2312.08935 .Qibin Wang, Pu Zhao, Shaohan Huang, Fangkai Yang, Lu Wang, Furu Wei, Qingwei Lin, Saravan Rajmohan, and Dongmei Zhang. Learning to refine: Self-refinement of parallel reasoning in llms, 2025. URL https://arxiv.org/abs/2509.00084 .Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models, 2023. URL https://arxiv.org/abs/2203.11171 .Yangzhen Wu, Zhiqing Sun, Shanda Li, Sean Welleck, and Yiming Yang. Inference scaling laws: An empirical analysis of compute-optimal inference for problem-solving with language models, 2025. URL https://arxiv.org/abs/2408.00724 .Miao Xiong, Zhiyuan Hu, Xinyang Lu, Yifei Li, Jie Fu, Junxian He, and Bryan Hooi. Can llms express their uncertainty? an empirical evaluation of confidence elicitation in llms, 2024. URL https://arxiv.org/abs/2306.13063 .Zhangchen Xu, Yang Liu, Yueqin Yin, Mingyuan Zhou, and Radha Poovendran. Kodcode: A diverse, challenging, and verifiable synthetic dataset for coding, 2025. URL https: //arxiv.org/abs/2503.02951 .Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Tom Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. 
+
+Advances in neural information processing systems , 36:11809–11822, 2023. Qiyuan Zhang, Fuyuan Lyu, Zexu Sun, Lei Wang, Weixu Zhang, Zhihan Guo, Yufei Wang, Niklas Muennighoff, Irwin King, Xue Liu, and Chen Ma. What, how, where, and how well? a survey on test-time scaling in large language models, 2025. URL https://arxiv. org/abs/2503.24235 .Wenting Zhao, Pranjal Aggarwal, Swarnadeep Saha, Asli Celikyilmaz, Jason Weston, and Ilia Kulikov. The majority is not always right: Rl training for solution aggregation, 2025. URL https://arxiv.org/abs/2509.06870 .Chenghua Zhu, Siyan Wu, Xiangkang Zeng, Zishan Xu, Zhaolu Kang, Yifu Guo, Yuquan Lu, Junduan Huang, and Guojing Zhou. Edis: Diagnosing llm reasoning via entropy dynamics, 2026. URL https://arxiv.org/abs/2602.01288 .Jiaru Zou, Ling Yang, Jingwen Gu, Jiahao Qiu, Ke Shen, Jingrui He, and Mengdi Wang. Reasonflux-prm: Trajectory-aware prms for long chain-of-thought reasoning in llms, 2025. URL https://arxiv.org/abs/2506.18896 .13 Preprint. Under review. 
+
+# Appendix 
+
+Contents 
+
+1 Introduction 12 Related Work 33 Background: Best-of-N Selection 34 Our Method: SC ATR 4
+
+4.1 Calibration Phase . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 44.2 Inference / Evaluation Phase . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+
+5 Experiments 5
+
+5.1 Main Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 65.2 Ablation Studies . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8
+
+6 Conclusion & Limitations 9A Experimental Setup Details 15 B Definitions and Metrics 16 
+
+B.1 Confidence-based Metrics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 B.2 Variants of Uncertainty Metrics . . . . . . . . . . . . . . . . . . . . . . . . . . 17 
+
+C Additional Experimental Results 18 
+
+C.1 SC ATR : Additional Results for Subsec. 5.1 . . . . . . . . . . . . . . . . . . . 18 C.2 Confidence-Based Methods: Additional Results . . . . . . . . . . . . . . . . 19 C.3 Ablation Studies . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 C.3.1 Layer choice analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 C.3.2 Calibration Set Size analysis . . . . . . . . . . . . . . . . . . . . . . . . 21 C.3.3 Scoring Function Design analysis . . . . . . . . . . . . . . . . . . . . . 22 C.4 Additional Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 C.4.1 LoRA - Domain Transfer Experiments . . . . . . . . . . . . . . . . . . 23 C.4.2 Additional ReasonFlux Experiments . . . . . . . . . . . . . . . . . . . 23 C.4.3 Domain-Adaptive Inference . . . . . . . . . . . . . . . . . . . . . . . . 24 C.4.4 SC ATR : In-distribution vs. out-of-distribution results . . . . . . . . 25 14 Preprint. Under review. 
+
+Appendix organization 
+
+The appendix is organized into three sections covering experimental setup details, defini-tions and metrics, and additional experimental results including ablations and extended analyses. App. A specifies the experimental framework, including model architectures and hidden-state dimensionalities, dataset compositions and partitions, the full set of baseline configurations and hyperparameter details for SC ATR. App. B provides an overview of existing confidence-based metrics and formalizes the evaluated token-level uncertainty met-rics (e.g. variance, Shannon entropy, probability gap) and trace-level aggregation strategies. Finally, App. C presents comprehensive additional experiments. We first report extended results for SCATR in Subsec. C.1, including Best-of-N evaluations across mathematical reasoning and code generation benchmarks, demonstrating that our lightweight scoring formulation achieves performance competitive with compute-intensive baselines such as LoRA fine-tuning and ReasonFlux PRM, while requiring orders-of-magnitude fewer training FLOPs and delivering up to 1000 × inference speedups. We then present additional results for confidence-based methods in Subsec. C.2, showing that standard confidence-based heuristics fail to provide robust discriminative signals for reasoning trajectory selection, performing close to random sampling. Next, we include ablation studies in Subsec. C.3 analyzing the impact of key design choices, including layer selection, calibration set size, and scoring function design. Finally, we present additional experiments in Subsec. C.4, cov-ering LoRA-based domain transfer, comparison with ReasonFlux PRMs, domain-adaptive inference, and SCATR performance under in-distribution and out-of-distribution settings. 
+
+A Experimental Setup Details 
+
+Model Configurations. Table 4 reports key model configuration details, including the dimensionality of hidden representations extracted from the underlying language mod-els. These representations are used as inputs to the scoring model in SC ATR. We also include relevant architectural details for each model family. For GPT-OSS-20B, we config-ure the reasoning effort to high during inference. All models use their default sampling temperatures. 
+
+Datasets. Table 5 summarizes all datasets used in our experiments, including their sizes and corresponding domains (coding or mathematical reasoning). Unless specified, calibra-tion and evaluation are performed across paired datasets within each domain: MATH-500 and AIME for mathematical reasoning, and HumanEval and KodCode for coding, with calibration and test roles swapped between the two. 
+
+Baselines. We compare SC ATR against random selection, majority voting (for math tasks), and a set of confidence-based scoring methods, including Average Trace Confidence (Cavg ), Bottom 10% Group Confidence ( Cbottom −10% ), Lowest Group Confidence ( Cleast ), and Tail Confidence ( Ctail ), as well as PRMs, including ReasonFlux-1.5B and ReasonFlux-7B, and a LoRA-based correctness predictor obtained by fine-tuning the base model used for rollout generation. All the confidence-based metrics are computed using top-k token probabilities (k = 10), with a group window of 1024 tokens and a tail length of 2048 tokens. For the LoRA-based correctness predictor, we fine-tune low-rank adapters on the base rollout model using separate datasets. During inference, the final k tokens of each response are fed to a binary yes/no classifier, and the rollout with the highest probability of “yes” is selected. We use k = 16 , 384 tokens for all models except GPT-OSS, where k = 4 , 096. In all cases, calibration data is drawn from a dataset distinct from the evaluation set. 
+
+Hyperparameter Details for SC ATR In this section, we list the architecture, loss, and hyperparameter details for SC ATR. The scoring function is a lightweight MLP trained on the calibration set with binary cross-entropy loss (with logits), using a class-balanced positive weight of nneg /npos to account for label imbalance. The architecture consists of an input dropout layer followed by 2-3 fully-connected hidden layers with ReLU activa-tions and dropout, and a single scalar output logit; hidden dimensions are selected from 15 Preprint. Under review.             
+
+> Model Layers Hidden dimension
+> GPT-OSS-20B 24 2880 OLMo-2-7B 32 4096 Qwen3-1.7B 28 2048 Qwen3-30B-A3B 48 2048 Qwen2.5-14B-Instruct 48 5120
+
+Table 4: Model architecture specifications. The hidden dimension is the feature vector size used to train the scoring function.             
+
+> Dataset Domain Number of problems
+> MATH-500 Math 500 AIME 2025 Math 30 AIME 2024 Math 30 HumanEval Code 164 KodCode (subsetted) Code 1000
+
+Table 5: Dataset specifications including problem domain and number of problem in each dataset. 
+
+{[512, 256 ], [512, 256, 128 ], [1024, 512 ], [1024, 512, 256 ]}. The training set is split 75/25 at the problem-ID level to prevent leakage across rollouts of the same problem. We use Adam with gradient clipping (norm 1.0) and a ReduceLROnPlateau scheduler (factor 0.5, patience 3), with early stopping at patience 10 per configuration and a maximum of 100 epochs. The hyperparameters: hidden dimensions, dropout, input dropout, learning rate, weight decay, batch size, and whether to use batch normalization; are selected via random search over 100 configurations, choosing the configuration with the lowest validation loss. All experiments are run with 3 random seeds (32, 42, 52) across 3 training turns (three calibration sets), and results are averaged over the resulting 9 runs. 
+
+B Definitions and Metrics 
+
+B.1 Confidence-based Metrics 
+
+When the majority vote is ill-defined (e.g., multiple distinct outputs can be correct) or when correctness is difficult to verify automatically, selection must rely on signals other than exact agreement on the final answer. A common alternative is confidence-based scoring, which ranks candidates using model-internal probability signals. In the literature (Fu et al., 2025; Kang et al., 2025), a common approach is to turn per-token log probabilities into a single confidence-style score, which is then used to rank and select among candidate generations. To make these confidence-based metrics precise, we first define a token-level confidence signal and then show how it can be aggregated into a sequence-level score. We begin with token-level confidence, defined as the negative average log-probability of the top-k predicted tokens at position i: Ci = − 1 
+
+> k
+
+∑kj=1 log Pi(j), where Pi(j) is the probability assigned to the j-th most likely token. Higher token confidence corresponds to more peaked predictive distributions (greater model certainty), whereas lower confidence indicates flatter distributions (less certainty) at that position. Confidence-based scoring then squashes these token-level confidence values to a single score for generated text by aggregating them over a chosen subset of token positions (or groups of positions). All confidence-based scoring functions of a generated response can be written as a normalized aggregation of token-level confidence values over a selectable index set: f (y; I) = 1 
+
+> |I (y)|
+
+∑i∈I (y) Ci, where I(y) ⊆ { 1, . . . , T} denotes the subset of token indices included in the aggregation. Average trace confidence is obtained by selecting all token indices, I(y) = {1, . . . , T}, yielding a global measure of model certainty. To capture local uncertainty, tokens are organized into overlapping groups {Gj}, with group confidence 
+
+defined as the mean token confidence within each group. Bottom 10% group confidence is computed by identifying the lowest-confidence 10% of groups and aggregating the token confidences contained in those groups, while lowest group confidence considers only the tokens belonging to the single minimum-confidence group. Tail confidence is obtained by restricting I(y) to Ttail , a fixed-length suffix of the generated sequence, emphasizing uncertainty in the final part of the trace. 16 Preprint. Under review. In prior work (Fu et al., 2025; Kang et al., 2025), token-level confidence is typically defined as the mean of the top-k log-probabilities, Ci = 1 
+
+> k
+
+∑kj=1 ℓj, where ℓ1, . . . , ℓk are the top-k log-probabilities at token position i. While simple and widely used, this mean-based confidence can be overly sensitive to outliers and may fail to capture the full uncertainty in the model’s predictions. In this work, we study several alternative token-level uncertainty metrics derived from the same top-k log-probabilities. 
+
+B.2 Variants of Uncertainty Metrics 
+
+We analyzed a family of probability-based, token-level scoring signals that resemble confi-dence and can be aggregated into a single rollout-level metric for Best-of-N selection. While confidence-based scoring in prior work is typically defined using a token-level confidence 
+
+Ci (often computed as the mean negative log-probability of the top-k tokens), we go beyond this standard formulation. In addition to the standard confidence metric, we study sev-eral alternative token-level measures derived from the model’s token-wise probabilities or log-probabilities. We consider the median of the top-k log-probabilities, which is less sensitive to outliers than the mean and can provide a more robust proxy for confidence. We also evaluate the variance of the top-k log-probabilities, which captures dispersion among likely tokens and serves as a proxy for predictive uncertainty. To measure the sharpness of the model’s preference, we compute the probability gap between the two most likely tokens. Finally, we consider the Shannon entropy of the normalized top-k distribution, which quantifies uncertainty in the predictive distribution. A detailed description of all scoring metrics is given below. 
+
+Median. The median of the top-k log-probabilities provides a more robust estimate of confidence by reducing the influence of extreme values and better reflecting the central tendency of the model’s predicted probabilities. Compared to the mean, it is less sensitive to outliers and better captures the typical confidence of likely tokens. 
+
+Variance. The variance of the top-k log-probabilities quantifies the dispersion among the top-k tokens: Var = 1
+
+k
+
+> k
+
+# ∑
+
+> i=1
+
+(ℓi − ¯ℓ)2, ¯ℓ = 1
+
+k
+
+> k
+
+# ∑
+
+> i=1
+
+ℓi.Higher variance indicates greater disagreement among likely tokens, serving as a proxy for predictive uncertainty. 
+
+Probability Gap. To capture the sharpness of the model’s preference, we compute the 
+
+probability gap , defined as the difference between the top two probabilities: Gap = exp (ℓ1) − exp (ℓ2).A larger gap indicates a more confident prediction at that token position. 
+
+Shannon Entropy. Finally, we consider the Shannon entropy H, which captures the overall uncertainty of the model’s predictions at a token. It is computed over the normalized top-k
+
+probabilities: 
+
+H = −
+
+> k
+
+# ∑
+
+> i=1
+
+˜pi log ˜ pi, ˜pi = exp (ℓi)
+
+∑kj=1 exp (ℓj) , i = 1, . . . , k.Higher entropy corresponds to a more uncertain or flat distribution over likely tokens. Trace-level scores are computed using the group-level confidence measures introduced in Subsec. B.1: Average Trace Confidence ( Cavg ), Bottom 10% Group Confidence ( Cbottom −10% ), Lowest Group Confidence ( Cleast ), and Tail Confidence ( Ctail ). In our experiments, we use 
+
+k = 10 for top-k token confidence, a group size of 1024 tokens, and a tail length of 2048 tokens. 17 Preprint. Under review. For Best-of-N selection, the candidate with the highest aggregate score is chosen for all metrics except entropy, for which lower values indicate higher confidence. Selection is applied across all variants of trace-level aggregation ( Cavg , Cbottom −10% , Cleast and Ctail ). 
+
+C Additional Experimental Results 
+
+C.1 SC ATR : Additional Results for Subsec. 5.1 
+
+We present full results for the math and coding domains, comparing SC ATR to several baseline methods and reporting the improvement over the strongest baseline. We also report the percentage of the gap between the best baseline and the oracle that is closed by SC ATR, computed as SC ATR −best baseline Oracle −best baseline . For math tasks, we include both Best-of-N results and Weighted Majority Vote results. Detailed results of math and coding tasks can be found in Tab. 6 and Tab. 7, respectively. We show that SC ATR consistently outperforms confidence-based baselines, reaching up to 9.1% and 6.1% improvements on math and coding tasks respectively, and performs on par with the LoRA finetuned model and ReasonFlux-1.5B PRM.                                                                                                                             
+
+> Model Calibration set Test SC ATR Best Confidence-based Strategy LoRA PRM SC ATR-WMV Oracle Delta Pct. gap closed GPT-OSS-20B MATH-500 AIME 89.8 ±2.9 93.3 ±0.0 94.8 ±2.4 92.2 ±1.9 94.0 ±1.3 97.8 -3.5 -77.8 GPT-OSS-20B AIME MATH-500 95.0 ±0.5 94.6 ±0.9 94.8 ±0.3 95.5 ±0.3 96.1 ±0.3 97.7 +0.4 12.9 Qwen-1.7B MATH-500 AIME 48.9 ±3.1 52.2 ±5.1 50.4 ±5.9 41.1 ±8.4 55.2 ±2.9 68.9 -3.3 -19.8 Qwen-1.7B AIME MATH-500 88.3 ±0.7 88.1 ±0.4 88.9 ±0.5 87.3 ±0.8 90.6 ±0.4 94.9 +0.2 2.9 Qwen-30B-A3B MATH-500 AIME 42.4 ±5.5 33.3 ±3.3 —37.8 ±5.1 45.7 ±3.8 57.8 +9.1 37.1 Qwen-30B-A3B AIME MATH-500 91.3 ±0.5 85.0 ±1.6 —88.9 ±0.2 91.6 ±0.3 93.2 +6.3 76.8
+
+Table 6: Best-of-N results for math domain. All values are mean ± standard deviation. SC ATR consistently matches or outperforms strong baselines and closes a substantial fraction of the gap to oracle selection, while remaining computationally efficient.                                                                                                                                            
+
+> Model Calibration set Test SC ATR Best Confidence-based Strategy LoRA PRM Oracle Delta Pct. gap closed (%) GPT-OSS-20B KodCode HumanEval 93.2 ±0.6 91.7 ±0.9 92.3 ±0.4 89.8 ±2.5 93.9 +1.5 68.2 GPT-OSS-20B HumanEval KodCode 86.8 ±0.7 83.8 ±0.9 85.2 ±1.0 82.5 ±4.0 94.5 +3.0 28.0 OLMo-2-7B KodCode HumanEval 35.0 ±1.7 31.7 ±1.1 37.7 ±2.7 32.9 ±1.6 73.4 +3.3 7.9 OLMo-2-7B HumanEval KodCode 33.1 ±0.9 27.0 ±0.2 32.7 ±0.8 29.3 ±1.3 66.7 +6.1 15.4 Qwen-1.7B KodCode HumanEval 59.3 ±8.1 56.1 ±2.1 63.8 ±9.2 60.4 ±4.3 87.4 +3.2 10.2 Qwen-1.7B HumanEval KodCode 67.1 ±12.2 61.3 ±11.6 68.3 ±9.1 64.5 ±6.9 90.8 +5.8 19.7 Qwen-30B-A3B KodCode HumanEval 90.4 ±0.8 90.0 ±0.7 —87.6 ±0.7 92.7 +0.4 14.8 Qwen-30B-A3B HumanEval KodCode 88.2 ±0.6 87.0 ±1.0 —84.6 ±1.1 93.7 +1.2 17.9
+
+Table 7: Best-of-N results for coding domain. All values are mean ± standard deviation. SC ATR consistently matches or outperforms strong baselines and closes a substantial fraction of the gap to oracle selection, while remaining computationally efficient. We further compare the efficiency of SC ATR against LoRA in Tab. 8 and Tab. 9. Despite its significantly smaller footprint and training and inference times, SC ATR performs on par with significantly larger models, demonstrating a markedly better efficiency–performance trade-off. Finally, we compare the efficiency and accuracy of ReasonFlux-PRM-1.5B (Zou et al., 2025) and SC ATR across evaluation datasets for mathematical reasoning tasks. SC ATR achieves comparable or higher accuracy while using orders of magnitude fewer parameters and providing substantial inference speedups of up to 1000 ×. Results are shown in Tab. 10. 18 Preprint. Under review. 
+
+LoRA SCATR (ours) Model Dataset TFLOPs Train (min) Acc. TFLOPs Train (min) Acc. GPT-OSS AIME 12690 × 119.07 0.95 8.7 × 10 1 2.17 0.90 HumanEval 13268 × 206.29 0.92 1.5 × 10 2 5.56 0.93 KodCode 15310 × 35.78 0.85 2.4 × 10 1 1.61 0.87 MATH-500 108503 × 74.37 0.95 7.4 × 10 0 0.47 0.95 OLMo-2-7B HumanEval 2075 × 35.38 0.38 1.6 × 10 2 3.89 0.35 KodCode 2515 × 5.76 0.33 1.9 × 10 1 1.37 0.33 Qwen-1.7B AIME 2324 × 29.50 0.50 8.9 × 10 1 2.24 0.49 HumanEval 5374 × 49.32 0.64 7.4 × 10 1 6.48 0.59 KodCode 3217 × 7.90 0.68 2.0 × 10 1 1.52 0.67 MATH-500 39568 × 30.02 0.89 5.4 × 10 0 0.49 0.88 
+
+Table 8: Comparison of LoRA finetuned model and SCATR (ours) across different models and datasets. The table reports training size (TFLOPs), training time in minutes, and accuracy for each method. SCATR demonstrates competitive performance with significantly reduced computational requirements. 
+
+Model Dataset LoRA SC ATR (ours) Size Infer (ms) ↓ Acc. ↑ Size Infer (ms) ↓ Speedup ↑ Acc. ↑ ∆ Accuracy ↑
+
+GPT-OSS-20B AIME 20B 159.9 94.8 ±2.4 6.7M 0.3 625.5 × 89.8 ±2.9 -5.1 HumanEval 20B 249.5 92.3 ±0.4 5.0M 0.2 1352.7 × 93.2 ±0.6 +0.9 KodCode 20B 257.6 85.2 ±1.0 2.9M 0.2 1271.9 × 86.8 ±0.7 +1.6 MATH-500 20B 616.1 94.8 ±0.3 2.3M 0.2 3534.1 × 95.0 ±0.5 +0.2 OLMo-2-7B HumanEval 7B 48.5 37.7 ±2.7 6.6M 0.2 305.5 × 35.0 ±1.7 -2.7 KodCode 7B 49.2 32.7 ±0.8 2.2M 0.2 251.0 × 33.1 ±0.9 +0.4 Qwen-1.7B AIME 1.7B 55.3 50.4 ±5.9 6.3M 0.2 326.0 × 48.9 ±3.1 -1.5 HumanEval 1.7B 47.0 63.8 ±9.2 2.6M 0.2 305.2 × 59.3 ±8.1 -4.5 KodCode 1.7B 48.7 68.3 ±9.1 2.2M 0.2 270.5 × 67.1 ±12.2 -1.2 MATH-500 1.7B 66.9 88.9 ±0.5 1.7M 0.2 436.1 × 88.3 ±0.7 -0.6 
+
+Table 9: Efficiency and accuracy comparison of LoRA and SC ATR across evaluation datasets. SC ATR achieves comparable accuracy while using orders of magnitude fewer parameters and providing substantial inference speedups. 
+
+Model Dataset ReasonFlux-PRM-1.5B SC ATR (ours) Size Infer (ms) Acc. Size Infer (ms) Speedup Acc. ∆Acc. GPT-OSS-20B AIME 1.5B 175.8 92.2 ±1.9 6.7M 0.26 687.5 × 89.8 ±2.9 -2.5 MATH-500 1.5B 119.3 95.5 ±0.3 2.3M 0.17 684.3 × 95.0 ±0.5 -0.5 Qwen-1.7B AIME 1.5B 188.7 41.1 ±8.4 6.3M 0.17 1113.3 × 48.9 ±3.1 +7.8 MATH-500 1.5B 170.9 87.3 ±0.8 1.7M 0.15 1115.2 × 88.3 ±0.7 +1.0 Qwen-30B-A3B AIME 1.5B 175.0 37.8 ±5.1 2.7M 0.3 691.3 × 42.4 ±5.5 +4.6 MATH-500 1.5B 167.8 88.9 ±0.2 2.6M 0.1 1148.1 × 91.3 ±0.5 +2.3 
+
+Table 10: Efficiency and accuracy comparison of ReasonFlux-PRM-1.5B (Zou et al., 2025) and SC ATR across evaluation datasets for math tasks. SCATR achieves comparable or higher accuracy while using orders of magnitude fewer parameters and providing substantial inference speedups of up to 1000 ×.
+
+C.2 Confidence-Based Methods: Additional Results 
+
+We compare tail-aggregated token-level uncertainty metrics on GPT-OSS-20B and Qwen-30B, as shown in Fig. 7, complementing the results in the main paper that cover additional model families. Consistent with prior findings, all confidence- and uncertainty-based metrics perform close to random selection and remain substantially below oracle performance, with no metric exhibiting reliable advantages across datasets. These results reinforce the 19 Preprint. Under review. 2 4 8 16                    
+
+> Number of rollouts
+> 32
+> 34
+> 36
+> 38
+> 40
+> 42
+> Accuracy
+> Qwen-30B-A3B |AIME
+> 24816
+> Number of rollouts
+> 85
+> 86
+> 87
+> 88
+> 89
+> 90
+> 91
+> Accuracy
+> Qwen-30B-A3B |MATH-500
+> 24816
+> Number of rollouts
+> 40
+> 45
+> 50
+> Accuracy
+> Qwen-1.7B |AIME
+> 24816
+> Number of rollouts
+> 87.5
+> 88.0
+> 88.5
+> 89.0
+> Accuracy
+> Qwen-1.7B |MATH-500
+> Confidence PRM SCaTR
+
+Figure 6: Accuracy as a function of the number of rollouts across two models and two math datasets. For each experiment, the calibration set is drawn from the alternate dataset. We compare four selection strategies: Confidence, the strongest confidence-based baseline selecting the rollout with the highest confidence score; PRM, using a fixed ReasonFlux-1.5B process reward model; LoRA, a fine-tuned model trained to predict rollout correctness. AIME MATH-500 HumanEval KodCode                                  
+
+> 80.0
+> 82.5
+> 85.0
+> 87.5
+> 90.0
+> 92.5
+> 95.0
+> 97.5
+> 100.0
+> Accuracy (%)  93.3
+> 97.8
+> (4.4)
+> 95.6 94.9
+> 97.7
+> (2.8)
+> 96.1
+> 91.1
+> 93.9
+> (2.8)
+> 83.2
+> 94.5
+> (11.4)
+> GPT-OSS-20B
+> AIME MATH-500 HumanEval KodCode
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> 48.9
+> 68.9
+> (20.0)
+> 51.1
+> 88.3
+> 94.9
+> (6.7)
+> 90.9
+> 56.1
+> 87.4
+> (31.3)
+> 61.7
+> 90.8
+> (29.1)
+> Qwen-1.7B
+> AIME MATH-500 HumanEval KodCode
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 1.1
+> 5.6
+> (4.4)
+> 35.8
+> 68.3
+> (32.5)
+> 46.8
+> 31.7
+> 73.4
+> (41.7)
+> 26.3
+> 66.7
+> (40.4)
+> OLMo-2-7B
+> AIME MATH-500 HumanEval KodCode
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> 31.1
+> 57.8
+> (26.7)
+> 43.3
+> 82.0
+> 93.2
+> (11.2)
+> 90.7
+> 87.8
+> 92.7
+> (4.9)
+> 86.8
+> 93.7
+> (6.9)
+> Qwen-30B-A3B
+> Mean Median Entropy Variance Gap Random Oracle Maj. vote
+
+Figure 7: Performance of tail-aggregated token-level uncertainty metrics compared with random, majority vote and oracle best-of-N responses selection. Metrics include standard mean confidence ( Ci), median and variance of top-k log-probabilities, probability gap between the first two top-k probabilities, and Shannon entropy, computed from the normalized distribution of top-k log-probabilities at each token position and aggregated over the tail of each sequence. Confidence-based metrics, including the standard mean ( Ci), behave similarly to random selection and remain far below oracle performance, defined as success whenever any candidate response is correct, indicating that fixed confidence measures provide a limited signal for effective response selection. conclusion that token-level uncertainty signals provide limited guidance for effective Best-of-N response selection. We evaluate confidence-based Best-of-N selection by applying multiple aggregation strate-gies to token-level confidence scores, including full-sequence averaging, tail-only aggrega-tion, and group-based criteria that emphasize low-confidence regions of the trace. As shown in Fig. 8, all aggregation strategies yield similar performance across models and datasets, with results close to random selection and substantially below oracle performance. While minor variations are observed depending on the model and dataset, no aggregation strategy consistently outperforms the others. These findings suggest that fixed confidence-based aggregation provides limited signal for identifying correct reasoning traces and offers no clear guidance on which aggregation strategy should be preferred in practice. Finally, a comprehensive overview of tail-aggregated token-level uncertainty metrics com-pared to random best-of-N response selection and SC ATR across all models in the coding domain (extending the results shown in the main paper) is presented in Fig. 9. SC ATR consistently outperforms all confidence-based metrics, which perform close to random selection, highlighting the limitations of fixed uncertainty metrics. 20 Preprint. Under review. AIME MATH-500 HumanEval KodCode                               
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> 93.3
+> 97.8
+> (4.4)
+> 94.6
+> 97.7
+> (3.1)
+> 91.7
+> 93.9
+> (2.2)
+> 83.8
+> 94.5
+> (10.8)
+> GPT-OSS-20B
+> AIME MATH-500 HumanEval KodCode
+> 52.2
+> 68.9
+> (16.7)
+> 88.1
+> 94.9
+> (6.8)
+> 56.1
+> 87.4
+> (31.3)
+> 61.3
+> 90.8
+> (29.5)
+> Qwen-1.7B
+> AIME MATH-500 HumanEval KodCode
+> 1.1
+> 5.6
+> (4.4)
+> 35.8
+> 68.3
+> (32.5)
+> 31.7
+> 73.4
+> (41.7)
+> 27.0
+> 66.7
+> (39.7)
+> OLMo-2-7B
+> AIME MATH-500 HumanEval KodCode
+> 33.3
+> 57.8
+> (24.4)
+> 85.0
+> 93.2
+> (8.2)
+> 90.0
+> 92.7
+> (2.6)
+> 87.0
+> 93.7
+> (6.8)
+> Qwen-30B-A3B
+> Mean (Full) Mean (Tail) Group Lowest Group Bottom% Random Oracle
+
+Figure 8: Performance of confidence-based Best-of-N selection using different aggregation strategies for token-level confidence, compared with random and oracle selection. Aggre-gation methods include confidence averaged over the full sequence (Full), over the final 2048 tokens (Tail), selection based on the highest lowest group confidence with group size 1024 (Group Lowest), and selection based on the highest bottom 10% group confidence (Bottom 10%). Across models and datasets, different aggregation strategies yield similar performance and remain far below oracle performance—defined as success whenever any candidate response is correct—exhibiting only minor variations and no consistent pattern, indicating that no single aggregation strategy consistently yields optimal responses, leaving it unclear which confidence-based criterion should be preferred in practice. HumanEval KodCode   
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> 56.1
+> 59.3
+> (3.2)
+> 61.7
+> 67.1
+> (5.4)
+
+Qwen-1.7B    
+
+> HumanEval KodCode
+> 31.7
+> 35.0
+> (3.3)
+> 26.3
+> 33.1
+> (6.8)
+
+OLMo-2-7B     
+
+> HumanEval KodCode
+> 91.1
+> 91.9
+> (0.8)
+> 83.2 85.3
+> (2.2)
+
+GPT-OSS-20B     
+
+> HumanEval KodCode
+> 87.8
+> 90.4
+> (2.6)
+> 86.8 88.2
+> (1.5)
+
+Qwen-30B-A3B       
+
+> Mean Median Entropy Variance Gap Random SCaTR
+
+Figure 9: Performance of tail-aggregated token-level uncertainty metrics compared to random best-of-N response selection and SC ATR across all models in the coding domain. Metrics include standard mean confidence ( Ci) (Fu et al., 2025), median and variance of top-k log-probabilities, probability gap between the top two tokens, and Shannon entropy, computed from normalized top-k distributions and aggregated over the sequence tail (see App. B). SC ATR consistently outperforms all confidence-based metrics, which perform close to random selection, highlighting the limitations of fixed uncertainty measures. 
+
+C.3 Ablation Studies 
+
+C.3.1 Layer choice analysis 
+
+Here, we experiment with using the hidden states from different intermediate layers, rather than just the last (which SC ATR uses). We consider layers at constant proportions of the total number of layers (taking floors if the resulting value is non-integral). We see that performance is similar across layers, with the last commonly exhibiting lower variance. Below are Best-of-N results, shown for N = 4, 8, 16 in Tab. 11, Tab. 12 and Tab. 13, respectively. 
+
+C.3.2 Calibration Set Size analysis 
+
+Here, we experiment with using just a fraction of the calibration set to train the scoring function. We see that additional data could be helpful for SC ATR trained on HumanEval (164 problems), but for Kodcode (1000 problems, which has been subsetted), performance plateaus. Below are results, evaluating SC ATR on N = 4, 8, 12, 16 rollouts as shown in Tab. 14. 21 Preprint. Under review. 
+
+Model Train Test .15 L .3 L .45 L .6 L .75 L .9 L L − 1GPT-OSS-20B HumanEval KodCode 85.0 ± 2.8 85.0 ± 2.7 85.2 ± 2.4 85.0 ± 2.4 86.0 ± 1.5 86.3 ± 1.4 85.9 ± 1.1 GPT-OSS-20B KodCode HumanEval 92.7 ± 0.6 92.6 ± 0.6 92.5 ± 0.8 92.5 ± 0.7 92.5 ± 0.7 92.3 ± 1.3 92.6 ± 1.0 Qwen-30B-A3B HumanEval KodCode 87.0 ± 0.6 86.7 ± 0.6 86.9 ± 0.7 86.9 ± 0.6 86.7 ± 0.6 86.8 ± 0.7 87.1 ± 0.5 
+
+Qwen-30B-A3B KodCode HumanEval 89.4 ± 1.0 89.7 ± 0.9 89.6 ± 0.9 89.5 ± 1.0 89.7 ± 1.1 89.3 ± 1.1 89.3 ± 1.2 Qwen-1.7B HumanEval KodCode 60.8 ± 14.7 61.1 ± 14.7 60.6 ± 15.3 61.2 ± 14.6 60.8 ± 15.0 60.8 ± 14.9 61.0 ± 14.7 Qwen-1.7B KodCode HumanEval 55.0 ± 6.1 55.2 ± 6.2 55.1 ± 6.2 55.0 ± 6.5 54.9 ± 6.6 54.4 ± 6.6 54.5 ± 7.0 OLMo-2-7B HumanEval KodCode 29.7 ± 0.6 31.1 ± 0.9 30.6 ± 1.1 31.5 ± 1.1 31.1 ± 0.8 31.2 ± 0.9 31.3 ± 0.8 OLMo-2-7B KodCode HumanEval 32.7 ± 1.6 32.5 ± 1.3 32.9 ± 2.7 34.3 ± 1.7 33.4 ± 1.5 34.4 ± 1.9 33.7 ± 2.1 
+
+Table 11: Comparison of Best-of-N accuracies ( N = 4) when using different intermediate layers for SC ATR (where we floor the respective percentages). 
+
+Model Train Test .15 L .3 L .45 L .6 L .75 L .9 L L − 1GPT-OSS-20B HumanEval KodCode 84.7 ± 3.2 84.7 ± 3.1 85.4 ± 2.6 85.0 ± 2.5 86.4 ± 1.5 86.8 ± 1.2 86.6 ± 0.6 GPT-OSS-20B KodCode HumanEval 92.7 ± 0.6 92.6 ± 0.8 92.3 ± 0.9 92.5 ± 0.9 92.4 ± 0.9 92.1 ± 0.8 92.7 ± 0.8 Qwen-30B-A3B HumanEval KodCode 87.1 ± 0.7 86.9 ± 0.7 87.1 ± 1.0 86.9 ± 0.7 87.3 ± 0.7 87.0 ± 0.8 87.7 ± 0.5 
+
+Qwen-30B-A3B KodCode HumanEval 90.5 ± 0.7 91.3 ± 0.8 90.5 ± 0.9 90.5 ± 0.8 90.4 ± 0.8 90.2 ± 0.7 90.2 ± 0.8 Qwen-1.7B HumanEval KodCode 61.5 ± 15.4 61.8 ± 15.7 61.2 ± 16.2 62.3 ± 15.5 61.7 ± 15.7 61.6 ± 15.6 62.4 ± 14.8 
+
+Qwen-1.7B KodCode HumanEval 54.2 ± 9.7 54.1 ± 9.2 54.3 ± 9.5 53.8 ± 9.5 53.1 ± 9.1 52.6 ± 8.4 52.6 ± 9.4 OLMo-2-7B HumanEval KodCode 30.2 ± 1.2 31.6 ± 1.0 31.6 ± 1.1 32.4 ± 1.4 32.0 ± 1.1 32.4 ± 1.2 32.2 ± 0.9 OLMo-2-7B KodCode HumanEval 31.7 ± 1.8 34.4 ± 1.7 34.1 ± 2.4 35.8 ± 1.5 34.5 ± 1.5 35.6 ± 1.4 35.2 ± 2.0 
+
+Table 12: Comparison of Best-of-N accuracies ( N = 8) when using different intermediate layers for SC ATR. 
+
+C.3.3 Scoring Function Design analysis 
+
+Here, we present the full results for the scoring function design ablation, where we try more sophisticated scoring function designs, some transformer based. We show results here for additional models, evaluated on N = 4, 8, 12 in Tab. 15, Tab. 16, and Tab. 17, respectively. 
+
+Model Train Test Final Last-10 Special Ensemble Best Layer SC ATR 
+
+Qwen-30B-A3B HumanEval KodCode 87.4 ± 0.3 86.8 ± 0.6 87.2 ± 0.5 86.9 ± 0.5 86.7 ± 0.7 87.1 ± 0.5 Qwen-30B-A3B KodCode HumanEval 89.3 ± 1.4 89.8 ± 1.0 89.4 ± 1.1 89.6 ± 1.0 89.6 ± 1.1 89.3 ± 1.2 Qwen-1.7B HumanEval KodCode 61.8 ± 14.6 61.2 ± 13.9 57.7 ± 14.1 61.0 ± 15.1 61.2 ± 15.0 61.0 ± 14.7 Qwen-1.7B KodCode HumanEval 55.5 ± 5.8 54.4 ± 6.0 53.6 ± 3.5 55.2 ± 6.3 55.2 ± 6.3 54.5 ± 7.0 GPT-OSS-20B HumanEval KodCode 85.8 ± 1.3 85.3 ± 1.1 85.5 ± 1.7 86.0 ± 2.1 85.5 ± 2.0 86.0 ± 1.3 GPT-OSS-20B KodCode HumanEval 92.5 ± 0.9 92.5 ± 1.0 92.6 ± 0.9 92.8 ± 0.7 92.8 ± 0.6 92.5 ± 0.9 OLMo-2-7B HumanEval KodCode 31.6 ± 0.8 29.0 ± 0.9 28.9 ± 0.8 32.0 ± 0.9 31.2 ± 1.0 31.3 ± 0.8 OLMo-2-7B KodCode HumanEval 34.5 ± 2.2 32.1 ± 2.2 32.8 ± 2.4 33.3 ± 1.8 33.4 ± 2.3 33.7 ± 2.1 
+
+Table 15: Scoring function design ablation results with N = 4. 
+
+Model Train Test Final Last-10 Special Ensemble Best Layer SC ATR 
+
+Qwen-30B-A3B HumanEval KodCode 87.6 ± 0.6 86.8 ± 1.1 87.8 ± 0.6 87.4 ± 0.5 86.7 ± 0.9 87.7 ± 0.5 Qwen-30B-A3B KodCode HumanEval 90.4 ± 0.9 90.5 ± 0.9 91.0 ± 0.7 90.6 ± 0.9 90.9 ± 1.0 90.2 ± 0.8 Qwen-1.7B HumanEval KodCode 62.9 ± 14.9 62.6 ± 14.4 58.1 ± 14.2 61.5 ± 15.9 62.0 ± 15.9 62.4 ± 14.8 Qwen-1.7B KodCode HumanEval 53.0 ± 9.4 52.4 ± 8.7 51.5 ± 6.6 53.9 ± 9.8 53.8 ± 9.6 52.6 ± 9.4 GPT-OSS-20B HumanEval KodCode 86.5 ± 1.0 85.9 ± 0.5 85.7 ± 1.7 86.3 ± 2.2 85.5 ± 2.0 86.8 ± 0.8 
+
+GPT-OSS-20B KodCode HumanEval 92.3 ± 0.9 92.1 ± 0.7 91.9 ± 1.4 92.6 ± 0.9 92.7 ± 0.7 92.4 ± 0.9 OLMo-2-7B HumanEval KodCode 32.2 ± 0.9 29.6 ± 1.1 29.2 ± 1.2 33.2 ± 1.3 32.2 ± 1.0 32.2 ± 0.9 OLMo-2-7B KodCode HumanEval 35.7 ± 1.6 33.4 ± 1.5 31.9 ± 2.0 35.3 ± 2.2 34.9 ± 1.7 35.2 ± 2.0 
+
+Table 16: Scoring function design ablation results with N = 8. 22 Preprint. Under review.           
+
+> Model Train Test .15 L.3 L.45 L.6 L.75 L.9 LL
+
+− 1GPT-OSS-20B HumanEval KodCode 84.6 ± 4.3 84.4 ± 4.3 85.0 ± 3.4 84.7 ± 3.2 86.4 ± 1.7 86.8 ± 1.2 86.8 ± 0.7 GPT-OSS-20B KodCode HumanEval 93.0 ± 0.6 93.2 ± 0.6 93.2 ± 0.4 93.1 ± 0.7 93.1 ± 0.5 92.9 ± 0.7 93.2 ± 0.6 Qwen-30B-A3B HumanEval KodCode 87.5 ± 0.8 87.1 ± 1.0 87.4 ± 1.3 87.2 ± 1.0 87.5 ± 0.8 87.4 ± 1.0 88.3 ± 0.6     
+
+> Qwen-30B-A3B KodCode HumanEval 90.4
+
+± 0.7 91.0 ± 0.7 90.4 ± 0.7 91.1 ± 0.7 90.8 ± 0.7 90.5 ± 0.8 90.4 ± 0.8 Qwen-1.7B HumanEval KodCode 65.2 ± 13.9 66.2 ± 13.6 65.6 ± 14.5 67.4 ± 12.8 66.2 ± 13.6 66.4 ± 13.2 67.1 ± 12.2 Qwen-1.7B KodCode HumanEval 60.6 ± 8.1 60.6 ± 7.3 61.7 ± 7.6 59.6 ± 7.0 59.6 ± 7.8 60.3 ± 7.3 59.3 ± 8.1 OLMo-2-7B HumanEval KodCode 30.0 ± 0.7 32.3 ± 0.9 32.2 ± 1.3 33.0 ± 1.1 32.8 ± 0.9 33.2 ± 1.2 33.1 ± 0.9 OLMo-2-7B KodCode HumanEval 30.6 ± 1.6 33.0 ± 2.0 34.3 ± 3.0 36.5 ± 2.7 34.2 ± 2.3 35.5 ± 1.6 35.0 ± 1.7 
+
+Table 13: Comparison of Best-of-N accuracies ( N = 16) when using different intermediate layers for SC ATR. 
+
+Model Train Test 10% 25% 50% 100% GPT-OSS-20B HumanEval KodCode 78.8 ± 6.6 84.7 ± 2.8 85.6 ± 2.4 86.8 ± 0.7 GPT-OSS-20B KodCode HumanEval 92.4 ± 0.7 92.6 ± 0.9 92.9 ± 0.8 93.2 ± 0.6 Qwen-30B-A3B HumanEval KodCode 85.5 ± 4.6 87.7 ± 0.6 87.8 ± 0.4 88.3 ± 0.6 Qwen-30B-A3B KodCode HumanEval 89.7 ± 2.0 90.0 ± 1.3 90.3 ± 1.0 90.4 ± 0.8 Qwen-1.7B HumanEval KodCode 64.2 ± 13.4 65.9 ± 10.9 66.2 ± 13.5 67.1 ± 12.2 Qwen-1.7B KodCode HumanEval 59.1 ± 7.5 59.7 ± 8.0 59.4 ± 7.8 59.3 ± 8.1 OLMo-2-7B HumanEval KodCode 29.5 ± 1.6 30.3 ± 2.6 32.7 ± 1.0 33.1 ± 0.9 OLMo-2-7B KodCode HumanEval 33.7 ± 2.2 34.9 ± 1.6 35.2 ± 2.3 35.0 ± 1.7 
+
+Table 14: SC ATR Best-of-N results with N = 16. Here, we train on a fraction of the calibration set: (10%, 25%, 50%, 100%). We see that SC ATR trained on HumanEval may benefit from more data, while training on KodCode seems to plateau by the time we use the full dataset. 
+
+Model Train Test Final Last-10 Special Ensemble Best Layer SC ATR 
+
+Qwen-30B-A3B HumanEval KodCode 87.8 ± 0.7 86.7 ± 1.3 87.8 ± 0.7 87.5 ± 0.7 86.8 ± 1.1 88.0 ± 0.6 
+
+Qwen-30B-A3B KodCode HumanEval 90.8 ± 0.7 91.1 ± 0.5 91.0 ± 0.8 90.7 ± 0.9 91.1 ± 0.8 90.6 ± 0.8 Qwen-1.7B HumanEval KodCode 65.8 ± 13.0 64.7 ± 12.9 60.4 ± 13.6 63.9 ± 14.7 64.6 ± 14.6 65.2 ± 13.1 Qwen-1.7B KodCode HumanEval 57.6 ± 7.9 56.2 ± 7.7 55.5 ± 6.1 58.4 ± 8.5 57.6 ± 8.3 56.8 ± 8.6 GPT-OSS-20B HumanEval KodCode 86.5 ± 1.2 85.8 ± 0.8 85.7 ± 1.7 86.3 ± 2.3 85.3 ± 2.6 86.5 ± 0.8 
+
+GPT-OSS-20B KodCode HumanEval 92.7 ± 0.8 92.0 ± 1.1 92.2 ± 0.9 93.1 ± 0.5 93.0 ± 0.8 93.0 ± 0.8 OLMo-2-7B HumanEval KodCode 32.8 ± 1.0 30.4 ± 0.9 29.5 ± 1.4 33.5 ± 1.2 32.5 ± 1.1 32.8 ± 0.9 OLMo-2-7B KodCode HumanEval 35.2 ± 2.1 33.9 ± 1.8 30.9 ± 2.2 35.2 ± 1.9 35.1 ± 2.3 35.3 ± 1.2 
+
+Table 17: Scoring function design ablation results with N = 12. 
+
+C.4 Additional Experiments 
+
+C.4.1 LoRA - Domain Transfer Experiments 
+
+Tab. 18 compares the performance of the scoring model under in-domain and out-of-domain training settings, where LoRA is used to adapt the base model into a scoring model trained for trajectory evaluation. In the in-domain setting, the scoring model is trained and eval-uated on the same domain (either mathematical reasoning or coding), whereas in the out-of-domain setting, the model is trained on one domain (e.g., math) and evaluated on the other (e.g., coding), and vice versa. We report accuracy across both settings to assess the extent to which the learned scoring function generalizes across domains. While transfer performance is often competitive, indicating that the model captures some domain-agnostic signals, in-domain training consistently yields stronger results. 
+
+C.4.2 Additional ReasonFlux Experiments 
+
+We compare SC ATR against process reward models (PRMs), which evaluate intermediate reasoning steps rather than only final answers and are commonly used to improve solution 23 Preprint. Under review.                                                                                                                                                                      
+
+> Model Test Train (out-of-domain) Train (in-domain) Out-of-domain Acc. In-domain Acc. GPT-OSS-20B HumanEval AIME KodCode 91.0 ±1.5 92.3 ±0.4 KodCode AIME HumanEval 83.8 ±0.9 85.2 ±1.0 AIME HumanEval MATH-500 94.4 ±3.8 94.8 ±2.4 MATH-500 HumanEval AIME 94.9 ±0.5 94.8 ±0.3 AIME KodCode MATH-500 92.2 ±3.8 94.8 ±2.4 MATH-500 KodCode AIME 94.9 ±0.9 94.8 ±0.3 HumanEval MATH-500 KodCode 91.0 ±1.2 92.3 ±0.4 KodCode MATH-500 HumanEval 84.4 ±1.3 85.2 ±1.0 OLMo-2-7B HumanEval AIME KodCode 35.6 ±2.7 37.7 ±2.7 KodCode AIME HumanEval 28.3 ±0.7 32.7 ±0.8 HumanEval MATH-500 KodCode 35.2 ±2.4 37.7 ±2.7 KodCode MATH-500 HumanEval 30.9 ±0.9 32.7 ±0.8 Qwen-1.7B HumanEval AIME KodCode 49.6 ±9.2 63.5 ±9.1 KodCode AIME HumanEval 57.9 ±19.5 68.3 ±9.0 AIME HumanEval MATH-500 43.0 ±5.1 50.4 ±5.9 MATH-500 HumanEval AIME 88.6 ±0.5 88.9 ±0.5 AIME KodCode MATH-500 45.9 ±3.6 50.4 ±5.9 MATH-500 KodCode AIME 89.0 ±0.5 88.9 ±0.5 HumanEval MATH-500 KodCode 51.3 ±7.8 63.5 ±9.1 KodCode MATH-500 HumanEval 59.2 ±18.9 68.3 ±9.0
+
+Table 18: Transfer vs. in-domain performance for finetuned full model using LoRA. We report accuracy when the scoring model is trained on an out-of-domain dataset versus an in-domain dataset. While transfer performance is often competitive, in-domain training consistently yields stronger results. selection on challenging reasoning tasks. In particular, we compare against ReasonFlux, a recent PRM-based approach for modeling the quality of reasoning trajectories. Results on Qwen-14B across three mathematical reasoning benchmarks are reported in Tab. 19. SC ATR consistently outperforms ReasonFlux-1.5B, despite being trained on only 1K OpenThoughts examples (500 math and 500 code), whereas ReasonFlux is trained on the full 114K-example dataset. These results underscore the strong data efficiency of SC ATR, showing that a lightweight scorer trained on a small calibration set can match or exceed substantially more data-intensive PRM approaches. SC ATR also remains competitive with ReasonFlux-7B. On AIME24 and AIME25, its per-formance lies within one standard deviation of the larger model, with an absolute gap of only around 5% on MATH-500. This is especially notable given the substantial disparity in scale: our scorer has roughly 2M parameters and is trained on just 1K examples, whereas ReasonFlux-7B has 7B parameters and is trained on 114K examples. Training and deploying a PRM at this scale is considerably more expensive, requiring substantially greater compute, memory, and supervision data than our lightweight scorer. While larger PRMs remain valu-able when the goal is to maximize absolute performance, these results suggest a compelling cost–quality tradeoff in which much smaller scorers can achieve comparable performance on many problems at a fraction of the training and inference cost. More broadly, this comparison suggests a practical hybrid design: a small, inexpensive scorer such as our MLP could handle routine or lower-ambiguity problems, while a larger PRM could be reserved for more challenging cases where additional reasoning capacity justifies the extra computational cost. 
+
+C.4.3 Domain-Adaptive Inference 
+
+Here, we discuss two methods to make SC ATR domain-adaptive. In the first approach, we train a classifier on a calibration set formed from problems of both domains. This classifier can be applied to rollouts of both math and coding. In the second, we use the LLM to classify the problem as math or coding (limiting output to five tokens). Then, we route the problem’s rollouts to the corresponding classifier. 24 Preprint. Under review. 
+
+Dataset SC ATR ReasonFlux-1.5B ReasonFlux-7B AIME24 18.5 ±4.5 17.8 ±1.9 24.4 ±1.9 AIME25 21.6 ±5.5 14.4 ±1.9 23.3 ±3.3 MATH-500 80.4 ±0.7 79.2 ±0.4 85.7 ±0.5 
+
+Table 19: Comparison of SC ATR with ReasonFlux models across mathematical reasoning benchmarks using Qwen2.5-14B model for data generation, following Zou et al. (2025). SC ATR consistently outperforms the ReasonFlux-1.5B model despite being trained on only 1K OpenThoughts problems (randomly sampled with 500 code and 500 math examples), whereas ReasonFlux models are trained on the full 114K OpenThoughts dataset. ReasonFlux-7B dominates performance, but is more expensive to train and does not offer the same lightweight accuracy-efficiency tradeoff that SC ATR does. We construct mixed calibration sets by combining two domains with a 50–50 task split, and train a single classifier on this pooled data using embeddings from the same layer for both domains. Results suggest that SC ATR does not require a highly domain-robust calibration set to perform well, and that single-domain calibration is generally sufficient. We also investigate a two-stage routing system that first classifies each problem by domain before selecting the appropriate classifier. Rather than training a single classifier on a mixed calibration set (as in the third ablation), we prepend an LLM-based router: given a problem statement, the same LLM used to generate responses is prompted to label the question as either math or coding , and the input is then forwarded to the corresponding single-domain SC ATR classifier trained exclusively on that domain. We classified approximately 3,000 questions spanning all five evaluation datasets (H UMAN EVAL , K OD CODE , B IG CODE BENCH -HARD , MATH500, and AIME) and found that the LLM router achieves 100% classification accuracy after prompt refinement, introducing no routing errors into the pipeline. This allows us to isolate the question of whether domain-specialized classifiers, when correctly routed to, outperform both the mixed-calibration classifier and the single-domain baselines. The two-stage system, therefore, represents the best-case deployment scenario for SC ATR in a setting where problems may be drawn from heterogeneous domains, and the results speak to whether the performance gap between single-domain and mixed-domain calibration can be recovered through routing rather than requiring separate inference pipelines per domain from the outset. Results for the mixed calibration set approach and the two-stage routing approach are shown in Tab. 20.                                                            
+
+> Model Train (mixed) Train (two-stage) Test Mixed-domain Two-stage routing
+> GPT-OSS-20B MATH-500+HumanEval Humaneval KodCode 86.2 ±0.9 86.8 ±0.7 GPT-OSS-20B MATH-500+KodCode KodCode HumanEval 92.8 ±0.7 93.2 ±0.6 Qwen-30B-A3B MATH-500+HumanEval Humaneval KodCode 88.0 ±0.7 88.3 ±0.6 Qwen-30B-A3B MATH-500+KodCode KodCode HumanEval 90.8 ±0.7 90.4 ±0.8 OLMo-2-7B MATH-500+HumanEval Humaneval KodCode 33.2 ±1.3 33.1 ±0.9 OLMo-2-7B MATH-500+KodCode KodCode HumanEval 34.5 ±2.1 35.0 ±1.7
+
+Table 20: We compare mixed-domain training to a two-stage routing approach. We com-pare Best-of-N accuracy where N = 16. We see that mixing domains does not sacrifice performance, and therefore, just a one classifier trained on math and coding data may be sufficient. 
+
+C.4.4 SC ATR : In-distribution vs. out-of-distribution results 
+
+We study whether using the same dataset to train and evaluate SC ATR leads to improve-ment. We use a 50-50 train/test split, evaluating Best-of-N accuracy on the held-out 50%. Results are shown in Tab. 21. 25 Preprint. Under review. 
+
+Model Train Dataset Same test dataset Different test dataset 
+
+Qwen-30B-A3B HumanEval 88.5 ± 1.5 90.4 ± 0.8 Qwen-30B-A3B KodCode 87.1 ± 1.3 88.3 ± 0.6 Qwen-30B-A3B MATH-500 89.1 ± 0.4 91.3 ± 0.5 GPT-OSS-20B HumanEval 92.2 ± 1.2 93.2 ± 0.6 GPT-OSS-20B KodCode 87.4 ± 1.2 86.8 ± 0.7 GPT-OSS-20B MATH-500 96.1 ± 1.0 95.0 ± 0.5 Qwen-1.7B HumanEval 60.5 ± 9.9 59.3 ± 8.1 Qwen-1.7B KodCode 67.8 ± 9.2 67.1 ± 12.2 Qwen-1.7B MATH-500 89.2 ± 1.1 88.3 ± 0.7 OLMo-2-7B HumanEval 29.8 ± 3.0 35.0 ± 1.7 OLMo-2-7B KodCode 33.6 ± 1.6 33.1 ± 0.9 OLMo-2-7B MATH-500 34.6 ± 1.5 32.8 ± 1.2 
+
+Table 21: Results for training and evaluating SC ATR on the same dataset, compared to having been trained on a different dataset (as in the main results). Best-of-N results are shown for N = 16. Results are mostly similar, differing more in cases where the sizes of the datasets are different. The different datasets are as follows: for HumanEval, we train on Kodcode and vice versa. For Math-500, we train on AIME. 26
