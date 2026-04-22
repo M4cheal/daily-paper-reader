@@ -1,0 +1,404 @@
+Title: AeroBridge-TTA: Test-Time Adaptive Language-Conditioned Control for UAVs
+
+URL Source: https://arxiv.org/pdf/2604.19059v1
+
+Published Time: Wed, 22 Apr 2026 00:39:58 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# AeroBridge-TTA: Test-Time Adaptive Language-Conditioned Control for UAVs 
+
+Lingxue Lyu* University of Pennsylvania Philadelphia, Pennsylvania, United States 
+
+lingxuelyu@alumni.upenn.edu 
+
+Abstract — Language-guided unmanned aerial vehicles (UAVs) often fail not from bad reasoning or perception, but from execution mismatch : the gap between a planned trajectory and the controller’s ability to track it when the real dynamics differ from training (mass changes, drag shifts, actuator delay, wind). We propose AeroBridge-TTA, a language-conditioned control pipeline that targets this gap with test-time adaptation. It has three parts: a language encoder that maps the command into a subgoal, an adaptive policy conditioned on the subgoal and a learned latent, and a test-time adaptation (TTA) module that updates the latent online from observed transitions. On five language-conditioned UAV tasks under 13 mismatch conditions with the same domain randomization, AeroBridge-TTA ties a strong PPO-MLP baseline in-distribution and wins all 5 out-of-distribution (OOD) conditions, +22 .0 pts on average (62 .7% vs. 40 .7% ); the +8 .5 pt overall gain comes entirely from the OOD regime. A same-weights ablation that only changes the step size α shows the latent update itself is responsible for a 4.6× OOD lift. Code, checkpoints, and rollout videos: 
+
+https://github.com/lyulingxue/AeroBridge-TTA .
+
+Keywords— Unmanned aerial vehicles, language-conditioned control, test-time adaptation, domain randomization, reinforcement learning, sim-to-real. I. I NTRODUCTION 
+
+Large language models (LLMs) make it tempting to com-mand robots in plain English instead of writing waypoints by hand [1], [2], [3]. For unmanned aerial vehicles (UAVs) the appeal is even stronger: an operator can just say “fly low to the target while avoiding the obstacle” [4], [5]. The reasoning and perception layers of these systems have improved a lot [6], [7], but one bottleneck is often ignored: execution mismatch . Even when the language mod-ule gives the right high-level plan, the low-level controller can fail when the real dynamics differ from training. Payload changes, damaged propellers, actuator delay, and wind all push the realised trajectory away from the intended one. The drone does not misunderstand the command; it just cannot fly the plan. Online adaptation has a long history in other robot do-mains, and the lesson is consistent. In humanoid robotics, recovering balance from a sudden push needs millisecond-scale strategy switching. One line of work uses hand contact to stabilise a falling humanoid via real-time optimal con-trol [8], and later realises the same strategy in closed loop on a physical robot [9]. More general planners pick the right contact mode from the available environment affordances by 0 1   
+
+> 2
+> 3
+> 4
+> 5
+> x(m) −1.25
+> −1.00
+> −0.75
+> −0.50
+> −0.25
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> y (m)
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> z (m)
+> Start
+> Goal
+> Goal
+> PPO-MLP @ Combined-OOD (fails)
+> AeroBridge @ Nominal
+> AeroBridge @ Mass +40% (OOD)
+> AeroBridge @ Wind-strong
+> AeroBridge @ Combined-OOD
+
+Fig. 1: AeroBridge-TTA closes the execution-mismatch gap on unseen dynamics. On the same language-conditioned navigation task, the PPO-MLP baseline fails under a composite out-of-distribution perturbation (gray, dashed, ×). The same AeroBridge-TTA checkpoint reaches the goal under nominal, mass +40% (OOD), strong wind, and combined-OOD, by adapting a latent from observed transitions online. searching a contact transition tree [10], instead of committing to one fixed strategy. Legged locomotion uses a rapid motor adaptation module to handle new body parameters and terrain at deployment [11]. In agile flight, learned residual models adapt to wind in-flight [12] or compensate ground effect during landing [13]. Even a simple platform like a self-balancing bike needs the controller to react to the real 
+
+dynamics, not the assumed ones [14]; classical adaptive control formalises this idea with Lyapunov update laws [15]. The same message shows up in autonomous driving: small mismatches between a calibrated and the actual longitudinal model compound quickly and need online correction [16]. The common conclusion is that robust execution needs a 
+
+> arXiv:2604.19059v1 [cs.RO] 21 Apr 2026
+
+closed-loop adaptation step inside the controller, not just a better open-loop plan. We propose AeroBridge-TTA for the language-conditioned UAV setting. Our contributions are: 1) Execution-mismatch hypothesis. We name execution mismatch as a primary failure mode of language-conditioned UAV control, separate from perception or reasoning errors, and we show that domain randomi-sation alone does not close it (Sec. III). 2) Structured language-to-control pipeline. A three-stage architecture, language encoder → subgoal →
+
+adaptive policy, that separates semantic understanding from motor execution. Each module can be improved on its own; the language frontend in particular is drop-in and can be replaced by a stronger LLM/VLA without retraining the controller (Sec. IV). 3) Test-time adaptation for UAV control. A small TTA module that updates a latent zt from each observed transition, so the policy compensates dynamics mis-match without retraining . The TTA head is around 6.5K parameters and runs as one feed-forward pass per step, suitable for 50 Hz real-time control (Sec. IV). We test AeroBridge-TTA on five language-conditioned tasks and 13 mismatch conditions, and compare it to a classical PID controller and to a strong PPO-MLP baseline trained with the same domain randomisation. II. R ELATED WORK 
+
+Language-conditioned robot control. SayCan [3] grounds instructions in affordances; RT-2 [1] and PaLM-E [2] train vision-language-action models end-to-end; LM-Nav [17] reuses pre-trained models for outdoor navigation. Aerial work covers vision-and-language navigation [4] and LLM-based task planning [6], [5]. Most of these works assume the low-level controller is good enough, which is exactly what breaks under dynamics mismatch. 
+
+UAV control and learning. Classical work uses geometric controllers [18] and trajectory optimisation [19]. RL has been applied to quadrotors [20] and to champion-level drone rac-ing [21], [22]. Neural-Fly [12] and Neural Lander [13] learn residual dynamics, but they are not language-conditioned. 
+
+Sim-to-real and adaptation. Domain randomisation [23], [24] trains over a dynamics distribution. RMA [11] learns an adaptation module for legged robots. Test-time training [25] and self-supervised policy adaptation [26] update the model at deployment. Online calibration [16] corrects the dynamics for autonomous cars at test time. We bring this adaptation-at-execution idea to language-conditioned UAV control. 
+
+Robust execution in robotics. The need for closed-loop adaptation is well known in humanoids, which must recover from disturbances in real time [8], [9], [10], and in balance problems [14]. Our take is the same: robustness under mismatch needs an adaptation step inside the controller, not only a smarter plan. III. P ROBLEM FORMULATION 
+
+System. We use a quadrotor with state xt = [ p, v, ϕ, ω] ∈
+
+R12 (position, velocity, Euler angles, body rates) and input 
+
+ut ∈ [−1, 1] 4 in collective-thrust-body-rates (CTBR) form. The dynamics are 
+
+m ˙v = R(ϕ)[0 , 0, F total ]⊤ − mg + fdrag + fwind (1) 
+
+I ˙ω = τ − ω × (Iω). (2) 
+
+Task. Given a language command q, the controller must output a sequence {ut}Tt=0 that meets a per-task success check Sq (xt) under reward rq (xt, ut).
+
+Execution mismatch. We define it as the dynamics resid-ual between training and deployment, 
+
+∆ft = ftest (xt, ut) − ftrain (xt, ut), (3) with sources ∆m, ∆cd, delay, wind. A policy that scores 100% under ftrain can still fail under ftest . That is an execution problem, not a reasoning one. IV. M ETHOD 
+
+AeroBridge-TTA consists of three components (Fig. 2): 
+
+Language encoder gt = P (ot, q ). It maps the command 
+
+q and observation ot to a position-delta subgoal gt ∈ R3:
+
+gt = MLP ([ Embed (q); ot]) , (4) where Embed (q) ∈ R32 is a learned task embedding and 
+
+ot ∈ R32 is the full observation (state, relative goal, task one-hot, obstacle info). The subgoal separates what to do 
+
+from how to do it .
+
+Language grounding frontend (POC). During training q
+
+is a one-hot, but a real operator types free-form English. We bridge the two with a frozen sentence encoder (MiniLM-L6-v2, 384 -d [27]). For each task k we precompute embeddings 
+
+ϕ(s) for a small bundle of canonical paraphrases Sk, and route an incoming command qnl by 
+
+ˆq = arg max  
+
+> k
+
+max 
+
+> s∈S k
+
+cos  ϕ(qnl ), ϕ (s). (5) The predicted ˆq feeds Eq. 4. The frontend is drop-in: a stronger LLM or VLA (GPT-4, PaLM-E, RT-2) can replace ϕ
+
+without touching the controller. On 15 held-out paraphrases that share no lexical overlap with the templates, the grounder reaches 100% task-routing accuracy (Fig. 3). 
+
+Adaptive policy ut = πθ (xt, gt, zt). The policy takes state, subgoal, and adaptation latent: 
+
+ut ∼ N  tanh( MLP θ ([ xt; gt; zt])) , diag (σ2 
+
+> θ
+
+) , (6) with three 256-unit tanh layers, orthogonal init, learnable log-std at e−1.5. Conditioning on zt lets the policy react to the inferred mismatch without an explicit system identifica-tion step. 
+
+Test-time adaptation module. A latent zt ∈ R32 is updated each step from the observed transition: 
+
+zt[t + 1] = zt + α · fψ (xt, ut, xt[t + 1]) , (7) Language command q
+
+“fly to the target” 
+
+Observation ot
+
+Language Encoder 
+
+gt = P (ot, q )
+
+Adaptive Policy 
+
+ut = πθ (xt, gt, zt)
+
+Quadrotor Dynamics 
+
+state xt
+
+TTA Module 
+
+zt[t + 1] = zt +α f ψ (xt, ut, xt[t + 1]) 
+
+subgoal gt action ut
+
+next obs. ot[t + 1] 
+
+xt
+
+ut
+
+xt[t + 1] 
+
+latent zt
+
+Fig. 2: AeroBridge-TTA architecture. The language encoder P maps the command q and observation ot to a subgoal gt; the adaptive policy πθ generates actions ut conditioned on the state xt, subgoal gt, and adaptation latent zt. The TTA module 
+
+fψ updates zt online from the observed transition (xt, ut, xt[t + 1]) . Dashed arrows are environment feedback; the green arrow highlights the test-time adaptation loop. T0: navigate_to_target                                                             
+
+> T1: avoid_and_reach
+> T2: fly_low_to_target
+> T3: hover_at_position
+> T4: fly_through_waypoints
+> fly straight to the target location
+> head over to the goal point
+> reach the destination coordinates
+> get to the goal but keep clear of the o…
+> dodge the obstacles while flying to the…
+> navigate around the barrels and reach t…
+> stay close to the ground on the way to …
+> cruise at low altitude toward the desti…
+> keep a low height and approach the goal
+> hold your current position
+> keep still right here
+> stay in place and hover
+> follow the waypoints in sequence
+> pass through each checkpoint in order
+> visit the waypoints one by one
+> 0.88 0.65 0.83 0.41 0.57
+> 0.81 0.48 0.51 0.31 0.43
+> 0.73 0.66 0.50 0.37 0.47
+> 0.59 0.79 0.45 0.33 0.35
+> 0.57 0.77 0.57 0.32 0.39
+> 0.48 0.55 0.35 0.25 0.35
+> 0.73 0.70 0.79 0.43 0.37
+> 0.45 0.48 0.76 0.32 0.33
+> 0.61 0.58 0.75 0.32 0.32
+> 0.62 0.37 0.45 0.81 0.17
+> 0.16 0.19 0.12 0.32 0.10
+> 0.42 0.38 0.37 0.86 0.22
+> 0.43 0.38 0.26 0.23 0.84
+> 0.34 0.41 0.24 0.20 0.82
+> 0.45 0.39 0.26 0.19 0.78
+> Language grounding: 100% of paraphrased commands route to the correct task
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Cosine similarity
+
+Fig. 3: Language grounding POC. Cosine similarity be-tween 15 free-form commands (rows) and 5 canonical tem-plates (columns), with MiniLM-L6-v2 and per-task max-pooling. Argmax per row is boxed; all 15 route correctly. with fψ a small tanh -output MLP ( R28 → R32 , about 6.5K params) and α = 0 .1. The residual carries the mismatch sig-nal: fψ is trained end-to-end with PPO [28] under DR (mass 
+
+∈ [0 .9, 1.1] , drag ∈ [0 .8, 1.2] ) so that zt becomes useful to the policy. A separate value head Vϕ(ot) is trained jointly. At deployment the update runs online with no gradient steps. V. E XPERIMENTS 
+
+We ask three questions: (1) can AeroBridge-TTA do all five language-conditioned tasks? (2) does TTA help under mismatch? (3) is the gain from the adaptation mechanism, TABLE I: Language-conditioned task definitions. 
+
+ID Language Command Success Criterion 0 “Go to the target position” d < 1.0 m, ∥v∥ < 2.0 m/s 1 “Avoid obstacle, reach target” d < 1.0 m, ∥v∥ < 2.0, no collision 2 “Fly low and reach target” d < 1.0 m, ∥v∥ < 2.0, pz < 1.0 m3 “Hover at the designated pose” d < 0.5 m, ∥v∥ < 0.3 m/s 4 “Fly through waypoints in order” all 3 WPs: d < 1.0 m, ∥v∥ < 2.0
+
+not just from extra parameters? 
+
+Environment. A 6-DOF quadrotor sim implementing Eqs. 1–2 with aerodynamic drag and configurable wind, running at 50 Hz. State ∈ R12 , action ∈ [−1, 1] 4 (CTBR), observation ∈ R32 . The five tasks are listed in Table I. Teaser trajectories are in Fig. 1; distance and latent time-series are in Fig. 4. 
+
+Baselines. PID (cascaded position/attitude [18]), PPO-MLP (3-layer MLP with full obs including task one-hot) [28], Ours without TTA ( zt ≡ 0), and full Ours. 
+
+Training. PPO ( γ=0 .99 , λGAE =0 .95 , clip 0.2, lr 3×10 −4
+
+linear, entropy 10 −3), 32 parallel envs, 4096 steps per rollout. A distance curriculum scales goals from 2 m to 7 m (+0.15 m per step above 25% SR, 10-iter EMA). Reward follows the profile v⋆= min(3 .5, 1.5√d) plus a +500 terminal bonus. Training converges in about 50 iters (about 6.5M steps) on an RTX 5080. 
+
+A. Experiment 1: Nominal Task Performance 
+
+First we ask whether the AeroBridge architecture can do all five tasks under nominal dynamics. Table II shows three settings: (1) per-task PPO-MLP, (2) per-task AeroBridge without TTA, and (3) a single multi-task AeroBridge model trained on all five tasks at once with language conditioning. A single AeroBridge model, conditioned only on the language embedding, reaches 97 .6% average SR over all five tasks ( 100 /88 /100 /100 /100 ). PPO-MLP needs five separate per-task models to do the same. The multi-task run uses 40 parallel envs (8 per task) and a per-task curriculum (hover starts at 40% of the nav distance because its success criterion 0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4   
+
+> Time (s)
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> Distance to goal (m)
+> success ( d< 1 m)
+> Condition
+> Mass +40%
+> Wind-strong
+> Combined-OOD
+> Method
+> AeroBridge-TTA
+> PPO-MLP
+
+(a) Distance to goal across 3 OOD conditions (Mass +40% , Wind-strong, Combined-OOD), mean ±1σ over 10 seeds. AeroBridge-TTA (solid) drives the distance below the 1 m success threshold; the PPO-MLP baseline (dashed) saturates at a large standoff on the harder perturbations. 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 
+
+> Time (s)
+> 0.0
+> 2.5
+> 5.0
+> 7.5
+> 10.0
+> 12.5
+> 15.0
+> 17.5
+> 20.0
+> Adaptation latent  ‖zt‖
+> Nominal
+> Mass +40%
+> Wind-strong
+> Combined-OOD
+
+(b) Adaptation latent ∥zt∥ for AeroBridge-TTA across nominal and 3 OOD conditions, mean ±1σ over 10 seeds. Under nominal dynamics the latent stays close to zero; under OOD perturbations the TTA module grows the latent, with magnitude scaling with perturbation severity. 
+
+Fig. 4: Time-series diagnostics from the trained AeroBridge-TTA checkpoint and the PPO-MLP+DR baseline. The 3D trajectory view is in Fig. 1. is tighter), and converges in about 35 iters (about 5.7M steps). The drop on the avoidance task ( 88% ) comes from a small set of obstacle layouts in which the multi-task model still skims the corner; per-task training closes this gap. The point of this experiment is not to push every task to 100% ,but to show that one language-conditioned controller can cover all five. 
+
+B. Experiment 2: Dynamics Mismatch Robustness 
+
+To test robustness, we train PPO-MLP and AeroBridge-TTA from scratch on the navigation task (Task 0) with domain randomization (DR): mass uniform in [0 .8, 1.3] ×
+
+and drag in [0 .5, 2.0] × at every episode reset. Both run for TABLE II: Success rate (%) across language-conditioned tasks under nominal dynamics (50 evaluation episodes). “Multi-task” uses a single language-conditioned model for all tasks.                         
+
+> Method Nav. Avoid Low Hover WP Avg. PPO-MLP (per-task) 100 –––––Ours w/o TTA (per-task) 100 98 100 100 100 99.6
+> Ours (multi-task) 100 88 100 100 100 97.6
+
+TABLE III: Mismatch conditions ( ∗ = OOD relative to the DR training range). 
+
+Condition Mass Drag Delay Wind (N) Nominal 1.0 × 1.0 × 0 –Mass −20% 0.8 × 1.0 × 0 –Mass +20% 1.2 × 1.0 × 0 –Mass +30% 1.3 × 1.0 × 0 –Mass +40% ∗ 1.4 × 1.0 × 0 –Drag +100% 1.0 × 2.0 × 0 –Delay (2) 1.0 × 1.0 × 2 –Delay (5) 1.0 × 1.0 × 5 –Wind med. 1.0 × 1.0 × 0 [1.0, 0.5, 0] Wind strong 1.0 × 1.0 × 0 [2.0, 1.0, 0.3] Combined mild 1.1 × 1.3 × 1 [0.3, 0.1, 0] Combined hard 1.2 × 1.5 × 3 [1.0, 0.5, 0] Combined-OOD ∗ 1.4 × 1.8 × 3 [1.5, 0.8, 0.2] 
+
+about 13M steps. We then evaluate them on 13 mismatch conditions (30 episodes each). Two conditions are strictly out-of-distribution for the DR mass range (Mass +40% and Combined-OOD, marked ∗). Wind and control delay are not randomized during training, so those axes are also untrained. We group all of these as the OOD set below. Table IV compares the two methods. The picture is clearly asymmetric. In-distribution they are tied ( 96 .3% vs. 96 .2% ,
+
+∆ID = +0 .0). Out-of-distribution, AeroBridge-TTA wins every single condition, +22 .0 pts on average ( 62 .7% vs. 
+
+40 .7% ). Across all 13 conditions the gain is +8 .5 pts ( 83 .3% 
+
+vs. 74 .9% ), and it comes entirely from the OOD side. 
+
+In-distribution: tied. Over the 8 ID conditions the two methods are basically the same on average (96 .3% vs. 
+
+96 .2% ). Already at the DR edge AeroBridge-TTA is ahead (+6 .7 on Mass +20% , +11 .7 on Mass +30% ), which already hints at the OOD story. In training it also reaches the goal about 7% faster (about 93 vs. 100 steps, Fig. 6). 
+
+OOD: AeroBridge-TTA wins every condition. Outside DR coverage, our method wins all 5 OOD conditions: +33 .3
+
+on Mass +40% ∗ (2.4×), +1 .7 on Wind-strong, +11 .7 on Delay = 5 , +30 .0 on Combined-hard, +33 .3 on Combined-OOD ∗ (7.7×). The biggest gains are on axes that DR did not see (Delay, Wind) or that stack multiplicatively (Combined). One latent summarising “what is off” is more efficient than expanding the DR grid. (We exclude Mass +50% : both score 
+
+0% because of the thrust ceiling.) 
+
+C. Experiment 3: TTA Ablation 
+
+Experiment 2 compared two different agents. Here we isolate the latent by running the same trained AeroBridge-TTA model with three step sizes at test time: α = 0 (no TABLE IV: Success rate (%) under dynamics mismatch (Task 0: Navigate, 60 episodes per condition). Both methods use identical domain randomization during training. Con-ditions are ordered in-distribution (ID) first, then out-of-distribution (OOD). Best per condition in bold ; ∗ marks strict OOD conditions beyond the DR mass range.                                                    
+
+> Condition PPO-MLP + DR AeroBridge-TTA + DR ∆
+> In-distribution (DR covers the perturbation)
+> Nominal 100 100 0
+> Mass −20% 100 91.7 −8.3
+> Mass +20% 90 96.7 +6 .7
+> Mass +30% 80 91.7 +11 .7
+> Drag +100% 100 98.3 −1.7
+> Delay (2) 100 100 0
+> Wind med. 100 96.7 −3.3
+> Combined mild 100 95.0 −5.0
+> ID avg 96.2 96.3 +0 .0
+> Out-of-distribution (beyond DR or untrained axis)
+> Mass +40% ∗23.3 56.7 +33 .3
+> Wind strong 95.0 96.7 +1 .7
+> Combined hard 51.7 81.7 +30 .0
+> Delay (5) 28.3 40.0 +11 .7
+> Combined-OOD ∗5.0 38.3 +33 .3
+> OOD avg 40.7 62.7 +22 .0
+> Overall average 74.9 83.3 +8 .5
+
+TABLE V: TTA ablation: success rate (%) on the same trained AeroBridge-TTA checkpoint, varying only the adap-tation step size α at test time (30 episodes per condition). ∗
+
+denotes strict OOD conditions. 
+
+Condition α=0 (no TTA) α=0 .02 (slow) α=0 .1 (full) Mass +30% 20 50 97 
+
+Mass +40% ∗ 0 3 57 
+
+Combined-hard 40 60 93 
+
+Combined-OOD ∗ 7 7 63 Average 16.8 30.0 77.5 
+
+adaptation, zt ≡ 0), α = 0 .02 (slow), and α = 0 .1 (full). Four mismatch conditions, 30 episodes each, covering both ID and OOD. Averaged over the four conditions, α=0 .1 lifts SR from 
+
+16 .8% (α=0 ) to 77 .5% , a 4.6× gain from only the test-time update, with the same weights . The trend is monotone per condition ( 20 → 50 → 97 on Mass +30% ; 0 → 3 → 57 on Mass +40% ∗; 40 → 60 → 93 on Combined-hard; 7 → 7 →
+
+63 on Combined-OOD, a 9× gain). Since only α changes, the OOD gain in Exp. 2 must come from the adaptation mechanism itself, not from extra parameters. VI. D ISCUSSION 
+
+DR and TTA are complementary. Inside the DR range, both methods are saturated and basically tied. The gap opens on OOD, where AeroBridge-TTA wins every condition (up to 7.7× on Combined-OOD). A latent that summarises the recent transition residuals is the right tool for perturbations DR cannot enumerate, especially when several axes (mass, drag, delay, wind) interact at once. Pushing the DR range wider would help in principle, but the effective grid grows Mass+30% Mass+40%    
+
+> (OOD)
+> Combined
+> hard
+> Combined
+> (OOD)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Success rate
+> No TTA ( α= 0 ) (avg 0.17)
+> Slow TTA ( α= 0.02 ) (avg 0.30)
+> Full TTA ( α= 0.1 ) (avg 0.78)
+
+Fig. 5: TTA ablation on a single trained checkpoint. Full adaptation ( α=0 .1) lifts average success from 16.8% ( α=0 )to 77.5%, a 4.6× improvement from the test-time latent update alone (weights identical across all three variants); slow adaptation ( α=0 .02 ) is an intermediate compromise. multiplicatively with the number of axes, while one TTA latent costs us a single small MLP. 
+
+Why the Combined-OOD gap is so large. Stacking mass, drag, delay, and wind together creates a regime that the baseline never sees, even with wide DR. AeroBridge-TTA does not need to have seen this exact combination at training time: as long as the residual signature is in the span of what 
+
+fψ learned, the latent moves in a direction the policy already knows how to react to. This is why we observe a 7.7× gain on Combined-OOD, while Wind-strong (a single, mild axis) gives a much smaller gain. 
+
+Limits. Adaptation cannot beat physical limits: at Mass +50% both methods fail because the rotors run out of thrust. A fixed α is fine inside the actuator envelope; gating α on residual magnitude is left for future work. The language frontend is drop-in (Eq. 5); a stronger LLM or VLA can replace ϕ without retraining the controller. The TTA head is about 6.5K parameters and one forward pass per step, suitable for 50 Hz real-time control, unlike gradient-based TTA which needs a backward pass each update [25]. Everything in this paper is in simulation; real flights would also need sensor noise, communication delay, and actuator nonlinearity. VII. C ONCLUSION 
+
+AeroBridge-TTA targets execution mismatch in language-conditioned UAV control with test-time adaptation. A single language-conditioned model does 5 tasks at 97 .6% average SR. Under 13 mismatch conditions with the same DR, it ties PPO-MLP in-distribution ( ∆=0 ) and wins every OOD condition ( +22 .0 pts, 7.7× on Combined-OOD, +33 .3 on Mass +40% ). The same-weights ablation isolates the mecha-nism: raising α from 0 to 0.1 lifts average OOD success from 
+
+16 .8% to 77 .5% . The execution-mismatch view and this TTA formulation should carry over to other language-conditioned robots that face dynamics they did not train on. REFERENCES [1] A. Brohan, N. Brown, J. Carbajal, et al. , “RT-2: Vision-language-action models transfer web knowledge to robotic control,” arXiv preprint arXiv:2307.15818 , 2023. 0.0        
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Training success rate
+> 99.8%
+> 95.0% DR saturation ( ≥ 95% )
+> AeroBridge-TTA (ours)
+> PPO-MLP
+> 0246810 12
+
+Training steps (M) 
+
+> 100
+> 125
+> 150
+> 175
+> 200
+> 225
+> Mean episode length (steps)
+> 93
+> 102
+> faster to goal
+
+Fig. 6: Training behaviour under domain randomization for AeroBridge-TTA (ours) and PPO-MLP. Top: both methods reach ≥ 95% training SR on the DR distribution (AB 100% ,BL ∼ 95% ); the OOD gap in Table IV therefore comes from adaptation at test time, not from training saturation. 
+
+Bottom: mean episode length — AeroBridge-TTA finishes trajectories in ∼ 93 steps vs. ∼ 100 for the baseline, i.e. reaches the goal ∼ 7% faster even on the same task. Raw traces in light shading; EMA-smoothed primary in bold. 
+
+[2] D. Driess, F. Xia, M. S. M. Sajjadi, et al. , “PaLM-E: An embodied multimodal language model,” arXiv preprint arXiv:2303.03378 , 2023. [3] M. Ahn, A. Brohan, N. Brown, et al. , “Do as I can, not as I say: Grounding language in robotic affordances,” arXiv preprint arXiv:2204.01691 , 2022. [4] S. Liu, H. Zhang, Y. Qi, P. Wang, Y. Zhang, and Q. Wu, “AerialVLN: Vision-and-language navigation for UAVs,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) ,2023. [5] J. Chen, B. Lin, R. Xu, Z. Chai, X. Liang, and K.-Y. K. Wong, “MapGPT: Map-guided prompting with adaptive path planning for vision-and-language navigation,” arXiv preprint arXiv:2401.07314 ,2024. [6] S. Vemprala, R. Bonatti, A. Bucker, and A. Kapoor, “ChatGPT for robotics: Design principles and model abilities,” IEEE Access , 2024. [7] C. H. Song, J. Wu, C. Washington, B. M. Sadler, W.-L. Chao, and Y. Su, “LLM-Planner: Few-shot grounded planning for embodied agents with large language models,” ICCV , 2023. [8] S. Wang and K. Hauser, “Real-time stabilization of a falling hu-manoid robot using hand contact: An optimal control approach,” in 
+
+2017 IEEE-RAS 17th International Conference on Humanoid Robots (Humanoids) . IEEE, 2017, pp. 454–461. [9] S. Wang and K. Hauser, “Realization of a real-time optimal control strategy to stabilize a falling humanoid robot with hand contact,” in 2018 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2018, pp. 4466–4473. [10] S. Wang and K. Hauser, “Unified multi-contact fall mitigation planning for humanoids via contact transition tree optimization,” in 2018 IEEE-RAS 18th International Conference on Humanoid Robots (Hu-manoids) . IEEE, 2018, pp. 1–9. [11] A. Kumar, Z. Fu, D. Pathak, and J. Malik, “RMA: Rapid motor adaptation for legged robots,” Robotics: Science and Systems (RSS) ,2021. [12] M. O’Connell, G. Shi, X. Shi, K. Azizzadenesheli, A. Anandkumar, Y. Yue, and S.-J. Chung, “Neural-fly enables rapid learning for agile flight in strong winds,” Science Robotics , vol. 7, no. 66, 2022. [13] G. Shi, X. Shi, M. O’Connell, R. Yu, K. Azizzadenesheli, A. Anand-kumar, Y. Yue, and S.-J. Chung, “Neural lander: Stable drone landing control using learned dynamics,” 2019 International Conference on Robotics and Automation (ICRA) , 2019. [14] A. M. Sharma, S. Wang, Y. M. Zhou, and A. Ruina, “Towards a maximally-robust self-balancing bicycle without reaction-moment gyroscopes or reaction wheels,” in Bicycle and Motorcycle Dynamics 2016 , 2016. [15] J.-J. E. Slotine and W. Li, Applied Nonlinear Control . Prentice Hall, 1991. [16] S. Wang, C. Deng, and Q. Qi, “Efficient online calibration for au-tonomous vehicle’s longitudinal dynamical system: A Gaussian model approach,” arXiv preprint , 2024. [17] D. Shah, B. Osi´ nski, B. Ichter, and S. Levine, “LM-Nav: Robotic navigation with large pre-trained models of language, vision, and action,” Conference on Robot Learning (CoRL) , 2023. [18] T. Lee, M. Leok, and N. H. McClamroch, “Geometric tracking control of a quadrotor UAV on SE(3),” 49th IEEE Conference on Decision and Control (CDC) , pp. 5420–5425, 2010. [19] D. Mellinger and V. Kumar, “Minimum snap trajectory generation and control for quadrotors,” 2011 IEEE International Conference on Robotics and Automation , pp. 2520–2525, 2011. [20] J. Hwangbo, I. Sa, R. Siegwart, and M. Hutter, “Control of a quadrotor with reinforcement learning,” IEEE Robotics and Automation Letters ,vol. 2, no. 4, pp. 2096–2103, 2017. [21] E. Kaufmann, A. Loquercio, R. Ranftl, M. M¨ uller, V. Koltun, and D. Scaramuzza, “Champion-level drone racing using deep reinforce-ment learning,” Nature , vol. 620, pp. 982–987, 2023. [22] A. Loquercio, E. Kaufmann, R. Ranftl, M. M¨ uller, V. Koltun, and D. Scaramuzza, “Learning high-speed flight in the wild,” Science Robotics , vol. 6, no. 59, 2021. [23] J. Tobin, R. Fong, A. Ray, J. Schneider, W. Zaremba, and P. Abbeel, “Domain randomization for transferring deep neural networks from simulation to the real world,” 2017 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , 2017. [24] X. B. Peng, M. Andrychowicz, W. Zaremba, and P. Abbeel, “Sim-to-real transfer of robotic control with dynamics randomization,” 2018 IEEE International Conference on Robotics and Automation (ICRA) ,2018. [25] Y. Sun, X. Wang, Z. Liu, J. Miller, A. A. Efros, and M. Hardt, “Test-time training with self-supervision for generalization under distribution shifts,” International Conference on Machine Learning (ICML) , 2020. [26] N. Hansen, R. Jangir, Y. Sun, G. Aleny` a, P. Abbeel, A. A. Efros, L. Pinto, and X. Wang, “Self-supervised policy adaptation during deployment,” International Conference on Learning Representations (ICLR) , 2021. [27] N. Reimers and I. Gurevych, “Sentence-BERT: Sentence embeddings using siamese BERT-networks,” in Proceedings of the 2019 Confer-ence on Empirical Methods in Natural Language Processing , 2019. [28] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Proximal policy optimization algorithms,” arXiv preprint arXiv:1707.06347 , 2017.
