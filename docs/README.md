@@ -6,61 +6,58 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-22
-- 运行时间：2026-04-22 20:30:01 UTC
+- 最新运行日期：2026-04-23
+- 运行时间：2026-04-23 20:38:56 UTC
 - 运行状态：成功
-- 本次总论文数：13
-- 精读区：6
-- 速读区：7
+- 本次总论文数：12
+- 精读区：1
+- 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 13 篇 AI 论文，重点攻克多模态测试时自适应（TTA）与具身智能控制难题。
-满分论文通过概率高斯校准革新多模态适配，AeroBridge-TTA 则实现了无人机在动态指令下的高适应性控制。
-建议关注具身智能中的物理线索增强与不确定性引导，这是提升机器人复杂任务可靠性的关键方向。
-- 详情：[/202604/22/README](/202604/22/README)
+今日精选 12 篇前沿论文，深度剖析了 Looped Transformer 的稳定性理论，并涵盖了具身智能与高效微调等热门领域。
+重点关注循环架构在泛化性能上的数学表现，以及 OmniVLA-RL 在空间理解与在线强化学习中的最新突破。
+建议优先研读 Looped Transformer 的稳定性分析，以掌握大模型底层架构演进与泛化能力的理论逻辑。
+- 详情：[/202604/23/README](/202604/23/README)
 
 ### 精读区论文标签
-1. [Multi-modal Test-time Adaptation via Adaptive Probabilistic Gaussian Calibration](/202604/22/2604.19093v1-multi-modal-test-time-adaptation-via-adaptive-probabilistic-gaussian-calibration)  
-   标签：评分：10.0/10、query:tta
-   evidence：通过概率校准进行多模态测试时间自适应
-2. [AeroBridge-TTA: Test-Time Adaptive Language-Conditioned Control for UAVs](/202604/22/2604.19059v1-aerobridge-tta-test-time-adaptive-language-conditioned-control-for-uavs)  
-   标签：评分：9.0/10、query:tta
-   evidence：无人机测试时间自适应语言条件控制（类VLA任务）
-3. [TEMPO: Scaling Test-time Training for Large Reasoning Models](/202604/22/2604.19295v1-tempo-scaling-test-time-training-for-large-reasoning-models)  
-   标签：评分：9.0/10、query:tta
-   evidence：使用EM算法扩展大型推理模型的测试时间训练(TTT)
-4. [World-Value-Action Model: Implicit Planning for Vision-Language-Action Systems](/202604/22/2604.14732v2-world-value-action-model-implicit-planning-for-vision-language-action-systems)  
+1. [Stability and Generalization in Looped Transformers](/202604/23/2604.15259v2-stability-and-generalization-in-looped-transformers)  
    标签：评分：8.0/10、query:tta
-   evidence：用于VLA系统隐式规划的世界-价值-动作模型
-5. [SCATR: Simple Calibrated Test-Time Ranking](/202604/22/2604.16535v2-scatr-simple-calibrated-test-time-ranking)  
-   标签：评分：8.0/10、query:tta
-   evidence：大语言模型的测试时间缩放与排序
-6. [SPREG: Structured Plan Repair with Entropy-Guided Test-Time Intervention for Large Language Model Reasoning](/202604/22/2604.17884v1-spreg-structured-plan-repair-with-entropy-guided-test-time-intervention-for-large-language-model-reasoning)  
-   标签：评分：8.0/10、query:tta
-   evidence：大语言模型推理阶段的错误纠正框架
+   evidence：测试时间计算缩放与稳定性分析
 
 ### 速读区论文标签
-1. [Catching Every Ripple: Enhanced Anomaly Awareness via Dynamic Concept Adaptation](/202604/22/2604.14726v2-catching-every-ripple-enhanced-anomaly-awareness-via-dynamic-concept-adaptation)  
+1. [OmniVLA-RL: A Vision-Language-Action Model with Spatial Understanding and Online RL](/202604/23/2604.17706v1-omnivla-rl-a-vision-language-action-model-with-spatial-understanding-and-online-rl)  
    标签：评分：7.0/10、query:tta
-   evidence：针对演化数据流的动态概念自适应
-2. [ReconVLA: An Uncertainty-Guided and Failure-Aware Vision-Language-Action Framework for Robotic Control](/202604/22/2604.16677v1-reconvla-an-uncertainty-guided-and-failure-aware-vision-language-action-framework-for-robotic-control)  
+   evidence：具有在线强化学习的视觉-语言-动作模型，用于具身智能适配
+2. [HiP-LoRA: Budgeted Spectral Plasticity for Robust Low-Rank Adaptation](/202604/23/2604.17751v1-hip-lora-budgeted-spectral-plasticity-for-robust-low-rank-adaptation)  
    标签：评分：7.0/10、query:tta
-   evidence：将符合性预测应用于预训练VLA策略的动作令牌输出
-3. [XEmbodied: A Foundation Model with Enhanced Geometric and Physical Cues for Large-Scale Embodied Environments](/202604/22/2604.18484v1-xembodied-a-foundation-model-with-enhanced-geometric-and-physical-cues-for-large-scale-embodied-environments)  
+   evidence：用于鲁棒低秩适配和稳定性的频谱感知适配框架
+3. [Enhancing Continual Learning of Vision-Language Models via Dynamic Prefix Weighting](/202604/23/2604.18075v1-enhancing-continual-learning-of-vision-language-models-via-dynamic-prefix-weighting)  
    标签：评分：7.0/10、query:tta
-   evidence：具身环境中的视觉-语言-动作 (VLA) 模型
-4. [Real-Time Visual Attribution Streaming in Thinking Model](/202604/22/2604.16587v1-real-time-visual-attribution-streaming-in-thinking-model)  
-   标签：评分：6.5/10、query:tta
-   evidence：多模态思考模型中的实时视觉归因
-5. [Don't Show Pixels, Show Cues: Unlocking Visual Tool Reasoning in Language Models via Perception Programs](/202604/22/2604.12896v1-dont-show-pixels-show-cues-unlocking-visual-tool-reasoning-in-language-models-via-perception-programs)  
+   evidence：视觉语言模型的领域类增量学习与自适应
+4. [Revisiting Change VQA in Remote Sensing with Structured and Native Multimodal Qwen Models](/202604/23/2604.18429v1-revisiting-change-vqa-in-remote-sensing-with-structured-and-native-multimodal-qwen-models)  
+   标签：评分：7.0/10、query:tta
+   evidence：针对变化视觉问答的低秩自适应(LoRA)
+5. [RDP LoRA: Geometry-Driven Identification for Parameter-Efficient Adaptation in Large Language Models](/202604/23/2604.19321v1-rdp-lora-geometry-driven-identification-for-parameter-efficient-adaptation-in-large-language-models)  
+   标签：评分：7.0/10、query:tta
+   evidence：大语言模型中基于几何识别的参数高效自适应技术
+6. [Mask World Model: Predicting What Matters for Robust Robot Policy Learning](/202604/23/2604.19683v1-mask-world-model-predicting-what-matters-for-robust-robot-policy-learning)  
+   标签：评分：7.0/10、query:tta
+   evidence：使用语义掩码进行鲁棒机器人策略学习的世界模型
+7. [TLoRA+: A Low-Rank Parameter-Efficient Fine-Tuning Method for Large Language Models](/202604/23/2604.13368v1-tlora-a-low-rank-parameter-efficient-fine-tuning-method-for-large-language-models)  
    标签：评分：6.0/10、query:tta
-   evidence：用于多模态推理的免训练感知程序
-6. [JumpLoRA: Sparse Adapters for Continual Learning in Large Language Models](/202604/22/2604.16171v2-jumplora-sparse-adapters-for-continual-learning-in-large-language-models)  
+   evidence：用于将预训练模型适配到特定任务的参数高效微调方法
+8. [Shuffle the Context: RoPE-Perturbed Self-Distillation for Long-Context Adaptation](/202604/23/2604.14339v1-shuffle-the-context-rope-perturbed-self-distillation-for-long-context-adaptation)  
    标签：评分：6.0/10、query:tta
-   evidence：LoRA模块中的自适应稀疏性用于持续学习
-7. [OFlow: Injecting Object-Aware Temporal Flow Matching for Robust Robotic Manipulation](/202604/22/2604.17876v1-oflow-injecting-object-aware-temporal-flow-matching-for-robust-robotic-manipulation)  
+   evidence：大语言模型的长文本自适应
+9. [Response-Aware User Memory Selection for LLM Personalization](/202604/23/2604.14473v1-response-aware-user-memory-selection-for-llm-personalization)  
    标签：评分：6.0/10、query:tta
-   evidence：在VLA模型中注入时间流匹配以实现鲁棒的机器人操作
+   evidence：推理时的记忆选择以引导模型生成
+10. [P3T: Prototypical Point-level Prompt Tuning with Enhanced Generalization for 3D Vision-Language Models](/202604/23/2604.15703v1-p3t-prototypical-point-level-prompt-tuning-with-enhanced-generalization-for-3d-vision-language-models)  
+   标签：评分：6.0/10、query:tta
+   evidence：3D 视觉语言模型的提示微调
+11. [JumpLoRA: Sparse Adapters for Continual Learning in Large Language Models](/202604/23/2604.16171v1-jumplora-sparse-adapters-for-continual-learning-in-large-language-models)  
+   标签：评分：6.0/10、query:tta
+   evidence：模型适配中LoRA块的持续学习和自适应稀疏性
 
 
 <div class="dpr-home-promo-card">

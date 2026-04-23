@@ -1,0 +1,1108 @@
+Title: HiP-LoRA: Budgeted Spectral Plasticity for Robust Low-Rank Adaptation
+
+URL Source: https://arxiv.org/pdf/2604.17751v1
+
+Published Time: Tue, 21 Apr 2026 01:50:02 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# HiP-LoRA: Budgeted Spectral Plasticity for Robust Low-Rank Adaptation 
+
+# Lixian Chen 1 , JianHong Tan 11Guangdong University of Technology 3123003175@mail2.gdut.edu.cn, 3123006160@mail2.gdut.edu.cn 
+
+# Abstract 
+
+Adapting foundation models under resource bud-gets relies heavily on Parameter-Efficient Fine-Tuning (PEFT), with LoRA being a standard mod-ular solution. However, LoRA suffers from spec-tral interference. Low-rank updates often con-centrate energy on the leading singular directions of pretrained weights, perturbing general capabili-ties and causing catastrophic forgetting and fragile multi-adapter merging. To resolve this, we propose HiP-LoRA, a spectrum-aware adaptation frame-work. Utilizing the cached singular value decom-position (SVD) of pretrained layers, HiP-LoRA de-composes updates into two channels: a principal channel within the dominant singular subspace, and a residual low-rank channel in the orthogonal com-plement. A singular-value-weighted stability bud-get on the principal channel continuously balances pretrained behavior preservation with task-specific plasticity. Experiments on Llama-3.1-8B demon-strate that under matched budgets, HiP-LoRA dras-tically reduces pretraining degradation and multi-adapter MergeFail, robustly outperforming base-lines in interference-sensitive tasks like continual tuning and knowledge editing. 
+
+# 1 Introduction 
+
+Foundation models and large pretrained neural backbones are now deployed across a wide range of tasks, including multimodal reasoning, medical imaging, reconstruction, and restoration [Shi et al. , 2026; Chen et al. , 2025a; Chen et al. ,2025b; Chen et al. , 2025c; Bai et al. , 2025; Lei et al. , 2025; Xia et al. , 2025], but practical use often requires repeated adaptation under limited compute, memory, and storage bud-gets. At the same time, recent evaluation has shown that con-trolled model behavior and robustness to errors remain im-portant concerns in complex multimodal settings [Shi et al. ,2026]. These trends make efficient and reliable adaptation a central problem. Parameter-efficient finetuning (PEFT) [Houlsby et al. ,2019] addresses this need by updating a small set of trainable parameters while keeping the pretrained backbone frozen. Frozen W 
+
+> 훥푊￿￿￿￿￿￿￿￿(orthogonal )
+> 훥푊￿￿￿￿￿￿￿￿￿(stabilized)
+> Effective weight:
+> 푊+훥푊
+> Singular-value–weighted
+> stability budget
+
+# ⊕ 훥푊
+
+Figure 1: Motivation of HiP-LoRA. Although LoRA up-dates are low-rank, their drift can still concentrate on dom-inant singular directions of the frozen pretrained weight, which may harm pretrained capabilities and reduce robust-ness under continual adaptation and adapter merging. HiP-LoRA addresses this by decomposing each update into a prin-cipal component regulated by a singular-value–weighted sta-bility budget and a residual component that preserves adapta-tion capacity. Representative approaches include prompt tuning [Lester et al. , 2021], bias-only finetuning [Zaken et al. , 2022], and low-rank adaptation methods such as LoRA [Hu et al. , 2022] and QLoRA [Dettmers et al. , 2023]. In particular, LoRA is attractive because its low-rank updates can be merged into the base model at deployment, which supports mod-ular continual updates and composition of independently trained adapters [Pfeiffer et al. , 2021; Mitchell et al. , 2021; Wortsman et al. , 2022; Ilharco et al. , 2022]. This practi-cal success has made LoRA one of the standard choices for adapting large language models. However, efficient parameterization alone does not resolve the problem of interference. When a model is adapted repeat-edly or when several adapters are combined, the new updates can damage broad pretrained behavior and produce forget-ting, negative transfer, or unstable composition [Kirkpatrick 
+
+et al. , 2017; Lopez-Paz and Ranzato, 2017; French, 1999]. We study this issue from the spectral structure of pretrained weights. The singular value decomposition of a frozen pre-trained matrix orders directions according to their importance in the pretrained parameter space. From this perspective, in-terference is not determined only by the total size of an up-date. It also depends on whether the update places substan-
+
+> arXiv:2604.17751v1 [cs.LG] 20 Apr 2026
+
+tial energy on dominant singular directions that support broad pretrained behavior. Even a low-rank update can therefore cause large and undesirable functional changes when its drift is concentrated in these dominant directions [Aghajanyan et al. , 2021]. This observation exposes a gap in existing adaptation methods. Some methods improve optimization or parameter-ization, while others use dominant subspaces for initialization or enforce orthogonality for preservation. Yet these designs do not directly provide a continuous mechanism that can reg-ulate how much editing is allowed inside dominant pretrained directions while preserving sufficient task plasticity. As a re-sult, low-rank adaptation can still perturb directions that sup-port broad generalization, which leads to degraded retention, brittle adapter composition, and poor edit locality [Yadav et al. , 2023; Wang et al. , 2023]. Motivated by this problem, we propose HiP-LoRA, a spectrum-aware PEFT method inspired by Complementary Learning Systems [Kumaran et al. , 2016; McClelland et al. ,1995]. HiP-LoRA represents each layer update in the cached top singular basis of the pretrained weight matrix and de-composes the update into two coordinated channels. The first channel edits gains inside the dominant singular sub-space. The second channel performs residual low-rank adap-tation in the two-sided orthogonal complement. A stability budget weighted by singular values then controls the magni-tude of edits in dominant directions, which yields a continu-ous trade-off between preservation of pretrained behavior and task-specific adaptation. Under matched budgets on Llama-3.1-8B, HiP-LoRA reduces Retain from 12.3 to 4.9 percent-age points while maintaining or improving downstream task performance, and it substantially improves the robustness of adapter merging without additional training. The main contributions are listed below: (1) We study interference in parameter-efficient adaptation from the spectral structure of pretrained weights, and show that low-rank updates can still induce concentrated functional perturbations along leading singular directions. This perspec-tive suggests that retention depends on how update energy is distributed across singular directions, not only on the total update magnitude. (2) We propose HiP-LoRA, a spectrum-aware low-rank adaptation framework that combines a principal editing chan-nel, a residual complementary channel, and a stability budget weighted by singular values. This design provides continu-ous control over preservation and adaptation without relying on hard inclusion or exclusion constraints. (3) We validate HiP-LoRA on single-task adaptation, adapter merging without additional training, continual in-struction tuning, and knowledge editing. Across these set-tings, HiP-LoRA improves retention, merging robustness, and edit locality under matched parameter budgets. 
+
+# 2 Related Work 
+
+2.1 Parameter-efficient adaptation 
+
+Parameter-efficient finetuning updates a small subset of pa-rameters while keeping the pretrained backbone fixed, which makes adaptation practical for large models [Houlsby et al. ,2019]. Representative designs include prompt tuning [Lester 
+
+et al. , 2021], bias-only finetuning [Zaken et al. , 2022], and low-rank adaptation through LoRA and QLoRA [Hu et al. ,2022; Dettmers et al. , 2023]. Recent surveys summarize a wide range of PEFT strategies, and follow-up work continues to refine the parameterization and optimization of low-rank updates [Han et al. , 2024; Liu et al. , 2024]. These methods improve efficiency and optimization, but they do not explic-itly control how update energy is distributed across the spec-tral coordinates of pretrained weights. Our work focuses on this missing degree of control. 
+
+2.2 Spectral and subspace-aware adaptation 
+
+Several methods use spectral or subspace structure to improve adaptation. Prior work has shown that finetuning often lies in a low-dimensional intrinsic subspace, which motivates struc-tured parameterizations of model updates [Aghajanyan et al. ,2021]. PiSSA uses singular vectors of pretrained weights for initialization and parameterization in order to improve opti-mization and data efficiency [Meng et al. , 2024]. Orthogonal or complement-subspace methods instead protect pretrained representations by constraining updates away from important directions [Wang et al. , 2023]. These approaches reveal the value of spectral structure, but they mainly decide where up-dates can occur. In contrast, HiP-LoRA uses the pretrained singular basis as a fixed coordinate system and continuously regulates how much editing is allowed inside dominant di-rections while preserving residual adaptation capacity outside them. 
+
+2.3 Adapter composition, merging, and interference 
+
+The modular form of PEFT has encouraged research on combining independently trained adapters and model up-dates. Adapter fusion and related methods study how mul-tiple task-specific modules can be composed after separate training [Pfeiffer et al. , 2021]. Other work considers editing, task arithmetic, and direct composition of learned updates in weight space [Mitchell et al. , 2021; Wortsman et al. , 2022; Ilharco et al. , 2022]. Recent studies of model merging further examine alignment, permutation mismatch, and in-terference across networks or updates [Yadav et al. , 2023; Bansal et al. , 2021; Ainsworth et al. , 2022]. These methods address how to combine learned components after training. Our focus is different. We design the adapter update itself so that it is easier to preserve general behavior and more robust to composition from the start. 
+
+2.4 Stability, plasticity, and structured adaptation 
+
+The tension between adaptation and retention is closely re-lated to the long-standing problem of catastrophic forgetting in continual learning [Kirkpatrick et al. , 2017; Lopez-Paz and Ranzato, 2017; French, 1999]. Beyond language model adap-tation, recent work in structured spatio-temporal modeling and domain-specific visual learning has also shown that ex-plicit geometric or architectural constraints can improve sta-ble representation learning and reconstruction quality [Lu et al. , 2026]. At a conceptual level, Complementary Learn-ing Systems provides a useful view of how stable knowl-edge and fast adaptation can coexist [Kumaran et al. , 2016; McClelland et al. , 1995]. HiP-LoRA draws motivation from this perspective, but turns it into a concrete PEFT mechanism in the spectral basis of pretrained weights, with an explicit budget that controls the balance between retention and adap-tation. 
+
+# 3 Method 
+
+Setup and notation. For a frozen pretrained weight matrix 
+
+W ∈ Rm×n, we compute and cache a rank-k truncated SVD 
+
+W ≈ Uk diag( σ)V⊤ 
+
+> k
+
+,
+
+where Uk ∈ Rm×k, Vk ∈ Rn×k, and σ ∈ Rk 
+
+> +
+
+are fixed throughout adaptation. We further define the projectors 
+
+PU = UkU⊤ 
+
+> k
+
+, PV = VkV⊤ 
+
+> k
+
+.
+
+Following LoRA, we write a rank-r update as 
+
+∆W = s BA ,
+
+where r ≪ min( m, n ) and s = α/r is the standard LoRA scaling. 
+
+Overview. HiP-LoRA represents each adapter update in the cached SVD basis of the pretrained weight and decomposes it into two channels: 
+
+∆W = Uk diag( ϕ)V⊤
+
+> k
+
+| {z }
+
+> principal channel
+
++ s ∆Wres 
+
+| {z }
+
+> residual channel
+
+. (1) The principal channel edits the dominant singular subspace, while the residual channel captures complementary low-rank adaptation in the two-sided orthogonal complement. The key idea is to avoid two extremes: editing dominant singu-lar directions without control, or excluding them altogether. HiP-LoRA instead allows limited edits in the principal sub-space while reserving the complementary subspace for resid-ual adaptation. To control the trade-off between preserving pretrained behavior and adapting to the target task, we reg-ularize ϕ with a singular-value–weighted quadratic budget. Figure 2 summarizes the two-channel design. 
+
+Principal channel: controlled editing in the dominant subspace. We parameterize the principal update as 
+
+∆W∥ = Uk diag( ϕ)V⊤ 
+
+> k
+
+, (2) where ϕ ∈ Rk contains one learned gain deviation for each cached singular direction. This parameterization is simple, interpretable, and restricted to the dominant singular direc-tions. Unlike hard exclusion, it still allows task-relevant ad-justments in the principal subspace when exact preservation would be too restrictive. 
+
+Residual channel: complementary low-rank adaptation. 
+
+To preserve adaptation capacity outside the dominant singular subspace, we apply a rank-r LoRA update restricted to the two-sided orthogonal complement: 
+
+∆Wres = ( I − PU ) ( BA ) ( I − PV ). (3) Equivalently, this can be realized by projecting the low-rank factors, 
+
+eB = ( I − UkU⊤ 
+
+> k
+
+)B, eA = A(I − VkV⊤ 
+
+> k
+
+), (4) and using 
+
+∆Wres = eB eA. (5) By construction, 
+
+U⊤ 
+
+> k
+
+∆Wres = 0, ∆Wres Vk = 0,
+
+so the residual channel does not reuse capacity assigned to the principal channel. This gives the two channels distinct roles: controlled editing inside the dominant subspace and residual adaptation outside it. In practice, we enforce the complement constraint by factor retraction once per optimizer step, which preserves the standard LoRA low-rank forward path; imple-mentation details are deferred to Appendix A.2. 
+
+Spectrum-aware stability control. Editing dominant pre-trained directions is useful but potentially destabilizing. We therefore regularize the principal deviations with a singular-value–weighted quadratic penalty: 
+
+Ω( ϕ) = 
+
+> k
+
+X
+
+> i=1
+
+wi ϕ2 
+
+> i
+
+, wi = σγi
+
+Pkj=1 σγj
+
+. (6) Here γ ≥ 0 controls how strongly larger-singular-value di-rections are protected. When γ = 0 , all principal directions are penalized equally; larger γ places more weight on high-σ
+
+directions. Normalizing the weights keeps the overall penalty scale comparable across layers and choices of k.
+
+Objective. We initialize ϕ = 0 and the residual factors to zero, so that the effective weight matches the pretrained one at initialization. Given task loss Ltask , HiP-LoRA optimizes 
+
+min  
+
+> ϕ,A,B
+
+Ltask (W + ∆ W) + λstab Ω( ϕ), (7) where ∆W is defined in Eq. 1. The hyperparameter λstab di-rectly controls the stability–plasticity trade-off: the principal channel allows limited edits in dominant directions, while the complementary residual channel preserves adaptation capac-ity outside them. For implementation, an equivalent reparam-eterization θ = σ + ϕ may be used; we keep the main text in terms of ϕ for clarity. 
+
+# 4 Experiments and Analysis 
+
+We evaluate HiP-LoRA from three perspectives: (1) Main results: We evaluate single-task adaptation and training-free multi-adapter merging to assess retention, downstream per-formance, and adapter compatibility. (2) Mechanistic analy-sis: We examine stability–plasticity control through sweeps over (λstab , γ ) and analyze the resulting spectral allocation patterns. (3) Additional evidence: We include a diagnos-tic probe of spectrum-dependent sensitivity and report results in continual tuning and knowledge editing. Ablations further isolate the contribution of each component. 
+
+4.1 Experimental setup 
+
+Benchmarks and backbone. We evaluate HiP-LoRA on four domains: general knowledge (MMLU), science QA (S CIENCE QA), mathematical reasoning (GSM8K), and code generation (CodeAlpaca-20k → HUMAN EVAL ). Unless noted otherwise, we use standard zero-shot prompting, and HiP-LoRA Adapter 
+
+Transformer B lock 훥푊|| 
+
+Linear Pro jection 
+
+> Principal Channel
+
+W
+
+> Frozen
+> Trainable
+> (from adapter)
+> Projeect:
+> (I-P￿)(BA)(I-P￿)
+
+ϕ
+
+A B B A (LoRA-like update) 
+
+퐿￿￿￿￿ = CE(logits,y *)
+
+→ →
+
+ΔW
+
+훥푊￿￿￿  
+
+> ＋
+> Residual Channel
+> logits SV D(W)
+
+휆￿￿￿￿ · Ω( ϕ)
+
+Loss   
+
+> Effective weight: W + ΔW
+> 푈￿,푉￿,휎￿
+
+↓
+
+퐿￿￿￿￿
+
+> ＋
+
+Figure 2: HiP-LoRA mechanism. Given a frozen transformer projection W, we cache its top-k singular directions W ≈
+
+Uk diag( σ)V⊤ 
+
+> k
+
+and keep (Uk, Vk, σ) fixed. HiP-LoRA decomposes the adapter update into two channels: a principal channel 
+
+Uk diag( ϕ)V⊤ 
+
+> k
+
+that performs controlled editing along dominant pretrained directions, and a residual channel s ∆Wres that applies complementary low-rank adaptation in the two-sided orthogonal complement. Training minimizes a task loss together with a singular-value–weighted regularizer on ϕ, which controls the trade-off between preserving pretrained behavior and adapting to the target task. report Pass@1 on H UMAN EVAL . For the MMLU domain adapter, we fine-tune on Alpaca-52k and evaluate on the MMLU test set. Unless stated otherwise, all experiments use 
+
+Llama-3.1-8B ; dataset versions, prompts, and decoding de-tails are given in Appendix C.1. 
+
+Protocols and metrics. Table 1 reports downstream per-formance on MMLU, S CIENCE QA, GSM8K, and H U-
+
+> MAN
+
+EVAL . Results are aggregated over four independently trained single-task adapters, one per domain. To measure preservation, we report Retain , the mean out-of-domain score drop on a fixed retention suite (lower is better, in per-centage points). For an adapter trained on domain d, we ex-clude d itself from the retention suite. For composability, we merge independently trained adapters by standard weight-space addition, without joint optimization or post-merge re-training, and report Before/After/ ∆ in Table 2. We also re-port MergeFail , the fraction of sampled merges whose post-merge score falls below a fixed fraction τ of the correspond-ing single-task score. Full metric definitions, thresholds, and sampling details are deferred to Appendix C.2 and Ap-pendix C.3. 
+
+Baselines and hyperparameters. We compare against 
+
+LoRA [Hu et al. , 2022], PiSSA [Meng et al. , 2024], Split-LoRA [Lin et al. , 2024] ( 4×4), and Proj-LoRA , which re-stricts a scaled LoRA update to the two-sided complement of the top-k SVD subspace, 
+
+∆W = ( I − UkU ⊤ 
+
+> k
+
+) ( s BA ) ( I − VkV ⊤ 
+
+> k
+
+),
+
+with s = α/r . Unless stated otherwise, all methods adapt self-attention projection layers only ( q proj, k proj, v proj, o proj ) for fair comparison. HiP-LoRA uses 
+
+k=32 and residual rank r=16 by default, and sweeps λstab ∈{0, 0.01 , 0.03 , 0.1, 0.3, 1.0} and γ ∈ { 0, 0.5, 1.0, 2.0}. Split-LoRA is included mainly for merging and is omitted from Table 1. All results are mean ± std over 3 seeds; implemen-tation details, selection protocol, stronger baselines, and ef-ficiency measurements are deferred to Appendix B–D.5 and Table 5. 
+
+4.2 Main results 
+
+Single-task adaptation 
+
+As primary evidence for improved retention, Table 1 shows a consistent pattern: HiP-LoRA improves or matches down-stream task accuracy while sharply reducing pretraining degradation (Retain). Relative to standard LoRA at the same residual rank ( r=16 ), HiP-LoRA cuts Retain by more than half, yet still improves performance across knowledge (MMLU), reasoning (GSM8K), code (H UMAN EVAL ), and science QA (S CIENCE QA). This setting is particularly sensitive to interference: al-though updates are low-rank, their energy can concentrate on high-σ directions that underpin broad pretrained competence, causing disproportionate retention degradation. HiP-LoRA mitigates this by stabilizing principal-subspace edits via the 
+
+σ-weighted budget while preserving task capacity through the projected residual channel. As a result, it learns task-specific behavior with substantially less collateral damage to pre-trained capabilities. Notably, Proj-LoRA improves retention over LoRA but still lags behind HiP-LoRA, indicating that pure exclusion from principal directions is not enough; con-trolled, spectrum-aware modulation within the principal sub-space is important for the retention–accuracy balance. HiP-LoRA also outperforms AdaLoRA under matched budgets (Appendix Table 12), suggesting that the improvement is not explained by adaptive rank allocation alone. Table 1: Single-task adaptation on Llama-3.1-8B (mean ± std over 3 seeds).                                
+
+> Method MMLU ↑GSM8K ↑HumanEval(Pass@1) ↑ScienceQA ↑Retain (pp) ↓
+> LoRA ( r=16) 37 .33 ±0.75 55 .64 ±0.25 29 .54 ±0.80 92 .26 ±0.35 12 .3±1.1
+> Proj-LoRA ( r=16) 37 .41 ±0.49 55 .12 ±0.38 29 .10 ±0.64 92 .08 ±0.51 8.9±0.9
+> PiSSA ( r=16) 38 .68 ±0.61 56 .63 ±0.36 30 .92 ±0.70 93 .62 ±0.33 7.1±0.7
+> HiP-LoRA ( k=32, r=16) 39 .44 ±0.58 57 .36 ±0.34 31 .52 ±0.66 94 .05 ±0.29 4.9±0.6
+
+Training-free multi-adapter merging 
+
+As our primary test of adapter compatibility, merging inde-pendently trained adapters constitutes a worst-case interfer-ence setting: even if each single-task adapter appears benign in isolation, additive composition can push the model far from the pretrained operating point. This setting isolates struc-tural compatibility of updates, independent of optimization dynamics. Table 2 highlights this failure mode for standard LoRA. Af-ter merging, performance degradation is highly non-uniform and often collapses on specific domains (e.g., S CIENCE QA), consistent with the accumulation of drift along spectrally sen-sitive directions. Under the same training-free merge operator, HiP-LoRA is substantially more robust. Across all reported metrics, it reduces the mean absolute post-merge drop from 20.24 to 5.42 points (a 73.2% relative reduction versus LoRA, 
+
+r=16 ), while maintaining strong single-task performance. This is consistent with our central claim: by explicitly budget-ing principal-subspace edits and isolating remaining capac-ity in the orthogonal residual channel, HiP-LoRA produces adapters whose updates are more additively compatible. We report MergeFail (threshold τ =0 .9) and full merge-sampling details in Appendix C.3. The same trend holds un-der a stronger merge rule. With TIES-Merging applied to the same trained adapters, HiP-LoRA reduces the mean abso-lute post-merge drop from 13.8 to 4.7 points and MergeFail from 38% to 4.5% relative to LoRA (Appendix Table 13). Because all adapters are trained independently and merged without joint optimization, this improvement reflects better structural compatibility of the learned updates rather than a favorable training procedure. 
+
+4.3 Controllable stability–plasticity trade-off and spectral allocation 
+
+To explain the main gains and validate controllability, HiP-LoRA exposes stability–plasticity trade-offs as an explicit, continuous control via (λstab , γ ) rather than an implicit side effect of optimization. The stability weight λstab directly modulates the magnitude of principal-subspace edits, while the orthogonal residual channel preserves task-specific adap-tation capacity. As shown in Figure 3, varying λstab traces a smooth trade-off curve between downstream performance and pretraining retention. Concretely, increasing λstab sup-presses the energy of principal-subspace edits, while leaving residual capacity available for task learning. The spectral sensitivity parameter γ further adjusts how strongly large-
+
+σ directions are protected, yielding a family of controllable operating regimes. To verify that HiP-LoRA enforces its intended spectral allocation, we inspect the learned princi-4 6 8 10 12 
+
+Pretrain degradation (%) ↓          
+
+> 55.0
+> 55.5
+> 56.0
+> 56.5
+> 57.0
+> 57.5
+> 58.0
+> Downstream accuracy (%) ↑
+> λ= 1
+> λ= 0
+> λ= 1
+> λ= 0
+> λ= 1
+> λ= 0
+> γ= 0.5
+> γ= 1.0
+> γ= 2.0
+
+Figure 3: Controllable stability–plasticity trade-off. 
+
+Downstream accuracy versus pretraining degradation (lower is better) under different values of λstab and γ. Varying λstab 
+
+traces a continuous trade-off curve, while γ controls how strongly updates are biased away from large-σ directions. Points show means over 3 seeds; error bars indicate ±1 std. pal deviations ϕ in SVD coordinates. Figure 4 shows a graded, spectrum-aligned allocation in which larger singu-lar values receive smaller edits, consistent with the singular-value–weighted budget and indicating direction-level control rather than undifferentiated shrinkage. 
+
+4.4 Spectral importance sanity check 
+
+As a diagnostic motivation probe (not a causal proof), we ex-amine whether functional sensitivity is spectrum-dependent in the SVD geometry of pretrained weights. This probe is in-tended to justify protecting large-σ directions more strongly, rather than to serve as the main evidence for our end-to-end gains. 
+
+Question. Do large singular values σi actually correspond to functionally sensitive directions? If so, a spectrum-aware stability budget is targeting the directions where small geo-metric drift is most likely to harm general competence. 
+
+Setup. On representative self-attention projection matri-ces, we compute a truncated SVD ( k=32 ) and apply con-trolled rank-1 interventions along individual singular direc-tions (Zero / Flip / Noise; details in Appendix C.1). We then measure the induced performance drop under fixed evaluation conditions. 
+
+What we see. The most pronounced effect is observed for 
+
+Zero (removing a direction): performance drops show a Table 2: Multi-task performance before/after training-free merging on Llama-3.1-8B. We evaluate LoRA variants on MMLU, ScienceQA, GSM8K ( accuracy ) and HumanEval ( Pass@ {1,5,10 }). Before : single-task adapter performance. After :performance after merging. ∆ is (After −Before). We report results for merging all four single-task adapters (merge size t=4 ). When we report the “mean absolute post-merge drop” in the text, we average |∆| over the six reported metrics.                                                                                                                   
+
+> Model Method Merge Status MMLU ScienceQA GSM8K HumanEval Pass@1 Pass@5 Pass@10
+> Llama 3.1-8B LoRA( r=16) Before 37 .33 ±0.75 92 .26 ±0.35 55 .64 ±0.25 29 .54 ±0.80 52 .98 ±0.70 62 .45 ±0.80
+> After 31 .37 ±1.10 32 .15 ±1.90 25 .05 ±1.40 17 .04 ±2.20 45 .72 ±1.60 57 .42 ±1.50 ∆(pp) −5.96 −60 .11 −30 .59 −12 .50 −7.26 −5.03
+> Split-LoRA( 4×4)Before 37 .20 ±0.70 92 .00 ±0.45 55 .55 ±0.30 29 .90 ±0.90 53 .00 ±0.80 62 .40 ±0.85
+> After 31 .29 ±1.05 35 .89 ±1.45 26 .95 ±1.15 18 .60 ±1.70 45 .64 ±1.30 57 .62 ±1.20 ∆(pp) −5.91 −56 .11 −28 .60 −11 .30 −7.36 −4.78
+> Proj-LoRA( r=16) Before 37 .41 ±0.49 92 .08 ±0.51 55 .12 ±0.38 29 .10 ±0.64 52 .10 ±1.05 61 .22 ±0.88
+> After 33 .92 ±0.91 62 .84 ±2.10 41 .78 ±1.62 23 .96 ±1.74 49 .18 ±1.44 60 .02 ±1.12 ∆(pp) −3.49 −29 .24 −13 .34 −5.14 −2.92 −1.20
+> PiSSA ( r=16) Before 38 .68 ±0.61 93 .62 ±0.33 56 .63 ±0.36 30 .92 ±0.70 53 .98 ±0.96 63 .52 ±0.73
+> After 35 .41 ±0.88 71 .18 ±1.84 45 .66 ±1.41 25 .92 ±1.53 50 .86 ±1.22 61 .84 ±0.98 ∆(pp) −3.27 −22 .44 −10 .97 −5.00 −3.12 −1.68
+> HiP-LoRA ( k=32, r=16) Before 39 .44 ±0.58 94 .05 ±0.29 57 .36 ±0.34 31 .52 ±0.66 55 .12 ±0.91 64 .88 ±0.79
+> After 37 .02 ±0.76 79 .06 ±1.52 49 .64 ±1.18 27 .78 ±1.27 52 .92 ±1.03 63 .44 ±0.86 ∆(pp) −2.42 −14 .99 −7.72 −3.74 −2.20 −1.44 123456
+> Singular value σ(quantile bins)
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> 0.12
+> Mean  |ϕi|
+> γ= 0.5
+> γ= 1.0
+> γ= 2.0
+
+Figure 4: Spectral allocation induced by HiP-LoRA. 
+
+Binned averages of |ϕi| versus singular value σi across lay-ers. HiP-LoRA assigns smaller updates to larger-σ directions, with the strength of this bias controlled by γ. Curves show means over 3 seeds; shaded bands indicate ±1 std. strong positive correlation with σ (Table 3), suggesting that large-σ directions can be disproportionately sensitive under destructive interventions. In contrast, Flip and small Noise 
+
+yield weaker effects, consistent with a picture where catas-trophic perturbations expose sensitivity more reliably than mild local distortions. We emphasize effect sizes with con-fidence intervals in the main text; for completeness, we ad-ditionally report p-values/significance tests in the appendix, Table 3: Sanity check: correlation between singular value magnitude and performance drop under rank-1 interventions. We report Pearson r computed on log(1 + σ) with bootstrap 95% CI.             
+
+> Perturb nr95% CI flip 20 0.33 [−0.26 , 0.75] noise 0.1 127 0.14 [−0.07 , 0.34] zero 29 0.86 [0.14, 0.95]
+
+since this experiment is meant as a sanity-check probe. 
+
+Why this matters for HiP-LoRA. This sanity check mo-tivates our design choice to protect large-σ directions more 
+
+than small-σ ones: the stability regularizer in HiP-LoRA is designed to impose this bias, while still allowing plasticity to flow through the residual orthogonal channel. We em-phasize the limits of the evidence (layer dependence; weaker signals for Flip/Noise) and provide full visualizations in Ap-pendix D.1. 
+
+4.5 Continual instruction tuning and knowledge editing 
+
+Beyond single-task adaptation and training-free merging, we further test HiP-LoRA in two interference-sensitive regimes: continual instruction tuning and knowledge editing (full pro-tocols and tables in Appendix C.4). Both settings require lo-calized updates: if adaptation spills into spectrally dominant directions, it can lead to forgetting in continual learning or poor locality in editing. 
+
+Continual instruction tuning. Appendix Table 7 shows that HiP-LoRA achieves the best final AvgAcc and the lowest 0 100 200 300 400 500 
+
+> Fine-tuning steps (from pretrained)
+> 47
+> 49
+> 51
+> 53
+> 55
+> 57
+> Accuracy (%)
+> HiP-LoRA (full)
+> w/o stability
+> w/o projection
+> init_zero
+
+Figure 5: Optimization dynamics under ablations. Down-stream accuracy versus fine-tuning steps from the pretrained initialization. Removing the stability budget, orthogonal pro-jection, or pretrained-aligned initialization leads to degraded or less stable optimization trajectories. Curves are mean over 3 seeds; shaded regions denote ±1 std. forgetting under matched budgets, improving AvgAcc to 74.6 while reducing forgetting to 6.9, compared with 73.1/10.2 for PiSSA and 71.8/13.6 for LoRA. 
+
+Knowledge editing. Appendix Table 8 shows that HiP-LoRA achieves the highest edit success with the smallest lo-cality change, reaching 89.2 edit success with 2.1 pp locality change, compared with 87.9/3.1 for PiSSA and 86.4/3.8 for LoRA. 
+
+4.6 Ablations and efficiency 
+
+Ablations. Figure 5 analyzes optimization dynamics under controlled ablations, isolating which components are neces-sary for the main retention and merging gains. Removing the spectrum-aware stability budget or the orthogonal resid-ual projection leads to slower or less stable convergence, even when final accuracy differences are modest. Appendix Ta-ble 11 shows the same pattern numerically: removing the sta-bility regularizer raises Retain from 4.9 to 9.8 and Merge-Fail from 6.8 to 14.2, while removing the residual projec-tion raises MergeFail to 12.5. These results support the two-channel design: stabilization alone is not enough without iso-lating residual capacity in the two-sided complement. 
+
+Efficiency. HiP-LoRA adds only modest overhead in re-turn. It requires a one-time top-k randomized SVD for each adapted frozen weight matrix, which is cached and reused across training and merging. For each adapted matrix W ∈
+
+Rm×n, storing (Uk, V k, σ ) adds k(m + n) + k scalars. In our Llama-3.1-8B setting, throughput decreases from 42k tok/s for LoRA to 40k tok/s for HiP-LoRA, peak mem-ory changes from 78.0 GB to 78.6 GB, and the one-time SVD preprocessing takes 18 minutes with a 0.13 GB cache (Appendix Table 5). The residual path remains in the same LoRA-style low-rank form and does not materialize dense 
+
+BA during training or adapter-mode inference. Training-free merging also retains the same asymptotic form as LoRA-style merging: adapters are combined by adding their realized updates in weight space. Our “no dense 
+
+BA ” claim applies to training and adapter-mode computa-tion; when an adapter is folded into the backbone for deploy-ment, the dense ∆W may be materialized once per module, as in standard LoRA merging, so the deployed runtime foot-print remains unchanged. 
+
+# 5 Discussion and Limitations 
+
+HiP-LoRA trades expressiveness for control. The principal channel uses direction-wise gain editing on the top-k singular directions, while the residual channel is restricted to the two-sided orthogonal complement. This keeps the update simple and stable, but it can be restrictive when a task requires larger changes along dominant directions. In such cases, the method can be relaxed by decreasing λstab , reducing the spectral bias through smaller γ, or increasing k.This design introduces a one-time SVD cost for frozen weight matrices. Although the factors can be cached and reused, the overhead may still be non-trivial for very large models or when many modules are adapted. More expres-sive principal-channel parameterizations, or residual updates that retain cross-subspace interactions, may further improve capacity at the cost of weaker control. We focus on LLM adaptation in this work. The same idea may be relevant to other models built around large frozen lin-ear projections, but that remains to be tested. A broader eval-uation is left to future work. 
+
+# 6 Conclusion 
+
+We presented HiP-LoRA, an SVD-based PEFT framework that allocates LoRA updates into two complementary chan-nels: a constrained edit in the top-k principal singular sub-space and a plastic residual update restricted to the orthog-onal complement. By introducing a singular-value-aware, direction-wise stability budget on the principal channel, HiP-LoRA provides continuously tunable control over how much dominant pre-trained directions are edited, bridging hard pro-tection with unconstrained adaptation. Across continual in-struction tuning, adapter merging, and knowledge editing, HiP-LoRA improves retention, merge stability, and edit lo-cality over LoRA and representative subspace baselines un-der comparable parameter budgets. Moreover, analyses in the SVD coordinate system reveal a graded pattern of learned up-date magnitudes aligned with the singular spectrum, offering an interpretable view of the stability–plasticity trade-off in PEFT. 
+
+# References 
+
+[Aghajanyan et al. , 2021] Armen Aghajanyan, Sonal Gupta, and Luke Zettlemoyer. Intrinsic dimensionality explains the effectiveness of language model fine-tuning. In Pro-ceedings of the 59th annual meeting of the association for computational linguistics and the 11th international joint conference on natural language processing (volume 1: long papers) , pages 7319–7328, 2021. [Ainsworth et al. , 2022] Samuel K Ainsworth, Jonathan Hayase, and Siddhartha Srinivasa. Git re-basin: Merging models modulo permutation symmetries. arXiv preprint arXiv:2209.04836 , 2022. [Bai et al. , 2025] Jiesong Bai, Yuhao Yin, Yihang Dong, Xi-aofeng Zhang, Chi-Man Pun, and Xuhang Chen. Lensnet: An end-to-end learning framework for empirical point spread function modeling and lensless imaging reconstruc-tion. In IJCAI , pages 684–692, 2025. [Bansal et al. , 2021] Yamini Bansal, Preetum Nakkiran, and Boaz Barak. Revisiting model stitching to compare neural representations. Advances in neural information process-ing systems , 34:225–236, 2021. [Chaudhary, 2023] Sahil Chaudhary. Code alpaca: An instruction-following llama model for code generation, 2023. [Chen et al. , 2025a] Xuhang Chen, Zhuo Li, Yanyan Shen, Mufti Mahmud, Hieu Pham, Michael Kwok-Po Ng, Chi-Man Pun, and Shuqiang Wang. High-fidelity functional ul-trasound reconstruction via a visual auto-regressive frame-work. IEEE Journal of Biomedical and Health Informat-ics , 2025. [Chen et al. , 2025b] Xuhang Chen, Yanyan Shen, Mufti Mahmud, Michael Kwok-Po Ng, Kim-Fung Tsang, Shan-shan Wang, Chi-Man Pun, and Shuqiang Wang. Connec-tomediffuser: Generative ai enables brain network con-struction from diffusion tensor imaging. IEEE Transac-tions on Consumer Electronics , 71(3):7835–7847, 2025. [Chen et al. , 2025c] Xuhang Chen, Ziyang Zhou, Zimeng Li, Xiujun Zhang, Yihang Dong, and Kim-Fung Tsang. Docunfold: Leveraging unfolding network and a real-world large-scale dataset for handwriting contamination removal in documents. IEEE Transactions on Consumer Electronics , 2025. [Chen, 2021] Mark Chen. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 , 2021. [Cobbe et al. , 2021] Karl Cobbe, Vineet Kosaraju, Moham-mad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. Training verifiers to solve math word prob-lems. arXiv preprint arXiv:2110.14168 , 2021. [Dettmers et al. , 2023] Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and Luke Zettlemoyer. Qlora: Efficient fine-tuning of quantized llms. Advances in neural information processing systems , 36:10088–10115, 2023. [French, 1999] Robert M French. Catastrophic forgetting in connectionist networks. Trends in cognitive sciences ,3(4):128–135, 1999. [Han et al. , 2024] Zeyu Han, Chao Gao, Jinyang Liu, Jeff Zhang, and Sai Qian Zhang. Parameter-efficient fine-tuning for large models: A comprehensive survey. arXiv preprint arXiv:2403.14608 , 2024. [Hendrycks et al. , 2020] Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask lan-guage understanding. arXiv preprint arXiv:2009.03300 ,2020. [Houlsby et al. , 2019] Neil Houlsby, Andrei Giurgiu, Stanis-law Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. Parameter-efficient transfer learning for nlp. In Interna-tional conference on machine learning , pages 2790–2799. PMLR, 2019. [Hu et al. , 2022] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. [Ilharco et al. , 2022] Gabriel Ilharco, Marco Tulio Ribeiro, Mitchell Wortsman, Suchin Gururangan, Ludwig Schmidt, Hannaneh Hajishirzi, and Ali Farhadi. Editing models with task arithmetic. arXiv preprint arXiv:2212.04089 ,2022. [Kirkpatrick et al. , 2017] James Kirkpatrick, Razvan Pas-canu, Neil Rabinowitz, Joel Veness, Guillaume Des-jardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al. Overcom-ing catastrophic forgetting in neural networks. Proceed-ings of the national academy of sciences , 114(13):3521– 3526, 2017. [Kumaran et al. , 2016] Dharshan Kumaran, Demis Hass-abis, and James L McClelland. What learning systems do intelligent agents need? complementary learning systems theory updated. Trends in cognitive sciences , 20(7):512– 534, 2016. [Lei et al. , 2025] Yingtie Lei, Zimeng Li, Chi-Man Pun, Yu-peng Liu, and Xuhang Chen. Fs-rwkv: Leveraging fre-quency spatial-aware rwkv for 3t-to-7t mri translation. In 
+
+BIBM , pages 1–6, 2025. [Lester et al. , 2021] Brian Lester, Rami Al-Rfou, and Noah Constant. The power of scale for parameter-efficient prompt tuning. arXiv preprint arXiv:2104.08691 , 2021. [Lin et al. , 2024] Zheng Lin, Xuanjie Hu, Yuxin Zhang, Zhe Chen, Zihan Fang, Xianhao Chen, Ang Li, Praneeth Vepakomma, and Yue Gao. Splitlora: A split parameter-efficient fine-tuning framework for large language models. 
+
+arXiv preprint arXiv:2407.00952 , 2024. [Liu et al. , 2024] Shih-Yang Liu, Chien-Yi Wang, Hongxu Yin, Pavlo Molchanov, Yu-Chiang Frank Wang, Kwang-Ting Cheng, and Min-Hung Chen. Dora: Weight-decomposed low-rank adaptation. In Forty-first Interna-tional Conference on Machine Learning , 2024. [Lopez-Paz and Ranzato, 2017] David Lopez-Paz and Marc’Aurelio Ranzato. Gradient episodic memory for continual learning. Advances in neural information processing systems , 30, 2017. [Lu et al. , 2022] Pan Lu, Swaroop Mishra, Tanglin Xia, Liang Qiu, Kai-Wei Chang, Song-Chun Zhu, Oyvind Tafjord, Peter Clark, and Ashwin Kalyan. Learn to ex-plain: Multimodal reasoning via thought chains for sci-ence question answering. Advances in Neural Information Processing Systems , 35:2507–2521, 2022. [Lu et al. , 2026] Liangsi Lu, Jingchao Wang, Zhaorong Dai, Hanqian Liu, and Yang Shi. Riemannian liquid spatio-temporal graph network. In Proceedings of the ACM Web Conference 2026 , WWW ’26, page 463–474, New York, NY, USA, 2026. Association for Computing Machinery. [McClelland et al. , 1995] James L McClelland, Bruce L Mc-Naughton, and Randall C O’Reilly. Why there are comple-mentary learning systems in the hippocampus and neocor-tex: insights from the successes and failures of connection-ist models of learning and memory. Psychological review ,102(3):419, 1995. [Meng et al. , 2024] Fanxu Meng, Zhaohui Wang, and Muhan Zhang. Pissa: Principal singular values and singu-lar vectors adaptation of large language models. Advances in Neural Information Processing Systems , 37:121038– 121072, 2024. [Mitchell et al. , 2021] Eric Mitchell, Charles Lin, Antoine Bosselut, Chelsea Finn, and Christopher D Manning. Fast model editing at scale. arXiv preprint arXiv:2110.11309 ,2021. [Pfeiffer et al. , 2021] Jonas Pfeiffer, Aishwarya Kamath, Andreas R¨ uckl´ e, Kyunghyun Cho, and Iryna Gurevych. Adapterfusion: Non-destructive task composition for transfer learning. In Proceedings of the 16th conference of the European chapter of the association for computa-tional linguistics: main volume , pages 487–503, 2021. [Shi et al. , 2026] Yang Shi, Yifeng Xie, Minzhe Guo, Liangsi Lu, Mingxuan Huang, Jingchao Wang, Zhihong Zhu, Boyan Xu, and Zhiqi Huang. Mmerror: A bench-mark for erroneous reasoning in vision-language models. 
+
+arXiv preprint arXiv:2601.03331 , 2026. [Wang et al. , 2023] Xiao Wang, Tianze Chen, Qiming Ge, Han Xia, Rong Bao, Rui Zheng, Qi Zhang, Tao Gui, and Xuan-Jing Huang. Orthogonal subspace learning for lan-guage model continual learning. In Findings of the Associ-ation for Computational Linguistics: EMNLP 2023 , pages 10658–10671, 2023. [Wortsman et al. , 2022] Mitchell Wortsman, Gabriel Ilharco, Samir Ya Gadre, Rebecca Roelofs, Raphael Gontijo-Lopes, Ari S Morcos, Hongseok Namkoong, Ali Farhadi, Yair Carmon, Simon Kornblith, et al. Model soups: av-eraging weights of multiple fine-tuned models improves accuracy without increasing inference time. In Inter-national conference on machine learning , pages 23965– 23998. PMLR, 2022. [Xia et al. , 2025] Han Xia, Quanjun Li, Qian Li, Zimeng Li, Hongbin Ye, Yupeng Liu, Haolun Li, and Xuhang Chen. Eems: Edge-prompt enhanced medical image segmenta-tion based on learnable gating mechanism. In BIBM , pages 3006–3011, 2025. [Yadav et al. , 2023] Prateek Yadav, Derek Tam, Leshem Choshen, Colin A Raffel, and Mohit Bansal. Ties-merging: Resolving interference when merging mod-els. Advances in Neural Information Processing Systems ,36:7093–7115, 2023. [Zaken et al. , 2022] Elad Ben Zaken, Yoav Goldberg, and Shauli Ravfogel. Bitfit: Simple parameter-efficient fine-tuning for transformer-based masked language-models. In 
+
+Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) ,pages 1–9, 2022. [Zhang et al. , 2023] Qingru Zhang, Minshuo Chen, Alexan-der Bukharin, Nikos Karampatziakis, Pengcheng He, Yu Cheng, Weizhu Chen, and Tuo Zhao. Adalora: Adap-tive budget allocation for parameter-efficient fine-tuning. 
+
+arXiv preprint arXiv:2303.10512 , 2023. A Theoretical Derivations and Method Details 
+
+A.1 Exact update forms 
+
+For each adapted frozen backbone matrix W0 ∈ Rm×n, we precompute and cache a truncated SVD 
+
+W0 ≈ Uk diag( σ)V ⊤ 
+
+> k
+
+,
+
+with Uk ∈ Rm×k, Vk ∈ Rn×k, and σ ∈ Rk
+
+> +
+
+. We also define the cached residual 
+
+fW := W0 − Uk diag( σ)V ⊤ 
+
+> k
+
+.
+
+Consistent with the main text, we write the HiP-LoRA up-date as 
+
+∆W = Uk diag( ϕ)V ⊤
+
+> k
+
+| {z }
+
+> ∆W∥
+
++∆ Wres , (8) where ϕ ∈ Rk denotes the learned principal deviations and 
+
+∆Wres is the residual-channel update in the two-sided or-thogonal complement. The corresponding effective weight is therefore 
+
+Weff = W0 + ∆ W = fW + Uk diag( σ + ϕ)V ⊤ 
+
+> k
+
++ ∆ Wres .
+
+In implementation, one may equivalently introduce 
+
+θ := σ + ϕ, 
+
+so that 
+
+Weff = fW + Uk diag( θ)V ⊤ 
+
+> k
+
++ ∆ Wres .
+
+We keep the appendix aligned with the main text and use ϕ as the primary variable; the θ parameterization is only an equiv-alent implementation form. 
+
+A.2 Efficient projection 
+
+We implement the two-sided complement projection without forming dense matrices. Define the principal-subspace pro-jectors PU := UkU ⊤ 
+
+> k
+
+∈ Rm×m and PV := VkV ⊤ 
+
+> k
+
+∈ Rn×n.With LoRA factors B ∈ Rm×r and A ∈ Rr×n, we apply the exact factor retraction eB = ( I − PU )B and eA = A(I − PV ),and use ∆Wres = eB eA (Eq. 4–5). This keeps the forward pass in the standard LoRA form (two GEMMs) and avoids materializing the dense matrix BA . For conceptual reference, letting X := BA , the equivalent projector form satisfies 
+
+(I − PU )X(I − PV ) = X − Uk(U ⊤ 
+
+> k
+
+X) − (XV k)V ⊤
+
+> k
+
++ Uk(U ⊤ 
+
+> k
+
+XV k)V ⊤ 
+
+> k
+
+,
+
+and each term can be evaluated via low-rank multiplications (e.g., U ⊤ 
+
+> k
+
+X = ( U ⊤ 
+
+> k
+
+B)A and XV k = B(AV k)), so neither X
+
+nor the dense projectors are formed in practice. 
+
+A.3 Spectrum-aware stability regularization 
+
+We penalize principal deviations with a singular-value– weighted quadratic budget: 
+
+Ω( ϕ) = 
+
+> k
+
+X
+
+> i=1
+
+wi ϕ2 
+
+> i
+
+, wi = σγi
+
+Pkj=1 σγj
+
+,
+
+> k
+
+X
+
+> i=1
+
+wi = 1 .
+
+(9) 
+
+Algorithm 1 HiP-LoRA (recap).  
+
+> 1:
+
+For each adapted matrix, precompute and cache top-k
+
+SVD triplets (Uk, V k, σ ) of the frozen backbone weight 
+
+W . 
+
+> 2:
+
+Initialize ϕ ← 0, A ← 0, B ← 0, and fW ← W −
+
+Uk diag( σ)V ⊤ 
+
+> k
+
+. 
+
+> 3:
+
+for training steps do  
+
+> 4:
+
+Project factors: eB ← (I − PU )B, eA ← A(I − PV ). 
+
+> 5:
+
+Form the update 
+
+∆W = Uk diag( ϕ)V ⊤ 
+
+> k
+
++ s eB eA, 
+
+with the standard LoRA scaling s = α/r applied only to the residual channel.  
+
+> 6:
+
+Update (ϕ, A, B ) by AdamW on task loss +λstab Ω( ϕ)
+
+(adapter parameters only).  
+
+> 7:
+
+Retract (B, A ) ← ( eB, eA) to enforce the two-sided complement constraint.  
+
+> 8:
+
+end for 
+
+The stability weight is λstab , and γ controls how strongly larger-singular-value directions are protected. Normalizing the weights keeps the overall penalty scale comparable across layers and choices of k.For a task dataset D, the full objective is 
+
+min  
+
+> ϕ,A,B
+
+L D; W0+Uk diag( ϕ)V ⊤ 
+
+> k
+
++∆ Wres (A, B )+λstab Ω( ϕ).
+
+(10) If the implementation uses the equivalent reparameteriza-tion θ = σ + ϕ, the same objective can be written in terms of 
+
+θ, but we keep the appendix consistent with the main text and optimize with respect to ϕ in the presentation. 
+
+A.4 Training algorithm 
+
+# B Implementation Details and Reproducibility 
+
+B.1 Implementation notes 
+
+Two-channel parameterization. We implement HiP-LoRA by extending standard PEFT LoRA modules with (i) an additional principal-channel parameter vector ϕ ∈ Rk,and (ii) cached SVD factors (Uk, V k, σ 1: k) for each adapted matrix from the frozen backbone weight. For each adapted weight matrix W ∈ Rm×n, we precom-pute a truncated SVD of the frozen weight: 
+
+W ≈ Uk diag( σ1: k)V ⊤ 
+
+> k
+
+, Uk ∈ Rm×k, V k ∈ Rn×k.
+
+We cache fW = W − Uk diag( σ1: k)V ⊤ 
+
+> k
+
+,
+
+and write the effective weight as 
+
+Weff = W + ∆ W = W + Uk diag( ϕ)V ⊤ 
+
+> k
+
++ ∆ Wres .
+
+Equivalently, 
+
+Weff = fW + Uk diag( σ + ϕ)V ⊤ 
+
+> k
+
++ ∆ Wres .In implementation, one may store θ = σ + ϕ instead of 
+
+ϕ directly. This is only an equivalent reparameterization; throughout the paper we describe the method in terms of the principal deviations ϕ.The residual channel is the two-sided complement projec-tion of a low-rank LoRA update. In practice, we realize it as ∆Wres = eB eA via factor projection, so the residual path remains in the standard LoRA form and no dense BA is formed. 
+
+Target modules. Unless otherwise stated, we apply HiP-LoRA (and all LoRA-family baselines) to self-attention projection layers only (q proj, k proj, v proj, o proj ) for all experiments, matching Sec. 3 for fair budget comparison. 
+
+Efficient two-sided projection for the residual channel. 
+
+Let X = BA denote the (conceptual) low-rank update with 
+
+B ∈ Rm×r and A ∈ Rr×n. Define the principal-subspace projectors PU := UkU ⊤ 
+
+> k
+
+and PV := VkV ⊤ 
+
+> k
+
+. The residual-channel update is the two-sided complement projection 
+
+∆Wres = ( I−PU ) ( BA ) ( I−PV ) = ( I−UkU ⊤ 
+
+> k
+
+) ( BA ) ( I−VkV ⊤ 
+
+> k
+
+).
+
+In practice, we implement this projection on the low-rank fac-tors and never materialize BA :
+
+eB = ( I−UkU ⊤ 
+
+> k
+
+)B, eA = A(I−VkV ⊤ 
+
+> k
+
+), ∆Wres = eB eA. 
+
+The residual update is then applied in the standard LoRA form (two GEMMs), while the projection is enforced by a post-update retraction once per optimizer step. A reference implementation is:                                                            
+
+> #U: (m,k), V: (n,k), A: (r,n), B: (m,r) #Project factors (no dense BA is formed) #U.T @B: (k,r) and (A @V): (r,k) B_tilde =B-U@(U.T @B) #(I -UUˆT) B,→
+> A_tilde =A-(A @V) @V.T #A(I -VVˆT) ,→
+> # Use DeltaW_res implicitly as (B_tilde @A_tilde) in standard LoRA forward ,→
+
+B.2 Training hyperparameters and budget matching 
+
+Unless otherwise stated, all runs use AdamW (β1=0 .9, β 2=0 .95 , ϵ =1e −8), learning rate 2e −4 (3% linear warmup, then constant), weight decay 0.01 on adapter parameters only, gradient clipping 1.0, sequence length 2,048 with packing, and a fixed budget of 2,000 optimizer steps per task. All LoRA-family methods use dropout = 0 .05 , scaling 
+
+α=2 r, and the same self-attention projection targets. We match trainable parameters within ±1% and report mean ±
+
+std over three seeds. Table 4 summarizes the shared training, evaluation, and reproducibility settings. 
+
+B.3 HiP-LoRA hyperparameters and selection protocol 
+
+HiP-LoRA hyperparameters. HiP-LoRA introduces method-specific hyperparameters controlling the spectrum-conditioned allocation of update energy. Unless stated otherwise, we use principal size k=32 and residual rank 
+
+r=16 for Llama-3.1-8B, and report mean ± std over three seeds [42,100,2024] .
+
+Choosing the principal size k. The principal size k trades off stability and capacity. If k is too small, high-gain direc-tions may be forced into the residual channel; if k is too large, the principal channel can dominate under non-trivial stability regularization and reduce task adaptivity. We therefore sweep 
+
+k ∈ { 8, 16 , 32 , 64 } and use k=32 by default. 
+
+Choosing the residual rank r (capacity control). The residual rank r plays a role analogous to the LoRA rank and primarily controls adaptation capacity in the orthogonal com-plement. We sweep r ∈ { 8, 16 , 32 } under matched parameter budgets and use r=16 by default. 
+
+Stability weight λstab (stability–plasticity control). We sweep λstab ∈ {0, 0.01 , 0.03 , 0.1, 0.3, 1.0} (log-grid) on a held-out validation split and select a balanced point based on downstream score and retention. For readability, main trade-off plots use three representative settings λstab ∈{0, 0.03 , 0.3}.
+
+Spectral sensitivity γ (testing whether spectral weighting matters). We evaluate 
+
+γ ∈ { 0, 0.5, 1, 2},
+
+where γ=0 is an equal-weight control (non-spectral) to test whether improvements require spectrum-aware weighting. We set γ=1 as the default. 
+
+MergeFail threshold τ and sensitivity. For training-free multi-adapter merging, we report MergeFail with the de-fault threshold τ =0 .9 and include a sensitivity check with 
+
+τ ∈ { 0.8, 0.9, 0.95 }. Under simple addition, LoRA exhibits 62% MergeFail whereas HiP-LoRA reduces it to 6.8% (Ap-pendix Table 13). 
+
+Randomized SVD details and verification. We compute top-k factors using randomized SVD with power iterations 
+
+niter =2 and stabilizer ϵ=10 −6, cache (Uk, V k, σ 1: k) per layer in fp32 to avoid accumulation error, and reuse the cache across runs. When oversampling is enabled, we use p ∈{8, 16 } (default p=8 ). As a lightweight sanity check, we spot-check a small subset of layers against exact SVD to con-firm comparable reconstruction error. 
+
+Compute-efficient selection protocol (coarse-to-fine). To minimize tuning compute while maintaining fairness, we adopt the following selection protocol: (i) fix (k, r, γ ) =(32 , 16 , 1) and sweep λstab on a held-out validation split to select a balanced point; (ii) fix (k, r, λ stab ) at the selected bal-anced point and sweep γ ∈ { 0, 0.5, 1, 2} to test whether spec-tral weighting is necessary; (iii) fix (r, λ stab , γ ) at the selected values and sweep k ∈ { 8, 16 , 32 , 64 } to verify robustness to the principal size. All baselines are tuned under the same learning-rate grid, step budget, target modules, and random seeds. Unless otherwise stated, we visualize the stability– plasticity trade-off using three representative settings λstab ∈{0, 0.03 , 0.3} for readability; the full log-grid and selection protocol are provided in Appendix B.3. Table 4: Training, evaluation, and reproducibility settings used in all experiments. Un-less stated otherwise, these settings are shared across all single-task runs, merging, continual tuning, and editing. 
+
+Category Hyperparameter Value / Notes Backbone & prompts 
+
+Backbone Llama-3.1-8B (public release) Tokenizer Same as backbone Prompt format Alpaca-style: {instruction, input, response }
+
+Max sequence length 2048 tokens; packing enabled 
+
+Optimization 
+
+Optimizer AdamW ( β1=0 .9, β2=0 .95 , ϵ=1e −8)Learning rate 2e −4 (linear warmup for 3% steps, then constant) Weight decay 0.01 on adapter parameters only Gradient clipping Global grad norm 1.0 Precision bf16 training 
+
+Batching & budget 
+
+Effective global batch size 128 sequences / optimizer step (via gradient accumulation when needed) Max updates 2000 optimizer steps per task (compute-matched across methods) Early stopping None (fixed-step budget) 
+
+LoRA-family baselines 
+
+LoRA rank rLoRA {8, 16 , 32 }; we report the tuned choice per setting LoRA scaling α α = 2 rLoRA 
+
+LoRA dropout 0.05 Target modules Self-attention projections only: q proj, k proj, v proj, o proj 
+
+HiP-LoRA (method-specific) 
+
+Principal size k 32 Residual rank r 16 Stability weight λstab {0, 0.01 , 0.03 , 0.1, 0.3, 1.0} (log-grid) Spectral sensitivity γ {0, 0.5, 1, 2}; default γ=1 
+
+SVD method Randomized top-k SVD; niter =2 ; ϵ=10 −6; cached per layer 
+
+Merging / continual / editing protocols 
+
+Merge operator Training-free merge by parameter addition (LoRA-style) MergeFail threshold τ =0 .9
+
+Merge sampling Nmerge =20 per seed; 3 seeds ( [42,100,2024] )Continual tuning Task order: MMLU → ScienceQA → GSM8K → Code; 2000 steps per stage Knowledge editing EditSet-1K (1000 edits; see protocol text); 500 optimiza-tion steps per edit batch; same optimizer/LR 
+
+Compute (reporting for reproducibility) 
+
+Hardware 1× NVIDIA RTX Pro 6000 96GB (bf16) Software PyTorch 2.3+, Transformers 4.40+, PEFT 0.10+ Speedups FlashAttention-2 and gradient checkpointing enabled when available B.4 SVD, compute, and reproducibility 
+
+Compute and runtime. All experiments were run on a sin-gle NVIDIA RTX Pro 6000 GPU (workstation-grade). Arepresentative single-task HiP-LoRA run on Llama-3.1-8B (2,000 optimizer steps; effective global batch 128 via gradi-ent accumulation when needed; sequence length 2,048 with packing) takes approximately 6–8 hours wall-clock, depend-ing on system load and memory-saving settings. The reported wall-clock time includes evaluation, checkpointing, logging, and system overhead beyond the steady-state training steps used for the throughput measurement. Our merge sweep (merging t ∈ { 2, 4} with Nmerge = 20 samples per seed) is evaluation-only and totals approximately 10–14 GPU-hours 
+
+using cached adapters. 
+
+Reproducibility artifacts. Repository URLs are not in-cluded in this version. The implementation details needed to reproduce the reported results, including training settings, hyperparameter selection, and evaluation protocols, are doc-umented in Appendix B–D. 
+
+Minimal reproducibility checklist. We provide a concise checklist of the settings required to reproduce the main tables: • Seeds: [42, 100, 2024] .• Target modules: self-attention projections only ( q proj, k proj, v proj, o proj ). • LoRA-family: rank r, scaling α = 2 r, dropout = 0 .05 .• HiP-LoRA: k = 32 , residual rank r = 16 , λstab ∈{0, 0.01 , 0.03 , 0.1, 0.3, 1.0}, γ ∈ { 0, 0.5, 1, 2}.• Merging: threshold τ = 0 .9, Nmerge = 20 per seed, paired sampling tuples shared across methods. 
+
+# C Detailed Experimental Setup 
+
+C.1 Datasets, preprocessing and evaluation 
+
+Benchmarks. We follow a standard main-stage proto-col and evaluate HiP-LoRA across four domains: (1) MMLU [Hendrycks et al. , 2020], (2) S CIENCE QA [Lu et al. ,2022], (3) GSM8K [Cobbe et al. , 2021], and (4) code gener-ation with CodeAlpaca-20k [Chaudhary, 2023] for finetuning and H UMAN EVAL [Chen, 2021] for evaluation. Except for HUMAN EVAL (Pass@ k), all other benchmarks are evaluated by accuracy. Unless otherwise stated, we evaluate all bench-marks in a zero-shot manner (no in-context demonstrations at inference time). 
+
+Auxiliary instruction data for the MMLU domain. For the MMLU domain adapter, we finetune on Alpaca-52k (52K instruction-following pairs), which is disjoint from the MMLU evaluation set, and report accuracy on the MMLU test set. 
+
+Training data for each domain. For S CIENCE QA and GSM8K, we finetune adapters on the official training split and evaluate on the corresponding test split using stan-dard task prompts. For code generation, we finetune on CodeAlpaca-20k and evaluate on H UMAN EVAL . For MMLU, following prior protocol, we finetune using an auxil-iary instruction-tuning corpus (distinct from the MMLU eval-uation set) and report accuracy on the MMLU test set. 
+
+Prompt templates and tokenization. We use the backbone tokenizer (Llama-3.1-8B) and an Alpaca-style instruction for-mat ( {instruction, input, response }) for super-vised finetuning. For evaluation, we use task-standard zero-shot prompts: (i) MMLU and S CIENCE QA are formatted as multiple-choice questions and decoded without rationales; accuracy is computed by the selected option. (ii) GSM8K uses the problem statement prompt with direct-answer de-coding (no chain-of-thought); final answers are extracted and exact-matched after normalization. 
+
+HUMAN EVAL evaluation. HUMAN EVAL is evaluated with Pass@1/5/10 using n=200 samples per problem and the unbiased estimator of [Chen, 2021]. We use temperature 
+
+T =0 .2, top-p=0 .95 , no top-k cutoff, max new tokens =256 , and stop tokens matching the official harness. Random seeds are fixed to [42,100,2024] for sampling. 
+
+Rank-1 interventions (Zero / Flip / Noise) 
+
+We define interventions on a frozen projection matrix W0 us-ing its truncated SVD W0 ≈ Ukdiag( σ1: k)V ⊤ 
+
+> k
+
+. For a chosen direction i ∈ { 1, . . . , k }, let Ci := σi uiv⊤ 
+
+> i
+
+denote the corre-sponding rank-1 component. We create an intervened weight 
+
+W ′ 
+
+> 0
+
+as follows: • Zero : remove the component, W ′ 
+
+> 0
+
+= W0 − Ci (so the 
+
+i-th component becomes 0). • Flip : negate the component, W ′ 
+
+> 0
+
+= W0 − 2Ci (so the 
+
+i-th component becomes −σiuiv⊤ 
+
+> i
+
+). • Noise : add multiplicative noise on the component, 
+
+W ′ 
+
+> 0
+
+= W0 + η C i with η ∼ N (0 , δ 2). In tables we de-note this as noise δ (e.g., noise 0.1 means δ=0 .1). All other components of W0 are unchanged. 
+
+C.2 Retention metric (Retain) 
+
+Definition. Let Bretain be a fixed retention evaluation suite (we use the same four benchmarks reported in the main ta-bles: MMLU, S CIENCE QA, GSM8K, and H UMAN EVAL ,evaluated with the protocols in Appendix C.1). For each benchmark b ∈ B retain , let Sb(·) denote the evaluation score (accuracy for MMLU/S CIENCE QA/GSM8K and Pass@1 for H UMAN EVAL ). Given a frozen backbone model f0 and an adapted model f , we define the per-benchmark retention drop (in percentage points) as: 
+
+∆b(f ) = Sb(f0) − Sb(f ).
+
+We report Retain (f ) = 1
+
+|B retain |
+
+X
+
+> b∈B retain
+
+∆b(f ), (11) where lower is better . Retain is measured in percentage points . When reporting Retain for a single-task adapter trained on domain d, we compute Retain on the suite Bretain \{ d } to avoid mixing in-domain adaptation gains/losses into the retention metric; Table 1 reports the mean Retain over the four single-task adapters. Table 5: Efficiency and overhead under matched budgets (Llama-3.1-8B). We report training throughput and peak GPU memory under the same backbone, target modules, batch size, sequence length, optimizer, and fixed-step budget (2,000 steps per task; Appendix B.2). HiP-LoRA uses cached randomized SVD factors; we report the one-time SVD preprocessing cost separately.                       
+
+> Method Throughput (tok/s) ↑
+> Peak GPU Mem (GB) ↓
+> One-time SVD precompute (min) ↓
+> SVD cache size (GB) ↓
+> LoRA ( r=16 )42000 78.0 ––Proj-LoRA ( r=16 )41500 78.2 ––PiSSA ( r=16 )41800 78.1 ––
+> HiP-LoRA ( k=32 , r =16 )40000 78.6 18 0.13
+> Measurement protocol. Throughput is reported as input tokens processed per second under packing and is averaged over 200 steady-state optimizer steps after warmup. Peak memory is the maximum allocated GPU memory during training. SVD preprocessing time and cache size are measured once per backbone and reused across runs.
+
+C.3 Merging protocol and diagnostics 
+
+In this paper the task pool contains four domains, so the merge size satisfies t ≤ 4; Table 2 reports the full merge 
+
+t=4 , while we additionally sweep t ∈ { 2, 4} when sampling merges. 
+
+Merging definition. We merge adapters by standard 
+
+weight-space addition: 
+
+Wmerged = W +
+
+> t
+
+X
+
+> i=1
+
+∆W (i).
+
+For HiP-LoRA, each adapter update takes the form 
+
+∆W (i) = Uk diag( ϕ(i))V ⊤ 
+
+> k
+
++ ∆ W (i)res ,
+
+with the same cached (Uk, V k, σ ) of the frozen backbone. Equivalently, using fW = W − Uk diag( σ)V ⊤ 
+
+> k
+
+, we have 
+
+Wmerged = fW + Uk diag 
+
+
+
+σ +
+
+> t
+
+X
+
+> i=1
+
+ϕ(i)
+
+V ⊤ 
+
+> k
+
++
+
+> t
+
+X
+
+> i=1
+
+∆W (i)res .
+
+If the implementation stores θ(i) = σ+ϕ(i), merging the prin-cipal channel amounts to summing the deviations ϕ(i), not the raw gains θ(i). In practice, we add the residual-channel real-ized updates ∆Wres in weight space, materialized once per module at merge or fold time as in standard LoRA merging. 
+
+MergeFail. For merged instance s, MergeFail s = 1 if any task j has score after  
+
+> s,j
+
+< τ · score before  
+
+> s,j
+
+; otherwise 0. We use τ =0.9. Reported MergeFail is the fraction of failed instances. 
+
+Sampling policy and CIs. For each merge size t, we train all single-task adapters with 3 random seeds ( [42, 100, 2024] ). We sample Nmerge = 20 merge instances per seed by (i) drawing a task subset of size t uniformly with-out replacement from the task pool, and (ii) for each selected task, uniformly sampling one of its 3 independently trained adapters (seeds); we then merge the resulting t adapters via parameter addition. The same sampled (task subset, seed as-signment) tuples are reused across methods to enable paired comparisons. We report the mean over all merge instances and seeds. We compute 95% confidence intervals using a 
+
+hierarchical paired bootstrap with 10,000 replicates: we re-sample training seeds with replacement, and within each sam-pled seed we resample merge instances with replacement, preserving the per-merge pairing across methods. If the num-ber of distinct (task subset, seed assignment) combinations is smaller than Nmerge for a given t, we enumerate all combina-tions instead of sampling. 
+
+Per-task breakdowns. We will release anonymized train-ing/evaluation scripts and exact commands upon acceptance. 
+
+C.4 Continual tuning and knowledge editing: protocol and metrics 
+
+Continual tuning. We train a single adapter sequentially over a fixed task sequence and evaluate on all tasks seen so far after finishing each stage. The canonical sequence used throughout this paper is: MMLU → SCIENCE QA → GSM8K → CODE 
+
+(evaluated on H UMAN EVAL ),
+
+which matches the per-step reporting in Appendix Table 9. For each stage, we train S=2000 update steps (compute-matched to our single-task budget unless otherwise stated). Let Acc t,i denote performance on task i after completing stage t. We report: AvgAcc = 1
+
+T
+
+> T
+
+X
+
+> i=1
+
+Acc T,i ,
+
+Forgetting = 1
+
+T − 1 
+
+> T−1
+
+X
+
+> i=1
+
+
+
+max   
+
+> t∈[i,T ]
+
+Acc t,i − Acc T,i 
+
+
+
+.
+
+Full per-step matrices are in Appendix Table 9. 
+
+Knowledge editing. We adopt a lightweight batch-edit pro-tocol with a small factual edit set. We use a curated set of Nedits =1000 edits, each item formatted as {prompt, old, new }, and stratified into three coarse categories (En-tity/Attribute, Relation/Fact, Temporal/Numeric) matching Table 10. 
+
+Sedit = 500 . (12) We finetune the adapter for Sedit =500 update steps (same op-timizer and learning-rate settings as other single-task runs) and evaluate: • Edit success : normalized string match to new (after whitespace/punctuation normalization) or log p(new ) >log p(old ) under the edited prompt, where log p(·) is computed by teacher forcing as the sum of token log-probabilities over the target answer span using the backbone tokenizer (same prompt and context), with 
+
+old/new compared under the same tokenization. • Locality : (i) accuracy change on an unrelated probe set (500 prompts sampled from held-out examples of MMLU/S CIENCE QA/GSM8K, disjoint from the edit set), and (ii) mean ∆ log-probability on the locality set for edited vs. non-edited targets. Per-category results appear in Appendix Table 10. 
+
+# D Additional Results 
+
+D.1 Supplementary diagnostics 
+
+Table 6: Full correlation statistics for the spectral sanity check, including significance tests. Pearson r is computed on log(1 + σ); Spearman ρ is computed on σ.
+
+Perturb n Pearson r (p) Spearman ρ (p) flip 20 0.327 (0.159) 0.282 (0.229) noise 0.1 127 0.142 (0.111) 0.100 (0.265) zero 29 0.856 (3.09e-9 ) 0.412 (0.026 )
+
+Figure 6: Binned mean performance drop across 6 quantile bins of log(1 + σ), with ± standard error bars. Zero and Flip show larger drops in higher-σ bins, whereas Noise 0.1 has only a small mean effect. 
+
+D.2 Continual instruction tuning and editing summary tables 
+
+Table 7: Continual instruction tuning (brief summary; mean 
+
+± std over 3 seeds: [42,100,2024] ). 
+
+Method AvgAcc (%) ↑ Forgetting (%) ↓
+
+LoRA ( r=16) 71 .8 ± 0.7 13 .6 ± 1.2
+
+PiSSA ( r=16) 73 .1 ± 0.6 10 .2 ± 1.0
+
+HiP-LoRA (full) 74 .6 ± 0.5 6.9 ± 0.9
+
+Table 8: Knowledge editing results (mean ± std over 3 seeds: 
+
+[42,100,2024] ).                        
+
+> Method Edit Success (%) ↑Locality (Unrelated ∆Acc, pp) ↓
+> LoRA ( r=16) 86 .4±1.13.8±0.6
+> PiSSA ( r=16) 87 .9±0.93.1±0.5
+> HiP-LoRA (full) 89 .2±0.82.1±0.4
+
+D.3 Per-step continual results and per-category editing breakdowns 
+
+Table 9: Per-step continual results (HiP-LoRA; mean ± std over 3 seeds: [42,100,2024] ).                     
+
+> Step (trained on) MMLU ScienceQA GSM8K HumanEval (Pass@1) 1 (MMLU) 39 .2±0.488 .9±0.652 .8±0.528 .4±0.8
+> 2 (+SciQA) 38 .6±0.593 .4±0.452 .1±0.628 .1±0.7
+> 3 (+GSM8K) 38 .1±0.592 .6±0.557 .0±0.427 .8±0.7
+> 4 (+Code) 37 .7±0.691 .9±0.656 .2±0.531 .0±0.6
+
+Table 10: Editing per-category results (HiP-LoRA; mean ±
+
+std over 3 seeds: [42,100,2024] ).            
+
+> Category Edit Success (%) ↑Locality (Unrelated ∆Acc, pp) ↓
+> Entity / Attribute 90 .1±0.82.0±0.4
+> Relation / Fact 88 .7±0.92.2±0.5
+> Temporal / Numeric 87 .9±1.02.5±0.5
+
+D.4 Ablations: implementation and full results 
+
+Table 11: Ablation summary (mean ± std).                                               
+
+> Variant Retain ↓(pp) MergeFail(%) Downstream Avg p-value (Retain) HiP-LoRA (full) 4.9 ±0.6 6.8 ±1.0 76.4 ±0.7 —w/o stability reg 9.8±0.914 .2±1.476 .9±0.61.2e −3
+> w/o residual proj 6.2±0.712 .5±1.276 .3±0.52.1e −2
+> Zero init 5.8±0.69.9±1.175 .6±0.74.0e −2
+
+D.5 Additional baseline comparisons 
+
+Why additional baselines. To address concerns that our improvements stem from comparing against weak PEFT baselines or a weak merge operator (simple addition), we in-clude two stronger references commonly used in the respec-tive settings: (i) AdaLoRA [Zhang et al. , 2023], a training-side PEFT baseline that adaptively allocates low-rank capac-ity during training; and (ii) TIES-Merging [Yadav et al. ,2023], a stronger training-free merge rule designed to mit-igate parameter interference. These comparisons are con-trolled: for AdaLoRA we keep the training protocol identi-cal to the main baselines, and for TIES-Merging we keep the trained adapters identical and only change the merge operator. 
+
+AdaLoRA setup and fairness. We compare against AdaLoRA under the same training protocol and matched pa-rameter budget as the other LoRA-family baselines. Un-less stated otherwise, AdaLoRA uses the same back-bone, target modules, optimizer and learning-rate schedule, batch/accumulation, step budget (2,000), and random seeds as in Appendix B.2. Model selection follows the same held-out validation protocol as HiP-LoRA (Appendix B.3). AdaLoRA-specific settings, including the initial/target rank and budget scheduler, are reported in Appendix B. 
+
+What this tests. Table 12 tests whether HiP-LoRA’s gains can be explained by adaptive rank/capacity allocation alone. Outperforming AdaLoRA under matched budgets supports the interpretation that spectrum-conditioned stabilization (via 
+
+(λstab , γ ) on the principal subspace with a protected residual channel) provides benefits beyond generic capacity realloca-tion. 
+
+TIES-Merging setup and fairness. For merging, we ap-ply TIES-Merging post hoc to the same independently trained single-task adapters (no additional finetuning), treating each adapter’s realized dense update ∆W as the “task vector” to be merged. We use the canonical fixed-hyperparameter recipe: 
+
+Trim keeps the top-20% entries by |∆W | and zeros the rest, 
+
+Elect chooses the merged sign by the sign of the sum of trimmed updates, and Disjoint merge averages only entries whose signs agree with the elected sign, with global scaling 
+
+λ = 1 .1 We reuse the same merge instance sampling and paired bootstrap protocol as Appendix C.3 so comparisons remain paired. 
+
+What this tests. Table 13 tests whether HiP-LoRA’s merg-ing robustness is an artifact of using a weak merge rule (sim-ple addition). If HiP-LoRA remains more robust under TIES-Merging (and ideally composes with it), it strengthens the claim that HiP-LoRA produces structurally more compatible 
+
+updates rather than benefiting from a favorable merge opera-tor.  
+
+> 1See Algorithm 1 and the fixed-hyperparameter recipe discus-sion in [Yadav et al. , 2023].
+
+Table 12: AdaLoRA comparison under matched budgets (Llama-3.1-8B). Same protocol as Table 1 (mean ± std over 3 seeds). 
+
+Metric AdaLoRA (match) HiP-LoRA ( k=32, r=16) 
+
+MMLU ↑ 39 .10 ±0.55 39 .44 ±0.58 
+
+GSM8K ↑ 57 .10 ±0.40 57 .36 ±0.34 
+
+HumanEval (Pass@1) ↑ 31 .10 ±0.65 31 .52 ±0.66 
+
+ScienceQA ↑ 93 .80 ±0.30 94 .05 ±0.29 
+
+Retain (pp) ↓ 6.4±0.7 4.9±0.6
+
+Same backbone, targets, training protocol, and matched parameter budget as the main LoRA-family baselines. 
+
+Table 13: Stronger merging-rule baseline (TIES-Merging) on the same adapters. 
+
+We apply TIES-Merging post hoc to the same independently trained single-task adapters (no additional finetuning), merging all four adapters ( t=4 ) on the same sam-pled merge instances and seeds as Appendix C.3. 
+
+Adapter type Merge rule Mean abs post-merge drop (pp) ↓ MergeFail (%) ↓
+
+LoRA ( r=16) Addition (default) 20.24 62 LoRA ( r=16) TIES-Merging 13.8 38 HiP-LoRA ( k=32, r=16) Addition (default) 5.42 6.8 HiP-LoRA ( k=32, r=16) TIES-Merging 4.7 4.5 
+
+Fairness note. No retraining/joint optimization; trained adapters are identical across merge rules. Paired sampling and paired bootstrap follow Appendix C.3. 
+
+TIES hyperparameters. Fixed recipe: keep top-20% by |∆W | and set λ = 1 (no tuning). 
+
+Mean abs post-merge drop. Averaged over the same reported metrics as Table 2.
