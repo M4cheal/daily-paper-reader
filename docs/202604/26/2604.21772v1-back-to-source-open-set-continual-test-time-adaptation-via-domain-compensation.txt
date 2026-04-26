@@ -1,0 +1,1561 @@
+Title: Back to Source: Open-Set Continual Test-Time Adaptation via Domain Compensation
+
+URL Source: https://arxiv.org/pdf/2604.21772v1
+
+Published Time: Fri, 24 Apr 2026 01:14:32 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Back to Source: Open-Set Continual Test-Time Adaptation via Domain Compensation 
+
+Yingkai Yang Chaoqi Chen * Hui Huang College of Computer Science and Software Engineering, Shenzhen University 
+
+{ekyleyang, cqchen1994, hhzhiyan }@gmail.com 
+
+Abstract 
+
+Test-Time Adaptation (TTA) aims to mitigate distributional shifts between training and test domains. However, existing TTA methods fall short in a realistic scenario where models face both continually changing domains and simultaneous emergence of unknown semantic classes — a challenging setting we term Open-set Continual Test-Time Adaptation (OCTTA). The coupling of domain and semantic shifts often collapses the feature space, severely degrading both clas-sification and out-of-distribution detection. To tackle this, we propose DOmain COmpensation ( DOCO ), an effective framework that robustly performs domain adaptation and OOD detection in a synergistic closed loop. DOCO first performs dynamic, adaptation-conditioned sample splitting to separate likely ID from OOD samples. Using only the ID samples, it learns a domain compensation prompt by aligning feature statistics with the source domain, guided by a structural regularizer that prevents semantic distor-tion. This learned prompt is then propagated to the OOD samples within the same batch, isolating their semantic novelty for reliable detection. Extensive experiments on multiple benchmarks show that DOCO outperforms prior continual and open-set TTA methods, establishing a new state-of-the-art for OCTTA. Code is released at https: //github.com/ekyle0522/DOCO .
+
+1. Introduction 
+
+Deploying pre-trained models in the real world invariably confronts domain shift, where the test distribution differs from the source and degrades performance. To mitigate this, test-time adaptation (TTA) adapts a source-trained model on the fly using only unlabeled target data at inference. Be-yond early single target domain setting [34], recent studies highlight two realistic axes: continual TTA, which copes with nonstationary streams [24, 29, 36, 44], and open-set TTA, where unknown classes co-occur with shifted known     
+
+> *Corresponding author. Source ID
+> Source OOD
+> Domain Shift ID
+> Domain Shift OOD
+> Compensated ID
+> Compensated OOD
+> DOmain COmpensate
+> Shift Direction
+
+Figure 1. Illustration of “Back to Source” . This t-SNE plot shows that while source ID (•) and OOD (•) features are well-separated, a severe domain shift collapses their feature space, mix-ing ID and OOD features into an inseparable cluster ( × and ×). By applying DO main CO mpensation method, the features of com-pensated ID ( +) and OOD ( +) samples are successfully realigned with the original source structure. This disentangles domain and semantic shifts, making corrupted data clearly separable again. 
+
+ones [9, 20, 42, 43]. We focus on their intersection and formulate the Open-set Continual Test-Time Adaptation (OCTTA) scenario that stresses both stability and unknown-awareness, as depicted in Fig. 2. For instance, a visual per-ception system deployed in the wild must adapt not only to changing environments, such as from a clear highway scene to a foggy forest scene (domain shift), but also to un-expected objects appearing in those scenes, such as a deer on the road (semantic shift). Crucially, these novel objects are subject to the same domain shifts as objects from the known classes, creating a coupled challenge. Robustly han-dling these combined shifts is therefore important for reli-able real-world visual systems. The OCTTA setting poses a tripartite challenge for ex-isting methods. First, the continuous stream of domain shifts exacerbates catastrophic forgetting, eroding knowl-edge of the source domain as the model adapts to new ones   
+
+> arXiv:2604.21772v1 [cs.CV] 23 Apr 2026 vanilla TTA Continual TTA
+> Open-Set TTA Open-Set Continual TTA
+> Tent
+> 58.1%
+> 22.4%
+> Ours
+> 60.6%
+> 61.5%
+> Accuracy Figure 2. Illustration of different TTA settings.
+
+[36]. Second, the mixture of in-distribution (ID) and out-of-distribution (OOD) 1 samples corrupts the batch statistics required by normalization-based methods and can misguide the optimization in entropy minimization-based approaches [9]. Third, and most critically, is the antagonistic coupling 
+
+of domain and semantic shifts (Fig. 1 and Appendix A.4). A severe domain shift can collapse the feature space, “squash-ing” the embeddings of both known and unknown classes into a poorly separable region. This collapse blurs class boundaries, simultaneously crippling the model’s ability to classify known data and to detect novelties. To address these challenges, we propose DO main 
+
+CO mpensation, a simple and intuitive framework for OCTTA setting. DOCO integrates domain adaptation and OOD detection into a unified, cyclical process. The cycle begins with Back-to-Source Prompt Learning , where a lightweight domain compensation prompt is updated using likely ID samples from the current online batch. This up-date, performed via one-step backpropagation, aligns target feature statistics with those of the source domain to neu-tralize the domain shift without distorting semantics. This learned prompt, which now encodes the current domain in-formation, is then immediately applied to the likely OOD samples in the same batch through Intra-Batch Prompt Propagation . By compensating for their domain shift, this step isolates their semantic novelty, making them more dis-tinguishable from known classes. The loop is sustained and improved by Adaptation-Conditioned Sample Splitting :prompt-adapted features enable more accurate ID/OOD separation for the current batch, yielding a purer ID set for prompt learning and better capture of the current domain mode. Improved splitting thus creates a virtuous cycle, en-hancing prompts and, in turn, future adaptation and detec-tion. This closed-loop design makes the system resilient to continuous and unforeseen environmental changes. Our main contributions are as follows: • We formally introduce Open-set Continual Test-Time Adaptation (OCTTA), a pragmatic setting that reflects real-world complexities. We show that prior TTA meth-ods suffer performance degradation caused by coupled 
+
+> 1In this paper, ID refers to data within the source semantic space, OOD refers to data outside it.
+
+domain and semantic shifts in the feature space. • We propose DOCO, a visual prompt learning-based framework that effectively mitigates the negative cou-pling of shifts through domain compensation and estab-lishes a positive feedback loop via a dynamic sample-splitting mechanism. • We conduct extensive experiments on multiple OOD datasets under the OCTTA setting. The results show that DOCO achieves state-of-the-art performance, especially surpassing the next-best UniEnt by 4.7% on ImageNet-C, validating its effectiveness and robustness. 
+
+2. Related Work 
+
+2.1. Test-time Adaptation 
+
+TTA [5, 16, 18, 21, 23, 38] adapts a source-trained model online without labeled target data. We summarize meth-ods along the two axes introduced above. For contin-ual TTA, CoTTA [36] stabilizes long-horizon updates via weight/augmentation-averaged targets with stochastic neu-ron restoration. EATA [29] filters unreliable or redundant samples and regularizes important weights to curb risky up-dates and forgetting. SAR [30] replaces brittle BN with batch-agnostic norms and employs sharpness-aware reliable entropy to avoid collapse under wild shifts. ViDA [24] in-troduces lightweight adapters to decouple domain-shared from domain-specific factors. DPCore [44] retains domain knowledge through a dynamic prompt coreset aimed at re-curring or short-lived domains. For open-set TTA, wisdom-of-crowds filtering [20] suppresses losses whose confidence decreases after adaptation. UniEnt [9] jointly minimizes en-tropy on pseudo-csID and maximizes it on pseudo-csOOD with marginal-entropy regularization. STAMP [42] lever-ages a stable, class-balanced memory with self-weighted entropy. COME [43] regularizes confidence via conserva-tive entropy minimization to enhance open-world stability. 
+
+2.2. Out-of-Distribution Detection 
+
+OOD detection [7, 31, 37, 46] separates ID from unknown samples without domain shift. Two widely used lines are post-hoc scoring and test-time detection. For post-hoc scor-ing, MSP [12] thresholds predicted confidence, and energy-based scoring [25] replaces confidence with log-sum-exp energy and often surpasses MSP and MaxLogit [15]. For test-time detection, RTL [8] learns a lightweight linear map from features to OOD scores directly at inference. AUTO [40] performs online optimization with an in–out-aware fil-ter, an ID memory, and a consistency loss. CODA [3] com-pacts source embeddings with virtual unknowns and disam-biguates known from unknown through prototype-guided updates. Recent dictionary-based designs such as OODD [41] maintain a dynamic OOD feature dictionary and cali-brate scores via feature–dictionary similarity during testing. Transformer 
+
+Layers 
+
+𝐀 𝐀 
+
+𝐀 𝐀 
+
+> 𝐀𬀀
+
+𝐀 𝐀 
+
+> 𝐀𝐀𬀀
+
+## 𝐀 𬀀𝐀𝐀𝐀 ( )
+
+𝐀 𝐀 +𝐀 
+
+𝐀 𝐀 
+
+Intra-Batch Prompt Propagation 
+
+## 1
+
+Adaptation-Conditioned Sample Splitting 
+
+## 3
+
+> Virtuous Cycle
+
+## 2 Back-to-Source Prompt Learning 
+
+> Mixed
+> Stream
+
+## 𝐀 𝐀𝐀𝐀𝐀 
+
+## 𝐀 𝐀𴰀𝐀 
+
+𝐀𵀀𝐀 (𝐀 𝐀 ,𝐀𝐀𝐀  
+
+> 𝐀𬀀
+
+) 𝐀𵀀𝐀 (𝐀 𝐀 ,𝐀  
+
+> 𝐀𬀀
+
+)
+
+(𝐀 𝐀 ,𝐀  
+
+> 𝐀𬀀
+
+, 𝐀 𝐀 ,𝐀  
+
+> 𝐀𬀀
+
+) (𝐀 𝐀 , 𝐀 𝐀 )
+
+𝐀 𝐀𬀀 𝐀 𝐀𝐀𬀀 Figure 3. Overview of DOCO framework. ❶ The incoming batch is processed with the prompt  pt to reduce domain shift, and features zi,p 
+
+are scored against source class prototypes  Wh = {wc}c∈Y S to split the batch into ˆBID  
+
+> t
+
+and ˆBOOD  
+
+> t
+
+. ❷ A new prompt  pt+1  is optimized on the ID subset by minimizing  LDOCO  in one-step backpropagation. ❸ The newly optimized prompt  pt+1  is immediately propagated to OOD data within the same batch, neutralizing domain shift for accurate OOD detection. 
+
+3. Preliminaries 
+
+In this section, we provide a brief overview of Vision Transformers (ViTs) and the Visual Prompt Tuning (VPT) paradigm, and then formally define the OCTTA setting. 
+
+ViTs & VPT. We use the ViT-base architecture [6] as our backbone. A model f with parameters θ is decomposed as a feature extractor ϕ : X → Z with parameters θϕ and a linear classifier h : Z → RC with parameters θh, i.e., 
+
+fθ = h ◦ ϕ. Concretely, we write h(z) = Whz + bh,
+
+where Wh = [ w1, . . . , w C ]⊤ and hc(z) denotes the logit for class c. Given an image, we denote by z ∈ Z the 
+
+[CLS ] representation after the last transformer block, and obtain predictions via ˆy = arg max c∈[C] hc(z). For ef-ficient test-time adaptation, we adopt Visual Prompt Tun-ing (VPT) [19]. We augment the input sequence with  L
+
+learnable prompt tokens  p = {[Prompt] i}L−1 
+
+> i=0
+
+, inserted after  [CLS ] and before the patch tokens, yielding the first-layer input  {[CLS ], p, patch 1, . . . , patch k}. During adap-tation, we freeze the original model parameters  θ and up-date only the prompts  p. This parameter-efficient design greatly reduces the number of trainable parameters and mit-igates catastrophic forgetting, while still allowing the model to swiftly adjust to shifting test distributions. 
+
+OCTTA Problem Formulation. Given a model  fθ pre-trained on a source domain  DS = (X S , YS ), the goal is to adapt  fθ to a sequence of unlabeled target domains 
+
+{D Ti }Mi=1 . Each target domain  DTi possesses its label space 
+
+YTi , and the source label space is a proper subset of the tar-get, i.e.,  YS ⊂ Y Ti . The model receives an online stream of test batches  {B t}∞
+
+> t=1
+
+. For any domain  DTi , we model the data distribution  P Ti 
+
+> test
+
+with the Huber contamination model [17] to represent coupled domain and semantic shifts: 
+
+P Ti 
+
+> test
+
+= (1 − κ)P Ti 
+
+> ID-C
+
++ κP Ti
+
+> OOD-C
+
+. (1) In this mixture,  κ ∈ [0 , 1)  is a preset ratio for OOD data. While κ controls the overall OOD proportion, each mini-batch is randomly sampled, resulting in a stochastic ID-to-OOD ratio per batch to better simulate real-world data streams.  P Ti 
+
+> ID-C
+
+is the distribution of ID samples  (x, y )
+
+with known class label where  y ∈ Y S , while  P Ti 
+
+> OOD-C
+
+is the distribution of OOD samples with novel classes where 
+
+y ∈ Y Ti \ Y S . The ‘ -C ’ suffix signifies that both ID and OOD data are affected by the same domain corruption spe-cific to  DTi . This adaptation process unfolds online, where at each time step  t, the model’s parameters  θt are updated to 
+
+θt+1  using only the current batch  Bt and a single backprop-agation step. The objective is to correctly classify future samples from known classes  YS while detecting those from novel classes  YTi \ Y S .
+
+4. Methodology 
+
+Overview. We introduce DOCO, a novel framework for the OCTTA setting, with an overview provided in Fig. 3. DOCO consists of three major components and systemat-ically addresses a series of core challenges: (1) How the prompt can adapt to the target domain without semantic overfitting (Sec. 4.1)? (2) How to reuse the learned do-main knowledge to bootstrap the model’s inference capa-bilities (Sec. 4.2)? and (3) How to effectively separate ID and OOD samples under severe domain shifts (Sec. 4.3)? These components operate within a synergistic closed-loop, where more accurate splitting enables better prompt learn-ing, which in turn improves inference and guides future adaptation steps. Algorithm is detailed in Appendix A.1. 4.1. Back-to-Source Prompt Learning 
+
+Upon receiving a batch Bt at time t, we first isolate a subset of likely ID samples, denoted as  ˆBID  
+
+> t
+
+⊂ B t, using a dynamic splitting mechanism detailed in Sec. 4.3. For this subset, we optimize the current prompt  pt and obtain an updated prompt  pt+1 . The purpose of the prompt is to align the fea-ture distribution of ˆBID  
+
+> t
+
+with that of the source domain DS ,thereby counteracting the domain shift while preserving the intrinsic semantic structure of the samples. 
+
+Statistical Alignment. A domain shift from  DS to  DTi
+
+will inevitably cause a shift in the statistics of the feature space [1]. We argue that encouraging the ID feature statis-tics to move back toward the source statistics enables the prompt to approximate a compensation for the domain shift in latent space [27]. To this end, we pre-cache the mean  μS
+
+and standard deviation  σS of the source features calculated from a small set of unlabeled samples in an offline manner. For the current ID batch  ˆBID  
+
+> t
+
+, we extract the features using the prompt  pt, yielding  ˆZID  
+
+> t,p
+
+= {ϕ(x; pt)}x∈ ˆBID 
+
+> t
+
+. We then compute the batch statistics, mean  ˆμID  
+
+> t,p
+
+and standard devia-tion  ˆσID 
+
+> t,p
+
+. The statistical alignment loss is defined as the L2 distance between the batch and source statistics: 
+
+Lstat (pt) = ∥ˆμID  
+
+> t,p
+
+− μS ∥2 + ∥ˆσID  
+
+> t,p
+
+− σS ∥2. (2) 
+
+Structural Preservation. Relying solely on Lstat is in-sufficient, as batch statistics reflect both domain shift and batch-specific semantics. For instance, if a batch contains only “dogs” and “cats”, forcing its feature statistics to match the entire source statistics with far more classes could com-pel the prompt to distort the feature structure, causing it to overfit to the batch’s narrow semantics rather than learning a general domain compensation. To address this, we introduce a regularization term to preserve the relative feature geometry. Specifically, we en-force that the pairwise similarity structure within the se-lected ID subset remains consistent before and after apply-ing the prompt. Let ˆBID  
+
+> t
+
+= {xi}ni=1 , where n = | ˆBID  
+
+> t
+
+|.For each xi, let zraw  
+
+> i
+
+= ϕ(xi) and zpt 
+
+> i
+
+= ϕ(xi; pt) denote its raw and prompted feature representations, respectively. Accordingly, ˆZID  
+
+> t, raw
+
+= {zraw  
+
+> i
+
+}ni=1 and ˆZID  
+
+> t,p
+
+= {zpt 
+
+> i
+
+}ni=1 .We use cosine similarity 
+
+C(a, b ) = a · b
+
+∥a∥2 ∥b∥2
+
+, (3) which is evaluated on both raw features (zraw  
+
+> i
+
+, z raw  
+
+> j
+
+) and prompted features (zpt 
+
+> i
+
+, z pt 
+
+> j
+
+). The structural preservation loss is then defined as the Frobenius norm of the difference between the two pairwise similarity matrices: 
+
+Lreg (pt) = 
+
+vuut
+
+> n
+
+X
+
+> i=1
+> n
+
+X
+
+> j=1
+
+ C(zpt 
+
+> i
+
+, z pt 
+
+> j
+
+) − C(zraw  
+
+> i
+
+, z raw  
+
+> j
+
+)2,
+
+(4) or equivalently, 
+
+Lreg (pt) = sim( ˆZID 
+
+> t,p
+
+) − sim( ˆZID 
+
+> t, raw
+
+) F
+
+, (5) where for a feature set Z = {zi}ni=1 , sim( Z) ∈ Rn×n de-notes its pairwise cosine-similarity matrix, whose (i, j )-th entry is C(zi, z j ). By penalizing disruptions to the relative feature geometry, this regularizer encourages the prompt to compensate for domain shift without overfitting to the nar-row semantics of the current batch. The final objective for optimizing the current prompt  pt is 
+
+LDOCO (pt) = Lstat (pt) + βLreg (pt), (6) where  β is a regularization coefficient. The prompt param-eters are then optimized on the current ID subset to obtain an updated prompt  pt+1 .
+
+4.2. Intra-Batch Prompt Propagation 
+
+Direct Intra-Batch Knowledge Reuse. Within the cur-rent batch, samples in ˆBID  
+
+> t
+
+are inferred using the prompt 
+
+pt. We then immediately reuse the batch-t domain knowl-edge learned from these likely ID samples — instantiated as the updated prompt pt+1 — by applying it only to likely OOD samples in ˆBOOD  
+
+> t
+
+within the same batch. Since all samples in Bt share the same batch-wise domain compo-nent δt, the prompt pt+1 compensates the domain factor of OOD features in a consistent manner. The final prediction for likely OOD samples is produced by the frozen linear classifier head h on compensated features: 
+
+ˆy = arg max 
+
+> c∈Y S
+
+hc
+
+ ϕ(x; pt+1 ), x ∈ ˆBOOD  
+
+> t
+
+. (7) 
+
+Motivation. Recent OOD generalization work [28] sug-gests that domain-invariant semantics can be exposed by re-moving domain-specific components from representations. As an intuition, we write the batch-t representation as 
+
+ϕ(x) ≈ s(x) + δt, where s(x) encodes class semantics and 
+
+δt is a batch-wise domain factor. We learn pt+1 from only likely ID samples in Bt and then immediately propagate it to the likely OOD subset in the same batch, yielding 
+
+ϕ(x; pt+1 ) ≈ ϕ(x) − δt ≈ s(x). (8) This propagation is non-trivial: it uses ID-only updates to estimate and neutralize the same batch factor for all sam-ples sharing δt, which (i) corrects mis-split IDs by pulling them back toward source-aligned neighborhoods, (ii) makes true OODs more novel relative to the compensated source geometry, and (iii) avoids leaking pseudo-label noise by not back-propagating through likely OOD samples, thus stabi-lizing the decision boundary for the whole batch. Compar-ison between training-time explicit separation [28] and our test-time in-process correction is provided in Appendix A.2. 0.5 0.6 0.7 0.8 
+
+> Prototypical Distance d proto (z)
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> 14
+> Estimated PDF
+> Domain Shift ID
+> Domain Shift OOD
+
+(a) w/o prompt. 0.4 0.5 0.6 0.7 0.8  
+
+> Prototypical Distance d proto (z)
+> 0
+> 2
+> 4
+> 6
+> 8
+> Estimated PDF
+> Domain Shift ID
+> Domain Shift OOD
+
+(b) w/ prompt. Contrast  
+
+> Defocus
+> Gauss.
+> Shot
+> Snow
+> Frost
+> Glass
+> Zoom
+> Elastic
+> JPEG
+> Pixel
+> Bright
+> Impulse
+> Motion
+> Fog
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> 45
+> Loss Value
+> Prompted Loss
+> Source Loss
+> Prompted First Batch Loss
+> Raw First Batch Loss
+> Zero-shot Prompt Advantage at Domain Entry
+
+(c) Lstat across 15 domains w/ and w/o prompt. 
+
+Figure 4. (a-b) DOCO facilitates the separation of ID and OOD by disentangling the bimodal distribution of the prototypical distance 
+
+dproto (z). (c) For each new domain, the statistical loss Lstat (pt) with DOCO is consistently smaller than that of the source model on the first batch, indicating that the learned prompt generalizes well to unseen domains. 
+
+4.3. Adaptation-Conditioned Sample Splitting 
+
+Domain overshadowing and prompt generalization. 
+
+The effectiveness of our framework relies on splitting each batch  Bt into likely ID and likely OOD subsets,  ˆBID  
+
+> t
+
+and 
+
+ˆBOOD  
+
+> t
+
+. This separation prevents OOD contamination dur-ing prompt learning, leading to a cleaner estimation of the batch-wise domain patterns. However, severe domain shifts can overshadow semantic differences (Fig. 4a), causing sub-stantial overlap between the ID and OOD distributions of the prototypical distance  dproto  (defined in Eq. 9). There-fore, for each batch we first compute compensated features 
+
+Zt,p = {ϕ(x; pt)}x∈B t using the prompt pt. Even un-der new domains, the structure-preserving prompt exhibits strong cross-domain generalization (Fig. 4c and Appendix A.3), enabling DOCO to address the “Continual” aspect of OCTTA effectively. This “back-to-source” effect restores a clearer bimodality (Fig. 4b), enabling reliable partitioning. 
+
+Prototypical Distance Splitting. Given the prompted features  Zt,p  and the frozen classifier weights  {wc}c∈Y S
+
+serving as source prototypical proxies [10], for each  z ∈
+
+Zt,p  we define the prototypical distance 
+
+dproto (z) = 1 − max 
+
+> c∈Y S
+
+C(z, w c). (9) Here,  C(·, ·) denotes cosine similarity defined in Eq. 3. Let 
+
+St := { dproto (z) | z ∈ Zt,p } denote the collection of prototypical distances induced by this batch. We run  K-Means with K = 2 over these scalar scores: 
+
+( bK0, bK1) = arg min 
+
+> K0,K1
+
+X
+
+> i∈{ 0,1}
+
+X
+
+> d∈K i
+
+∥d − μi∥2,
+
+s.t. K0 ∪ K 1 = St, K0 ∩ K 1 = ∅.
+
+(10) where μi = 1
+
+> |K i|
+
+P 
+
+> d∈K i
+
+d denotes the centroid of cluster 
+
+Ki. Since a smaller  dproto  indicates being closer to the source prototypes, we assign the cluster with the smaller centroid to ID. Denoting that index by  iID ∈ { 0, 1} and 
+
+iOOD = 1 − iID , the split is 
+
+ˆBID  
+
+> t
+
+=  x ∈ B t dproto (ϕ(x; pt)) ∈ bKiID ,
+
+ˆBOOD  
+
+> t
+
+=  x ∈ B t dproto (ϕ(x; pt)) ∈ bKiOOD . (11) 
+
+5. Experiments 
+
+5.1. Experimental Setup 
+
+Datasets. For ID component, we first use the standard benchmark ImageNet-C [11]. This dataset contains 15 com-mon corruption types, and we use the highest severity level 5. To further assess performance, we then adopt a newly-released LAION-C benchmark [22], which produces six challenging, synthetic distortions. Given their significant difficulty, we use a moderate severity level of 3 for these corruptions. For the OOD component, we follow common practices but apply the same corruption to standard OOD benchmarks. Specifically, the OOD datasets are corrupted versions of Places365 [45], Textures [4], NINCO [2], iNat-uralist [32], SSB-Hard [33], and SUN [39]. 
+
+Baselines. We compare our method against strong contin-ual and open-set TTA baselines including Tent [34], CoTTA [36], SAR [30], EATA [29], ViDA [24], DPCore [44], STAMP [42], OSTTA [20], UniEnt [9], and COME [43]. 
+
+Evaluation Protocol. We use three metrics for a com-prehensive evaluation. First, we report ID classification accuracy (ACC) to measure domain generalization. Sec-ond, we use the area under the ROC curve (AUC) to as-sess the model’s threshold-free outlier detection capability. Finally, to jointly evaluate both aspects, we report the H-score , which is the harmonic mean of ACC and AUC. 
+
+Implementation Details. Experiments use a ViT-B/16 pretrained on ImageNet-1K, with weights from timm . For evaluating OOD detection, we use the energy score [25] to compute AUC. The test stream follows Eq. 1 with OOD ratio κ = 0.5, and we standardize the batch size to 64 for fair comparison. To simulate a real-world deployment and ensure a fair blind test, hyperparameters for all meth-ods are tuned only on the first dataset-domain combina-tion. These settings are then frozen and applied to all subse-quent, unseen datasets to rigorously evaluate generalization robustness [42]. Prior to online adaptation, we pre-compute source feature statistics from 300 samples, following EATA Table 1. Results ( %) for ImageNet-to-ImageNet-C (severity = 5, κ = 0 .5) in OCTTA setting across six covariate-shifted OOD datasets. All the results are averaged over 15 corruptions. Bold and underline are used to indicate the first and second best performance, respectively. 
+
+Method Places.–C Texture–C iNatur.–C SUN–C SSB-H.–C NINCO–C Avg. 
+
+ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC H-score Source 49.8 66.8 49.8 70.5 49.8 78.7 49.8 71.4 49.8 56.3 49.8 64.5 49.8 68.0 56.4 Tent (ICLR’21) [34] 12.3 49.3 3.8 44.6 12.1 50.1 13.3 38.9 55.3 62.5 37.5 59.8 22.4 50.9 23.8 CoTTA (CVPR’22) [36] 49.9 63.0 48.8 65.5 49.4 75.3 49.6 65.8 49.9 55.5 49.4 62.0 49.5 64.5 54.8 EATA (ICML’22) [29] 54.9 65.4 50.5 72.1 51.9 72.9 52.1 70.8 56.3 58.3 51.8 64.3 52.9 67.3 57.8 SAR (ICLR’23) [30] 51.2 59.6 45.0 60.0 46.0 64.3 49.5 57.9 56.8 60.5 53.7 66.8 50.4 61.5 54.3 OSTTA (ICCV’23) [20] 57.5 60.2 56.5 55.5 50.9 66.3 55.6 59.4 58.8 62.5 57.8 67.2 56.2 61.9 58.5 ViDA (ICLR’24) [24] 53.0 59.8 52.1 36.8 53.1 35.9 51.5 30.4 55.2 61.9 53.2 62.9 53.0 47.9 48.4 UniEnt (CVPR’24) [9] 58.6 74.1 55.5 79.7 56.8 89.6 58.1 84.6 59.1 62.1 58.6 72.2 57.8 77.0 65.4 STAMP (ECCV’24) [42] 51.9 72.4 52.0 75.1 52.1 85.6 51.9 77.4 52.0 60.9 51.9 71.4 51.9 73.8 60.2 E-COME (ICLR’25) [43] 57.7 76.0 57.8 78.6 58.9 85.4 59.3 82.7 59.2 58.9 56.6 71.3 58.3 75.5 65.2 S-COME (ICLR’25) [43] 31.2 58.5 29.3 67.1 22.9 55.6 54.6 76.4 54.3 55.6 53.2 65.1 40.9 63.0 45.5 DPCore (ICML’25) [44] 56.4 76.7 54.3 78.0 46.7 82.8 52.6 82.0 60.2 62.6 54.3 75.3 54.1 76.2 62.6 
+
+DOCO (Ours) 61.8 80.6 61.0 84.6 61.4 95.7 61.5 92.2 61.9 65.9 61.5 77.4 61.5 82.7 70.1 0    
+
+> 20
+> 40
+> 60
+> 80
+> Gauss
+> Shot
+> Impul.
+> Defoc
+> Glass
+> Motion
+> Zoom
+> Snow
+> Frost
+> Fog
+> Brit.
+> Contr.
+> Elast.
+> Pixel.
+> JPEG
+> Source SAR
+> STAMP ViDA
+> Tent S-COME
+> DPCore DOCO (Ours)
+> Accuracy (%)
+
+(a) Cross domain Acc 20           
+
+> 25
+> 30
+> 35
+> 40
+> 45
+> 50
+> 55
+> 60
+> Ours DPCore E-COME UniEnt OSTTA STAMP
+> ORDER 1 ORDER 2 ORDER 3
+> ORDER 4 ORDER 5 ORDER 6
+> Accuracy (%)
+
+(b) Different domain order 
+
+Figure 5. Further analysis of the OCTTA setting on the ImageNet-C benchmark. (a) Per-domain accuracy ( %) of different mod-els under continuous domain shifts. (b) Accuracy ( %) of models tested with different domain orders. 
+
+[29]. The prompts conduct a one-time self-supervised up-date for 50 iterations to refine the initial state. During TTA, we update L = 8 learnable prompts for each incom-ing batch using AdamW (learning rate 1e-1) with structural preservation weight β = 0 .5. In contrast to methods like CoTTA which update all model parameters, DOCO exclu-sively fine-tunes the prompts, while most other baselines update only the affine parameters of LayerNorm layers. For the plug-in frameworks UniEnt and COME, we eval-uate their strongest open-set and continual configurations: EATA with UniEnt+ (full version, denoted as UniEnt for short), EATA with COME ( E-COME ) and SAR with COME (S-COME ). More details are available in Appendix B.2. 
+
+5.2. Main Results 
+
+ImageNet-C Benchmark. The comprehensive results in Tab. 1 show that DOCO achieves state-of-the-art perfor-mance across multiple OOD datasets. On average 2, our method sets a new SOTA with an H-score of 70 .1%, sur-
+
+> 2
+
+ACC/AUC/H-score are first computed per dataset and then averaged. 10% 20% 30% 40% 50% 
+
+> OOD Percentage
+> 48
+> 50
+> 52
+> 54
+> 56
+> 58
+> 60
+> 62
+> Mean Accuracy
+> DPCore
+> EATA
+> UniEnt
+> DOCO (Ours)
+> OSTTA
+> Source
+> STAMP
+> ViDA
+> SAR
+> E-COME
+
+(a) Accuracy (%) 10% 20% 30% 40% 50%  
+
+> OOD Percentage
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> Mean H-Score Energy
+> DPCore
+> EATA
+> UniEnt
+> DOCO (Ours)
+> OSTTA
+> Source
+> STAMP
+> ViDA
+> SAR
+> E-COME
+
+(b) H-score (%) 
+
+Figure 6. Performance under different OOD ratios. 
+
+passing the next-best method UniEnt by a significant 4.7%.This top-tier result is based on a leading known-class ac-curacy of 61 .5% and an exceptional OOD detection AUC of 82 .7%. This demonstrates DOCO’s balanced enhance-ment of both ID classification and OOD detection. To fur-ther analyze DOCO’s robustness, we examine its perfor-mance across individual domains and different domain or-derings in Fig. 5. Figure 5a tracks per-domain accuracy as the model sequentially adapts to 15 corruptions. DOCO’s performance curve is consistently at or near the top, show-casing its stable adaptation. This stability is particularly pronounced on difficult domains like Contrast , where most other methods suffer a sharp decline in accuracy. DOCO, by effectively decoupling the severe domain shift from the underlying semantic information, remains strong un-der such challenging conditions. Furthermore, we assess its resilience to the sequence of domains. As depicted in Fig. 5b, DOCO’s Accuracy remains stable across six differ-ent random domain orderings. This result underscores that DOCO’s effectiveness does not depend on a favorable do-main sequence, confirming its robustness in truly continual settings. We further investigate how the OOD percentage 
+
+κ impacts our method. As shown in Fig. 6, we manipu-Table 2. Results ( %) for LAION-C benchmark (severity = 3, κ = 0 .5) in the OCTTA setting across six domain shift OOD datasets. All results are averaged over 6 constantly switching domains. ‘ -L ’ stands for applying LAION-C corruption to OOD dataset.                                                                                                                                                                                                                                                                                                 
+
+> Method Places.–L Texture–L iNatur.–L SUN–L SSB-H.–L NINCO–L Avg.
+> ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC H-score Source 16.2 52.2 16.2 54.8 16.2 58.9 16.2 54.9 16.2 54.8 16.2 55.8 16.2 55.2 19.1 Tent (ICLR’21) 0.2 47.4 0.2 58.9 0.4 46.5 0.2 49.8 0.4 49.3 0.2 53.4 0.3 50.9 0.6 CoTTA (CVPR’22) 16.2 50.7 16.1 51.7 16.1 56.1 16.1 52.8 16.1 54.5 16.1 54.8 16.1 53.4 18.5 EATA (ICML’22) 23.9 56.0 23.3 59.9 20.7 59.6 22.5 60.3 25.0 54.4 23.1 55.1 23.1 57.5 27.9 SAR (ICLR’23) 7.6 50.6 9.4 51.8 4.5 47.9 4.6 48.4 13.6 54.4 5.1 51.5 7.5 50.8 9.6 OSTTA (ICCV’23) 16.3 49.4 16.7 48.6 15.6 47.6 14.5 48.6 17.1 54.4 16.9 53.7 16.2 50.4 17.5 ViDA (ICLR’24) 2.5 42.7 3.2 48.6 2.7 36.5 2.0 40.4 2.2 49.0 2.4 47.1 2.5 44.0 3.9 UniEnt (CVPR’24) 24.0 58.3 23.8 64.5 23.7 66.0 23.6 64.5 24.4 54.4 23.1 57.0 23.8 60.8 29.3 STAMP (ECCV’24) 16.4 53.5 15.6 54.1 15.3 56.5 16.0 53.8 16.2 55.0 15.7 55.9 15.9 54.8 19.5 E-COME (ICLR’25) 4.6 53.1 17.9 57.6 16.5 63.6 18.1 61.4 18.8 52.3 17.3 56.4 15.5 57.4 19.9 S-COME (ICLR’25) 0.1 46.4 0.1 55.4 0.2 47.6 0.1 48.8 0.1 53.3 0.1 54.2 0.1 51.0 0.3 DPCore (ICML’25) 23.4 61.6 21.1 63.3 20.6 65.5 25.0 64.2 24.8 55.6 23.9 59.8 23.1 61.7 30.3
+> DOCO (Ours) 28.1 62.2 24.4 64.8 25.7 78.2 23.2 71.2 26.1 53.7 24.6 59.2 25.4 64.9 32.7
+> Table 3. Accuracy (%) under the closed-set setting. Method IN-C IN-A IN-R IN-Sketch IN-L Avg. Source 49.8 28.1 43.6 46.6 16.2 36.9 Tent [34] 58.1 29.8 44.1 46.6 0.84 35.9 CoTTA [36] 50.1 28.2 43.6 46.7 16.2 37.0 EATA [29] 59.9 29.9 46.0 47.6 23.4 41.4 OSTTA [20] 58.2 29.7 44.0 46.6 16.9 39.1 ViDA [24] 56.5 29.5 42.8 45.6 6.0 36.1 UniEnt [9] 59.1 29.3 45.4 47.6 22.5 40.8 STAMP [42] 51.7 28.8 43.6 46.7 16.2 37.4 E-COME [43] 59.0 31.2 46.3 49.2 15.5 40.2 DPCore [44] 61.7 29.3 46.3 49.0 24.5 42.2
+> DOCO (Ours) 60.6 31.7 47.4 49.5 26.3 43.1
+
+late the ratio ranging from 10% to 50% , and present the corresponding Accuracy and H-scores. The outcomes are averaged over six OOD datasets, with transparent bands in-dicating the standard deviation. While most baselines suffer from a significant performance drop and huge fluctuations as the ratios and datasets vary, DOCO shows the consis-tently superior and stable performance all the time. 
+
+LAION-C Benchmark. To explore the limits of adapta-tion under more extreme domain shifts, we evaluate our method on the recently released LAION-C benchmark [22]. As shown in Tab. 2, the severity of these shifts causes a drastic performance degradation across all methods, high-lighting the benchmark’s difficulty. Even in this adversar-ial setting, DOCO once again demonstrates its superior ro-bustness and establishes a new state-of-the-art. Our method achieves the highest average H-score of 32 .7%, leading the closest competitor by 2.4%. For dataset details and low-severity experiments, please refer to Appendix B.1 and C.3. 
+
+Closed-set CTTA. Additionally, we examine the meth-ods under the fundamental closed-set scenario in Tab. 3. Apart from ImageNet-C and LAION-C, we introduce ImageNet-A [14], ImageNet-R [13] and ImageNet-Sketch [35] datasets, which provide natural adversarial, rendition                                                           
+
+> Table 4. Ablation results for DOCO’s modules.
+> Method Module N (Norm-based) P (DOCO) SORH-score ↑Gain ↑H-score ↑Gain ↑
+> Source ---56.4 -56.4 -w/o S.O.R ---60.7 +4.3 64.0 +7.6 w/o S.O --✓62.5 +6.1 67.6 +11.2 w/o O.R ✓--62.5 +6.1 65.1 +8.7 w/o O ✓-✓63.9 +7.5 65.9 +9.5 w/o R ✓✓-64.2 +7.8 68.5 +12.1
+> Full Model ✓✓✓68.1 +11.7 70.1 +13.7
+
+and sketch domain shift. DOCO shows the best results on almost all datasets, highlighting its capability to handle a broad range of domain shifts, while also demonstrating that the design of DOCO does not harm performance in non-open-set scenarios. This outcome makes DOCO a potent competitor in the vanilla TTA and CTTA arena. 
+
+5.3. Analysis 
+
+Components Ablation Study. We conduct a comprehen-sive ablation study to dissect the contributions of DOCO’s core components: Sample Splitting ( S), OOD Propagation (O), and the Structural Regularizer ( R). The results in Tab. 4 validate that our proposed mechanisms offer broad benefits, enhancing not only the prompt-based ( P) approach but also the NormLayer-based ( N) baseline, indicating the applica-bility to the ResNet backbone. A vanilla implementation that relies solely on statistical alignment (P w/o S.O.R) is insufficient, yielding a limited performance gain of +7 .6% .DOCO’s performance is achieved by building upon this foundation with its unique components. The synergistic ap-plication of Sample Splitting (S) and OOD Propagation (O) mechanisms propels the gain substantially to +12 .1%.The final addition of the Structural Regularizer (R) fur-ther refines the feature space, culminating in the full DOCO model’s H-score of 70 .1% . Our analysis makes it clear that 1 2 4 8 12 16 20 24 32 64                                                                                            
+
+> Numbers of Prompt
+> 0.0
+> 0.1
+> 0.3
+> 0.5
+> 0.7
+> 0.9
+> 1.0
+> 1.2
+> 1.4
+> 1.6
+> Beta
+> 66.6 67.0 67.5 68.2 67.9 68.9 67.6 68.4 67.2 62.5
+> 66.5 66.8 67.3 69.2 67.2 66.8 68.6 68.3 65.6 63.4
+> 66.8 67.7 68.2 69.6 68.9 68.9 69.4 68.5 65.7 63.8
+> 66.6 68.0 69.7 69.9 69.0 70.3 69.8 69.7 69.6 66.4
+> 67.0 68.0 69.9 69.7 70.6 70.6 70.0 70.6 69.0 67.7
+> 66.6 67.9 69.6 69.8 70.2 70.7 70.8 70.2 70.2 67.9
+> 67.0 67.7 69.4 68.9 70.0 70.0 69.7 70.2 69.7 69.2
+> 67.0 67.3 67.9 66.7 68.1 68.4 68.4 68.4 68.6 68.5
+> 63.4 63.7 66.1 64.6 65.1 65.2 65.4 64.5 65.8 67.1
+> 61.3 61.4 63.1 63.6 63.5 64.2 64.3 64.5 64.4 64.5
+> 62
+> 64
+> 66
+> 68
+> 70 H-Score (%)
+
+(a) Sensitivity of β vs L2 4 8 16 32 64 128  
+
+> Batch Size (Log Scale)
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> H-Score (%)
+> Method
+> DOCO
+> DOCO w/o R
+> DPCore
+> E-COME
+> EATA
+> OSTTA
+> S-COME
+> SAR
+> STAMP
+> Source
+> Tent
+> UniEnt
+
+(b) Batch size comparison 10  
+
+> 50
+> 100
+> 300
+> 500
+> 1000
+> 2000
+> 5000
+> #Source Samples
+> EATA
+> UniEnt
+> E-COME
+> DPCore
+> DOCO(Ours)
+> Method
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> 80
+> Metric Value (%)
+> Accuracy
+> AUC
+> H-Score
+
+(c) # Source Sample 
+
+Figure 7. (a) The parameter sensitivity analysis of β vs L on H-score (%). (b) The sensitivity of batch size on H-score (%). (c) Comparison of five methods with preliminary source characteristics extraction on three metrics versus the number of unlabeled source samples. Source Image Source Model Target Image UniEnt Ours        
+
+> Contrast
+> Sev erity=5
+> GT: Magpie
+> Nematode (7.7%) Magpie (83.2%) Magpie (80.5%)
+> Eft (76.8%) Stinkhorn (68.4%) Eft (73.5%)
+> Motion Blur
+> Severity=5
+> GT: Eft
+> Snow
+> Severity=5
+> GT: Puffer
+> Puffer (81.1%) Eel (30.5%) Puffer (77.2%)
+
+Figure 8. Grad-CAM visualizations for the source model on clean images and for UniEnt and DOCO on their corrupted counterparts. 
+
+DOCO’s success is not merely a consequence of its adap-tation paradigm, but is fundamentally driven by its special-ized components, which are essential for unlocking robust performance in the demanding OCTTA setting. Notably, even when we disable the splitting mechanism (w/o S.O), the prompt still encodes a reasonable domain pattern on the mixed, noisy ID/OOD batch. This can be attributed to the structural regularizer, which prevents the prompt from aligning OOD semantics to source ID (w/o S.O.R → w/o S.O. yields an additional +3 .6%). This further addresses a natural concern: even in extreme cases where we cannot clearly split the ID subset, the model does not collapse. 
+
+Sensitivity to prompt number L and regularization β.
+
+Figure 7a exhibits a broad plateau on the ImageNet-C and Places365-C combination: DOCO maintains high H-score across a wide swath of β and L, indicating low sensitivity to precise hyperparameter choices. Notably, along the di-agonal trend where L increases, adaptation becomes harder to drive, as excess prompts diffuse learning and weaken do-main compensation, but raising β counteracts this disper-sion, preserving feature geometry and recovering accuracy. 
+
+Effect on batch size and source number. As shown in Fig. 7b, DOCO reaches first-tier performance beginning at batch size 8 and remains strong and stable thereafter. In the small-batch regime, removing the structural regularizer noticeably hurts performance relative to the full method, which matches the design insight in Sec. 4.1 when per-batch statistics are noisy. For source number in Fig. 7c, we com-pare five methods that leverage source number information. Across all source numbers, DOCO consistently attains the highest performance, evidencing high data efficiency. Re-markably, using only 50 source samples already delivers performance very close to the full setting. For details on the missing points and our small-batch solution of DOCO, please see Appendix B.3. 
+
+Visualization. As illustrated in Fig. 8, while the source model focuses on the target object in the clean domain, DOCO better recovers source-like attention under severe corruptions compared to UniEnt [9], concentrating on the true object regions rather than background noise. This qual-itative comparison highlights DOCO’s core capability: it disentangles domain shifts from semantic features, effec-tively compensating for the corruption and restoring source-like representations for reliable inference. 
+
+6. Conclusion 
+
+In this paper, we introduce OCTTA, a challenging yet prag-matic setting involving coupled domain and semantic shifts. To address this, we propose DOCO, a novel and efficient framework based on prompt learning. DOCO works by learning to compensate for domain shifts using likely ID data and then propagating this knowledge to enhance the detection of OOD samples, all within a self-reinforcing virtuous cycle. This synergistic design allows DOCO to remain robust and computationally practical where other methods falter. Extensive experiments on multiple chal-lenging benchmarks validate the superiority of our method, which sets a new SOTA in handling coupled shifts. Acknowledgment 
+
+This work was supported in part by National Key R&D Program of China (2024YFB3908500, 2024YFB3908502), NSFC Excellent Young Scientists Fund Program (Over-seas), Guangdong Basic and Applied Basic Research Foundation (2023B1515120026), Shenzhen Science and Technology Program (KJZD20240903100022028), and Scientific Development Funds from Shenzhen University. 
+
+References 
+
+[1] Shai Ben-David, John Blitzer, Koby Crammer, and Fernando Pereira. Analysis of representations for domain adaptation. In Advances in Neural Information Processing Systems . MIT Press, 2006. 4 [2] Julian Bitterwolf, Maximilian Mueller, and Matthias Hein. In or out? fixing imagenet out-of-distribution detection eval-uation. In ICML , 2023. 5 [3] Chaoqi Chen, Luyao Tang, Yue Huang, Xiaoguang Han, and Yizhou Yu. Coda: Generalizing to open and unseen domains with compaction and disambiguation. Advances in Neural Information Processing Systems , 36:12746–12759, 2023. 2 [4] Mircea Cimpoi, Subhransu Maji, Iasonas Kokkinos, Sammy Mohamed, and Andrea Vedaldi. Describing textures in the wild. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 3606–3613, 2014. 5 [5] Hao Dong, Eleni Chatzi, and Olga Fink. Towards robust mul-timodal open-set test-time adaptation via adaptive entropy-aware optimization. In The Thirteenth International Confer-ence on Learning Representations , 2025. 2 [6] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-vain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale. ICLR , 2021. 3 [7] Xuefeng Du, Zhaoning Wang, Mu Cai, and Yixuan Li. Vos: Learning what you don’t know by virtual outlier synthesis. 
+
+Proceedings of the International Conference on Learning Representations , 2022. 2 [8] Ke Fan, Tong Liu, Xingyu Qiu, Yikai Wang, Lian Huai, Zeyu Shangguan, Shuang Gou, Fengjian Liu, Yuqian Fu, Yanwei Fu, et al. Test-time linear out-of-distribution detection. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 23752–23761, 2024. 2 [9] Zhengqing Gao, Xu-Yao Zhang, and Cheng-Lin Liu. Uni-fied entropy optimization for open-set test-time adaptation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 23975–23984, 2024. 1, 2, 5, 6, 7, 8, 3, 4 [10] Mingrong Gong, Chaoqi Chen, Qingqiang Sun, Yue Wang, and Hui Huang. Out-of-distribution detection with prototyp-ical outlier proxy. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 16835–16843, 2025. 5 [11] Dan Hendrycks and Thomas Dietterich. Benchmarking neu-ral network robustness to common corruptions and perturba-tions. Proceedings of the International Conference on Learn-ing Representations , 2019. 5 [12] Dan Hendrycks and Kevin Gimpel. A baseline for detecting misclassified and out-of-distribution examples in neural net-works. Proceedings of International Conference on Learning Representations , 2017. 2 [13] Dan Hendrycks, Steven Basart, Norman Mu, Saurav Kada-vath, Frank Wang, Evan Dorundo, Rahul Desai, Tyler Zhu, Samyak Parajuli, Mike Guo, Dawn Song, Jacob Steinhardt, and Justin Gilmer. The many faces of robustness: A critical analysis of out-of-distribution generalization. ICCV , 2021. 7 [14] Dan Hendrycks, Kevin Zhao, Steven Basart, Jacob Stein-hardt, and Dawn Song. Natural adversarial examples. CVPR ,2021. 7 [15] Dan Hendrycks, Steven Basart, Mantas Mazeika, Andy Zou, Mohammadreza Mostajabi, Jacob Steinhardt, and Dawn Xi-aodong Song. Scaling out-of-distribution detection for real-world settings. In International Conference on Machine Learning , 2022. 2 [16] Yihao Hu, Congyu Qiao, Xin Geng, and Ning Xu. Selective label enhancement learning for test-time adaptation. In The Thirteenth International Conference on Learning Represen-tations . 2 [17] Peter J Huber. Robust estimation of a location parameter. In 
+
+Breakthroughs in statistics: Methodology and distribution ,pages 492–518. Springer, 1992. 3 [18] Yusuke Iwasawa and Yutaka Matsuo. Test-time classifier adjustment module for model-agnostic domain generaliza-tion. Advances in Neural Information Processing Systems ,34:2427–2440, 2021. 2 [19] Menglin Jia, Luming Tang, Bor-Chun Chen, Claire Cardie, Serge Belongie, Bharath Hariharan, and Ser-Nam Lim. Vi-sual prompt tuning. In European conference on computer vision , pages 709–727. Springer, 2022. 3 [20] Jungsoo Lee, Debasmit Das, Jaegul Choo, and Sungha Choi. Towards open-set test-time adaptation utilizing the wisdom of crowds in entropy minimization. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 16380–16389, 2023. 1, 2, 5, 6, 7, 3, 4 [21] Jonghyun Lee, Dahuin Jung, Saehyung Lee, Junsung Park, Juhyeon Shin, Uiwon Hwang, and Sungroh Yoon. Entropy is not enough for test-time adaptation: From the perspective of disentangled factors. In The Twelfth International Confer-ence on Learning Representations , 2024. 2 [22] Fanfei Li, Thomas Klein, Wieland Brendel, Robert Geirhos, and Roland S. Zimmermann. Laion-c: An out-of-distribution benchmark for web-scale vision models. In Proceedings of the 42nd International Conference on Machine Learning (ICML) , 2025. 5, 7 [23] Yushu Li, Xun Xu, Yongyi Su, and Kui Jia. On the robust-ness of open-world test-time training: Self-training with dy-namic prototype expansion. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 11836– 11846, 2023. 2 [24] Jiaming Liu, Senqiao Yang, Peidong Jia, Renrui Zhang, Ming Lu, Yandong Guo, Wei Xue, and Shanghang Zhang. ViDA: Homeostatic visual domain adapter for continual test time adaptation. In The Twelfth International Conference on Learning Representations , 2024. 1, 2, 5, 6, 7, 3, 4 [25] Weitang Liu, Xiaoyun Wang, John Owens, and Yixuan Li. Energy-based out-of-distribution detection. Advances in neural information processing systems , 33:21464–21475, 2020. 2, 5 [26] Laurens van der Maaten and Geoffrey Hinton. Visualizing data using t-sne. Journal of machine learning research , 9 (Nov):2579–2605, 2008. 2 [27] Akshay Mehra, Yunbei Zhang, and Jihun Hamm. Un-derstanding the transferability of representations via task-relatedness. In Advances in Neural Information Process-ing Systems , pages 116513–116546. Curran Associates, Inc., 2024. 4 [28] Qiaowei Miao, Yawei Luo, and Yi Yang. Dics: Find domain-invariant and class-specific features for out-of-distribution generalization. In ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE, 2025. 4, 1 [29] Shuaicheng Niu, Jiaxiang Wu, Yifan Zhang, Yaofo Chen, Shijian Zheng, Peilin Zhao, and Mingkui Tan. Efficient test-time model adaptation without forgetting. In Interna-tional conference on machine learning , pages 16888–16905. PMLR, 2022. 1, 2, 5, 6, 7, 3, 4 [30] Shuaicheng Niu, Jiaxiang Wu, Yifan Zhang, Zhiquan Wen, Yaofo Chen, Peilin Zhao, and Mingkui Tan. Towards stable test-time adaptation in dynamic wild world. In International Conference on Learning Representations , 2023. 2, 5, 6, 3, 4, 7[31] Leitian Tao, Xuefeng Du, Jerry Zhu, and Yixuan Li. Non-parametric outlier synthesis. In The Eleventh International Conference on Learning Representations , 2023. 2 [32] Grant Van Horn, Oisin Mac Aodha, Yang Song, Yin Cui, Chen Sun, Alex Shepard, Hartwig Adam, Pietro Perona, and Serge Belongie. The inaturalist species classification and de-tection dataset. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 8769–8778, 2018. 5 [33] Sagar Vaze, Kai Han, Andrea Vedaldi, and Andrew Zisser-man. Open-set recognition: a good closed-set classifier is all you need? In International Conference on Learning Repre-sentations , 2022. 5 [34] Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno Ol-shausen, and Trevor Darrell. Tent: Fully test-time adaptation by entropy minimization. In International Conference on Learning Representations , 2021. 1, 5, 6, 7, 3, 4 [35] Haohan Wang, Songwei Ge, Zachary Lipton, and Eric P Xing. Learning robust global representations by penalizing local predictive power. In Advances in Neural Information Processing Systems , pages 10506–10518, 2019. 7 [36] Qin Wang, Olga Fink, Luc Van Gool, and Dengxin Dai. Continual test-time domain adaptation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7201–7211, 2022. 1, 2, 5, 6, 7, 3, 4 [37] Qizhou Wang, Junjie Ye, Feng Liu, Quanyu Dai, Marcus Ka-lander, Tongliang Liu, Jianye HAO, and Bo Han. Out-of-distribution detection with implicit outlier transformation. In 
+
+The Eleventh International Conference on Learning Repre-sentations , 2023. 2 [38] Wei Wang, Zhun Zhong, Weijie Wang, Xi Chen, Charles Ling, Boyu Wang, and Nicu Sebe. Dynamically instance-guided adaptation: A backward-free approach for test-time domain adaptive semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 24090–24099, 2023. 2 [39] Jianxiong Xiao, James Hays, Krista A Ehinger, Aude Oliva, and Antonio Torralba. Sun database: Large-scale scene recognition from abbey to zoo. In 2010 IEEE computer so-ciety conference on computer vision and pattern recognition ,pages 3485–3492. IEEE, 2010. 5 [40] Puning Yang, Jian Liang, Jie Cao, and Ran He. Auto: Adap-tive outlier optimization for online test-time ood detection. 
+
+arXiv preprint arXiv:2303.12267 , 2023. 2 [41] Yifeng Yang, Lin Zhu, Zewen Sun, Hengyu Liu, Qinying Gu, and Nanyang Ye. Oodd: Test-time out-of-distribution detection with dynamic dictionary. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 30630–30639, 2025. 2 [42] Yongcan Yu, Lijun Sheng, Ran He, and Jian Liang. Stamp: Outlier-aware test-time adaptation with stable memory re-play. In European Conference on Computer Vision , pages 375–392. Springer, 2024. 1, 2, 5, 6, 7, 3, 4 [43] Qingyang Zhang, Yatao Bian, Xinke Kong, Peilin Zhao, and Changqing Zhang. COME: Test-time adaption by conserva-tively minimizing entropy. In The Thirteenth International Conference on Learning Representations , 2025. 1, 2, 5, 6, 7, 3, 4 [44] Yunbei Zhang, Akshay Mehra, Shuaicheng Niu, and Jihun Hamm. DPCore: Dynamic prompt coreset for continual test-time adaptation. In Forty-second International Conference on Machine Learning , 2025. 1, 2, 5, 6, 7, 3, 4 [45] Bolei Zhou, Agata Lapedriza, Aditya Khosla, Aude Oliva, and Antonio Torralba. Places: A 10 million image database for scene recognition. IEEE transactions on pattern analysis and machine intelligence , 40(6):1452–1464, 2017. 5 [46] Jianing Zhu, Yu Geng, Jiangchao Yao, Tongliang Liu, Gang Niu, Masashi Sugiyama, and Bo Han. Diversified outlier ex-posure for out-of-distribution detection via informative ex-trapolation. Advances in neural information processing sys-tems , 36:22702–22734, 2023. 2 Back to Source: Open-Set Continual Test-Time Adaptation via Domain Compensation 
+
+# Supplementary Material 
+
+In this appendix, we provide detailed supplementary ma-terials to further clarify and support our framework. We be-gin with additional analysis of DOCO, where we present the full algorithmic procedure, discuss its connection to domain compensation and feature disentanglement, and examine how the learned prompts generalize to unseen domains with extended visualizations. We then describe implementation details, including the construction of corrupted datasets, the configurations of all baselines, and practical considerations such as batch-size stabilizers and the use of source-domain samples. Finally, we report extended experimental results, covering computational efficiency, robustness under differ-ent OOD ratios and corruption severities, and comprehen-sive comparisons across multiple OOD score measurements to validate the stability and effectiveness of DOCO in the OCTTA setting. 
+
+A. Additional Analysis of DOCO 
+
+A.1. Algorithm 
+
+As mentioned in Implementation Details , the prompts conduct a one-time self-supervised update for 50 iterations to refine their initial state. For all subsequent batches we reuse the prompt and perform only a single gradient step. 
+
+A.2. End-to-End Domain Compensation 
+
+Two feature-level routes. Pixel-space restoration ( g−1)could in principle clean inputs before feature extraction, but its ill-posedness risks artifacts propagating to features; we therefore focus on feature-level compensation. A rep-resentative explicit separation route is DICS [28]: during 
+
+training , it learns domain vectors and subtracts them while enforcing same-class cross-domain consistency (DIT), and further promotes class specificity via a memory-driven soft labeling (CST), then deploys a fixed model without using the target stream. In contrast, our route performs test-time, in-process correction: within each batch t, we es-timate the shared factor δt using only likely ID samples, and immediately propagate the learned prompt pt+1 to the whole batch during the forward pass, yielding ϕ(x; pt+1 ) ≈
+
+ϕ(x) − δt ≈ s(x) for both ID and OOD candidates from the same batch. This batch-consistent compensation lever-ages the live stream inside the feature extractor and avoids back-propagating through likely OOD samples. 
+
+Relation to DICS. Both routes aim to expose s(x) by atten-uating domain factors. Empirically, DICS realizes this via 
+
+training-time explicit subtraction plus class-specific con-
+
+Algorithm 1 DOmain COmpensation (DOCO) 
+
+Require: Model fθ = h ◦ ϕ; source labels YS ; cached source statistics (μS , σ S ); frozen classifier weights {wc}c∈Y S ; test stream {B t}Tt=1 ; learning rate η; regularization weight β.
+
+Ensure: Predictions on all batches and updated prompts {pt}. 
+
+> 1:
+
+Initialize the first prompt p1 with Xavier-uniform initializa-tion.  
+
+> 2:
+
+First-batch initialization ( t = 1 ):  
+
+> 3:
+
+Compute raw features Z1,raw = {ϕ(x)}x∈B 1 . 
+
+> 4:
+
+Compute raw prototypical distances by Eq. (9) on Z1,raw . 
+
+> 5:
+
+Run K-Means ( K = 2) on the raw score set Sraw 1 =
+
+{dproto (ϕ(x)) | x ∈ B 1}, and split B1 into ˆBID 1 and ˆBOOD 1
+
+analogously to Eq. (11).  
+
+> 6:
+
+Predict samples in ˆBID 1 using the raw model h(ϕ(x)) . 
+
+> 7:
+
+for k = 1 to 50 do  
+
+> 8:
+
+Update p1 on ˆBID 1 by minimizing LDOCO in Eq. (6).  
+
+> 9:
+
+end for  
+
+> 10:
+
+Set p2 ← p1. 
+
+> 11:
+
+Predict samples in ˆBOOD 1 by Eq. (7) using p2. 
+
+> 12:
+
+for t = 2 to T do  
+
+> 13:
+
+Compute prompted features Zt,p = {ϕ(x; pt)}x∈B t . 
+
+> 14:
+
+Compute prototypical distances by Eq. (9) on Zt,p . 
+
+> 15:
+
+Run K-Means ( K = 2 ) on St = {dproto (z) | z ∈ Zt,p },and obtain ˆBID  
+
+> t
+
+and ˆBOOD  
+
+> t
+
+by Eq. (11).  
+
+> 16:
+
+Predict samples in ˆBID  
+
+> t
+
+using the current prompt pt. 
+
+> 17:
+
+Update the prompt on ˆBID  
+
+> t
+
+by one gradient step on Eq. (6) to obtain pt+1 . 
+
+> 18:
+
+Predict samples in ˆBOOD  
+
+> t
+
+by Eq. (7) using pt+1 . 
+
+> 19:
+
+end for 𝐀 𝐀       
+
+> 𝐀 (𝐀 𝐀 )𝐀 𝐀 =𝐀 (𝐀 ) + 𝐀 𝐀
+> −𝐀 𝐀
+> 𝐀 (𝐀 )𝐀 𝐀
+> 𝐀 (𝐀 𝐀 )
+> 𝐀 (𝐀 𝐀 ,𝐀 𝐀 )
+> ℊ−1
+> ℊ
+> ①
+> ②
+> ③
+
+Figure 9. Three pathways from a corrupted image xt to a domain-invariant feature s(x): (1) pixel restoration (briefly noted), (2) 
+
+training-time explicit separation (DICS), and (3) our test-time in-process correction that learns a batch-conditioned prompt inside 
+
+ϕ(·, p ).
+
+straints, whereas we realize a test-time compensation con-ditioned on the current batch and updated online without 
+
+backprop on likely-OOD data—thereby preventing OOD semantics from contaminating alignment and stabilizing the decision boundary under a frozen head. A.3. Generalization to Unseen Domains 
+
+We evaluate whether the learned prompt generalizes across unseen domains before any update on the new domain. For each domain transition in a sequence, we take the very first target batch (except the first domain for which the prompt is initialized) and compute the statistical misalignment Lstat 
+
+against pre-cached source statistics. We compare (i) the static Source model and (ii) DOCO carrying the prompt updated on previous domains but untouched on the cur-rent one. On both ImageNet-C and LAION-C streams (see Fig. 11 and Fig. 12; six random orders are examined for each), DOCO consistently exhibits a lower initial Lstat , in-dicating a zero-backprop corrective effect that transfers to novel domains. In a few difficult transitions the initial gap is small, yet the loss still decreases rapidly without degra-dation, suggesting the prompt provides a beneficial starting point rather than causing negative transfer. In short, the prompt functions as a batch-wise domain compensator that generalizes to new domains at encounter time, aligning features toward the source geometry and en-abling stable adaptation in OCTTA. 
+
+A.4. Extended visualization results. Easy mode: semantic difference dominates Hard mode: domain shift dominates     
+
+> Source ID
+> Source OOD
+> Domain Shift ID
+> Domain Shift OOD
+> Compensated ID
+> Compensated OOD
+> Figure 10. Semantic and domain shift antagonism
+
+To further visualize this internal mechanism, we present a t-SNE [26] visualization of the feature space in Fig. 10, contrasting a mild domain shift (brightness) with a severe one (fog). In the Hard mode , the severe domain shift over-whelms the semantic differences. This causes the features of both shifted ID ( ×) and OOD ( ×) samples to drift sig-nificantly from their origins and mix together in the fea-ture space. Crucially, DOCO effectively reverses this effect, pulling the compensated features ( + and +) back to align with their corresponding source ID ( •) and OOD ( •) clus-ters. Conversely, in the Easy mode , the intrinsic semantic differences dominate the mild domain shift. Here, aided by our pairwise structural regularizer, DOCO demonstrates its precision by ensuring the compensated features ( + and +)remain tightly anchored to their respective clusters ( • and 
+
+•) without introducing distortion. This confirms DOCO’s dual ability to robustly correct large shifts while delicately preserving feature structures under smaller ones. 
+
+B. Implementation Details 
+
+B.1. Dataset Corruption Settings. 
+
+The LAION-C benchmark features six highly challeng-ing domains: Mosaic, Glitched, Vertical Lines, Geometric Shapes, Stickers, and Luminance Checkerboard . Example corruptions are shown in Fig. 13. To evaluate covariate-shifted OOD robustness, we applied these synthetic corrup-tions to OOD datasets. The specific generation settings for 
+
+mosaic and sticker are as follows: • Tile Pool Source : We used the ImageNet-1K (ILSVRC2012 ) validation set as the tile pool for corruption generation due to its diversity. • Tile Pool Subsampling : To manage memory constraints, we subsampled 5000 images from the 50,000-image val-idation set, sequentially selected and packaged into a 
+
+.tar archive using the WebDataset format, as re-quired by the LAION-C data loader. • Corruption Generation : Corruptions were applied us-ing the curated 5000-image tile pool. All parameters, such as intensity level , and generation protocols followed the default behavior of the LAION-C codebase, except for the specified sub-sampling strategy. We use a fixed random seed when subsampling the 5,000 validation images and generating corruptions to ensure that LAION-C benchmarks are fully reproducible. 
+
+B.2. Baselines. 
+
+For a fair and reproducible comparison, we implement all baseline methods using their official, publicly available codebases. We initialize all hyperparameters and learning rates for each algorithm strictly according to the config-urations recommended by the original authors. The im-plementation of OSTTA is taken from the official UniEnt repository. For the ViDA baseline, we evaluate two back-bone settings: (i) a standard pre-trained model from the 
+
+timm library, and (ii) the pre-trained model released in the official ViDA repository. In the latter case, the low-rank and high-rank ViDA modules are pre-trained, providing a much better initialization than random parameters. In our final results, we report the performance of the ViDA variant that achieves the higher score between these two configura-tions. We consider both backbone settings to avoid penal-izing ViDA due to implementation differences, and always report the better one, while all other baselines are evalu-ated with their official configurations. For STAMP, we fol-low its experimental setup on the ImageNet benchmark and remove the consistency filtering mechanism to avoid dis-carding too many samples. For E-COME, UniEnt, EATA, and DPCore, which require collecting information from the source domain beforehand, we also adhere to their default settings. Specifically, for E-COME, UniEnt, and EATA, the number of source samples used to compute the Fisher infor-mation matrix is set to 2000, while DPCore uses 300 source samples by default. To ensure a fair comparison, DOCO is likewise restricted to only 300 source-domain samples. Moreover, to keep the number of parameters comparable, although DOCO can obtain better performance with a larger prompt number (Fig. 7a), in all main experiments we fix the prompt length to L = 8 , which matches the configuration used by DPCore. 
+
+B.3. Details for Batch Size and Source Number 
+
+Note on omitted points. We provide the data integrity ex-planation of Fig. 7b here for further understanding. DPCore 
+
+at small batches (BS=2/4/8) on mixed data exhibits core-set blowup due to unstable per-batch statistics, rendering runs infeasible. EATA-based variants (EATA, E-COME, UniEnt) at BS=128 are omitted because their GPU memory cost is prohibitive. 
+
+Small-batch stabilizers in DOCO. In the small-batch regime (test batch size ≤ 8) discussed in § Effect on batch size and source number , DOCO enables two lightweight stabilizers that are only activated in this analysis and are disabled in all main results. (1) A FIFO buffer R of a fixed size (we use 64 recent values in our experiments) stores recent proto-distances dproto (z); we run k-means ( K=2 )over scores in R and use the resulting clusters to assign the current batch to ID/OOD, reducing the variance of the split when batches are tiny. (2) We enforce a minimum of one ID sample to update pt; otherwise, we skip adaptation and only perform forward prediction. The structure-preserving reg-ularizer Lreg is the Frobenius norm between the pairwise cosine-similarity matrices of prompted and raw CLS fea-tures, and is evaluated only when the ID subset has at least two samples. 
+
+More details on source number ablation. As a supple-mentary view of Fig. 7c, we additionally provide a 2D source number comparison visualization on Fig. 14. 
+
+C. Extended Experimental Results 
+
+C.1. Computational efficiency 
+
+Tab. 5 reports runtime and memory under the same pro-tocol as the main results: batch size 64 on LAION-C (sev=3) and ImageNet-C (sev=5) . Numbers are shown as “LAION-C/ImageNet-C”. Time is a relative measure nor-malized to Tent = 1 .0 (lower is faster), and Memory is GPU usage (MB). All methods are measured on a single NVIDIA Quadro P6000 GPU under the same implementation, so the relative runtime is directly comparable. Overall, DOCO 
+
+attains the strongest performance in the main tables while keeping moderate overhead—its prompt-based updates add                                                     
+
+> Table 5. Comparison w.r.t computational complexity Method Update Memory(MB) Time H-s (%) Tent [34] Norm 10,094/10,112 1.0/1.0 0.6/23.8 CoTTA [36] All 20,780/21,354 2.8/4.7 18.5/54.8 EATA [29] Norm 12,442/12,442 0.9/0.84 27.9/57.8 SAR [30] Norm 12,542/6,800 1.5/1.6 9.6/54.3 OSTTA [20] Norm 12,944/12,618 1.9/1.9 17.5/58.5 ViDA [24] Adapters 11,812/11,786 8.6/8.7 3.9/48.4 UniEnt [9] Norm 13,944/13,944 1.4/1.4 29.3/65.4 STAMP [42] Norm 9,978/10,070 2.8/2.8 19.5/60.2 E-COME [43] Norm 12,494/12,494 0.7/0.8 19.9/65.2 S-COME [43] Norm 6,966/6,800 1.6/1.6 0.3/45.5 DPCore [44] Prompts 11,424/10,700 3.6/2.0 30.3/62.6
+> DOCO (Ours) Prompts 14,694/16,604 2.1/1.9 32.7/70.1
+
+little computation compared to methods that retrain normal-ization layers or adapters. Notably on the harder LAION-C (sev=3), DPCore’s core-set rapidly grows during the stream, inflating computation and wall-clock time. These results confirm that our in-process prompt correction offers a fa-vorable accuracy–efficiency trade-off in OCTTA. 
+
+C.2. Different OOD percentage 
+
+We thoroughly analyze the impact of varying OOD sample percentages on model performance, with overview Tab. 6 and detailed results for OOD ratios 10% − 40% in Tab. 7 -Tab. 10. DOCO demonstrates strong robustness, delivering consistently high accuracy across all tested OOD ratios, and in particular achieves a 5% favorable improvement over the next-best method DPCore when κ = 0 .4.
+
+C.3. Different severity experiment 
+
+Similarly, we test our method on the LAION-C benchmark with a lower corruption severity level of 1, while keeping the OOD ratio at κ = 0 .5. As shown in Tab. 11, DOCO continues to outperform other methods, securing the high-est average metrics, surpassing the second by 3.4%. This demonstrates that DOCO’s effectiveness is not limited to extreme domain shifts but also holds in scenarios with more subtle corruptions, confirming its consistent superiority. 
+
+C.4. Different OOD Score Measurement 
+
+In the main paper, we adopt the energy-based OOD score as the default choice for computing AUC and H-score. To verify that our conclusions are not tied to a particular score, we further evaluate all methods under three additional main-stream post-hoc OOD scores, including entropy, Max Logit (MLS), and maximum softmax probability (MSP). As sum-marized in Tab. 12, DOCO consistently achieves the best H-score under all four score functions and exhibits only mi-nor variation across them, whereas the strongest competing method reaches at most 65 .36% . These results indicate that DOCO is insensitive to the specific OOD score used for evaluation and remains clearly ahead of existing baselines across different OOD score measurements. Table 6. Results ( %) for ImageNet-to-ImageNet-C benchmark (severity = 5) in OCTTA setting with different OOD samples percentages across six covariate-shifted OOD datasets. All the results are averaged over 15 domains. 
+
+Method 10% 20% 30% 40% 50% Avg. 
+
+ACC AUC H-s ACC AUC H-s ACC AUC H-s ACC AUC H-s ACC AUC H-s ACC AUC H-score Source 49.7 67.9 56.3 49.8 68.1 56.4 49.8 68.2 56.4 49.8 68.1 56.4 49.8 68.0 56.4 49.8 68.1 56.4 Tent [34] 51.2 65.3 55.0 49.2 60.3 51.8 30.0 54.4 31.9 29.1 53.8 31.3 22.4 50.9 23.8 36.4 56.9 38.8 CoTTA [36] 49.9 67.5 56.4 49.9 67.0 56.2 49.8 66.6 56.0 49.8 65.8 55.6 49.5 64.5 54.8 49.8 66.3 55.8 EATA [29] 58.6 70.6 63.5 58.5 70.1 63.3 56.6 69.4 61.2 55.0 67.8 59.6 52.9 67.3 57.8 56.3 69.0 61.1 SAR [30] 57.1 71.9 63.2 56.1 69.2 61.4 54.0 66.8 58.7 52.8 64.5 57.2 50.4 61.5 54.3 54.1 66.8 59.0 OSTTA [20] 58.5 69.3 63.0 58.2 67.3 62.0 57.8 65.7 61.1 57.3 64.2 60.2 56.2 61.9 58.5 57.6 65.7 61.0 ViDA [24] 56.0 70.8 62.1 55.3 63.5 58.4 54.8 57.6 55.0 53.9 52.5 51.6 53.0 47.9 48.4 54.6 58.5 55.1 UniEnt [9] 57.6 75.1 64.5 57.7 75.5 64.7 57.8 76.2 65.1 56.8 76.3 64.2 57.8 77.0 65.4 57.5 76.0 64.8 STAMP [42] 51.3 71.5 59.0 51.5 71.8 59.2 51.3 72.3 59.2 51.9 73.7 60.1 52.0 73.8 60.2 51.6 72.6 59.5 E-COME [43] 58.4 75.7 65.4 58.5 76.0 65.6 57.5 75.1 64.5 53.5 73.1 59.9 58.3 75.5 65.2 57.2 75.1 64.1 S-COME [43] 53.1 69.7 58.9 53.8 70.8 60.0 50.2 67.7 56.1 50.2 68.0 56.4 40.9 63.0 45.5 49.7 67.9 55.4 DPCore [44] 59.0 79.3 67.2 58.3 80.1 66.9 56.8 78.5 65.4 56.2 78.3 64.9 54.1 76.2 62.6 56.9 78.5 65.4 
+
+DOCO (Ours) 61.7 79.8 69.2 62.0 81.0 69.8 61.6 81.0 69.5 61.7 82.0 69.9 61.5 82.7 70.1 61.7 81.3 69.7 
+
+Table 7. Results ( %) for ImageNet-to-ImageNet-C (severity = 5, κ = 0 .1) in OCTTA setting across six covariate-shifted OOD datasets. 
+
+Method Places.–C Texture–C iNatur.–C SUN–C SSB-H.–C NINCO–C Avg. 
+
+ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC H-score Source 49.7 66.5 49.7 70.7 49.7 78.4 49.7 71.6 49.7 56.1 49.7 64.4 49.7 67.9 56.3 Tent [34] 17.2 52.0 57.3 60.0 57.6 78.6 58.0 67.6 58.7 64.8 58.3 68.9 51.2 65.3 54.9 CoTTA [36] 49.9 65.7 49.9 69.9 49.9 77.9 49.9 70.7 50.0 56.4 50.0 64.2 49.9 67.5 56.4 EATA [29] 56.6 66.3 59.5 74.7 58.2 78.6 59.3 73.8 58.4 61.8 59.8 68.2 58.6 70.6 63.5 SAR [30] 57.2 68.0 57.0 74.1 57.0 82.3 57.3 74.5 57.0 62.2 57.1 70.5 57.1 71.9 63.2 OSTTA [20] 58.4 65.7 58.3 66.1 58.5 79.7 58.5 71.8 58.7 63.7 58.7 68.7 58.5 69.3 63.0 ViDA [24] 56.1 71.6 55.5 69.2 55.9 74.2 55.7 69.1 56.4 66.6 56.0 73.9 55.9 70.8 62.1 UniEnt [9] 59.1 73.3 58.7 81.3 57.0 84.3 56.8 79.6 55.0 60.7 58.8 71.5 57.6 75.1 64.5 STAMP [42] 51.2 71.0 51.1 71.3 51.4 82.9 51.4 74.8 51.5 59.7 51.2 69.2 51.3 71.5 59.0 E-COME [43] 58.4 75.9 58.2 78.4 58.4 85.3 58.4 82.1 58.2 60.5 58.7 72.0 58.4 75.7 65.4 S-COME [43] 42.4 65.8 54.3 74.4 54.0 75.7 55.3 76.6 55.4 58.5 57.1 67.4 53.1 69.7 58.9 DPCore [44] 61.5 79.7 61.5 82.5 57.8 93.7 58.0 83.4 59.1 63.2 56.3 73.4 59.0 79.3 67.2 
+
+DOCO (Ours) 61.7 76.8 61.1 82.5 61.9 92.3 62.4 88.0 62.0 64.4 61.3 74.8 61.7 79.8 69.2 
+
+Table 8. Results ( %) for ImageNet-to-ImageNet-C (severity = 5, κ = 0 .2) in OCTTA setting across six covariate-shifted OOD datasets. 
+
+Method Places.–C Texture–C iNatur.–C SUN–C SSB-H.–C NINCO–C Avg. 
+
+ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC H-score Source 49.8 67.0 49.8 70.8 49.8 78.3 49.8 71.6 49.8 56.2 49.8 64.5 49.8 68.1 56.4 Tent [34] 56.9 61.8 31.2 50.7 33.8 57.5 56.8 58.0 58.5 65.5 57.9 68.3 49.2 60.3 51.8 CoTTA [36] 49.9 65.6 49.9 69.0 49.7 77.3 50.0 69.8 49.9 56.3 49.9 64.0 49.9 67.0 56.2 EATA [29] 57.9 66.5 58.5 73.1 58.7 78.4 58.8 73.4 59.2 62.3 57.7 66.9 58.5 70.1 63.3 SAR [30] 56.9 67.5 53.3 67.8 56.0 78.9 56.3 68.1 57.3 62.9 56.8 70.0 56.1 69.2 61.4 OSTTA [20] 58.0 64.5 57.7 62.3 58.0 76.2 58.4 67.8 58.5 64.6 58.3 68.3 58.2 67.3 62.0 ViDA [24] 55.7 69.5 54.5 56.7 55.1 59.6 55.0 57.4 56.2 66.3 55.5 71.6 55.3 63.5 58.4 UniEnt [9] 59.1 73.9 59.5 82.1 52.2 82.6 59.4 82.7 56.7 59.8 59.2 71.8 57.7 75.5 64.7 STAMP [42] 51.6 71.6 51.3 71.6 51.4 83.0 51.4 74.7 51.6 60.0 51.5 69.6 51.5 71.7 59.2 E-COME [43] 59.6 76.7 59.1 79.1 59.1 86.4 56.9 81.8 58.7 60.2 57.9 72.1 58.6 76.1 65.6 S-COME [43] 54.6 72.1 44.9 73.1 55.5 77.2 56.8 77.2 55.8 58.4 55.5 66.9 53.8 70.8 60.0 DPCore [44] 58.4 79.7 58.4 82.8 57.0 93.3 58.4 87.6 60.4 63.1 57.1 74.4 58.3 80.1 66.9 
+
+DOCO (Ours) 62.1 78.4 61.8 83.6 62.5 94.0 61.9 90.0 61.9 64.7 62.1 75.2 62.0 81.0 69.8 Table 9. Results ( %) for ImageNet-to-ImageNet-C (severity = 5, κ = 0 .3) in OCTTA setting across six covariate-shifted OOD datasets. 
+
+Method Places.–C Texture–C iNatur.–C SUN–C SSB-H.–C NINCO–C Avg. 
+
+ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC H-score Source 49.8 67.0 49.8 71.1 49.8 78.7 49.8 71.7 49.8 56.0 49.8 64.5 49.8 68.2 56.4 Tent [34] 18.2 53.5 11.3 46.4 34.3 58.1 41.6 46.6 17.7 54.4 56.9 67.6 30.0 54.4 31.9 CoTTA [36] 49.8 65.2 49.7 68.3 49.8 77.5 50.0 69.1 50.1 55.9 49.6 63.5 49.8 66.6 55.9 EATA [29] 56.0 66.2 56.6 72.2 55.4 76.7 54.8 72.8 58.1 60.8 58.6 67.4 56.6 69.4 61.2 SAR [30] 54.8 66.1 50.0 63.6 54.2 78.7 52.8 61.5 57.3 62.2 54.7 68.9 54.0 66.8 58.7 OSTTA [20] 58.1 63.2 57.1 59.8 56.6 74.3 57.7 65.0 58.8 63.9 58.4 68.0 57.8 65.7 61.1 ViDA [24] 55.1 66.7 54.0 48.7 54.6 50.0 53.9 46.7 56.1 64.5 55.1 69.2 54.8 57.6 55.0 UniEnt [9] 56.1 73.2 59.0 82.8 59.8 89.8 57.1 81.2 56.6 58.7 58.1 71.8 57.8 76.2 65.1 STAMP [42] 51.1 71.8 51.0 72.7 51.5 83.9 51.2 75.6 51.7 60.0 51.4 70.0 51.3 72.3 59.2 E-COME [43] 58.9 76.5 57.3 78.1 54.5 82.2 58.0 82.6 58.1 59.0 58.4 72.1 57.5 75.1 64.5 S-COME [43] 29.9 57.1 55.4 75.5 54.2 75.1 55.0 76.3 53.4 56.4 53.7 66.1 50.2 67.7 56.1 DPCore [44] 57.5 76.1 55.1 80.5 57.0 89.2 57.3 86.4 58.0 63.5 55.8 75.1 56.8 78.5 65.4 
+
+DOCO (Ours) 61.4 79.0 61.6 83.4 61.6 94.3 61.5 89.5 62.1 64.4 61.4 75.3 61.6 81.0 69.5 
+
+Table 10. Results ( %) for ImageNet-to-ImageNet-C (severity = 5, κ = 0 .4) in OCTTA setting across six covariate-shifted OOD datasets. 
+
+Method Places.–C Texture–C iNatur.–C SUN–C SSB-H.–C NINCO–C Avg. 
+
+ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC H-score Source 49.8 66.9 49.8 70.9 49.8 78.6 49.8 71.7 49.8 56.2 49.8 64.3 49.8 68.1 56.4 Tent [34] 26.1 51.8 6.0 53.1 14.3 47.2 17.2 41.7 58.2 64.3 52.4 64.8 29.0 53.8 31.3 CoTTA [36] 49.8 64.2 49.4 67.3 49.8 76.6 49.9 67.8 50.1 55.9 49.6 62.8 49.8 65.8 55.6 EATA [29] 55.8 65.6 52.8 69.5 54.8 75.5 54.6 72.1 56.3 58.1 55.8 66.0 55.0 67.8 59.6 SAR [30] 54.6 64.8 44.8 59.0 53.5 70.3 52.8 63.2 57.0 61.8 54.4 68.1 52.8 64.5 57.2 OSTTA [20] 58.0 62.1 56.7 57.7 54.9 71.3 57.1 62.6 58.8 63.8 58.2 67.5 57.3 64.2 60.2 ViDA [24] 54.0 63.2 52.9 40.4 53.9 42.5 52.7 38.7 55.8 63.6 54.0 66.5 53.9 52.5 51.6 UniEnt [9] 57.6 72.7 56.6 81.1 56.3 88.2 55.9 82.7 58.9 62.2 55.3 71.0 56.7 76.3 64.1 STAMP [42] 52.0 72.5 51.9 75.0 51.8 85.4 51.9 77.3 51.9 60.7 52.0 71.1 51.9 73.7 60.1 E-COME [43] 54.8 74.6 56.9 78.0 59.2 86.2 34.4 70.3 59.1 59.1 56.4 70.7 53.5 73.1 59.9 S-COME [43] 54.9 71.6 53.1 73.5 53.9 76.2 36.7 64.5 49.7 56.3 53.2 65.7 50.2 68.0 56.4 DPCore [44] 56.9 77.3 58.7 82.5 50.6 86.5 54.9 83.5 60.0 64.6 56.5 75.6 56.2 78.3 64.9 
+
+DOCO (Ours) 62.4 80.1 62.1 84.6 61.3 95.5 60.5 90.8 61.9 65.2 62.1 75.8 61.7 82.0 69.9 
+
+Table 11. Results ( %) for LAION-C benchmark (severity = 1, κ = 0 .5) in OCTTA setting across six covariate-shifted OOD datasets. All the results are averaged over 6 constantly switching domains. -L stands for applying LAION-C corruption to OOD dataset. 
+
+Method Places.–L Texture–L iNatur.–L SUN–L SSB-H.–L NINCO–L Avg. 
+
+ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC ACC AUC H-score Source 51.4 63.8 51.4 68.9 51.4 77.7 51.4 72.6 51.4 60.8 51.4 66.5 51.4 68.4 57.2 Tent (ICLR’21) 2.5 47.9 2.8 50.9 1.6 39.6 1.7 54.1 2.5 53.8 2.1 51.9 2.2 49.7 3.5 CoTTA (CVPR’22) 51.3 61.6 51.3 65.0 51.3 72.4 51.2 68.8 51.3 60.8 50.4 64.1 51.1 65.4 55.9 EATA (ICML’22) 61.7 64.5 61.6 72.4 59.9 78.5 60.7 77.0 61.9 62.6 61.9 65.2 61.3 70.0 64.9 SAR (ICLR’23) 29.1 52.2 39.6 56.3 31.6 57.5 32.4 58.0 52.2 61.8 51.5 66.7 39.4 58.7 44.4 OSTTA (ICCV’23) 56.8 58.1 54.6 55.1 52.2 60.5 54.5 60.2 57.9 63.1 57.2 64.1 55.5 60.2 57.0 ViDA (ICLR’24) 30.8 46.8 33.6 45.0 29.1 37.4 29.5 42.1 35.0 62.2 29.7 55.3 31.3 48.1 34.2 UniEnt (CVPR’24) 61.4 70.6 61.2 82.1 61.0 88.2 61.2 85.0 60.7 64.0 60.8 69.3 61.0 76.5 67.3 STAMP (ECCV’24) 51.3 68.0 51.2 67.7 51.2 75.1 51.3 70.9 51.2 62.2 51.2 67.8 51.2 68.6 57.7 E-COME (ICLR’25) 60.5 73.3 48.7 72.2 59.9 86.5 61.0 81.4 60.9 59.6 59.9 70.1 58.5 73.8 64.2 S-COME (ICLR’25) 1.8 46.3 12.4 53.9 16.2 53.2 1.5 55.1 59.6 57.0 48.1 61.9 23.3 54.6 25.1 DPCore (ICML’25) 65.2 78.8 62.3 80.4 52.9 86.5 62.9 87.1 64.6 67.8 62.3 75.9 61.7 79.4 68.9 
+
+DOCO (Ours) 66.9 77.6 65.7 82.4 64.9 94.9 65.4 89.7 66.2 68.8 64.7 75.7 65.6 81.5 72.3 Bright 
+
+Pixel 
+
+Gauss. 
+
+Motion 
+
+Zoom 
+
+Glass 
+
+Impulse 
+
+JPEG 
+
+Defocus 
+
+Elastic 
+
+Shot 
+
+Frost 
+
+Snow 
+
+Fog 
+
+Contrast 
+
+10 
+
+15 
+
+20 
+
+25 
+
+30 
+
+35 
+
+40 
+
+45 
+
+> Loss Value
+
+Prompted Loss 
+
+Source Loss 
+
+Prompted First Batch Loss 
+
+Raw First Batch Loss 
+
+Zero-shot Prompt Advantage at Domain Entry JPEG 
+
+Shot 
+
+Zoom 
+
+Frost 
+
+Contrast 
+
+Fog 
+
+Defocus 
+
+Elastic 
+
+Gauss. 
+
+Bright 
+
+Glass 
+
+Impulse 
+
+Pixel 
+
+Snow 
+
+Motion 
+
+10 
+
+15 
+
+20 
+
+25 
+
+30 
+
+35 
+
+40 
+
+45 
+
+> Loss Value
+
+Shot 
+
+Fog 
+
+Glass 
+
+Pixel 
+
+Snow 
+
+Elastic 
+
+Bright 
+
+Impulse 
+
+Defocus 
+
+Frost 
+
+Contrast 
+
+Gauss. 
+
+Motion 
+
+JPEG 
+
+Zoom 
+
+10 
+
+15 
+
+20 
+
+25 
+
+30 
+
+35 
+
+40 
+
+45 
+
+> Loss Value
+
+Pixel 
+
+Glass 
+
+Zoom 
+
+Snow 
+
+Fog 
+
+Impulse 
+
+Bright 
+
+Motion 
+
+Frost 
+
+JPEG 
+
+Gauss. 
+
+Shot 
+
+Contrast 
+
+Defocus 
+
+Elastic 
+
+10 
+
+15 
+
+20 
+
+25 
+
+30 
+
+35 
+
+40 
+
+45 
+
+> Loss Value
+
+Motion 
+
+Snow 
+
+Fog 
+
+Shot 
+
+Defocus 
+
+Contrast 
+
+Zoom 
+
+Bright 
+
+Frost 
+
+Elastic 
+
+Glass 
+
+Gauss. 
+
+Pixel 
+
+JPEG 
+
+Impulse 
+
+10 
+
+15 
+
+20 
+
+25 
+
+30 
+
+35 
+
+40 
+
+45 
+
+> Loss Value
+
+Frost 
+
+Impulse 
+
+JPEG 
+
+Contrast 
+
+Zoom 
+
+Glass 
+
+Pixel 
+
+Snow 
+
+Defocus 
+
+Motion 
+
+Bright 
+
+Elastic 
+
+Shot 
+
+Fog 
+
+Gauss. 
+
+10 
+
+15 
+
+20 
+
+25 
+
+30 
+
+35 
+
+40 
+
+45 
+
+> Loss Value
+
+Figure 11. First-batch statistical loss per domain in six different OCTTA orders (ImageNet-C, κ = 0 .5). Mosaic 
+
+Vertical Lines 
+
+Glitched 
+
+Luminance 
+
+Geometric Shapes 
+
+Sticker 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+> Loss Value
+
+Geometric Shapes 
+
+Luminance 
+
+Mosaic 
+
+Glitched 
+
+Sticker 
+
+Vertical Lines 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+> Loss Value
+
+Luminance 
+
+Geometric Shapes 
+
+Vertical Lines 
+
+Sticker 
+
+Glitched 
+
+Mosaic 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+> Loss Value
+
+Glitched 
+
+Luminance 
+
+Sticker 
+
+Vertical Lines 
+
+Mosaic 
+
+Geometric Shapes 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+> Loss Value
+
+Vertical Lines 
+
+Sticker 
+
+Mosaic 
+
+Geometric Shapes 
+
+Luminance 
+
+Glitched 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+> Loss Value
+
+Sticker 
+
+Glitched 
+
+Mosaic 
+
+Geometric Shapes 
+
+Vertical Lines 
+
+Luminance 
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+> Loss Value
+
+Figure 12. First-batch statistical loss per domain in six different OCTTA orders (LAION-C, κ = 0 .5). Mosaic Glitched Geometric Shapes Luminance Checkerboard Stickers Vertical Lines 
+
+> Severity = 1 Severity = 3
+
+Figure 13. Examples of six LAION-C corruption types. 10 50 100 300 500 1000 2000 5000 
+
+> Number of Source Samples (Log Scale)
+> 52
+> 54
+> 56
+> 58
+> 60
+> 62
+> Accuracy (%)
+> DOCO(Ours)
+> DPCore
+> E-COME
+> EATA
+> UniEnt
+
+(a) Accuracy(%) 10 50 100 300 500 1000 2000 5000  
+
+> Number of Source Samples (Log Scale)
+> 64
+> 66
+> 68
+> 70
+> 72
+> 74
+> 76
+> 78
+> 80
+> AUC (%)  DOCO(Ours)
+> DPCore
+> E-COME
+> EATA
+> UniEnt
+
+(b) AUC(%) 10 50 100 300 500 1000 2000 5000  
+
+> Number of Source Samples (Log Scale)
+> 56
+> 58
+> 60
+> 62
+> 64
+> 66
+> 68
+> 70
+> H-Score (%)
+> DOCO(Ours)
+> DPCore
+> E-COME
+> EATA
+> UniEnt
+
+(c) H-score(%) 
+
+Figure 14. Source-number and small-batch ablations. (a)–(c): Accuracy, AUC, and H-score vs. number of source samples (log scale). 
+
+Method OOD score Mean ±Std Ent MLS Energy MSP Source 57.29 57.02 56.37 56.96 56.91 ±0.39 Tent [34] 24.25 23.99 23.82 24.11 24.04 ±0.18 CoTTA [36] 56.25 55.42 54.79 55.82 55.57 ±0.62 EATA [29] 57.98 57.84 57.77 57.29 57.72 ±0.30 SAR [30] 55.10 54.51 54.31 54.63 54.64 ±0.34 OSTTA [20] 60.39 58.92 58.51 59.82 59.41 ±0.85 ViDA [24] 48.03 48.22 48.40 47.92 48.14 ±0.21 UniEnt [9] 64.95 65.25 65.39 64.02 64.90 ±0.62 STAMP [42] 60.16 59.94 60.18 59.94 60.05 ±0.13 E-COME [43] 65.36 65.00 65.22 64.73 65.08 ±0.27 S-COME [43] 45.87 45.53 45.47 45.37 45.56 ±0.22 DPCore [44] 62.12 61.76 62.62 61.05 61.89 ±0.66 
+
+DOCO (Ours) 69.57 69.38 70.10 68.45 69.38 ±0.69 
+
+Table 12. H-score results on ImageNet-C with κ = 0 .5, sev = 5 .

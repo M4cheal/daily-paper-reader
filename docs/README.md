@@ -6,58 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-23
-- 运行时间：2026-04-23 20:38:56 UTC
+- 最新运行日期：2026-04-26
+- 运行时间：2026-04-26 20:22:11 UTC
 - 运行状态：成功
-- 本次总论文数：12
-- 精读区：1
+- 本次总论文数：17
+- 精读区：6
 - 速读区：11
 
 ### 今日简报（AI）
-今日精选 12 篇前沿论文，深度剖析了 Looped Transformer 的稳定性理论，并涵盖了具身智能与高效微调等热门领域。
-重点关注循环架构在泛化性能上的数学表现，以及 OmniVLA-RL 在空间理解与在线强化学习中的最新突破。
-建议优先研读 Looped Transformer 的稳定性分析，以掌握大模型底层架构演进与泛化能力的理论逻辑。
-- 详情：[/202604/23/README](/202604/23/README)
+今日深度解析 17 篇 AI 论文，聚焦视觉语言模型（VLM）在空间推理与测试时自适应（TTA）上的突破性进展。
+满分研究 SpatiO 与 Prototype-Based TTA 证明了动态编排与原型学习是解决多模态模型泛化难题的关键。
+建议开发者重点关注测试时优化技术，以低成本提升模型在复杂多变环境下的推理表现与鲁棒性。
+- 详情：[/202604/26/README](/202604/26/README)
 
 ### 精读区论文标签
-1. [Stability and Generalization in Looped Transformers](/202604/23/2604.15259v2-stability-and-generalization-in-looped-transformers)  
-   标签：评分：8.0/10、query:tta
-   evidence：测试时间计算缩放与稳定性分析
+1. [SpatiO: Adaptive Test-Time Orchestration of Vision-Language Agents for Spatial Reasoning](/202604/26/2604.21190v1-spatio-adaptive-test-time-orchestration-of-vision-language-agents-for-spatial-reasoning)  
+   标签：评分：10.0/10、query:tta
+   evidence：视觉语言智能体的自适应测试时间编排
+2. [Prototype-Based Test-Time Adaptation of Vision-Language Models](/202604/26/2604.21360v1-prototype-based-test-time-adaptation-of-vision-language-models)  
+   标签：评分：10.0/10、query:tta
+   evidence：基于原型的视觉语言模型测试时间自适应
+3. [Ramen: Robust Test-Time Adaptation of Vision-Language Models with Active Sample Selection](/202604/26/2604.21728v1-ramen-robust-test-time-adaptation-of-vision-language-models-with-active-sample-selection)  
+   标签：评分：10.0/10、query:tta
+   evidence：视觉语言模型的鲁棒测试时间自适应
+4. [Back to Source: Open-Set Continual Test-Time Adaptation via Domain Compensation](/202604/26/2604.21772v1-back-to-source-open-set-continual-test-time-adaptation-via-domain-compensation)  
+   标签：评分：10.0/10、query:tta
+   evidence：提出了一种针对开放集持续测试时间自适应（OCTTA）的框架
+5. [Absorber LLM: Harnessing Causal Synchronization for Test-Time Training](/202604/26/2604.20915v1-absorber-llm-harnessing-causal-synchronization-for-test-time-training)  
+   标签：评分：9.0/10、query:tta
+   evidence：用于测试时间训练的自监督因果同步
+6. [Adaptive Test-Time Compute Allocation with Evolving In-Context Demonstrations](/202604/26/2604.21018v1-adaptive-test-time-compute-allocation-with-evolving-in-context-demonstrations)  
+   标签：评分：9.0/10、query:tta
+   evidence：利用测试集样本自适应调整生成过程的测试时计算分配框架
 
 ### 速读区论文标签
-1. [OmniVLA-RL: A Vision-Language-Action Model with Spatial Understanding and Online RL](/202604/23/2604.17706v1-omnivla-rl-a-vision-language-action-model-with-spatial-understanding-and-online-rl)  
+1. [ReCAPA: Hierarchical Predictive Correction to Mitigate Cascading Failures](/202604/26/2604.21232v1-recapa-hierarchical-predictive-correction-to-mitigate-cascading-failures)  
+   标签：评分：8.0/10、query:tta
+   evidence：针对视觉-语言-动作系统的后置修正机制
+2. [No-Worse Context-Aware Decoding: Preventing Neutral Regression in Context-Conditioned Generation](/202604/26/2604.16686v1-no-worse-context-aware-decoding-preventing-neutral-regression-in-context-conditioned-generation)  
    标签：评分：7.0/10、query:tta
-   evidence：具有在线强化学习的视觉-语言-动作模型，用于具身智能适配
-2. [HiP-LoRA: Budgeted Spectral Plasticity for Robust Low-Rank Adaptation](/202604/23/2604.17751v1-hip-lora-budgeted-spectral-plasticity-for-robust-low-rank-adaptation)  
+   evidence：用于上下文条件生成的解码时间适配器
+3. [RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware Black-Box Optimization in Non-Stationary Environments](/202604/26/2604.18026v1-rasp-tuner-retrieval-augmented-soft-prompts-for-context-aware-black-box-optimization-in-non-stationary-environments)  
    标签：评分：7.0/10、query:tta
-   evidence：用于鲁棒低秩适配和稳定性的频谱感知适配框架
-3. [Enhancing Continual Learning of Vision-Language Models via Dynamic Prefix Weighting](/202604/23/2604.18075v1-enhancing-continual-learning-of-vision-language-models-via-dynamic-prefix-weighting)  
+   evidence：非平稳环境下的在线调优与自适应成本
+4. [Mask World Model: Predicting What Matters for Robust Robot Policy Learning](/202604/26/2604.19683v2-mask-world-model-predicting-what-matters-for-robust-robot-policy-learning)  
    标签：评分：7.0/10、query:tta
-   evidence：视觉语言模型的领域类增量学习与自适应
-4. [Revisiting Change VQA in Remote Sensing with Structured and Native Multimodal Qwen Models](/202604/23/2604.18429v1-revisiting-change-vqa-in-remote-sensing-with-structured-and-native-multimodal-qwen-models)  
+   evidence：用于鲁棒机器人策略学习的世界模型
+5. [Efficient Reinforcement Learning using Linear Koopman Dynamics for Nonlinear Robotic Systems](/202604/26/2604.19980v1-efficient-reinforcement-learning-using-linear-koopman-dynamics-for-nonlinear-robotic-systems)  
    标签：评分：7.0/10、query:tta
-   evidence：针对变化视觉问答的低秩自适应(LoRA)
-5. [RDP LoRA: Geometry-Driven Identification for Parameter-Efficient Adaptation in Large Language Models](/202604/23/2604.19321v1-rdp-lora-geometry-driven-identification-for-parameter-efficient-adaptation-in-large-language-models)  
+   evidence：针对流式交互数据的在线小批量策略梯度框架
+6. [Adaptive Conformal Anomaly Detection with Time Series Foundation Models for Signal Monitoring](/202604/26/2604.20122v1-adaptive-conformal-anomaly-detection-with-time-series-foundation-models-for-signal-monitoring)  
    标签：评分：7.0/10、query:tta
-   evidence：大语言模型中基于几何识别的参数高效自适应技术
-6. [Mask World Model: Predicting What Matters for Robust Robot Policy Learning](/202604/23/2604.19683v1-mask-world-model-predicting-what-matters-for-robust-robot-policy-learning)  
+   evidence：针对分布偏移的基础模型事后自适应方法
+7. [Temporal Difference Calibration in Sequential Tasks: Application to Vision-Language-Action Models](/202604/26/2604.20472v1-temporal-difference-calibration-in-sequential-tasks-application-to-vision-language-action-models)  
    标签：评分：7.0/10、query:tta
-   evidence：使用语义掩码进行鲁棒机器人策略学习的世界模型
-7. [TLoRA+: A Low-Rank Parameter-Efficient Fine-Tuning Method for Large Language Models](/202604/23/2604.13368v1-tlora-a-low-rank-parameter-efficient-fine-tuning-method-for-large-language-models)  
+   evidence：专注于机器人序列任务中视觉-语言-动作（VLA）模型的不确定性校准。
+8. [Efficient Test-Time Inference via Deterministic Exploration of Truncated Decoding Trees](/202604/26/2604.20500v1-efficient-test-time-inference-via-deterministic-exploration-of-truncated-decoding-trees)  
+   标签：评分：7.0/10、query:tta
+   evidence：通过确定性解码实现高效的测试时间推理
+9. [OASIS: On-Demand Hierarchical Event Memory for Streaming Video Reasoning](/202604/26/2604.17052v1-oasis-on-demand-hierarchical-event-memory-for-streaming-video-reasoning)  
    标签：评分：6.0/10、query:tta
-   evidence：用于将预训练模型适配到特定任务的参数高效微调方法
-8. [Shuffle the Context: RoPE-Perturbed Self-Distillation for Long-Context Adaptation](/202604/23/2604.14339v1-shuffle-the-context-rope-perturbed-self-distillation-for-long-context-adaptation)  
+   evidence：针对历史无限增长的流式视频推理的按需检索技术。
+10. [Continual Safety Alignment via Gradient-Based Sample Selection](/202604/26/2604.17215v1-continual-safety-alignment-via-gradient-based-sample-selection)  
    标签：评分：6.0/10、query:tta
-   evidence：大语言模型的长文本自适应
-9. [Response-Aware User Memory Selection for LLM Personalization](/202604/23/2604.14473v1-response-aware-user-memory-selection-for-llm-personalization)  
+   evidence：在保持安全对齐的同时持续适应新任务
+11. [Waking Up Blind: Cold-Start Optimization of Supervision-Free Agentic Trajectories for Grounded Visual Perception](/202604/26/2604.17475v1-waking-up-blind-cold-start-optimization-of-supervision-free-agentic-trajectories-for-grounded-visual-perception)  
    标签：评分：6.0/10、query:tta
-   evidence：推理时的记忆选择以引导模型生成
-10. [P3T: Prototypical Point-level Prompt Tuning with Enhanced Generalization for 3D Vision-Language Models](/202604/23/2604.15703v1-p3t-prototypical-point-level-prompt-tuning-with-enhanced-generalization-for-3d-vision-language-models)  
-   标签：评分：6.0/10、query:tta
-   evidence：3D 视觉语言模型的提示微调
-11. [JumpLoRA: Sparse Adapters for Continual Learning in Large Language Models](/202604/23/2604.16171v1-jumplora-sparse-adapters-for-continual-learning-in-large-language-models)  
-   标签：评分：6.0/10、query:tta
-   evidence：模型适配中LoRA块的持续学习和自适应稀疏性
+   evidence：针对小型视觉语言模型的无监督框架
 
 
 <div class="dpr-home-promo-card">

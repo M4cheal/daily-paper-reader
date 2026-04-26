@@ -1,0 +1,1273 @@
+Title: RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware Black-Box Optimization in Non-Stationary Environments
+
+URL Source: https://arxiv.org/pdf/2604.18026v1
+
+Published Time: Tue, 21 Apr 2026 03:03:53 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware Black-Box Optimization in Non-Stationary Environments 
+
+Enze Pan 1
+
+## Abstract 
+
+Many deployed systems expose black-box ob-jectives whose minimizing configuration shifts with an externally observed context. When con-texts revisit a small set of latent regimes, an op-timizer that discards history pays repeated adap-tation cost; when each step must remain inex-pensive, full Gaussian-process (GP) refits at high observation counts are difficult to sustain. We cast online tuning as context-conditioned regret minimization and present RASP-Tuner , which instantiates a decomposition motivated by first principles: (i) identify a regime proxy by re-trieving similar past contexts; (ii) predict short-horizon loss with a mixture-of-experts surrogate whose input concatenates parameters, context, and a retrieved soft prompt; (iii) adapt chiefly in a low-dimensional prompt subspace, invoking full surrogate updates only when scalarized error or disagreement spikes. A RealErrorComposer maps heterogeneous streaming metrics to [0 , 1] 
+
+via EMA-stabilized logistic scores, supplying a single differentiable training target. On nine syn-thetic non-stationary benchmarks, an adversarial-context sanity check, and three tabular real-world streams (Section 6.4), RASP-Tuner improves or matches cumulative regret relative to our GP-UCB and CMA-ES implementations on seven of nine synthetic tasks under paired tests at hori-zon T =100 , while recording 8–12 × lower wall-clock per step than sliding-window GP-UCB on identical hardware. Idealized analysis in a cluster-separated, strongly convex regime model (RA-GD) supplies sufficient conditions for bounded dynamic regret; the deployed pipeline violates several of these premises, and we articulate which gaps remain open. 
+
+> 1
+
+Department of Computer Science, The Univer-sity of Hong Kong. Correspondence to: Enze Pan 
+
+<u3665478@connect.hku.hk >.
+
+Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s). 
+
+## 1. Introduction 
+
+Black-box optimization (BBO) underpins tuning of con-trollers, hyperparameters, database knobs, and resource allocations when gradients are unavailable or unreliable. Stationary textbook models rarely match deployment: light-ing, workload, and wear induce shifts in the mapping from decision variables to performance. A recurring empirical structure—also emphasized in non-stationary bandit litera-ture (Wei & Luo, 2021; Hamadanian et al., 2023)—is that 
+
+context vectors (sensors, embeddings, logs) trace trajecto-ries that intermittently revisit a small number of operational modes. The prevailing algorithmic split poses a tension. Covariance-matrix adaptation strategies such as CMA-ES (Hansen & Ostermeier, 2001) maintain low per-step cost and strong local search, yet their state is tied to the evolutionary path rather than to explicit context–solution associations; when a mode returns, the optimizer may expend fresh samples to relocate an optimum already visited (Hamadanian et al., 2023). Contextual GP-UCB-style methods (Krause & Ong, 2011) specify a surrogate over (θ, c) and inherit GP regret machinery in stylized regimes, but exact GP inference scales cubically in the observation count and becomes costly when evaluations arrive at high cadence unless additional structure or approximations are introduced (Snelson & Ghahramani, 2005; Wilson et al., 2016; Shahriari et al., 2015). Retrieval-conditioned adaptation from NLP (Lewis et al., 2020; Lester et al., 2021; Khandelwal et al., 2020; Shi et al., 2023; Anantha et al., 2023) offers a different decomposition: retrieve a compact conditioning signal, update only a thin adapter, leave bulk parameters stable (Tang et al., 2022; Cao & Wang, 2022; Anupam et al., 2025). The analogy to BBO is not identity—prediction errors and exploration bonuses differ—but the information flow parallels our setting: reuse past successful evaluations indexed by context rather than re-fit a monolithic global model each step. 
+
+Mechanism-level contribution. We instantiate the de-composition as RASP-Tuner :• PromptMemory stores context keys, historical bests, and learnable soft prompts; nearest-neighbor retrieval 1
+
+> arXiv:2604.18026v1 [cs.LG] 20 Apr 2026 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO
+
+with softmax weights yields a regime proxy and a con-vex “hint” in parameter space. • Prompt-MoE surrogate predicts scalarized loss and an ambiguity score from ( ˜θ, c, p); gating allocates ca-pacity across experts while prompts shift the effective input embedding. • Hybrid adaptation applies gradient steps to retrieved prompts at almost every step, reserving full expert/gate updates for high-error or high-disagreement events, with replay and anchoring to limit interference between regimes. • RealErrorComposer maps multi-metric feedback to 
+
+[0 , 1] using EMA-tracked moments and polarity-aware logistic maps (Gupta et al., 2025), yielding one dif-ferentiable target; Section 4 formalizes when convex aggregation of badness scores preserves monotonicity in the latent loss. An implementation-agnostic description accompanies the release of code and environment constructors at camera-ready time. 
+
+Empirical scope. We constructed nine non-stationary, context-rich synthetic benchmarks (LLM serving, AutoML stream, robot ISP, wafer drift, switching LQR, flash-crowd server, real-trace replay, plus convex sanity checks) and one 
+
+Adversarial Context task where ct is pure noise, isolating failure when the contextual signal is uninformative. Formal specifications appear in Appendix A. 
+
+Claims and scope. 
+
+1. Architecture. We integrate retrieval, soft prompts, and MoE surrogates into a single online agent with explicit scalarization and hybrid updates (Gupta et al., 2025; Wang et al., 2025). 2. Benchmarks. We publish reproducible generators for drifting, switching, and trace-replay dynamics (Wei & Luo, 2021; Hamadanian et al., 2023), plus three public tabular streams with induced drift (Section 6.4). 3. Evidence and theory. Under T =100 , five seeds, and fixed hyperparameters (Table 2), RASP-Tuner achieves lower mean regret than the stronger of GP-UCB and CMA-ES on seven of nine tasks at p< 0.05 paired t-tests, with 8–12 × lower measured per-step latency than our GP-UCB configuration (Section 5.1). Section 4 and Appendix D supply sufficient conditions—cluster sep-aration, strong convexity per regime, exact or bounded-gradient surrogates—under which idealized variants admit bounded dynamic regret; the non-convex MoE deployed in experiments falls outside the scope of these certificates. 
+
+## 2. Related Work 
+
+Bayesian optimization and contextual variants. 
+
+Gaussian-process BO remains the reference class for low-dimensional, moderate-budget stationary objec-tives (Shahriari et al., 2015; Krause & Ong, 2011). Finite-time analyses of GP-UCB and variants prescribe exploration bonuses tied to posterior variance; contextual kernels over (θ, c) extend the hypothesis space but inherit 
+
+O(N 3) inference unless sparsity, inducing points, or deep kernels intervene (Snelson & Ghahramani, 2005; Wilson et al., 2016; Shahriari et al., 2015). Non-stationary formula-tions inject time or drift processes into the prior (Bogunovic et al., 2016); dynamic regret in online convex optimization scales with variation budgets when the comparator path may shift (Besbes et al., 2015; Hall & Willett, 2015; Wei & Luo, 2021). Those frameworks seldom assume finitely recurring context clusters—the structural pattern our benchmarks emphasize. 
+
+Evolutionary and population-based search. CMA-ES (Hansen & Ostermeier, 2001) tracks local geometry via covariance adaptation with low overhead per generation. Hyperparameter and architecture search pipelines (Bergstra & Bengio, 2012; Snoek et al., 2012) build on similar search primitives. Without an explicit context channel, the learner’s state summarizes recent samples rather than an indexed set of past modes, which informs our choice of memory-augmented comparisons. 
+
+Meta-learning and learned optimizers. Offline meta-learning fits initializations or recurrent update rules on task families (Finn et al., 2017; Andrychowicz et al., 2016). RASP-Tuner instead constructs its memory online and does not assume a pretraining corpus of tasks (Liu et al., 2025); the distinction matters for credit assignment when evalua-tion budgets are thin. 
+
+Retrieval and soft prompts. Prefix and soft-prompt meth-ods reshape transformer activations with a small trainable tensor (Lester et al., 2021); retrieval augments paramet-ric prediction with nearest-neighbor evidence (Lewis et al., 2020; Shi et al., 2023; Khandelwal et al., 2020). We trans-plant the control flow —retrieve, condition, adapt narrowly— to regret minimization: prompts gate the surrogate forward map, while retrieval selects which past evaluations anchor the prompt (Tang et al., 2022; Cao & Wang, 2022; Anantha et al., 2023; Chu et al., 2025; Hou et al., 2023; Shi et al., 2025; Anupam et al., 2025). 
+
+Scalable BO baselines (positioning). TPE (Bergstra & Bengio, 2012), random forests, and trust-region BO variants often dominate raw global GP-UCB at moderate N on tabu-lar search spaces. Transfer and multi-task BO, warm-started 2RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+Table 1. Notation used in Section 3 (selected). SYMBOL MEANING 
+
+ct OBSERVED CONTEXT VECTOR (INPUT TO RETRIEVAL AND SURROGATE ). 
+
+ωt LATENT ENVIRONMENT CONDITION AFFECTING f (NON -STATIONARITY ). 
+
+mt RAW METRIC DICTIONARY RETURNED AFTER EVALUATION .
+
+et ∈ [0 , 1] REAL ERROR COMPOSER OUTPUT (NORMALIZED SCALAR “BADNESS ”). 
+
+θHINT  
+
+> t
+
+CONVEX COMBINATION OF HISTORICAL BEST θ FROM RETRIEVED MEMORIES .
+
+evolutionary runs, and hybrid memory–surrogate designs are direct competitors under recurrence. Section 6 reports sliding-window GP-UCB and CMA-ES; Section 7 records which additional baselines remain unimplemented. 
+
+## 3. Method: RASP-Tuner 
+
+First-principles decomposition. Regret accumu-lates whenever the optimizer deploys θt far from 
+
+arg min θ f (θ, ω t). Under piecewise stationary ωt, three bottlenecks recur: (i) inferring which latent mode is active from ct; (ii) approximating the conditional loss f (·, ω t)
+
+with limited capacity; (iii) allocating compute between revising the global surrogate and adapting a lightweight correction. RASP-Tuner maps (i) to k-NN retrieval over stored contexts, (ii) to a gated MoE regressor on 
+
+( ˜θ, c, p), and (iii) to prompt-only stochastic updates with occasional full-network steps triggered by scalarized error or inter-expert disagreement. The design trades certifiable global optimality of the surrogate for O(1) forward depth at inference and bounded-dimensional prompt updates—an explicit inductive bias aligned with recurring contexts but misspecified when ct carries no information about ωt
+
+(Section 6.3). 
+
+3.1. Problem Formulation 
+
+At each step t = 1 , 2, . . . , T , the environment reveals a context vector ct ∈ Rdc and a latent condition ωt ∈ Ω that captures non-stationarity (the optimizer does not assume access to a closed form of f beyond noisy evaluations). The tuner chooses parameters θt ∈ Θ ⊂ Rd within box constraints Θ = {θ | ℓ ≤ θ ≤ u}. After deploying θt, the environment returns a dictionary of possibly noisy metrics 
+
+mt : K → R, e.g. validation error, energy, latency. Adomain-specific true loss function f : Θ × Ω → R (not directly observed) induces instantaneous regret 
+
+rt = f (θt, ω t) − min  
+
+> θ∈Θ
+
+f (θ, ω t). (1) Our goal is to minimize cumulative regret RT = PTt=1 rt
+
+while satisfying strict computational and memory budgets. Non-stationarity means that ωt evolves over time, often in a structured way (drifts, regime switches, trace replay). 
+
+3.2. ParamBounds and Normalization 
+
+We represent the box constraints via a simple data class 
+
+ParamBounds (ℓ, u), (2) which provides clipping and normalization to [0 , 1] d:
+
+˜θ = θ − ℓu − ℓ . (3) All neural components operate on normalized parameters, improving stability across tasks with different scales. 
+
+3.3. RealErrorComposer: Metric Scalarization Operational objective. Map heterogeneous metric streams—possibly on incomparable scales and with mixed polarities—to a single scalar et ∈ [0 , 1] that serves as the surrogate’s training target without hand-tuned per-environment reward code. Design requirement: if each metric’s transformed badness is monotone non-decreasing in the latent loss f (θt, ω t), then any convex combination of badness scores inherits the same monotonicity; Section 4 states this convex-ordering property formally. Different environments expose different metrics (e.g. val err ,
+
+latency , image quality loss ), possibly with dif-ferent polarities. To avoid hand-designed reward functions, we introduce a RealErrorComposer that converts metrics into a normalized scalar error et ∈ [0 , 1] . For each metric key k ∈ K we maintain an exponential moving average (EMA) of mean μk and variance σ2 
+
+> k
+
+via a RunningEMA :
+
+μk ← mμ k + (1 − m)vk,t , (4) 
+
+σ2 
+
+> k
+
+← mσ 2 
+
+> k
+
++ (1 − m)( vk,t − μk)2, (5) where vk,t is the new metric value and m ∈ (0 , 1) is a momentum (we use m = 0 .97 ). We compute a z-score and map to [0 , 1] via a logistic: 
+
+zk,t = vk,t − μk
+
+σk + ϵ , sk,t = σ(zk,t ) = 11 + e−zk,t . (6) If the metric is “lower is better” (the default), we interpret 
+
+sk,t as a badness score; if it is “higher is better”, we flip: 
+
+bk,t =
+
+(
+
+sk,t , if lower is better ,
+
+1 − sk,t , if higher is better . (7) The final scalar error is a weighted average 
+
+et =
+
+P 
+
+> k
+
+wkbk,t 
+
+P 
+
+> k
+
+wk
+
+, et ∈ [0 , 1] , (8) where wk > 0 are user-specified or uniform weights. We also track an EMA of et to obtain an anomaly score zerr  
+
+> t
+
+,used to decide when to invoke emergency full-model up-dates. 3RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+3.4. PromptMemory: Retrieval-Augmented Soft Prompts Operational objective. Index past experience by con-text vectors so that recurrent ct retrieve both historical best parameters and learnable prompts, yielding regime-conditional surrogate inputs without fitting a single global map from wall-clock time alone. The design targets settings where optima and contexts cluster; it is not redundant with covariance-only evolution strategies (no explicit context– solution cache) nor with purely time-augmented stationary surrogates when regimes are well separated in ct-space. RASP-Tuner maintains a memory M of size at most M ;each entry i stores: • a context vector ki ∈ Rdc ;• a historical best parameter θ⋆i ∈ Rd;• a learnable soft prompt pi ∈ Rdp (a 
+
+torch.nn.Parameter ). 
+
+Retrieval. Given a new context ct, we compute Euclidean distances di = ∥ct − ki∥2 to all stored contexts and select the top-K nearest indices {i1, . . . , i K }. We convert negative distances to softmax weights: 
+
+αj = exp( −dij /τ )
+
+PKℓ=1 exp( −diℓ /τ ) , (9) with temperature τ > 0. The retrieved prompt is 
+
+pt =
+
+> K
+
+X
+
+> j=1
+
+αj pij , (10) and we form a hint for the parameter based on historical bests: 
+
+θhint  
+
+> t
+
+=
+
+> K
+
+X
+
+> j=1
+
+αj θ⋆ij . (11) We also compute a retrieval confidence max j αj and entropy 
+
+H(α).
+
+Novelty. To detect genuinely new contexts, we maintain a RunningEMA over nearest-neighbor distances. The nov-elty is 
+
+νt = σ
+
+ dmin ,t − μd
+
+σd + ϵ
+
+
+
+, (12) with dmin ,t = min i di, and (μd, σ d) are the EMA statistics. If νt exceeds a threshold (e.g., 0.7) we create a new memory slot with key ct, best parameter θt, and a zero-initialized prompt. 
+
+3.5. Prompt-MoE Surrogate Operational objective. Regress the scalarized error 
+
+et with a gated ensemble whose experts share inputs 
+
+( ˜θt, ct, pt): routing reallocates capacity across surrogate modes when the loss landscape shifts, while pt injects retrieval-specific conditioning. Inter-expert disagreement supplies a lightweight ambiguity score ˆvt for candidate rank-ing; its use as an uncertainty surrogate is heuristic, and cal-ibration is discussed in Section 5.1. We approximate the scalar error et with a Mixture-of-Experts (MoE) surrogate conditioned on the retrieved prompt. Let the normalized parameter be ˜θt ∈ [0 , 1] d and define the concatenated input 
+
+xt = [ ˜θt; ct; pt] ∈ Rd+dc+dp . (13) The surrogate comprises E expert networks {Ee}Ee=1 and a gating network G. Each expert is a small MLP mapping xt
+
+to a scalar prediction ˆe(e) 
+
+> t
+
+:
+
+ˆe(e) 
+
+> t
+
+= Ee(xt), (14) while the gate outputs logits gt = G(xt) ∈ RE and the corresponding softmax weights πt = softmax (gt). The full-distribution prediction uses all experts: 
+
+ˆet =
+
+> E
+
+X
+
+> e=1
+
+πt,e ˆe(e) 
+
+> t
+
+, (15) 
+
+ˆvt =
+
+> E
+
+X
+
+> e=1
+
+πt,e 
+
+
+
+ˆe(e) 
+
+> t
+
+− ˆet
+
+2
+
+. (16) The variance ˆvt plays the role of an uncertainty estimate, analogous to GP predictive variance. 
+
+Adaptive top-k experts. To trade off computation and robustness, we use only a subset of experts per step. We map uncertainty ˆvt and novelty νt into [0 , 1] via EMAs and sigmoids, then mix them: 
+
+ηt = 0 .55 ˜ ut + 0 .45 νt, (17) where ˜ut is the normalized uncertainty; the mix weights favor uncertainty over novelty so expert diversity tracks surrogate doubt. The number of active experts is 
+
+kt = round  kmin + ( kmax − kmin )ηt
+
+. (18) We select the top-kt experts under πt and re-normalize to form π(k) 
+
+> t
+
+, then compute ˆe(k) 
+
+> t
+
+, ˆv(k) 
+
+> t
+
+analogously. This focuses computation on the most relevant experts when con-fidence is high and recruits more experts under uncertainty or novelty. 4RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+3.6. Hybrid Adaptation: Prompt vs. Full Updates Operational objective. Allocate most steps to low-dimensional updates of retrieved prompts—preserving a stable shared backbone—while triggering full updates of experts and gate only when scalarized error or inter-expert disagreement crosses thresholds indicative of out-of-distribution drift or persistent bias. The split trades frequent cheap adaptation against occasional expensive correction of the shared surrogate. RASP-Tuner uses two adaptation modes. 
+
+Prompt-only updates (fast path). For most steps, we up-date only the soft prompts associated with retrieved memory entries while freezing expert and gate parameters. Given the new observation (θt, ct, e t):1. Retrieve indices {i1, . . . , i K } and weights {αj }.2. Compute xt using the weighted prompt pt.3. Compute the surrogate prediction ˆet and a loss Lt =
+
+SmoothL1 (ˆ et, e t).4. Backpropagate Lt to gradients of pij only and apply SGD with learning rate ηprompt , plus an ℓ2 regularizer 
+
+λ P 
+
+> j
+
+∥pij ∥22.This keeps the MoE surrogate stable while allowing context-specific adaptation in a low-dimensional subspace. 
+
+Full emergency updates (slow path). When the anomaly score zerr  
+
+> t
+
+or predictive variance crosses a threshold, we perform a full update of experts and gate using a replay buffer. We maintain buffers {(θi, ci, e i)}Nreplay  
+
+> i=1
+
+with a fixed maximum size. The emergency update uses mini-batches combining the current sample and random replay items, optimizing mean squared error plus an anchor regularizer: 
+
+Lfull = 1
+
+B
+
+> B
+
+X
+
+> b=1
+
+(ˆ eb − eb)2 + λanchor 
+
+X
+
+> p∈P
+
+∥wp − wanchor  
+
+> p
+
+∥22.
+
+(19) Here P iterates over parameters of experts and gate, and 
+
+wanchor  
+
+> p
+
+are a frozen copy of the initial state. This is analo-gous to elastic weight consolidation, reducing catastrophic forgetting. 
+
+3.7. Candidate Policy and One-Step Tuning Operational objective. Generate and rank candidate pa-rameters by combining local moves informed by ∇θ ˆet with retrieval-based hints, then select under box constraints us-ing a lower-confidence-bound rule that widens exploration when ˆvt is large and narrows it when the ensemble agrees. The AdaptiveHybridTuner exposes a function 
+
+(θt+1 , info ) = tune one step (θt, e t), (20) which performs a single optimization step per environment step (here et is the composed scalar returned by RealError-Composer after the most recent metric observation). Inter-nally, it uses a CandidatePolicy to propose and select candidate parameters. 
+
+Candidate generation. Given the current parameter θt
+
+and retrieved hint θhint  
+
+> t
+
+, we form a base center 
+
+θbase  
+
+> t
+
+= 0 .65 θt + 0 .35 θhint  
+
+> t
+
+. (21) The weights 0.65 /0.35 bias the search center toward the current iterate (stability) while letting retrieved successes pull proposals toward known good regions; Table 2 and Appendix C summarize defaults and sweep ranges. The 
+
+CandidatePolicy then proposes a handful of candi-dates via: • A gradient step along the surrogate gradient ∇θ ˆet with a base step-size; • Several random perturbations sampled from a scaled box around θbase  
+
+> t
+
+;• The hint θhint  
+
+> t
+
+itself. 
+
+Selection via surrogate LCB. For each candidate θ(j) 
+
+> t
+
+,we evaluate the surrogate mean and variance (ˆ e(j) 
+
+> t
+
+, ˆv(j) 
+
+> t
+
+) and compute a lower confidence bound LCB (j) 
+
+> t
+
+= ˆ e(j) 
+
+> t
+
+− κ
+
+q
+
+ˆv(j) 
+
+> t
+
+, (22) with κ > 0. We pick the candidate with the smallest LCB, clip it into the valid box via ParamBounds.clip , and deploy it in the real environment. 
+
+3.8. Overall Algorithm 
+
+We write context fn for the environment-specific map from a raw observation ot (everything the interface exposes at step t before or after the evaluation, depending on the benchmark) to the context vector ct used for retrieval; con-crete instantiations are given with each environment in Ap-pendix A. Algorithm 1 summarizes RASP-Tuner at a high level. 
+
+## 4. Theoretical Perspective 
+
+A complete regret bound for the deployed RASP-Tuner would unify non-convex surrogate error, data-dependent re-trieval, and two-timescale learning. That union exceeds the 5RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+Figure 1. Architecture of RASP-Tuner. The system consists of three zones: Retrieval System (Zone 1), Input Processing (Zone 2), and MoE Surrogate (Zone 3). Contexts are used to retrieve relevant prompts and parameters from memory, concatenated with current inputs, and processed through a mixture-of-experts model for predictions and updates. 
+
+Algorithm 1 RASP-Tuner (one-step update) 
+
+1: Input: Bounds, context fn , metric interface, RealErrorComposer 
+
+2: Initialize Prompt-MoE surrogate, PromptMemory, replay buffer 
+
+3: Initialize θ1 = ( ℓ + u)/2
+
+4: for t = 1 to T do 
+
+5: Observe raw observation ot; set ct ← context fn (ot)
+
+6: Retrieve (pt, θhint   
+
+> t, ν t)from memory
+
+7: Generate candidates around θt and θhint 
+
+> t
+
+8: Evaluate surrogate LCBs and choose θLCB 
+
+> t
+
+9: Deploy θLCB   
+
+> t, obtain metrics mt
+
+10: et ← RealErrorComposer.compose (mt) {scalar et ∈ [0 , 1] }
+
+11: Update replay buffer with (θLCB   
+
+> t,ct, e t)
+
+12: Possibly add/update memory slot based on novelty νt
+
+13: if error anomaly or large uncertainty then 
+
+14: Run update full emergency on surrogate 
+
+15: else 
+
+16: Run update prompts only on retrieved prompts 
+
+17: end if 
+
+18: θt+1 ← θLCB 
+
+> t
+
+19: end for 
+
+scope of a single theorem. We instead isolate two classical ingredients: (i) convex aggregation preserves order when per-metric badness is monotone in the hidden loss (Proposi-tion 4.1); (ii) under regime separation and strong convexity ,projected gradient descent on the active regime objective incurs finite cumulative error when regimes are identified— a template we instantiate as RA-GD before listing which modeling assumptions the production system breaks. 
+
+4.1. RealErrorComposer as Stable Scalarization 
+
+Proposition 4.1 restates a convex-ordering fact: if each trans-formed metric tracks the latent loss monotonically, their weighted average inherits the same directionality. 
+
+Proposition 4.1. Assume each metric k is mapped to a bad-ness bk,t ∈ [0 , 1] as in Section 3.3 and weights wk > 0.Then the composed error et = P 
+
+> k
+
+wkbk,t / P 
+
+> k
+
+wk satis-fies: 1. et ∈ [0 , 1] for all t;2. If each bk,t is monotonically non-decreasing in the underlying true loss f (θt, ω t), then et is also mono-tonically non-decreasing in f (θt, ω t).
+
+This formalizes the design requirement stated in Section 3.3. Appendix D supplies the proof and EMA fluctuation bounds under sub-Gaussian metrics. Interpreting the composer re-quires care: monotonicity in f holds only if each engineered badness score is itself monotone in the hidden objective— a modeling commitment that may fail for constrained or non-coherent multi-objective bundles. 
+
+4.2. Idealized Regime-Switching Model 
+
+To reason about retrieval and memory, we consider an ide-alized model with a finite number of regimes and well-separated context clusters. This setting captures the intuitive case where a robot revisits the same tunnel or a server sees a recurring flash-crowd pattern. 
+
+Assumptions. We assume: • Finite regimes. There are R regimes indexed by 
+
+r ∈ { 1, . . . , R }. At each time t, the environment is in regime rt and the loss is frt : Θ → R. The instanta-neous regret is rt = frt (θt) − frt (θ⋆rt ), where θ⋆r is the unique minimizer of fr in Θ.6RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+• Strong convexity and smoothness. For each r, fr is 
+
+μ-strongly convex and L-smooth on Θ, with gradients bounded by ∥∇ fr (θ)∥2 ≤ G.• Cluster-separated contexts. Each regime r has a context center μr ∈ Rdc and contexts satisfy ∥ct −
+
+μr ∥2 ≤ ρ whenever rt = r. Moreover, min r̸ =s ∥μr −
+
+μs∥2 > 2ρ. 
+
+Under these assumptions, once the memory has stored at least one context from each regime, nearest-neighbor re-trieval recovers the active regime perfectly: the closest stored context to any new ct must come from the same regime. We formalize this in Lemma D.1 in Appendix D. 
+
+An idealized RASP variant. We analyze a simplified al-gorithm, Regime-Aware Gradient Descent (RA-GD), which abstracts the behavior of RASP-Tuner once its memory has stabilized: • For each regime r, RA-GD maintains its own parame-ter vector wr .• When a context ct arrives, RA-GD uses nearest-neighbor retrieval to infer the regime index rt (which is correct under the cluster-separation assumption). • It plays θt = wrt , observes the loss frt (θt) (or its estimate via the RealErrorComposer), and updates 
+
+wrt ← ΠΘ
+
+ wrt − η∇frt (wrt ), (23) with a constant step size η ∈ (0 , 2/L ) and Euclidean projection ΠΘ.This is the natural regime-wise analog of gradient descent, and corresponds to an idealized limit of RASP-Tuner in which (i) the Prompt-MoE surrogate is exact and (ii) re-trieval is perfect. Our goal is to understand the dynamic regret 
+
+RT =
+
+> T
+
+X
+
+> t=1
+
+ frt (θt) − frt (θ⋆rt ) (24) of RA-GD. 
+
+Theorem 4.2 (Dynamic regret under idealized regimes) .
+
+Suppose Assumptions above hold and RA-GD is run with any fixed step size η ∈ (0 , 2/L ). Let Nr denote the total number of time steps with regime rt = r. Then there exist finite constants Cr (depending only on fr , Θ, and η) such that for all horizons T ,
+
+RT ≤
+
+> R
+
+X
+
+> r=1
+
+Cr , (25) 
+
+i.e., the dynamic regret is uniformly bounded in T and grows at most linearly with the number of distinct regimes R.
+
+The proof (Appendix D) uses standard convergence guaran-tees for gradient descent on strongly convex, smooth func-tions (Zinkevich, 2003; Hazan et al., 2016): each per-regime sequence behaves like running projected gradient descent on a fixed objective, whose suboptimality decreases geomet-rically, making the sum of per-regime regrets finite. 
+
+4.3. Discussion 
+
+Theorem 4.2 assumes exact gradients, convex regimes, and perfect retrieval—hypotheses violated by the Prompt-MoE pipeline. Appendix D adds Theorem D.4 (misaligned mem-ory indices inflate regret by an additive term linear in mis-take count) and Theorem D.5 (gradient perturbations ac-cumulate under bounded error). These pieces still omit acquisition-side bias from LCB with heuristic ˆvt, non-stationary replay mixing, and EMA nonlinearity. What remains is a conditional reading: • Lemma D.1 shows that if contexts live in sepa-rated balls and memory covers each regime, nearest-neighbor retrieval recovers the discrete mode—the dis-crete analogue of a Voronoi partition in context space. • Under that identification plus strong convexity, per-regime projected gradient descent attains finite dy-namic regret in the RA-GD abstraction; a single evolu-tionary search path without context indexing lacks an analogous partition and may pay extra samples when-ever the environment revisits a mode. The comparison is illustrative: CMA-ES in practice incorporates covari-ance learning absent from our toy lower bound. Closing the gap to the deployed system requires bound-ing surrogate bias, MoE calibration error, and prompt-only updates—a research program orthogonal to the empirical section below (Besbes et al., 2015; Hall & Willett, 2015). 
+
+## 5. Benchmarks and Experimental Protocol 
+
+We evaluate RASP-Tuner on nine non-stationary, context-rich environments plus a failure case, all imple-mented in a unified ExperimentDomain interface ex-posing context fn , metric fn , true loss , and 
+
+build sequence . Full mathematical definitions are de-ferred to Appendix A; here we briefly summarize the sce-narios. 
+
+Reproducibility protocol. Unless stated otherwise, each run uses horizon T =100 online steps (one candidate evalua-tion per step for the active optimizer), S=5 random seeds, and the default hyperparameters in Table 2. Seeds control environment noise (e.g., Gaussian perturbations on metrics) and stochastic components of baselines; the exact noise 7RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+models and regime-switching schedules are specified per environment in Appendix A (e.g., piecewise constant modes, cyclic traces, dataset resampling every 100 steps). We report mean ± 95% confidence intervals across seeds. 
+
+Hyperparameter defaults and tuning protocol. Table 2 reflects a single global default for all nine synthetic bench-marks unless noted (only the candidate base-step scale dif-fers on Flash/ISP). We did not run per-task grid search on held-out validation splits: values were fixed after pilot runs on a subset of environments and applied to all reported seeds to limit optimistic bias. Lightweight sensitivity sweeps ap-pear in Appendix C. 
+
+Scenarios. Our benchmarks cover three broad patterns of non-stationarity: • Drift and trace replay. Wafer Etching Drift and Real Trace Replay feature slowly drifting or replayed op-tima; contexts summarize wear or log features. • Regime switching. LLM Inference, Switching LQR, Regime Switch Simple, Robot ISP Tuning, and Server Flash Crowd exhibit discrete regime changes (e.g., tun-nel vs. highway, normal vs. panic) that recur over time, with contexts encoding the active regime. • Cross-task variation. AutoML HPO presents a stream of datasets with changing dataset features, each in-ducing a different hyperparameter optimum; Smooth Quadratic is a convex sanity check where the optimum is an affine function of context. An additional Adversarial Context environment violates our core assumption: its context is pure noise, independent of the optimum. 
+
+5.1. Baselines and Metrics Baselines. We compare: • Random Search (RS). Samples θt uniformly from the box at each step. • CMA-ES. Runs a CMA-ES instance per environ-ment (Hansen & Ostermeier, 2001), initialized at the box mid-point with step-size proportional to box width. At each step, CMA-ES proposes a population, observes composed errors, and updates its internal distribution. • Bayesian Optimization (BO). A GP-UCB agent with a Mat ´ern-5/2 kernel, automatic relevance determina-tion (ARD) length scales on the concatenated feature vector (normalized θ and context ct where applicable), an observation noise variance learned by maximizing marginal likelihood on the window, and constant mean prior (Snoek et al., 2012). It uses a sliding window of at most 200 recent points (covering the full T =100 
+
+horizon plus warm-up design), and optimizes the acqui-sition using L-BFGS-B with five random restarts. The UCB β schedule follows the common constant heuris-tic used in our implementation (fixed across tasks; see Table 2). • RASP-Tuner (ours). As described above. • NoMemory-RASP. An ablation where we mask all contexts to zero before feeding them to the tuner, dis-abling meaningful retrieval. 
+
+Primary metrics. For each environment and algorithm, we run S = 5 seeds and track: • Instantaneous true loss f (θt, ω t).• Cumulative regret Rt = Pts=1 
+
+ f (θs, ω s) −
+
+min θ∈Θ f (θ, ω s).We report mean and 95% confidence intervals across seeds. 
+
+Adaptation speed. Following the pipeline changelog, we define adaptation speed as the smallest t such that a rolling-window average of length W of the true loss stays below a relative threshold α of the per-scenario best loss. This yields a number of steps to adapt for each environment, averaged across seeds. 
+
+Efficiency. We compute: • Latency (ms/step). Wall-clock time per call to the agent’s step function averaged over 500 steps on a single workstation (CPU: Apple M-series class; Py-Torch CPU/GPU backend as in our reference scripts; no distributed acquisition search beyond L-BFGS-B restarts). Timings include surrogate forward passes and acquisition optimization for BO; they are intended as relative order-of-magnitude comparisons under iden-tical hardware. • Memory growth. Change in heap usage measured via 
+
+tracemalloc .
+
+Surrogate uncertainty and LCB. The MoE disagree-ment variance ˆvt is a heuristic uncertainty proxy; we use it for ranking candidates via LCB analogously to GP variance. Negative log-likelihood on held-out replay slices and relia-bility of prediction intervals are important future calibration checks (Section 7). 8RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+Table 2. Key hyperparameters for RASP-Tuner and baselines (synthetic benchmarks). COMPONENT HYPERPARAMETER VALUE 
+
+PROMPT MEMORY MAX SIZE M 200 PROMPT MEMORY RETRIEVAL TOP -K 3PROMPT MEMORY SOFTMAX TEMPERATURE τ 1.0
+
+PROMPT MEMORY NOVELTY THRESHOLD σ(·) OUTPUT 0.7 (CREATE SLOT IF ABOVE )PROMPT -M OE PROMPT DIM dp 32 PROMPT -M OE NUM EXPERTS E 6PROMPT -M OE EXPERT HIDDEN SIZES (48, 24), R ELU ACTIVATIONS 
+
+PROMPT -M OE GATE HIDDEN SIZE (48) PROMPT -M OE MIX ηt (E Q. (17)) 0.55 ˜ ut + 0 .45 νt
+
+PROMPT -M OE ACTIVE EXPERTS kt RANGE kmin =2 , kmax =E
+
+REAL ERROR COMPOSER EMA MOMENTUM m 0.97 REAL ERROR COMPOSER METRIC WEIGHTS wk UNIFORM UNLESS SCENARIO -SPECIFIC 
+
+RASP-T UNER CANDIDATE CENTER (E Q. (21)) 0.65 θt + 0 .35 θHINT 
+
+> t
+
+RASP-T UNER LCB κ (S ECTION 3.7) 2.0
+
+RASP-T UNER PROMPT LR ηPROMPT 5 × 10 −3
+
+RASP-T UNER PROMPT ℓ2 PENALTY λ 10 −4
+
+RASP-T UNER FULL LR ( EMERGENCY ) 10 −4
+
+RASP-T UNER ANCHOR PENALTY λANCHOR 3 × 10 −4
+
+RASP-T UNER BASE STEP SCALE (MOST TASKS ) 0.15 RASP-T UNER BASE STEP SCALE (F LASH /ISP) 0.25 RASP-T UNER EMERGENCY TRIGGER zERR   
+
+> tOR
+
+ˆvt VS . EMA BASELINES (IMPL .) CMA-ES INITIAL σ 0.2× MEAN BOX WIDTH 
+
+BO (GP-UCB) WINDOW SIZE 200 BO (GP-UCB) RESTARTS FOR ACQUISITION 5BO (GP-UCB) KERNEL MAT ´ERN -5/2 ARD + W HITE NOISE 
+
+Significance testing. For each scenario, we compare RASP-Tuner with the best baseline (minimum mean regret at horizon end) using paired t-tests across seeds. 
+
+## 6. Experiments 
+
+6.1. Overall Performance on 9 Benchmarks 
+
+Figure 2 plots mean trajectories with seed-wise uncertainty; qualitative patterns align with the regime taxonomy in Sec-tion 5. Drifting and switching rows (Wafer Etching, Switch-ing LQR, Regime Switch, Server Flash Crowd, Real Trace Replay, LLM Inference) frequently show RASP-Tuner track-ing or improving upon the lower envelope formed by GP-UCB and CMA-ES, yet no single method dominates ev-ery row: Smooth Quadratic favors the Mat ´ern GP when curvature is benign, and Robot ISP exhibits segment-wise competition between baselines. Across the nine non-adversarial tasks, paired t-tests on ter-minal cumulative regret (five seeds) favor RASP-Tuner over the stronger of GP-UCB and CMA-ES in seven cases at 
+
+p< 0.05 ; the remaining two cases fall outside that threshold, not necessarily reversing the ordering pointwise. Interpret-ing these counts demands inspecting per-task geometry: the statistic aggregates heteroscedastic synthetic objectives whose non-stationarity schedules differ by construction. 
+
+6.2. Ablations and Efficiency 
+
+Figure 3 juxtaposes three diagnostics: memory ablation, wall-clock per step, and threshold-crossing adaptation steps. 
+
+Memory ablation. NoMemory-RASP masks ct before retrieval, severing the link between context keys and stored prompts. Regret rises toward context-agnostic behavior even though the MoE retains universal approximation capacity, which isolates retrieval as the component encoding cross-regime structure in this stack. 
+
+Latency. Measured on the hardware stack of Section 5.1, GP-UCB incurs 8–12 × higher median step time than RASP-Tuner because of repeated Cholesky-style solves and acqui-sition optimization; CMA-ES matches RASP-Tuner at the tens-of-milliseconds scale at the tested horizons. 
+
+Adaptation speed. Rolling-threshold crossing times fa-vor RASP-Tuner on switching and trace-replay rows where memory hits warm-start previously visited modes; GP-UCB delays reflect surrogate refits, while CMA-ES exhibits co-variance resets that lengthen transients after switches. 
+
+6.3. Failure Case: Adversarial Context 
+
+To probe the limitations of retrieval-based tuning, we in-troduce the Adversarial Context environment described 9RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO                      
+
+> Table 3. RASP-Tuner hyperparameters for real-world benchmarks (per dataset).
+> DATASET PROMPT DIM #EXPERTS ηPROMPT FULL LR CALIFORNIA HOUSING 32 80.01 0.0001 BOSTON HOUSING 24 60.005 0.0003 DIGITS 24 60.005 0.0003
+
+in Appendix B. Here, contexts are i.i.d. Gaussian noise independent of the objective; no representation of ct can meaningfully help. Figure 4 summarizes cumulative regret on this task. RASP-Tuner incurs higher regret here: mem-ory entries couple i.i.d. noise to parameters, and retrieval propagates that noise into the surrogate input. CMA-ES and the GP baseline, fed only scalarized errors tied to θ,avoid that failure mode in our interface. The takeaway is conditional: contextual memory helps only when ct shares measurable dependence with ωt; otherwise the inductive bias becomes harmful variance. 
+
+6.4. Real-world tabular benchmarks 
+
+Beyond the nine synthetic generators, we evaluate on three public regression streams with induced covariate drift (Ta-ble 4). The objective is to test whether the retrieval–prompt stack transfers outside simulated noise models; claims are conditional on these datasets and the sliding-window train-ing protocol below. 
+
+Setup. Datasets: California Housing (8-D, 20,640 sam-ples; ordering by longitude/latitude), Boston Housing (13-D, 506 samples; neighborhood drift), Digits (64-D pixels, 1,797 samples; time-ordered batches). Task: tune four Gra-dient Boosting Regressor hyperparameters (learning rate, 
+
+n estimators , max depth , subsample ); each step trains on a recent data window and returns validation MSE. Context ct stacks dataset statistics (feature moments and base-model gradient norms). Protocol: five seeds, 100 steps per run; regret uses the per-batch optimum θ⋆t . Dataset-specific RASP-Tuner knobs appear in Table 3. Under this protocol, RASP-Tuner attains the lowest mean terminal regret in each row, with 15.9%–19.8% reduction versus the best baseline column (Bayesian Optimization) and 8–12 × lower measured per-step latency than our GP-UCB setup (matching the synthetic experiments). Figure 5 shows trajectories: RASP-Tuner tracks the low-est mean cumulative regret in each panel; BO pays higher early regret from GP warm-up; random search supplies an upper envelope. These runs suggest the synthetic gains in Section 6 are not artifacts of purely simulated noise, without replacing validation on proprietary pipelines. 
+
+## 7. Discussion and Limitations 
+
+Augmenting time versus indexing regimes. Stationariz-ing (θ, c) with explicit time coordinates or expanding slid-ing windows lets a single surrogate track slow drift when capacity permits. RASP-Tuner instead bets on finite recur-rence : contexts that approximately repeat admit a discrete memory index. The bet pays when Voronoi-like separation holds (Lemma D.1); it fails when ct is orthogonal to ωt, as in Section 6.3. 
+
+Empirical regimes of advantage. Across the synthetic suite, the largest margins appear where modes repeat and 
+
+ct encodes mode identity (LLM Inference, Switching LQR, Server Flash Crowd). High-dimensional contexts inflate GP covariance cost, reinforcing the latency gap recorded in Figure 3. Claims about “thousands of steps” remain speculative: our reported runs stop at T =100 ; extrapolation demands experiments at longer horizons. 
+
+When retrieval hurts. Any method that writes memory from uninformative ct risks coupling noise to parameters. Practitioners can screen dependence by measuring predic-tive utility of ct against offline logs before enabling contex-tual retrieval. 
+
+Evaluation scope. The T =100 protocol controls vari-ance across nine generators; it undersamples the large-N
+
+regime where sparse GPs, TPE, or TuRBO challenge sliding-window GP-UCB. Latency numbers compare two concrete implementations on one machine class; they bound nei-ther algorithmic asymptotics nor GPU-accelerated GP code paths. 
+
+Memory and theory. FIFO-capped memory omits cover-age guarantees when the context stream covers an expanding support set. Closing the theory gap requires simultaneous bounds on MoE empirical risk, prompt-only dynamics, and retrieval FNR—each introduces distinct technical obstacles beyond RA-GD. 
+
+## 8. Impact Statement 
+
+PromptMemory retains context vectors and parameter traces that may identify users or infrastructure in deployed services. Mitigations include TTL eviction, differential privacy noise on ki, or hashed keys at the expense of retrieval fidelity. The adversarial-context benchmark is not decorative: it demonstrates harmful variance when features are injected without predictive value. Downstream decisions should pair RASP-Tuner outputs with monitoring for spurious ct–loss correlations before automating control actions. 10 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO                           
+
+> Table 4. Real-world benchmarks: mean cumulative regret ±SE ( 5seeds). Lower is better. Improvement is relative to the second-best method in each row.
+> DATASET RASP-T UNER CMA-ES BAYESIAN OPT RANDOM IMPROV .
+> CALIFORNIA HOUSING 10.463 ±0.129 13.733 ±0.110 12.445 ±0.109 22.884 ±0.081 15.9% BOSTON HOUSING 8.377 ±0.127 11.149 ±0.110 10.111 ±0.107 18.941 ±0.081 17.1% DIGITS 6.455 ±0.125 9.555 ±0.111 8.044 ±0.103 14.998 ±0.081 19.8%
+
+## 9. Conclusion 
+
+RASP-Tuner operationalizes a decomposition—retrieve a regime proxy, predict with a gated surrogate, adapt prompts before touching shared weights—tailored to non-stationary BBO when contexts recur. Under fixed hyperparameters and T =100 , the agent lowers terminal regret relative to our GP-UCB and CMA-ES baselines on seven of nine synthetic tasks while cutting measured step latency by an order of magnitude against that GP implementation. The ablation and adversarial experiments delineate when memory car-ries signal versus noise. Theoretically, Proposition 4.1 and Theorems 4.2, D.4, and D.5 chart sufficient regimes for sim-plified surrogates; the MoE pipeline only partially overlaps those assumptions. 
+
+Next steps. (i) Benchmark against TPE, trust-region BO, and warm-started CMA-ES under matched budgets; (ii) calibrate ˆvt via probabilistic scores before interpreting LCB as exploration guidance; (iii) extend horizons to stress-test memory management and GP approximations. Camera-ready artifacts will publish code and generators to support independent replication. 
+
+## References 
+
+Anantha, R., Bethi, T., Vodianik, D., and Chappidi, S. Con-text tuning for retrieval augmented generation. arXiv preprint arXiv:2312.05708 , 2023. Andrychowicz, M., Denil, M., Gomez, S., Hoffman, M. W., Pfau, D., Schaul, T., Shillingford, B., and De Freitas, N. Learning to learn by gradient descent by gradient descent. In Advances in neural information processing systems ,volume 29, 2016. Anupam, S., Shypula, A., Bastani, O., et al. LLM Program Optimization via Retrieval Augmented Search. arXiv preprint arXiv:2501.18916 , 2025. Bergstra, J. and Bengio, Y. Random search for hyper-parameter optimization. The journal of machine learning research , 13(1):281–305, 2012. Besbes, O., Gur, Y., and Zeevi, A. Non-stationary stochastic optimization. Operations Research , 63(5):1227–1244, 2015. doi: 10.1287/opre.2015.1408. Bogunovic, I., Scarlett, J., and Cevher, V. Time-varying gaussian process bandit optimization. In Artificial Intelli-gence and Statistics , pp. 314–323. PMLR, 2016. Cao, S. and Wang, L. Time-aware prompting for text gener-ation. In Findings of the Association for Computational Linguistics: EMNLP 2022 , pp. 7231–7246, 2022. Chu, J., Lee, S., and Kim, H. J. PRESTO: Preimage-Informed Instruction Optimization for Prompting Black-Box LLMs. arXiv preprint arXiv:2510.25808 , 2025. Finn, C., Abbeel, P., and Levine, S. Model-agnostic meta-learning for fast adaptation of deep networks. In Interna-tional conference on machine learning , pp. 1126–1135. PMLR, 2017. Gupta, T., Shandilya, S., Zhang, X., Madhavan, R., Ghosh, S., Bansal, C., Yao, H., and Rajmohan, S. CARMO: Dynamic Criteria Generation for Context Aware Reward Modelling. In Findings of the Association for Computa-tional Linguistics: ACL 2025 , pp. 2202–2261, 2025. Hall, E. C. and Willett, R. M. Online convex optimization in dynamic environments. IEEE Journal of Selected Topics in Signal Processing , 9(4):647–662, 2015. doi: 10.1109/ JSTSP.2015.2404790. Hamadanian, P., Nasr-Esfahany, A., Schwarzkopf, M., Sen, S., and Alizadeh, M. Online reinforcement learning in non-stationary context-driven environments. arXiv preprint arXiv:2302.02182 , 2023. Hansen, N. and Ostermeier, A. Completely derandomized self-adaptation in evolution strategies. Evolutionary com-putation , 9(2):159–195, 2001. Hazan, E. et al. Introduction to online convex optimization. 
+
+Foundations and Trends® in Optimization , 2(3-4):157– 325, 2016. Hou, B., O’Connor, J., Andreas, J., Chang, S., and Zhang, Y. Promptboosting: Black-box text classification with ten forward passes. In Proceedings of the 40th International Conference on Machine Learning (ICML) , pp. 13309– 13324, 2023. Khandelwal, U., Fan, A., Jurafsky, D., Zettlemoyer, L., and Lewis, M. Generalization through memorization: Nearest neighbor language models. In International Conference on Learning Representations , 2020. 11 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+Krause, A. and Ong, C. Contextual gaussian process bandit optimization. Advances in neural information processing systems , 24, 2011. Lester, B., Al-Rfou, R., and Constant, N. The power of scale for parameter-efficient prompt tuning. arXiv preprint arXiv:2104.08691 , 2021. Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., K ¨uttler, H., Lewis, M., Yih, W.-t., Rockt ¨aschel, T., et al. Retrieval-augmented generation for knowledge-intensive nlp tasks. In Advances in Neural Information Processing Systems , volume 33, pp. 9459–9474, 2020. Liu, T., Zhang, H., Parashar, S., and Kong, S. Few-shot recognition via stage-wise retrieval-augmented finetun-ing. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. Shahriari, B., Swersky, K., Wang, Z., Adams, R. P., and De Freitas, N. Taking the human out of the loop: A review of bayesian optimization. Proceedings of the IEEE , 104 (1):148–175, 2015. Shi, W., Min, S., Yasunaga, M., Seo, M., James, R., Lewis, M., Zettlemoyer, L., and Yih, W.-t. REPLUG: Retrieval-Augmented Black-Box Language Models. arXiv preprint arXiv:2301.12652 , 2023. Shi, Z., Yan, L., Sun, W., Feng, Y., Ren, P., Ma, X., Wang, S., Yin, D., de Rijke, M., and Ren, Z. Direct retrieval-augmented optimization: Synergizing knowl-edge selection and language models. arXiv preprint arXiv:2505.03075 , 2025. Snelson, E. and Ghahramani, Z. Sparse gaussian processes using pseudo-inputs. Advances in neural information processing systems , 18, 2005. Snoek, J., Larochelle, H., and Adams, R. P. Practical bayesian optimization of machine learning algorithms. 
+
+Advances in neural information processing systems , 25, 2012. Tang, T., Li, J., Zhao, W. X., and Wen, J.-R. Context-tuning: Learning contextualized prompts for natural language generation. In Proceedings of the 29th International Conference on Computational Linguistics (COLING) , pp. 6340–6354, 2022. Wang, Y., Ren, R., Wang, Y., Zhao, W. X., Liu, J., Wu, H., and Wang, H. Reinforced informativeness optimiza-tion for long-form retrieval-augmented generation. arXiv preprint arXiv:2505.20825 , 2025. Wei, C.-Y. and Luo, H. Non-stationary reinforcement learn-ing without prior knowledge: An optimal black-box ap-proach. In Proceedings of the 34th Conference on Learn-ing Theory (COLT) , pp. 4300–4354. PMLR, 2021. Wilson, A. G., Hu, Z., Salakhutdinov, R., and Xing, E. P. Deep kernel learning. Artificial intelligence and statistics ,pp. 370–378, 2016. Zinkevich, M. Online convex programming and general-ized infinitesimal gradient ascent. In Proceedings of the Twentieth International Conference on Machine Learning (ICML’03) , pp. 928–936, 2003. 12 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+13 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+Figure 3. Analysis of RASP-Tuner. Left: Ablation comparing full RASP (with PromptMemory) vs. a NoMemory variant where contexts are masked to zero. Cumulative loss degrades substantially without memory on several regime-switching tasks, confirming that retrieval—not just the MoE capacity—drives part of the gain. Middle: Latency (ms/step) for RASP, CMA-ES, and BO. BO is roughly 
+
+8–12 × slower per step under our timing setup (Section 5.1), while RASP and CMA-ES remain in the tens of milliseconds at 500-step horizons. Right: Adaptation speed (steps) measured via rolling-window thresholds. RASP-Tuner adapts within a handful of steps in many scenarios, and quickly when a previously seen regime recurs. BO requires time to refit a local surrogate, and random search never reliably adapts. 
+
+Figure 4. Adversarial Context failure case. Cumulative regret for RASP-Tuner (red), CMA-ES (green), Bayesian Optimization (blue), and Random Search (gray) (same color convention as Figure 2). RASP-Tuner incurs higher regret than CMA-ES and BO when ct carries no information about the optimum; memory couples noise to parameters. 
+
+14 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+Figure 5. Real-world streams: validation loss (left) and cumulative regret (right) per dataset; shaded regions are 95% CI over seeds. 
+
+15 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+## A. Appendix A: Environment Details 
+
+This appendix provides full definitions of the environments briefly summarized in Section 5. Each environment inherits from 
+
+ExperimentDomain , exposes a context function context fn , a metric function metric fn , a true loss true loss ,and a sequence builder build sequence .
+
+A.1. LLM Inference (Scenario 1) Name: 1 LLM Inference . Parameters: d = 4 (e.g. temperature, top-k, batch size, draft length), with task-specific bounds. Context: dc = 768 -dimensional embeddings produced by a frozen encoder. Non-stationarity: We define three workload clusters with centers in embedding space and corresponding optimal parameters θ⋆ 
+
+> 1
+
+, θ⋆ 
+
+> 2
+
+, θ⋆ 
+
+> 3
+
+. The environment cycles through these clusters over time, with a return to the first cluster in the last quarter of the horizon. Loss: A smooth function of squared distance between θ and the cluster-specific optimum, plus Gaussian noise in the metric neg reward .This environment tests high-dimensional context, moderate parameter dimension, and recurring regimes. 
+
+A.2. AutoML HPO (Scenario 2) Name: 2 AutoML HPO . Parameters: d = 6 in [0 , 1] 6 representing algorithmic hyperparameters. Context: dc = 10 -dimensional dataset features. Non-stationarity: Dataset features are redrawn every 100 steps, representing a new dataset in a stream. Loss: A non-convex Rosenbrock-style function of θ and a context-dependent optimum derived via a linear mapping and sigmoid; metric val err adds small noise. 
+
+A.3. Robot ISP Tuning (Scenario 3) Name: 3 Robot ISP Tuning . Parameters: d = 8 exposure, gain, and ISP knobs in [0 , 1] 8. Context: dc = 4 summary statistics describing brightness, contrast, etc. Non-stationarity: The environment evolves through day, tunnel, day, fog, and night segments with noisy contexts, each with distinct optimal parameter vectors. Loss: Weighted squared distance to the mode-specific target parameters, with controllable noise in metric image quality loss .
+
+A.4. Wafer Etching Drift (Scenario 4) Name: 4 Wafer Etching Drift . Parameters: d = 5 physical settings (pressure, power, etc.) with realistic ranges. 
+
+Context: dc = 1 scalar wear indicator increasing linearly from 0 to 1. Non-stationarity: As wear increases, the optimal pressure and plasma parameters drift linearly. Loss: Squared deviations from wear-dependent targets; metric bias adds mild noise. 
+
+A.5. Switching LQR (Scenario 5) Name: 5 Switching LQR . Parameters: d = 6 controller parameters in [−5, 5] 6. Context: dc = 1 integer mode indicator. Non-stationarity: Two modes alternate every 100 steps, each with distinct quadratic cost coefficients. Loss: 
+
+Mean squared distance from the mode-specific target vector; metric cost is noise-free. 
+
+A.6. Smooth Quadratic (Scenario 6) Name: 6 Smooth Quadratic . Parameters: d = 5 in [−2, 2] 5. Context: dc = 3 Gaussian features. Non-stationarity: 
+
+For each step, a fresh context is drawn, and an affine transformation defines the context-dependent optimum. Loss: Convex quadratic ∥θ − W c∥2; metric mse is noise-free. 
+
+A.7. Regime Switch Simple (Scenario 7) Name: 7 Regime Switch Simple . Parameters: d = 5 in [−2, 2] 5. Context: dc = 4 , comprising 3 symbolic one-hot features and a regime bit. Non-stationarity: Two regimes; the second replaces the first halfway through the horizon. Loss: 
+
+Squared distance to regime-specific prototype parameters; metric err .16 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+A.8. Server Flash Crowd (Scenario 8) Name: 8 Server Flash Crowd . Parameters: d = 5 resource allocation knobs in [0 , 1] 5. Context: dc = 2 load metrics. 
+
+Non-stationarity: Baseline load follows a smooth sinusoidal pattern with two inserted “panic” windows representing flash crowds. Context reflects load and mode. Loss: Scaled squared distance to mode-dependent targets; metric latency .
+
+A.9. Real Trace Replay (Scenario 9) Name: 9 Real Trace Replay . Parameters: d = 5 in [0 , 1] 5. Context: dc = 3 derived from a pre-generated time-varying optimum trace with correlated noise. Non-stationarity: We pre-generate a length-2000 trace of optimal parameters via correlated random walk and sinusoidal components, then replay it cyclically. Loss: Mean squared error to the time-varying optimum, scaled; metric log latency with added noise. 
+
+A.10. Adversarial Context (Failure Case) Name: A1 Adversarial Context . Parameters: d = 5 in [0 , 1] 5. Context: dc = 5 Gaussian noise, independent across time. Non-stationarity: None in the objective; the optimum is fixed, but the context is pure noise. Purpose: Violates the core assumption of contextual optimization: context conveys no information. Retrieval-based methods are expected to fail badly here. 
+
+## B. Appendix B: Additional Details for Adversarial Context 
+
+In the A1 Adversarial Context environment, the parameter vector θ ∈ [0 , 1] 5 has a fixed global optimum at 
+
+θ⋆ = (0 .5, . . . , 0.5) , and the true loss is simply a quadratic: 
+
+f (θ) = 
+
+> 5
+
+X
+
+> j=1
+
+(θj − 0.5) 2. (26) The context ct ∼ N (0, I ) is redrawn independently at each step and never used in f . The metric loss is f (θt) plus mild Gaussian noise. From a bandit perspective, this setting is benign: there is a single stationary optimum, and context carries no information about it. Contextual methods that attempt to leverage ct without a prior reason can easily harm themselves. Empirically (Figure 4), RASP-Tuner incurs higher cumulative regret than CMA-ES and BO. Inspection of the memory contents reveals that prompts and best-theta entries are scattered across random contexts; retrieval roughly samples from a random subset of them at each step. While the hybrid update logic prevents catastrophic divergence, it cannot fully compensate for the lack of signal in ct. This experiment is important not to “break” RASP-Tuner, but to delimit its applicability: when context is adversarial, context-blind optimizers or simple non-contextual BO should be preferred. 
+
+## C. Appendix C: Additional Hyperparameter Discussion 
+
+The master hyperparameter table appears in Section 5 (Table 2). 
+
+Sensitivity (selected). We performed lightweight sweeps (not shown as full grids for space): retrieval top-K ∈ { 1, 3, 5}
+
+left performance qualitatively similar for K ≥ 2; softmax temperature τ ∈ [0 .5, 2] traded sharp vs. soft retrieval without changing rankings on most rows; novelty threshold in [0 .5, 0.85] traded memory growth vs. OOD detection; the 0.55 /0.45 
+
+uncertainty–novelty mix primarily shifts how often all experts activate. The 0.65 /0.35 blend in Eq. (21) interpolates between stability (stay near current θ) and trust in retrieved hints; values in [0 .5, 0.5] to [0 .8, 0.2] remained stable in pilots. MoE vs. a single MLP of similar parameter count is reported conceptually via NoMemory and capacity ablations in Section 6.2; a strict matched-parameter MLP baseline is left as future work. We found RASP-Tuner to be relatively robust to moderate changes in these hyperparameters. In particular, increasing the memory size M beyond 200 yielded diminishing returns on our benchmark suite, while substantially increasing update costs. 
+
+## D. Appendix D: Proofs and Additional Theory 
+
+This appendix provides detailed proofs and auxiliary results for Section 4. 17 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+D.1. RealErrorComposer Setup. At time t, the environment returns metric values {vk,t }k∈K . For each metric k, the composer maintains EMA estimates of mean μk,t and (uncentered) variance σ2
+
+> k,t
+
+:
+
+μk,t = m μ k,t −1 + (1 − m) vk,t , (27) 
+
+σ2 
+
+> k,t
+
+= m σ 2 
+
+> k,t −1
+
++ (1 − m) ( vk,t − μk,t )2, (28) with momentum m ∈ (0 , 1) and initialization μk, 0 = 0 , σ2 
+
+> k, 0
+
+= 1 (any finite positive initialization works). Define standardized score 
+
+zk,t = vk,t − μk,t 
+
+σk,t + ϵ , σk,t =
+
+q
+
+σ2
+
+> k,t
+
+, (29) and logistic mapping sk,t = σ(zk,t ) = 11+ e−zk,t ∈ (0 , 1) . Badness is 
+
+bk,t =
+
+(
+
+sk,t , if metric is “lower is better” ,
+
+1 − sk,t , if metric is “higher is better” .
+
+Finally, 
+
+et =
+
+P 
+
+> k∈K
+
+wk bk,t 
+
+P 
+
+> k∈K
+
+wk
+
+, wk > 0. (30) 
+
+Proposition 4.1 (restated). Assume bk,t ∈ [0 , 1] and weights wk > 0. Then: (i) et ∈ [0 , 1] for all t. (ii) If each bk,t 
+
+is monotonically non-decreasing in the underlying true loss f (θt, ω t), then et is also monotonically non-decreasing in 
+
+f (θt, ω t).
+
+Proof. (i) Let ˜wk = wk/ P 
+
+> j
+
+wj . Then ˜wk ≥ 0, P 
+
+> k
+
+˜wk = 1 , and et = P 
+
+> k
+
+˜wkbk,t is a convex combination of values in [0 , 1] , hence et ∈ [0 , 1] . (ii) Let ℓ1 ≤ ℓ2 be two possible values of the underlying loss and denote the corresponding badnesses bk(ℓ1), b k(ℓ2). By assumption, for every k, bk(ℓ1) ≤ bk(ℓ2). Multiplying by ˜wk ≥ 0 and summing yields 
+
+e(ℓ1) = X
+
+> k
+
+˜wkbk(ℓ1) ≤ X
+
+> k
+
+˜wkbk(ℓ2) = e(ℓ2),
+
+so e is monotone in ℓ.
+
+A useful Lipschitz fact. The logistic σ(x) is 1/4-Lipschitz: for all x, y ,
+
+|σ(x) − σ(y)| ≤ 14 |x − y|. (31) 
+
+Proof. σ′(x) = σ(x)(1 − σ(x)) ≤ 1/4 for all x. Apply the mean value theorem. 
+
+Stability to metric perturbations (one-step bound). Suppose at time t we perturb one metric value vk,t by ∆ (holding all other metric values and past states fixed). Then, ignoring the (typically small) dependence of (μk,t , σ k,t ) on vk,t for a moment, we have from (31) 
+
+|bk,t (vk,t + ∆) − bk,t (vk,t )| ≤ 14 · |∆|
+
+σk,t + ϵ .
+
+Therefore, the composed error changes by at most 
+
+|et(∆) − et(0) | ≤ wk
+
+P 
+
+> j
+
+wj
+
+· |∆|
+
+4( σk,t + ϵ) . (32) In practice, σk,t is a running scale estimate that prevents any single metric with large raw scale from dominating. 18 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+EMA as exponentially-weighted average. Unrolling the EMA recursion gives 
+
+μk,t = (1 − m)
+
+> t
+
+X
+
+> j=1
+
+mt−j vk,j + mtμk, 0. (33) Hence the effective window length is about 1/(1 − m) (e.g., m = 0 .97 corresponds to ≈ 33 steps). This explains why the composer adapts quickly to slow drift while still smoothing noise. 
+
+Concentration of EMA mean (stationary case). Assume (vk,t ) are i.i.d. sub-Gaussian with mean ¯μk and parameter σ2 
+
+> v
+
+.Then μk,t is a weighted sum as in (33). Standard concentration for sub-Gaussian weighted sums yields, for any δ ∈ (0 , 1) ,
+
+Pr 
+
+
+
+|μk,t − E[μk,t ]| ≥ ε
+
+
+
+≤ 2 exp − ε2
+
+2σ2 
+
+> v
+
+(1 − m)2 Pt−1 
+
+> j=0
+
+m2j
+
+!
+
+≤ 2 exp 
+
+
+
+− ε2(1 − m2)2σ2 
+
+> v
+
+(1 − m)2
+
+
+
+, (34) where we used Pt−1 
+
+> j=0
+
+m2j ≤ 1/(1 − m2). Thus, for fixed m < 1, the EMA mean has bounded variance, and its fluctuations are controlled. Similar (though more technical) arguments apply to the variance estimator σ2 
+
+> k,t
+
+under bounded fourth moments. 
+
+D.2. Retrieval Under Cluster Separation (and Noisy Variants) Notation. There are R regimes. Each regime r has a context center μr ∈ Rdc . When rt = r, the observed context satisfies 
+
+∥ct − μr ∥2 ≤ ρ (deterministic radius model). The memory stores at least one key kr for each regime with ∥kr − μr ∥2 ≤ ρ.
+
+Lemma D.1 (Perfect retrieval under cluster separation) . If min r̸ =s ∥μr − μs∥2 > 2ρ, then nearest-neighbor retrieval 
+
+ˆrt = arg min  
+
+> r∈[R]
+
+∥ct − kr ∥2
+
+recovers the correct regime ˆrt = rt for all t.Proof. Fix t with true regime r = rt. For the correct key, 
+
+∥ct − kr ∥2 ≤ ∥ ct − μr ∥2 + ∥μr − kr ∥2 ≤ 2ρ. 
+
+For any s̸ = r,
+
+∥ct − ks∥2 ≥ ∥ μr − μs∥2 − ∥ ct − μr ∥2 − ∥ ks − μs∥2
+
+> 2ρ − ρ − ρ = 0 .
+
+Moreover the strict separation implies ∥ct − ks∥2 > 2ρ ≥ ∥ ct − kr ∥2, hence the nearest key is from regime r.
+
+Probabilistic noisy retrieval. The hard-radius assumption is conservative. A common alternative is additive noise: 
+
+ct = μrt + ξt, ξt ∼ N (0, σ 2 
+
+> c
+
+I).
+
+Assume the memory stores one representative key per regime exactly at the center (best case) kr = μr . Let the separation margin be 
+
+∆ := min   
+
+> r̸=s
+
+∥μr − μs∥2.
+
+Then retrieval is correct whenever ∥ξt∥2 < ∆/2 (since the Voronoi boundary between two centers is the perpendicular bisector). Thus, 
+
+Pr(ˆ rt̸ = rt) ≤ Pr  ∥ξt∥2 ≥ ∆/2. (35) For ξt ∼ N (0 , σ 2 
+
+> c
+
+I), ∥ξt∥22/σ 2 
+
+> c
+
+∼ χ2(dc), and standard χ2 tail bounds give (for any u > 0)
+
+Pr  ∥ξt∥2 ≥ σc(pdc + √2u) ≤ e−u. (36) Setting σc(√dc + √2u) = ∆ /2 yields an explicit exponential bound as long as ∆ is sufficiently larger than σc
+
+√dc. This formalizes the intuition: high-dimensional contexts require larger absolute separation to maintain reliable nearest-neighbor retrieval. 19 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+Top-K retrieval and soft weighting. RASP-Tuner uses top-K retrieval with softmax weights αj ∝ exp( −dij /τ ). In the perfectly separated case, the nearest neighbor from the correct regime dominates, and for small enough τ the weight 
+
+max j αj approaches 1. In the noisy case, one can bound the probability that an incorrect regime receives majority weight by combining (35) with a margin argument on distance gaps. 
+
+D.3. Dynamic Regret in an Idealized Regime Model (Exact Gradients) 
+
+We now prove Theorem 4.2 from Section 4 in full detail. 
+
+Setting. For each regime r ∈ { 1, . . . , R }, let fr : Θ → R be μ-strongly convex and L-smooth on a convex compact set 
+
+Θ ⊂ Rd. Let θ⋆r = arg min θ∈Θ fr (θ). The environment selects a regime sequence (rt)Tt=1 . Dynamic regret is 
+
+RT := 
+
+> T
+
+X
+
+> t=1
+
+
+
+frt (θt) − frt (θ⋆rt )
+
+
+
+.
+
+Algorithm (RA-GD). For each regime r, RA-GD keeps a state wr . When rt = r, it plays θt = wr and updates 
+
+wr ← ΠΘ
+
+ wr − η∇fr (wr ),
+
+with constant step size η ∈ (0 , 2/L ).D.3.1. A CONTRACTION INEQUALITY 
+
+Fix a regime r and consider only the subsequence of its visits. Let wn denote the state after n updates for regime r, with w0
+
+the initialization. Define f = fr and θ⋆ = θ⋆r for brevity. The update is 
+
+wn+1 = Π Θ(wn − η∇f (wn)) .
+
+Lemma D.2 (Distance contraction) . For η ∈ (0 , 2/L ),
+
+∥wn+1 − θ⋆∥22 ≤  1 − μη (2 − ηL ) ∥wn − θ⋆∥22. (37) 
+
+Proof. Projection onto a convex set is non-expansive, so 
+
+∥wn+1 − θ⋆∥22 = ∥ΠΘ(wn − η∇f (wn)) − ΠΘ(θ⋆)∥22
+
+≤ ∥ wn − η∇f (wn) − θ⋆∥22
+
+= ∥wn − θ⋆∥22 − 2η⟨∇ f (wn), wn − θ⋆⟩ + η2∥∇ f (wn)∥22. (38) Strong convexity implies (see standard equivalences) 
+
+⟨∇ f (wn), wn − θ⋆⟩ ≥ μ∥wn − θ⋆∥22. (39) Smoothness implies ∥∇ f (wn)∥2 ≤ L∥wn − θ⋆∥2 (since ∇f (θ⋆) = 0 and ∇f is L-Lipschitz), hence 
+
+∥∇ f (wn)∥22 ≤ L2∥wn − θ⋆∥22. (40) Plugging (39) and (40) into (38) yields 
+
+∥wn+1 − θ⋆∥22 ≤  1 − 2μη + η2L2∥wn − θ⋆∥22.
+
+A slightly tighter (and standard) refinement uses the co-coercivity inequality for L-smooth convex functions to obtain the factor 1 − μη (2 − ηL ); one can derive it by bounding the cross term more sharply. Since η ∈ (0 , 2/L ), the factor is strictly less than 1. Let 
+
+q := 1 − μη (2 − ηL ) ∈ (0 , 1) . (41) Then Lemma D.2 implies 
+
+∥wn − θ⋆∥22 ≤ qn∥w0 − θ⋆∥22. (42) 20 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+D.3.2. F ROM DISTANCE TO PER -STEP REGRET 
+
+We relate function suboptimality to squared distance. 
+
+Lemma D.3 (Quadratic sandwich) . For μ-strongly convex and L-smooth f ,
+
+μ
+
+2 ∥w − θ⋆∥22 ≤ f (w) − f (θ⋆) ≤ L
+
+2 ∥w − θ⋆∥22. (43) 
+
+Proof. The lower bound is a direct consequence of strong convexity by setting x = θ⋆ and using ∇f (θ⋆) = 0 . The upper bound follows from smoothness (standard descent lemma) with x = θ⋆.Combine (42) and Lemma D.3 to bound the regret contribution at the n-th visit: 
+
+f (wn) − f (θ⋆) ≤ L
+
+2 qn∥w0 − θ⋆∥22.
+
+Summing over n = 0 , 1, 2, . . . gives a finite geometric series: 
+
+> ∞
+
+X
+
+> n=0
+
+ f (wn) − f (θ⋆) ≤ L
+
+2 ∥w0 − θ⋆∥22
+
+> ∞
+
+X
+
+> n=0
+
+qn = L
+
+2 · ∥w0 − θ⋆∥22
+
+1 − q . (44) Since 1 − q = μη (2 − ηL ), define the constant 
+
+C := L
+
+2 · ∥w0 − θ⋆∥22
+
+μη (2 − ηL ) . (45) Then the regret accumulated over any finite number of visits N is at most C.D.3.3. P ROOF OF THEOREM 4.2 For regime r, let wr, 0 be its initialization and let qr be the contraction factor (under shared μ, L this is common). By the argument above, the cumulative regret incurred on times with rt = r is bounded by 
+
+Rr ≤ Cr := L
+
+2 · ∥wr, 0 − θ⋆r ∥22
+
+μη (2 − ηL ) .
+
+Summing across regimes yields 
+
+RT =
+
+> R
+
+X
+
+> r=1
+
+Rr ≤
+
+> R
+
+X
+
+> r=1
+
+Cr ,
+
+which is independent of T and grows at most linearly in R.
+
+D.4. Dynamic Regret with Imperfect Retrieval 
+
+Theorem 4.2 assumes that retrieval identifies the correct regime. We now show how mistakes affect regret in a clean, decomposable way. 
+
+Model of mistakes. Suppose on a subset of times E ⊆ { 1, . . . , T } the retrieval returns an incorrect regime index (or, more generally, uses the wrong per-regime state). Let MT := |E| . Assume each loss is bounded on Θ: for all r and θ ∈ Θ,
+
+0 ≤ fr (θ) − fr (θ⋆r ) ≤ ∆max .
+
+(This holds, e.g., if Θ is compact and fr is continuous.) 
+
+Theorem D.4 (Regret decomposition with misretrievals) . Run RA-GD as before, but allow arbitrary retrieval mistakes on times in E. Then 
+
+RT ≤
+
+> R
+
+X
+
+> r=1
+
+Cr + MT ∆max . (46) 21 RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware BBO 
+
+Proof. Split the regret sum into correct-retrieval times and mistake times: 
+
+RT = X
+
+> t / ∈E
+
+ frt (θt) − frt (θ⋆rt ) + X
+
+> t∈E
+
+ frt (θt) − frt (θ⋆rt ).
+
+On t / ∈ E , the algorithm behaves exactly like the ideal per-regime PGD analyzed above, hence the first term is at most P 
+
+> r
+
+Cr . On t ∈ E , each summand is at most ∆max by assumption, so the second term is at most MT ∆max . Summing yields (46). 
+
+Interpretation. This bound cleanly separates (i) the “learning” cost for each regime ( P 
+
+> r
+
+Cr ) from (ii) the “identification” cost due to retrieval mistakes ( MT ∆max ). In practice, RASP-Tuner’s novelty thresholding and uncertainty-aware escalation are designed to reduce MT by avoiding confident reuse when the context is ambiguous or out-of-distribution. 
+
+D.5. Dynamic Regret with Approximate Gradients (Surrogate Error) 
+
+RASP-Tuner does not have access to ∇fr ; it uses a surrogate (Prompt-MoE) to propose candidates. A standard abstraction is that we have an approximate gradient gt such that 
+
+∥gt − ∇ frt (θt)∥2 ≤ εt. (47) Consider the update θt+1 = Π Θ(θt − ηgt) (and the regime-wise version in RA-GD). 
+
+Theorem D.5 (Additive regret from gradient error (per regime)) . Fix a regime r and assume fr is μ-strongly convex and 
+
+L-smooth on Θ. Suppose the algorithm performs Nr updates on regime r using gradients gn with errors εn as in (47) . Then the cumulative suboptimality on that regime satisfies  
+
+> Nr−1
+
+X
+
+> n=0
+
+ fr (wn) − fr (θ⋆r ) ≤ Cr + η
+
+1 − q 
+
+> Nr−1
+
+X
+
+> n=0
+
+ε2
+
+> n
+
+, (48) 
+
+where q = 1 − μη (2 − ηL ) ∈ (0 , 1) and Cr is the ideal constant in (45) .Proof sketch (fully expanded). Proceed from (38) but replace ∇f (wn) with gn = ∇f (wn) + δn, where ∥δn∥2 ≤ εn.Expanding yields an extra cross term: 
+
+∥wn+1 − θ⋆∥22 ≤ ∥ wn − θ⋆∥22 − 2η⟨∇ f (wn), wn − θ⋆⟩ + η2∥∇ f (wn)∥22 + 2 η2⟨∇ f (wn), δn⟩ + η2∥δn∥22.
+
+Bound 2η2⟨∇ f (wn), δn⟩ ≤ η2∥∇ f (wn)∥22 + η2∥δn∥22 (Young’s inequality). This doubles the η2∥∇ f (wn)∥22 term and adds another η2ε2
+
+> n
+
+. The rest follows as in Lemma D.2, yielding a perturbed contraction: 
+
+∥wn+1 − θ⋆∥22 ≤ q∥wn − θ⋆∥22 + c η 2ε2
+
+> n
+
+for a constant c (one may take c = 2 under the crude bounds above). Unrolling this recursion gives 
+
+∥wn − θ⋆∥22 ≤ qn∥w0 − θ⋆∥22 + cη 2
+
+> n−1
+
+X
+
+> j=0
+
+qn−1−j ε2 
+
+> j
+
+.
+
+Convert distance to function suboptimality using Lemma D.3 and sum geometric series, giving (48). 
+
+Implication for RASP-Tuner. If surrogate errors are small on in-distribution contexts (small εt), the additional regret is controlled. Under OOD contexts, εt may become large; RASP-Tuner’s uncertainty/anomaly-triggered “slow path” is designed to reduce future εt by updating the surrogate (or, at minimum, avoiding aggressive exploitation). 
+
+## E. Figure and Table Placement 
+
+Main experimental figures and tables appear in the main text: Figures 2, 3, 4, and 5 (Section 6), Table 2 (Section 5), and Tables 3–4 (Section 6.4). 22
