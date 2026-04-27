@@ -6,73 +6,58 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-26
-- 运行时间：2026-04-26 20:22:11 UTC
+- 最新运行日期：2026-04-27
+- 运行时间：2026-04-27 20:29:41 UTC
 - 运行状态：成功
-- 本次总论文数：17
-- 精读区：6
+- 本次总论文数：12
+- 精读区：1
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 17 篇 AI 论文，聚焦视觉语言模型（VLM）在空间推理与测试时自适应（TTA）上的突破性进展。
-满分研究 SpatiO 与 Prototype-Based TTA 证明了动态编排与原型学习是解决多模态模型泛化难题的关键。
-建议开发者重点关注测试时优化技术，以低成本提升模型在复杂多变环境下的推理表现与鲁棒性。
-- 详情：[/202604/26/README](/202604/26/README)
+今日精选 12 篇前沿论文，重点突破视觉语言智能体（VLA）的空间推理与具身控制难题。
+高分论文 SpatiO 提出的自适应推理编排框架，为提升智能体在复杂空间环境下的决策精度提供了新范式。
+建议深入了解 VLA 模型如何结合空间感知与在线强化学习，以实现更高效、稳健的机器人任务执行。
+- 详情：[/202604/27/README](/202604/27/README)
 
 ### 精读区论文标签
-1. [SpatiO: Adaptive Test-Time Orchestration of Vision-Language Agents for Spatial Reasoning](/202604/26/2604.21190v1-spatio-adaptive-test-time-orchestration-of-vision-language-agents-for-spatial-reasoning)  
-   标签：评分：10.0/10、query:tta
+1. [SpatiO: Adaptive Test-Time Orchestration of Vision-Language Agents for Spatial Reasoning](/202604/27/2604.21190v1-spatio-adaptive-test-time-orchestration-of-vision-language-agents-for-spatial-reasoning)  
+   标签：评分：9.0/10、query:tta
    evidence：视觉语言智能体的自适应测试时间编排
-2. [Prototype-Based Test-Time Adaptation of Vision-Language Models](/202604/26/2604.21360v1-prototype-based-test-time-adaptation-of-vision-language-models)  
-   标签：评分：10.0/10、query:tta
-   evidence：基于原型的视觉语言模型测试时间自适应
-3. [Ramen: Robust Test-Time Adaptation of Vision-Language Models with Active Sample Selection](/202604/26/2604.21728v1-ramen-robust-test-time-adaptation-of-vision-language-models-with-active-sample-selection)  
-   标签：评分：10.0/10、query:tta
-   evidence：视觉语言模型的鲁棒测试时间自适应
-4. [Back to Source: Open-Set Continual Test-Time Adaptation via Domain Compensation](/202604/26/2604.21772v1-back-to-source-open-set-continual-test-time-adaptation-via-domain-compensation)  
-   标签：评分：10.0/10、query:tta
-   evidence：提出了一种针对开放集持续测试时间自适应（OCTTA）的框架
-5. [Absorber LLM: Harnessing Causal Synchronization for Test-Time Training](/202604/26/2604.20915v1-absorber-llm-harnessing-causal-synchronization-for-test-time-training)  
-   标签：评分：9.0/10、query:tta
-   evidence：用于测试时间训练的自监督因果同步
-6. [Adaptive Test-Time Compute Allocation with Evolving In-Context Demonstrations](/202604/26/2604.21018v1-adaptive-test-time-compute-allocation-with-evolving-in-context-demonstrations)  
-   标签：评分：9.0/10、query:tta
-   evidence：利用测试集样本自适应调整生成过程的测试时计算分配框架
 
 ### 速读区论文标签
-1. [ReCAPA: Hierarchical Predictive Correction to Mitigate Cascading Failures](/202604/26/2604.21232v1-recapa-hierarchical-predictive-correction-to-mitigate-cascading-failures)  
-   标签：评分：8.0/10、query:tta
-   evidence：针对视觉-语言-动作系统的后置修正机制
-2. [No-Worse Context-Aware Decoding: Preventing Neutral Regression in Context-Conditioned Generation](/202604/26/2604.16686v1-no-worse-context-aware-decoding-preventing-neutral-regression-in-context-conditioned-generation)  
+1. [Learning Whole-Body Humanoid Locomotion via Motion Generation and Motion Tracking](/202604/27/2604.17335v1-learning-whole-body-humanoid-locomotion-via-motion-generation-and-motion-tracking)  
    标签：评分：7.0/10、query:tta
-   evidence：用于上下文条件生成的解码时间适配器
-3. [RASP-Tuner: Retrieval-Augmented Soft Prompts for Context-Aware Black-Box Optimization in Non-Stationary Environments](/202604/26/2604.18026v1-rasp-tuner-retrieval-augmented-soft-prompts-for-context-aware-black-box-optimization-in-non-stationary-environments)  
+   evidence：类人机器人运动对不同地形的实时自适应
+2. [OmniVLA-RL: A Vision-Language-Action Model with Spatial Understanding and Online RL](/202604/27/2604.17706v2-omnivla-rl-a-vision-language-action-model-with-spatial-understanding-and-online-rl)  
    标签：评分：7.0/10、query:tta
-   evidence：非平稳环境下的在线调优与自适应成本
-4. [Mask World Model: Predicting What Matters for Robust Robot Policy Learning](/202604/26/2604.19683v2-mask-world-model-predicting-what-matters-for-robust-robot-policy-learning)  
+   evidence：具有在线强化学习的视觉-语言-动作模型
+3. [SpanVLA: Efficient Action Bridging and Learning from Negative-Recovery Samples for Vision-Language-Action Model](/202604/27/2604.19710v1-spanvla-efficient-action-bridging-and-learning-from-negative-recovery-samples-for-vision-language-action-model)  
    标签：评分：7.0/10、query:tta
-   evidence：用于鲁棒机器人策略学习的世界模型
-5. [Efficient Reinforcement Learning using Linear Koopman Dynamics for Nonlinear Robotic Systems](/202604/26/2604.19980v1-efficient-reinforcement-learning-using-linear-koopman-dynamics-for-nonlinear-robotic-systems)  
+   evidence：视觉-语言-动作模型的高效动作桥接
+4. [ImageHD: Energy-Efficient On-Device Continual Learning of Visual Representations via Hyperdimensional Computing](/202604/27/2604.21280v1-imagehd-energy-efficient-on-device-continual-learning-of-visual-representations-via-hyperdimensional-computing)  
    标签：评分：7.0/10、query:tta
-   evidence：针对流式交互数据的在线小批量策略梯度框架
-6. [Adaptive Conformal Anomaly Detection with Time Series Foundation Models for Signal Monitoring](/202604/26/2604.20122v1-adaptive-conformal-anomaly-detection-with-time-series-foundation-models-for-signal-monitoring)  
+   evidence：针对非平稳数据流的设备端持续学习
+5. [Hi-WM: Human-in-the-World-Model for Scalable Robot Post-Training](/202604/27/2604.21741v1-hi-wm-human-in-the-world-model-for-scalable-robot-post-training)  
    标签：评分：7.0/10、query:tta
-   evidence：针对分布偏移的基础模型事后自适应方法
-7. [Temporal Difference Calibration in Sequential Tasks: Application to Vision-Language-Action Models](/202604/26/2604.20472v1-temporal-difference-calibration-in-sequential-tasks-application-to-vision-language-action-models)  
+   evidence：世界模型作为策略改进的纠正基质
+6. [Knowledge-driven Augmentation and Retrieval for Integrative Temporal Adaptation](/202604/27/2604.22098v1-knowledge-driven-augmentation-and-retrieval-for-integrative-temporal-adaptation)  
    标签：评分：7.0/10、query:tta
-   evidence：专注于机器人序列任务中视觉-语言-动作（VLA）模型的不确定性校准。
-8. [Efficient Test-Time Inference via Deterministic Exploration of Truncated Decoding Trees](/202604/26/2604.20500v1-efficient-test-time-inference-via-deterministic-exploration-of-truncated-decoding-trees)  
-   标签：评分：7.0/10、query:tta
-   evidence：通过确定性解码实现高效的测试时间推理
-9. [OASIS: On-Demand Hierarchical Event Memory for Streaming Video Reasoning](/202604/26/2604.17052v1-oasis-on-demand-hierarchical-event-memory-for-streaming-video-reasoning)  
+   evidence：针对具有分布偏移的未来数据的模型时间自适应
+7. [Spike-NVPT: Learning Robust Visual Prompts via Bio-Inspired Temporal Filtering and Discretization](/202604/27/2604.18284v1-spike-nvpt-learning-robust-visual-prompts-via-bio-inspired-temporal-filtering-and-discretization)  
+   标签：评分：6.5/10、query:tta
+   evidence：预训练视觉模型适配的参数高效范式
+8. [Lever: Inference-Time Policy Reuse under Support Constraints](/202604/27/2604.20174v1-lever-inference-time-policy-reuse-under-support-constraints)  
+   标签：评分：6.5/10、query:tta
+   evidence：针对新复合目标的推理阶段策略重用
+9. [dWorldEval: Scalable Robotic Policy Evaluation via Discrete Diffusion World Model](/202604/27/2604.22152v1-dworldeval-scalable-robotic-policy-evaluation-via-discrete-diffusion-world-model)  
+   标签：评分：6.5/10、query:tta
+   evidence：用于机器人策略评估的离散扩散世界模型
+10. [SafeAnchor: Preventing Cumulative Safety Erosion in Continual Domain Adaptation of Large Language Models](/202604/27/2604.17691v1-safeanchor-preventing-cumulative-safety-erosion-in-continual-domain-adaptation-of-large-language-models)  
    标签：评分：6.0/10、query:tta
-   evidence：针对历史无限增长的流式视频推理的按需检索技术。
-10. [Continual Safety Alignment via Gradient-Based Sample Selection](/202604/26/2604.17215v1-continual-safety-alignment-via-gradient-based-sample-selection)  
+   evidence：大语言模型的持续领域自适应
+11. [HELM: Harness-Enhanced Long-horizon Memory for Vision-Language-Action Manipulation](/202604/27/2604.18791v1-helm-harness-enhanced-long-horizon-memory-for-vision-language-action-manipulation)  
    标签：评分：6.0/10、query:tta
-   evidence：在保持安全对齐的同时持续适应新任务
-11. [Waking Up Blind: Cold-Start Optimization of Supervision-Free Agentic Trajectories for Grounded Visual Perception](/202604/26/2604.17475v1-waking-up-blind-cold-start-optimization-of-supervision-free-agentic-trajectories-for-grounded-visual-perception)  
-   标签：评分：6.0/10、query:tta
-   evidence：针对小型视觉语言模型的无监督框架
+   evidence：用于长程操作任务的视觉-语言-动作 (VLA) 模型
 
 
 <div class="dpr-home-promo-card">

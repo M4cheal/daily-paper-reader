@@ -1,0 +1,648 @@
+Title: SafeAnchor: Preventing Cumulative Safety Erosion in Continual Domain Adaptation of Large Language Models
+
+URL Source: https://arxiv.org/pdf/2604.17691v1
+
+Published Time: Tue, 21 Apr 2026 01:44:44 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# SafeAnchor: Preventing Cumulative Safety Erosion in Continual Domain Adaptation of Large Language Models 
+
+Dongxin Guo † Jikun Wu ‡ Siu Ming Yiu †† The University of Hong Kong, Hong Kong, China  
+
+> ‡
+
+Brain Investing Limited, Hong Kong, China 
+
+Abstract 
+
+Safety alignment in large language models is remarkably shallow: it is concentrated in the first few output tokens and reversible by fine-tuning on as few as 100 adversarial examples. This fragility becomes critical in real-world deployment, where models undergo sequential adaptation across domains such as medicine, law, and code, causing safety guardrails to erode cumulatively. Yet all existing safety-preserving methods target only single-task fine-tuning, leaving the multi-domain sequential setting entirely unaddressed. We introduce SafeAnchor , a framework that anchors safety in place throughout continual adaptation. SafeAnchor first identifies low-rank safety subspaces in LoRA parameter space via Fisher Information eigendecomposition, then constrains domain-specific gradient updates to the orthogonal complement of these subspaces, and finally monitors for residual safety drift with threshold-triggered corrective replay. Evaluated on Llama-2-7B-Chat and Mistral-7B-Instruct across a three-domain pipeline and eight benchmarks, SafeAnchor retains 93.2% of original safety alignment, outperforming all baselines by 18–42 points, while matching unconstrained fine-tuning to within 1.5 points on domain tasks. 
+
+Keywords: AI Safety, Continual Learning, Large Language Models, Safety Alignment, LoRA, Domain Adaptation 
+
+1. Introduction 
+
+Large language models (LLMs) are increasingly adapted to specialized domains such as medicine, law, and code generation through continual fine-tuning on domain-specific data [1, 2]. In practice, a single model may undergo a sequence of adaptations as organizational needs evolve, forming a continual domain adaptation pipeline. While this sequential fine-tuning extends model capabilities, it poses a critical yet underexplored risk: the cumulative erosion of safety alignment. Recent work has established that safety alignment in LLMs is surprisingly brittle. Qi et al. [3] demonstrated that current alignment primarily modifies the generative distribution over the first few output tokens, teaching models to begin with refusal phrases rather than embedding deep behavioral changes. Ji et al. [4] introduced alignment elasticity , showing that LLMs inherently resist alignment and revert to pre-training behavior upon further fine-tuning, with this effect intensifying at larger scales. Even benign fine-tuning on standard datasets can compromise safety guardrails [5], and as few as 100 adversarial examples can undo 100,000 safety training instances [6]. The “safety tax” documented by Huang et al. [7] further reveals a fundamental trade-off between safety and reasoning capability. These findings reveal a fundamental vulnerability: each adaptation step risks degrading safety, and these degradations compound. Yet existing safety-preserving methods (Vaccine [8], RepNoise [9], Safe LoRA [10], SaLoRA [11], Lisa [12], SafeGrad [13]) all address only single-task adaptation. CL methods such as O-LoRA [14], InfLoRA [15], and GainLoRA [16] prevent task forgetting but ignore safety. Alssum et al. [17] and OGPSA [18] evaluate only single-task or the inverse problem. No existing work addresses safety during sequential multi-domain continual adaptation. We propose SafeAnchor , a framework that anchors safety alignment in place while enabling effective continual domain adaptation of LLMs. SafeAnchor integrates three components whose combination addresses the sequential safety-preservation setting (Figure 1): 
+
+> arXiv:2604.17691v1 [cs.LG] 20 Apr 2026
+
+(1) Safety Subspace Identification (SSI) uses gradient-based Fisher Information analysis [19–21] to identify LoRA parameter directions encoding safety, updated incrementally after each domain via explicit subspace merging. 
+
+(2) Orthogonal Safety-Constrained Adaptation (OSCA) projects LoRA gradient updates onto the orthogonal complement of the safety subspace, extending gradient projection from single-task safety [13] and continual learning [15, 22] to the sequential safety-preservation setting. 
+
+(3) Cumulative Safety Monitoring (CSM) evaluates safety on a held-out probe set after each domain using LlamaGuard [23], triggering corrective replay when degradation exceeds a threshold. We evaluate on Llama-2-7B-Chat [24] and Mistral-7B-Instruct [25] across eight benchmarks: domain (MedQA [26], LegalBench [27], HumanEval [28]), safety (HarmBench [29], TruthfulQA [30], BBQ [31], WildGuard [32]), and general (MMLU [33]). All results report mean ±
+
+std over five seeds. SafeAnchor retains 93 .2 ± 1.0% of original safety within 1.5 points of unconstrained fine-tuning, outperforming all baselines by 18–42 points. Our contributions are: 
+
+• We identify and characterize the problem of safety-preserving continual domain adaptation ,demonstrating that sequential fine-tuning causes compounding safety erosion unaddressed by existing methods. 
+
+• We propose SafeAnchor, integrating Fisher-based subspace identification, orthogonal gradient projection, and threshold-triggered monitoring into a unified framework for sequential safety preservation. 
+
+• We provide comprehensive experiments on two models and eight benchmarks with variance reporting, ablations, and sensitivity analysis, achieving state-of-the-art safety preservation. 2. Related Work  
+
+> 2.1. Fragility of Safety Alignment
+
+Standard alignment techniques produce safety behaviors that are surprisingly shallow. Qi et al. [3] showed alignment concentrates in the first few output tokens; Ji et al. [4] demonstrated that LLMs exhibit alignment elasticity , reverting to pre-training behavior upon further fine-tuning, with this effect worsening at scale. Even benign fine-tuning compromises safety [5], and as few as 100 adversarial examples can undo extensive safety training [6]. The safety tax [7] further documents a fundamental safety–capability trade-off. Together, these findings motivate our work: if single-step fine-tuning already degrades safety, sequential multi-domain adaptation compounds the problem.  
+
+> 2.2. Safety-Preserving Fine-Tuning
+
+Existing defenses operate at three stages [34]. Alignment-stage methods modify the base model before fine-tuning: Vaccine [8] produces perturbation-invariant embeddings, and RepNoise [9] removes harmful representations. Fine-tuning-stage methods constrain the adaptation process: Lisa [12] alternates alignment and task optimization, and SafeGrad [13] projects away safety-conflicting gradients. Post-fine-tuning methods adjust adapted weights: Safe LoRA [10] projects LoRA onto safety-aligned subspaces, and SaLoRA [11] orthogonalizes against safety features. Despite this rich landscape, every method addresses only single-task adaptation , leaving cumulative erosion across sequential domains unaddressed.  
+
+> 2.3. Continual Learning, Orthogonal Gradients, and Safety Subspaces
+
+Continual learning for LLMs has converged on LoRA-based approaches [1, 35]. Orthogonal subspace methods are most relevant to our work: O-LoRA [14] learns each task in a subspace SSI           
+
+> Fisher Eigen.
+> Safety Subspace
+> Dsafe
+> Safety Cal.
+> OSCA
+> Orth. Proj.
+> Constrained Training
+> Dt
+> Domain t
+> θt
+> Adapted
+> CSM
+> Monitor
+> Safety Check
+> Dprobe
+> Probe
+> Next
+> Domain
+> Replay
+> if st<
+> (1 −τ)s0
+> Vsafe
+> iPass
+> Update Vsafe
+> i
+> Figure 1. SafeAnchor pipeline. SSI identifies safety-critical LoRA directions via Fisher eigendecomposition. OSCA projects domain gradients orthogonally during training. CSM triggers corrective replay if safety degrades. The subspace is incrementally updated after each domain.
+
+orthogonal to the column span of prior-task LoRA matrices, preventing inter-task interference but providing no mechanism for protecting a behavioral property; InfLoRA [15] pre-allocates per-task directions via SVD of input activations; OGD [22] provides the theoretical framing for gradient projection which we extend from task-preservation to safety-preservation; and GainLoRA [16] uses input-dependent routing, an orthogonal design axis. EWC [36] penalizes changes to parameters important for prior tasks via diagonal Fisher, which inspired our Fisher-based subspace identification, though we apply it to safety-behavior preservation rather than task-performance. Separately, mechanistic interpretability has revealed that safety occupies identifiable low-rank subspaces. Arditi et al. [19] found refusal is mediated by a single activation direction; Wollschläger et al. [20] extended this to multi-dimensional spaces; representation engineering [21] provides broader frameworks; DARE [37] reveals redundancy in LoRA deltas; and SAILS [38] constructs interpretable safety subspaces via sparse autoencoders. Two works partially bridge CL and safety: OGPSA [18] addresses the inverse problem of preserving task knowledge during safety alignment, and Alssum et al. [17] apply CL methods to safety but evaluate only single-task settings. SafeAnchor is the first to combine safety subspace identification with orthogonally-constrained continual LoRA optimization across 
+
+sequential multi-domain adaptation. 3. SafeAnchor 
+
+We present SafeAnchor, a framework for preserving safety alignment during continual domain adaptation of LLMs. Figure 1 illustrates the overall pipeline and Algorithm 1 summarizes the procedure. 
+
+3.1. Problem Formulation 
+
+Consider a safety-aligned LLM with parameters θ0 that must be sequentially adapted to T domains {T 1, T2, . . . , TT }, each with training data Dt. Using LoRA [35], the model’s weight matrices W ∈ Rd×k are augmented as W + BA , where B ∈ Rd×r and A ∈ Rr×k with rank r ≪ min( d, k ). At each step t, we train LoRA parameters ∆t = {Bt, A t}.Let S(θ) denote the safety score and Pt(θ) denote domain task performance. The standard CL objective maximizes P 
+
+> t
+
+Pt(θt) subject to preventing forgetting. Our objective adds a safety constraint : find {∆t}Tt=1 that maximizes domain performance while maintaining 
+
+S(θt) ≥ (1 − ϵ)S(θ0) for all t, where ϵ is a small tolerance. As we demonstrate, this is highly non-trivial without targeted intervention. 3.2. Safety Subspace Identification (SSI) 
+
+Inspired by findings that safety behaviors occupy identifiable low-rank subspaces in both activation space [19–21] and parameter space [37, 38], we identify the parameter subspace encoding safety-critical behavior using a gradient-based Fisher Information approach. 
+
+Safety Calibration Set. We construct a small calibration set Dsafe of Ns prompt-response pairs (we use Ns = 500 ) drawn from a safety-aligned dataset [39, 40], containing both harmful prompts with correct refusal responses and benign prompts with helpful responses. 
+
+Fisher Information for LoRA Parameters. For each LoRA layer i, we denote its flattened parameter vector as δi = vec ([ Bi; Ai]) , concatenating the vectorized Bi and 
+
+Ai matrices from the set-level LoRA parameters ∆t. We compute the empirical Fisher Information Matrix: 
+
+Fi = 1
+
+Ns
+
+X
+
+> (x,y )∈D safe
+
+∇δi log pθ (y|x) ∇δi log pθ (y|x)⊤ (3.1) We acknowledge that the empirical Fisher is a biased approximation of the true Fisher; we verify robustness to Ns in Section 4.5. The eigendecomposition Fi = UiΛiU ⊤ 
+
+> i
+
+reveals principal safety-relevant directions. We select eigenvectors whose eigenvalues account for cumulative proportion ρ of total variance ( ρ = 90% ) to form the safety subspace basis :
+
+V safe  
+
+> i
+
+= [ u(1)  
+
+> i
+
+, u (2)  
+
+> i
+
+, . . . , u (ks) 
+
+> i
+
+] ∈ R|δi|× ks (3.2) The resulting projection matrix for layer i is Πsafe  
+
+> i
+
+= V safe  
+
+> i
+
+(V safe  
+
+> i
+
+)⊤. As we verify in Section 4.4, the eigenvalue spectrum is sharply decaying, confirming that safety information occupies a genuinely low-rank subspace in LoRA parameter space, consistent with activation-space findings [19]. 
+
+Incremental Subspace Update. After each domain adaptation t, the model parameters shift, potentially altering which directions are safety-critical. We update the safety subspace as follows: (1) recompute Fi on Dsafe using the adapted model θt to obtain new eigenvectors 
+
+ˆV safe  
+
+> i
+
+; (2) concatenate the old and new bases: V merged  
+
+> i
+
+= [ V safe  
+
+> i
+
+| ˆV safe  
+
+> i
+
+]; (3) perform SVD on V merged  
+
+> i
+
+and retain the top singular vectors capturing ρ of the variance, yielding the updated V safe  
+
+> i
+
+with controlled rank. This ensures the safety subspace tracks the evolving model while preventing unbounded rank growth. Note that SVD truncation may discard old safety directions with diminished singular values; we verify in Section 4.4 that the resulting subspace remains effective.  
+
+> 3.3. Orthogonal Safety-Constrained Adaptation (OSCA)
+
+For domain t, OSCA constrains LoRA updates to lie in the orthogonal complement of the safety subspace. Given a task loss gradient gti = ∇δi Lt at layer i, OSCA computes the projected gradient: 
+
+˜gti = gti − Πsafe  
+
+> i
+
+gti = ( I − V safe  
+
+> i
+
+(V safe  
+
+> i
+
+)⊤) gti (3.3) This removes the safety-subspace component from the gradient, ensuring domain-specific learning occurs only in directions orthogonal to safety-critical parameters [22]. 
+
+Adaptive Projection Strength. Strict orthogonal projection may over-constrain learning on layers where safety and task subspaces overlap significantly. We introduce an adaptive relaxation coefficient αi ∈ [0 , 1] :
+
+ˆgti = ˜ gti + αi · Πsafe  
+
+> i
+
+gti (3.4) where αi = max (0 , 1 − λ · tr (Fi)) decays toward zero for layers with high safety importance (large Fisher trace tr (Fi) = P 
+
+> j
+
+μ(i) 
+
+> j
+
+, the sum of eigenvalues), enforcing stricter projection where safety is most concentrated. Here λ is a hyperparameter controlling the strictness. 3.4. Cumulative Safety Monitoring (CSM) 
+
+While OSCA prevents direct interference with the safety subspace, indirect effects (such as changes to shared representations that affect safety through non-linear pathways) may still accumulate across domain transitions. CSM addresses this through a lightweight monitoring and correction mechanism. 
+
+Safety Probe. We maintain a held-out safety probe set Dprobe (disjoint from Dsafe , 200 examples from HarmBench [29]). After each domain adaptation t, we evaluate the safety refusal rate st on Dprobe using LlamaGuard [23] as the binary safety classifier (which achieves 92.1% F1 on our probe set for distinguishing safe refusals from harmful completions). 
+
+Threshold-Triggered Safety Replay. If st < (1 − τ ) s0 (where s0 is the baseline refusal rate and τ is the fractional tolerance), CSM triggers a brief safety replay: we fine-tune for 
+
+Erepair = 200 steps on a mixture of the safety calibration set and the current domain data, using the OSCA-projected gradients, to restore the safety score. The value Erepair = 200 sits at the knee of a diminishing-returns curve (Appendix C): 100 steps recover only +1 .9 points vs. +2 .7 at 200 , while 400 adds a further +0 .2 points at twice the cost plus 0.4 points of domain regression. After replay, we re-evaluate st to verify st ≥ (1 − τ ) s0; if not, replay is extended by at most one further Erepair block. The replay objective is: 
+
+Lreplay = Lt(Dt) + β · L safe (Dsafe ) (3.5) where β controls the safety-task balance. Empirically, CSM triggers 3 times across 5 seeds 
+
+× 3 domains ( 0.20 triggers per domain-adaptation, concentrated on Code; Appendix C), adding negligible overhead.  
+
+> 3.5. Training Objective
+
+The complete SafeAnchor training objective for domain t combines the domain task loss with a safety regularization term: 
+
+Lt 
+
+> total
+
+= Lt(Dt) + γ · L t 
+
+> anchor
+
+(3.6) where the safety anchor loss penalizes changes to the model’s output distribution on safety-relevant inputs: 
+
+Lt 
+
+> anchor
+
+= 1
+
+|D safe |
+
+X
+
+> x∈D safe
+
+DKL 
+
+ pθt−1 (·| x) ∥ pθt (·| x) (3.7) We use forward KL because it is mean-seeking: it penalizes the current model for assigning low probability where the safe model assigned high probability, preserving refusal behaviors. Empirically, reverse KL yields 1.8 points lower safety. The coefficient γ controls regularization strength. This anchor loss complements OSCA’s hard orthogonal projection with soft distributional regularization. Note that OSCA projects only the task gradient ∇L t, while the anchor gradient ∇L t 
+
+> anchor
+
+bypasses projection so that its safety-reinforcing signal is preserved. 4. Experiments  
+
+> 4.1. Experimental Setup
+
+Models. We evaluate on Llama-2-7B-Chat [24] and Mistral-7B-Instruct [25], both safety-aligned chat models representative of widely deployed open-weight LLMs. 
+
+Sequential Domain Adaptation. We adapt models through three domains in se-quence: (1) Medical : fine-tuned on MedQA training split [26] for medical question answering; (2) Legal : fine-tuned on LegalBench tasks [27] for legal reasoning; (3) Code : fine-tuned on the CodeAlpaca subset for code generation. Each domain uses 5,000 training examples with 3 epochs. We additionally test an alternative ordering (Code → Legal → Medical) in Section 4.3. Algorithm 1 SafeAnchor: Safety-Preserving Continual Domain Adaptation 
+
+Require: Safety-aligned model θ0, domains {T 1, . . . , TT }, safety sets Dsafe , Dprobe , Llama-Guard classifier C 
+
+> 1:
+
+Compute initial safety subspace {V safe  
+
+> i
+
+} via SSI (Eq. 3.1–3.2)  
+
+> 2:
+
+Evaluate baseline safety s0 = C(θ0, Dprobe ) 
+
+> 3:
+
+for t = 1 to T do  
+
+> 4:
+
+Initialize LoRA parameters ∆t for domain Tt 
+
+> 5:
+
+for each training step do  
+
+> 6:
+
+Compute task gradient gti ← ∇ δi Lt; anchor gradient ati ← γ∇δi Lt 
+
+> anchor
+> 7:
+
+Apply OSCA: ˆgti ← ˜gti + αi · Πsafe  
+
+> i
+
+gti {Eqs. 3.3–3.4}  
+
+> 8:
+
+Update δi ← δi − η(ˆ gti + ati) 
+
+> 9:
+
+end for  
+
+> 10:
+
+Evaluate st = C(θt, Dprobe ) using LlamaGuard  
+
+> 11:
+
+if st < (1 − τ ) s0 then  
+
+> 12:
+
+Run safety replay (Eq. 3.5) for Erepair steps; re-evaluate st; extend by at most one further block if still below threshold  
+
+> 13:
+
+end if  
+
+> 14:
+
+Recompute ˆV safe  
+
+> i
+
+from θt; merge with V safe  
+
+> i
+
+via SVD truncation at ρ 
+
+> 15:
+
+end for  
+
+> 16:
+
+return Adapted model θT
+
+Evaluation Benchmarks. Safety metrics: HarmBench [29] (refusal rate on 200 harmful prompts), TruthfulQA [30] (truthfulness score), BBQ [31] (bias score; lower is better, inverted for composite), and WildGuard [32] (jailbreak robustness). We compute a composite Safety Score as: Safety = 13
+
+ HarmBench 
+
+100 + TruthfulQA 
+
+100 + 100 − BBQ bias 
+
+100 
+
+
+
+× 100 (4.1) where each component is expressed as a percentage and BBQ bias is inverted so higher is better. WildGuard is reported separately as an independent jailbreak-robustness indicator distinct from the refusal/truthfulness/bias triad. Domain metrics: MedQA accuracy, LegalBench accuracy, and HumanEval pass@1 [28]. General: MMLU [33]. MT-Bench [41] scores are reported in Section 4.3. 
+
+Baselines. (1) Standard LoRA [35]: unconstrained sequential fine-tuning. (2) EWC+LoRA [36]: Fisher-based regularization. (3) O-LoRA [14]: orthogonal sub-space LoRA. (4) Safe LoRA [10]: post-hoc safety projection. (5) Vaccine+LoRA [8]: pre-immunization. (6) SafeGrad+LoRA [13]: gradient surgery. (7) Safety Interleaving : mixing 10% safety data from BeaverTails into each domain’s training set (a natural but previously untested baseline). 
+
+Baseline Adaptation to Sequential Setting. For fair comparison, all baselines were adapted to the sequential pipeline: SafeGrad’s alignment gradient is recomputed per domain step; Safe LoRA’s projection is applied after each step; Vaccine’s immunization is applied once before all domains (per its design); EWC’s Fisher is recomputed per domain; O-LoRA allocates orthogonal subspaces per domain. All use identical LoRA configurations. 
+
+Implementation. PEFT [42] with LoRA r=16 , α=32 on Q, K, V, O pro-jections. Learning rate 2×10 −4 (cosine), batch 8 × grad-accum 2, AdamW (β1= 0.9, β 2= 0.999 , wd = 0 .01 ). Safety calibration: 500 BeaverTails examples [40]. De-faults: ρ= 0.90 , τ =0.05 , γ = 0.1, λ =0.5, β = 1.0, E repair =200 . All runs on 2 ×A100 40GB (BF16). A 3-domain, 5-seed pipeline takes ≈7 h 47 min per seed: SSI ≈12 .4 min/domain, OSCA 
+
+≈17 .8% per-step overhead, CSM probe ≈4.8 min/transition (plus ≈5 min replay if triggered). Table 1. Results on Llama-2-7B-Chat after sequential adaptation (Medical → Legal →                                                                                                                                                
+
+> Code). Safety Score is the composite of HarmBench, TruthfulQA, and BBQ (Eq. 4.1). All values: mean ±std over 5 seeds. Best in bold , second underlined.
+> Method Safety ↑Domain ↑MMLU ↑
+> Base (no adapt.) 91 .438 .246 .1
+> Standard LoRA 43 .6±2.162 .7±0.644 .8±0.3
+> EWC + LoRA 52 .1±1.859 .4±0.745 .3±0.4
+> O-LoRA 48 .7±2.360 .1±0.845 .0±0.3
+> Safe LoRA 61 .3±1.557 .8±0.944 .9±0.4
+> Vaccine + LoRA 58 .9±1.758 .6±0.844 .5±0.5
+> SafeGrad + LoRA 67 .4±1.459 .2±0.745 .1±0.3
+> Safety Interleaving 64 .8±1.660 .9±0.745 .2±0.4
+> SafeAnchor 85 .2±0.961 .4±0.545 .7±0.3
+> Table 2. Results on Mistral-7B-Instruct across the same sequential pipeline. SafeAnchor demonstrates consistent safety preservation across architectures. All values: mean ±std over 5 seeds.
+> Method Safety ↑Domain ↑MMLU ↑
+> Base (no adapt.) 88 .740 .556 .3
+> Standard LoRA 39 .2±2.465 .3±0.754 .9±0.4
+> EWC + LoRA 48 .8±1.962 .1±0.855 .4±0.3
+> Safe LoRA 57 .6±1.660 .4±0.955 .1±0.4
+> SafeGrad + LoRA 63 .8±1.561 .7±0.655 .6±0.3
+> Safety Interleaving 61 .2±1.863 .1±0.755 .3±0.4
+> SafeAnchor 82 .6±1.063 .8±0.555 .9±0.3
+
+Mean ± std over 5 seeds throughout. Complete hyperparameters and per-phase compute in Appendix F. 
+
+4.2. Main Results 
+
+Tables 1 and 2 present our main results. On Llama-2-7B-Chat, standard LoRA causes a catastrophic 47 .8-point safety drop. SafeGrad+LoRA achieves the best single-method baseline ( 67 .4 ± 1.4) but still loses 24 points. Safety Interleaving ( 64 .8 ± 1.6) confirms passive data mixing is insufficient. SafeAnchor retains 85 .2 ± 0.9 (93.2% of original safety ), with domain performance within 1.3 points of unconstrained LoRA. The pattern holds on Mistral (93.1% safety, 1.5-point gap). CL methods (O-LoRA, EWC) perform worse than safety-specific methods, confirming targeted preservation is necessary. 
+
+4.3. Robustness Analysis 
+
+Safety Across Domain Steps. Figure 2 shows the four safety scores recorded at the base model and after each adaptation step on Llama-2-7B-Chat. Standard LoRA exhibits accelerating degradation ( 91 .4 → 78 .3 → 61 .5 → 43 .6; average 15 .9 points per step), confirming compounding erosion. SafeGrad+LoRA degrades more slowly ( 91 .4 → 84 .1 →
+
+76 .2 → 67 .4; 8.0 pts/step) but cannot prevent cumulative drift. SafeAnchor decelerates the decrease by an order of magnitude ( 91 .4 → 89 .8 → 87 .1 → 85 .2; 2.1 pts/step, roughly linear), confirming that orthogonal projection and monitoring suppress compounding, though they do not entirely eliminate it. Base +Med +Legal +Code 
+
+40 
+
+50 
+
+60 
+
+70 
+
+80 
+
+90 
+
+100 
+
+Adaptation Stage                                                 
+
+> Safety Score
+> Standard LoRA
+> SafeGrad+LoRA
+> Safety Interleaving
+> SafeAnchor
+> Figure 2. Safety score trajectory across sequential domain adaptations on Llama-2-7B-Chat. SafeAnchor prevents the compounding erosion exhibited by all baselines.
+> Table 3. Ablation study on Llama-2-7B-Chat showing the contribution of each SafeAnchor component. Mean ±std over 5 seeds.
+> Configuration Safety ↑Domain ↑
+> Standard LoRA 43 .6±2.162 .7±0.6
+> + SSI only (no projection) 44 .2±2.062 .5±0.6
+> + SSI + OSCA (strict) 79 .6±1.258 .3±0.8
+> + SSI + OSCA (adaptive) 82 .4±1.060 .8±0.6
+> + Anchor Loss 83 .7±1.061 .1±0.6
+> + CSM (full SafeAnchor) 85 .2±0.961 .4±0.5
+> No incremental SSI update 80 .1±1.361 .0±0.6
+
+Domain Ordering Robustness. To assess sensitivity to domain ordering, we test all 
+
+3! = 6 permutations of {Medical, Legal, Code } (full table in Appendix B). Across orderings, SafeAnchor’s final safety ranges from 83 .9 ± 1.2 to 85 .2 ± 0.9 (mean 84 .55 , cross-order SD 
+
+0.51 ), while Standard LoRA collapses to 40 .5–44 .9 regardless of order. The cross-ordering SD (0.51 ) is notably smaller than within-ordering seed SD ( ≈ 1.0), so ordering contributes less variance than seed-level randomness and SafeAnchor’s safety preservation is substantively order-robust. 
+
+Adversarial Robustness. We test models after full adaptation against GCG-style adversarial suffixes [43] ( 20 optimization steps, suffix length 20 tokens, 256 attack candidates per step, 100 harmful prompts; a compute-reduced configuration that preserves cross-method ordering but yields higher absolute refusal rates than full-budget 500 -step GCG [29]). SafeAnchor maintains 78 .4 ± 2.1% refusal under attack, versus 54 .6 ± 2.6% for the strongest baseline (SafeGrad+LoRA), 49 .3 ± 2.9% for Safety Interleaving, and 31 .2 ± 3.8% for Standard LoRA; the full table with all seven baselines is in Appendix E. The +23 .8-point gap to SafeGrad exceeds the +17 .8-point benign-safety gap in Table 1, indicating that preserving the safety subspace during adaptation confers robustness beyond what benign probes reveal. 
+
+Additional Metrics. SafeAnchor achieves WildGuard jailbreak robustness of 81 .3 ± 1.2
+
+(vs. 38 .7 ± 3.1 for Standard LoRA, 62 .4 ± 2.0 for SafeGrad) and MT-Bench quality of 
+
+6.21 ± 0.15 (vs. 6.08 ± 0.18 Standard LoRA), confirming safety preservation does not degrade conversational quality. CSM triggered once (after Code) in 2 of 5 seeds. 
+
+4.4. Ablation Study 
+
+Table 3 reveals each component’s contribution. SSI alone has minimal effect ( +0 .6). Strict OSCA recovers most safety ( 79 .6 ± 1.2) at a 4.4-point domain cost; adaptive projection reduces this ( 82 .4 ± 1.0, 60 .8). The anchor loss adds 1.3 ± 0.3 points ( p < 0.01 , paired t-test), Table 4. Sensitivity to ρ (variance threshold), τ (CSM threshold), and Ns (calibration size) on Llama-2-7B-Chat. Default configuration ( ρ = 0 .90 , τ = 0 .05 , Ns = 500 ) is marked with ∗ and its corresponding numeric entry is bolded to orient the reader; bolding does not indicate optimality on any single axis. Mean over 5 seeds.                       
+
+> ρ: 0.80 / 0.85 / 0.90 ∗/ 0.95 Safety / Domain 82.8 / 62.0 84.1 / 61.7 85.2 / 61.4 85.9 / 59.8
+> τ: 0.02 / 0.05 ∗/ 0.10 / 0.15 Safety / Domain 85.8 / 60.9 85.2 / 61.4 84.3 / 61.5 82.7 / 61.6
+> Ns: 100 / 250 / 500 ∗/ 1000 Safety / Domain 83.1 / 61.6 84.6 / 61.5 85.2 / 61.4 85.4 / 61.3
+
+confirming complementary value beyond OSCA. CSM contributes 1.5 ± 0.4 points. Without incremental SSI update, safety drops 5.1 points. 
+
+Safety Subspace Validation. To validate the low-rank safety subspace assumption (Section 3.2), we examined the eigenvalue spectrum of the Fisher Information matrix on the safety calibration set. Across all LoRA layers, the spectrum decays sharply: on average 
+
+∼8 eigenvectors capture 90% of the total variance, while a random subset of training data produces a near-flat spectrum. This confirms that safety information in LoRA parameter space is genuinely low-rank, consistent with activation-space findings [19, 21]. We further analyze the stability of this subspace across sequential domain adaptations (principal-angle and Grassmannian-distance analyses) in Appendix D. 
+
+4.5. Sensitivity Analysis 
+
+We examine sensitivity to key hyperparameters (Table 4). Increasing ρ from 0.80 to 0.95 improves safety (+3.1) at moderate domain cost ( −2.2). CSM threshold τ controls monitoring sensitivity. SafeAnchor is also robust to calibration size: even Ns = 100 achieves 83.1 safety, which is above all baselines, confirming stable Fisher eigenvector estimation. 5. Conclusion 
+
+We introduced SafeAnchor, a framework for preserving safety alignment during continual domain adaptation of LLMs. By combining Safety Subspace Identification, Orthogonal Safety-Constrained Adaptation, and Cumulative Safety Monitoring, SafeAnchor retains over 93% of original safety after three sequential adaptations with competitive domain performance. While individual components draw on established techniques, their principled integration for sequential safety preservation is validated across two architectures, eight benchmarks, and full variance reporting. 
+
+Limitations and Future Work. Our evaluation is limited to 7B-scale models and a primary focus of three sequential domains; Appendix A extends to T = 5 and finds SafeAnchor’s near-linear trajectory continues (slope ≈1.9 pts/step), but rigorous study at 
+
+T ≥5 across orderings remains open. Alignment elasticity worsens with scale [4], making 13B+ extension important; we expect SafeAnchor’s Fisher-subspace machinery to transfer, but ks and Fisher-trace distributions may shift. Longer sequences could eventually exhaust the orthogonal complement (manifesting as subspace inflation or gradient cancellation); neither is observed at T =5 (App. D). Future work includes integration with alignment-stage defenses [8, 44] and non-LoRA methods [45]. Reproducibility. All materials are available at: https://github.com/bettyguo/ SafeAnchor . Full hyperparameters, per-component compute profile, and evaluation protocols are detailed in Appendix F. 
+
+References 
+
+[1] H. Shi, Z. Xu, H. Wang, W. Qin, W. Wang, Y. Wang, Z. Wang, S. Ebrahimi, and H. Wang. “Continual Learning of Large Language Models: A Comprehensive Survey”. In: ACM Comput. Surv. 58.5 (2026), 120:1–120:42. [2] Y. Luo, Z. Yang, F. Meng, Y. Li, J. Zhou, and Y. Zhang. “An Empirical Study of Catastrophic Forgetting in Large Language Models During Continual Fine-tuning”. In: arXiv preprint arXiv.2308.08747 (2023). [3] X. Qi, A. Panda, K. Lyu, X. Ma, S. Roy, A. Beirami, P. Mittal, and P. Henderson. “Safety Alignment Should be Made More Than Just a Few Tokens Deep”. In: The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025. [4] J. Ji, K. Wang, T. A. Qiu, B. Chen, J. Zhou, C. Li, H. Lou, J. Dai, Y. Liu, and Y. Yang. “Language Models Resist Alignment: Evidence From Data Compression”. In: Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2025, Vienna, Austria, July 27 - August 1, 2025 . Ed. by W. Che, J. Nabende, E. Shutova, and M. T. Pilehvar. Association for Computational Linguistics, 2025, pp. 23411–23432. [5] X. Qi, Y. Zeng, T. Xie, P. Chen, R. Jia, P. Mittal, and P. Henderson. “Fine-tuning Aligned Language Models Compromises Safety, Even When Users Do Not Intend To!” In: The Twelfth International Con-ference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net, 2024. [6] X. Yang, X. Wang, Q. Zhang, L. Petzold, W. Y. Wang, X. Zhao, and D. Lin. Shadow Alignment: The Ease of Subverting Safely-Aligned Language Models . 2023. [7] T. Huang, S. Hu, F. Ilhan, S. F. Tekin, Z. Yahn, Y. Xu, and L. Liu. “Safety Tax: Safety Alignment Makes Your Large Reasoning Models Less Reasonable”. In: arXiv preprint arXiv.2503.00555 (2025). [8] T. Huang, S. Hu, and L. Liu. “Vaccine: Perturbation-aware Alignment for Large Language Models against Harmful Fine-tuning Attack”. In: Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 . Ed. by A. Globersons, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. M. Tomczak, and C. Zhang. 2024. [9] D. Rosati, J. Wehner, K. Williams, L. Bartoszcze, R. Gonzales, C. Maple, S. Majumdar, H. Sajjad, and F. Rudzicz. “Representation Noising: A Defence Mechanism Against Harmful Finetuning”. In: 
+
+Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 . Ed. by A. Globersons, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. M. Tomczak, and C. Zhang. 2024. [10] C. Hsu, Y. Tsai, C. Lin, P. Chen, C. Yu, and C. Huang. “Safe LoRA: the Silver Lining of Reducing Safety Risks when Fine-tuning Large Language Models”. In: arXiv preprint arXiv.2405.16833 (2024). [11] M. Li, W. M. Si, M. Backes, Y. Zhang, and Y. Wang. “SaLoRA: Safety-Alignment Preserved Low-Rank Adaptation”. In: The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025. [12] T. Huang, S. Hu, F. Ilhan, S. F. Tekin, and L. Liu. “Lisa: Lazy Safety Alignment for Large Language Models against Harmful Fine-tuning Attack”. In: Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 . Ed. by A. Globersons, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. M. Tomczak, and C. Zhang. 2024. [13] B. Yi, J. Li, B. Zhang, L. Nie, T. Li, T. Huang, and Z. Liu. Gradient Surgery for Safe LLM Fine-Tuning .2025. [14] X. Wang, T. Chen, Q. Ge, H. Xia, R. Bao, R. Zheng, Q. Zhang, T. Gui, and X. Huang. “Orthogonal Subspace Learning for Language Model Continual Learning”. In: Findings of the Association for Com-putational Linguistics: EMNLP 2023 . Association for Computational Linguistics, 2023, 10658–10671. [15] Y. Liang and W. Li. “InfLoRA: Interference-Free Low-Rank Adaptation for Continual Learning”. In: 
+
+IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024 . IEEE, 2024, pp. 23638–23647. [16] Y. -S. Liang, J. -R. Chen, and W. -J. Li. Gated Integration of Low-Rank Adaptation for Continual Learning of Large Language Models . 2025. [17] L. Alssum, H. Itani, H. A. A. K. Hammoud, P. Torr, A. Bibi, and B. Ghanem. “Unforgotten Safety: Preserving Safety Alignment of Large Language Models with Continual Learning”. In: arXiv preprint 
+
+arXiv.2512.10150 (2025). [18] G. Sun, S. Zhang, L. Wang, J. Zhu, H. Su, and Y. Zhong. Safety Alignment as Continual Learning: Mitigating the Alignment Tax via Orthogonal Gradient Projection . 2026. [19] A. Arditi, O. Obeso, A. Syed, D. Paleka, N. Panickssery, W. Gurnee, and N. Nanda. “Refusal in Language Models Is Mediated by a Single Direction”. In: Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 . Ed. by A. Globersons, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. M. Tomczak, and C. Zhang. 2024. [20] W. Pan, Z. Liu, Q. Chen, X. Zhou, H. Yu, and X. Jia. “The Hidden Dimensions of LLM Alignment: A Multi-Dimensional Safety Analysis”. In: arXiv preprint arXiv.2502.09674 (2025). [21] A. Zou et al. “Representation Engineering: A Top-Down Approach to AI Transparency”. In: arXiv preprint arXiv.2310.01405 (2023). [22] M. Farajtabar, N. Azizan, A. Mott, and A. Li. “Orthogonal Gradient Descent for Continual Learning”. In: The 23rd International Conference on Artificial Intelligence and Statistics, AISTATS 2020, 26-28 August 2020, Online [Palermo, Sicily, Italy] . Ed. by S. Chiappa and R. Calandra. Vol. 108. Proceedings of Machine Learning Research. PMLR, 2020, pp. 3762–3773. [23] H. Inan, K. Upasani, J. Chi, R. Rungta, K. Iyer, Y. Mao, M. Tontchev, Q. Hu, B. Fuller, D. Testuggine, and M. Khabsa. “Llama Guard: LLM-based Input-Output Safeguard for Human-AI Conversations”. In: 
+
+arXiv preprint arXiv.2312.06674 (2023). [24] H. Touvron et al. “Llama 2: Open Foundation and Fine-Tuned Chat Models”. In: arXiv preprint 
+
+arXiv.2307.09288 (2023). [25] A. Q. Jiang et al. “Mistral 7B”. In: arXiv preprint arXiv.2310.06825 (2023). [26] D. Jin, E. Pan, N. Oufattole, W. Weng, H. Fang, and P. Szolovits. “What Disease does this Patient Have? A Large-scale Open Domain Question Answering Dataset from Medical Exams”. In: arXiv preprint arXiv.2009.13081 (2020). [27] N. Guha et al. “LegalBench: A Collaboratively Built Benchmark for Measuring Legal Reasoning in Large Language Models”. In: Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 . Ed. by A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine. 2023. [28] M. Chen et al. “Evaluating Large Language Models Trained on Code”. In: arXiv preprint 
+
+arXiv.2107.03374 (2021). [29] M. Mazeika, L. Phan, X. Yin, A. Zou, Z. Wang, N. Mu, E. Sakhaee, N. Li, S. Basart, B. Li, D. A. Forsyth, and D. Hendrycks. “HarmBench: A Standardized Evaluation Framework for Automated Red Teaming and Robust Refusal”. In: Forty-first International Conference on Machine Learning, ICML 2024, Vienna, Austria, July 21-27, 2024 . Ed. by R. Salakhutdinov, Z. Kolter, K. A. Heller, A. Weller, N. Oliver, J. Scarlett, and F. Berkenkamp. Vol. 235. Proceedings of Machine Learning Research. PMLR / OpenReview.net, 2024, pp. 35181–35224. [30] S. Lin, J. Hilton, and O. Evans. “TruthfulQA: Measuring How Models Mimic Human Falsehoods”. In: 
+
+Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2022, Dublin, Ireland, May 22-27, 2022 . Ed. by S. Muresan, P. Nakov, and A. Villavicencio. Association for Computational Linguistics, 2022, pp. 3214–3252. [31] A. Parrish, A. Chen, N. Nangia, V. Padmakumar, J. Phang, J. Thompson, P. M. Htut, and S. R. Bowman. “BBQ: A hand-built bias benchmark for question answering”. In: Findings of the Association for Computational Linguistics: ACL 2022, Dublin, Ireland, May 22-27, 2022 . Ed. by S. Muresan, P. Nakov, and A. Villavicencio. Vol. ACL 2022. Findings of ACL. Association for Computational Linguistics, 2022, pp. 2086–2105. [32] Y. Choi, N. Dziri, A. Ettinger, S. Han, L. Jiang, N. Lambert, B. Y. Lin, and K. Rao. “WildGuard: Open One-stop Moderation Tools for Safety Risks, Jailbreaks, and Refusals of LLMs”. In: Advances in Neural Information Processing Systems 37 . NeurIPS 2024. Neural Information Processing Systems Foundation, Inc. (NeurIPS), 2024, 8093–8131. [33] D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and J. Steinhardt. “Measuring Massive Multitask Language Understanding”. In: 9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021 . OpenReview.net, 2021. [34] T. Huang, S. Hu, F. Ilhan, S. F. Tekin, and L. Liu. “Harmful Fine-tuning Attacks and Defenses for Large Language Models: A Survey”. In: arXiv preprint arXiv.2409.18169 (2024). [35] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen. “LoRA: Low-Rank Adaptation of Large Language Models”. In: The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022 . OpenReview.net, 2022. [36] J. Kirkpatrick, R. Pascanu, N. Rabinowitz, J. Veness, G. Desjardins, A. A. Rusu, K. Milan, J. Quan, T. Ramalho, A. Grabska-Barwinska, D. Hassabis, C. Clopath, D. Kumaran, and R. Hadsell. “Overcoming catastrophic forgetting in neural networks”. In: Proceedings of the National Academy of Sciences 114.13 (2017), 3521–3526. issn : 1091-6490. [37] L. Yu, B. Yu, H. Yu, F. Huang, and Y. Li. “Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch”. In: Forty-first International Conference on Machine Learning, ICML 2024, Vienna, Austria, July 21-27, 2024 . Ed. by R. Salakhutdinov, Z. Kolter, K. A. Heller, A. Weller, N. Oliver, J. Scarlett, and F. Berkenkamp. Vol. 235. Proceedings of Machine Learning Research. PMLR / OpenReview.net, 2024, pp. 57755–57775. [38] D. Wang, Q. Ma, Y. Shang, Z. Lu, L. Ning, Z. Xu, H. Wu, and Z. He. “Interpretable Safety Alignment via SAE-Constructed Low-Rank Subspace Adaptation”. In: arXiv preprint arXiv.2512.23260 (2025). [39] J. Dai, X. Pan, R. Sun, J. Ji, X. Xu, M. Liu, Y. Wang, and Y. Yang. “Safe RLHF: Safe Rein-forcement Learning from Human Feedback”. In: The Twelfth International Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net, 2024. [40] J. Ji, M. Liu, J. Dai, X. Pan, C. Zhang, C. Bian, B. Chen, R. Sun, Y. Wang, and Y. Yang. “BeaverTails: Towards Improved Safety Alignment of LLM via a Human-Preference Dataset”. In: Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 . Ed. by A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine. 2023. [41] L. Zheng, W. Chiang, Y. Sheng, S. Zhuang, Z. Wu, Y. Zhuang, Z. Lin, Z. Li, D. Li, E. P. Xing, H. Zhang, J. E. Gonzalez, and I. Stoica. “Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena”. In: Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 . Ed. by A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine. 2023. [42] S. Mangrulkar, S. Gugger, L. Debut, Y. Belkada, S. Paul, B. Bossan, and M. Tietz. “PEFT: State-of-the-art Parameter-Efficient Fine-Tuning Methods”. In: GitHub repository (2022). [43] A. Zou, Z. Wang, J. Z. Kolter, and M. Fredrikson. “Universal and Transferable Adversarial Attacks on Aligned Language Models”. In: arXiv preprint arXiv.2307.15043 (2023). [44] R. Tamirisa, B. Bharathi, L. Phan, A. Zhou, A. Gatti, T. Suresh, M. Lin, J. Wang, R. Wang, R. Arel, A. Zou, D. Song, B. Li, D. Hendrycks, and M. Mazeika. “Tamper-Resistant Safeguards for Open-Weight LLMs”. In: The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025. [45] S. Liu, C. Wang, H. Yin, P. Molchanov, Y. F. Wang, K. Cheng, and M. Chen. “DoRA: Weight-Decomposed Low-Rank Adaptation”. In: Forty-first International Conference on Machine Learning, ICML 2024, Vienna, Austria, July 21-27, 2024 . Ed. by R. Salakhutdinov, Z. Kolter, K. A. Heller, A. Weller, N. Oliver, J. Scarlett, and F. Berkenkamp. Vol. 235. Proceedings of Machine Learning Research. PMLR / OpenReview.net, 2024, pp. 32100–32121. Appendix A. Extended Sequential Adaptation to T =5 
+
+Reviewers R1 and R3 noted that the main-text pipeline stops at T =3 and suggested testing whether safety degradation continues linearly beyond the reported three domains. We extend the sequence with two further specialized domains: (4) Finance , using 5,000 examples drawn from FinancialPhraseBank and FiQA-SA for financial sentiment and reasoning; and (5) Science , using 5,000 SciQ-style multiple-choice and short-answer items for general science. All hyperparameters match Section 4.1.                                              
+
+> Table 5. Safety score after each adaptation on Llama-2-7B-Chat, extended to T=5.SafeAnchor’s slope holds at approximately 2 pts/step; Standard LoRA decelerates only because the refusal rate approaches a floor.
+> Method Base +Med +Legal +Code +Finance +Science Standard LoRA 91.4 78 .3±1.961 .5±2.243 .6±2.132 .7±2.324 .9±2.4
+> SafeGrad+LoRA 91.4 84 .1±1.576 .2±1.667 .4±1.460 .5±1.554 .3±1.5
+> Safety Interleaving 91.4 82 .5±1.773 .8±1.864 .8±1.657 .2±1.750 .9±1.7
+> SafeAnchor 91.4 89 .8±0.987 .1±1.085 .2±0.983 .4±1.081 .6±1.1
+> Composite domain (SafeAnchor) —61 .4±0.561 .4±0.561 .4±0.559 .8±0.658 .9±0.6
+> Composite domain (Std LoRA) —62 .7±0.662 .7±0.662 .7±0.660 .2±0.757 .8±0.8
+
+SafeAnchor retains 81 .6 ± 1.1 safety after five domains, still 27.3 points above the best baseline at T =5 (SafeGrad, 54 .3 ± 1.5) and 56.7 points above Standard LoRA. The per-step decrease averages (91 .4−81 .6) /5 = 1 .96 pts/step, consistent with the 2.1 pts/step slope reported at T =3. Standard LoRA’s slope decelerates from 15 .9 to 13 .3 pts/step as it approaches the residual-refusal floor ( ≈ 20 for HarmBench on Llama-2-Chat [29]). SafeAnchor’s domain composite remains within 1.3 points of Standard LoRA throughout. 
+
+Appendix B. All 6 Domain Orderings at T =3 
+
+Reviewer R3 observed that the main text tests only two of the 3! =6 possible orderings of {Medical, Legal, Code }. We complete the sweep on Llama-2-7B-Chat with 5 seeds per ordering (30 total runs per method).                                                                        
+
+> Table 6. Final safety score on Llama-2-7B-Chat across all six orderings. Within-cell SD is over 5 seeds; the bottom row reports mean and cross-ordering SD over the six cells.
+> Ordering Standard LoRA SafeAnchor
+> Medical →Legal →Code (default) 43 .6±2.185 .2±0.9
+> Medical →Code →Legal 44 .9±2.084 .7±1.0
+> Legal →Medical →Code 42 .8±2.385 .0±1.0
+> Legal →Code →Medical 40 .5±2.483 .9±1.2
+> Code →Medical →Legal 43 .1±2.284 .4±1.0
+> Code →Legal →Medical 41 .3±2.584 .1±1.1
+> Mean ±cross-ordering SD 42 .7±1.684 .55 ±0.51
+
+SafeAnchor’s safety lies in a narrow [83 .9, 85 .2] band across all six orderings. The cross-ordering SD ( 0.51 ) is approximately half the within-ordering (seed) SD ( ≈1.0), so ordering explains less variance than random seeds. Orderings ending with a domain whose gradients overlap most with the safety subspace (Code, reflected in higher trigger rates; App. C) tend to produce marginally lower final safety. Standard LoRA also shows comparable robustness to ordering (all within [40 .5, 44 .9] ), but at a safety level 40 + points below SafeAnchor regardless of ordering. The cumulative erosion is therefore an intrinsic property of unconstrained adaptation, not an artefact of ordering. 
+
+Appendix C. CSM Repair Analysis 
+
+Reviewer R3 asked (a) why Erepair is fixed, (b) whether the repair actually succeeds, and (c) how often CSM triggers. We address all three here. 
+
+Trigger frequency. Across the default-ordering campaign (5 seeds × 3 domains), CSM fires 3 times in 15 domain-adaptation events ( 0.20 per event). Triggers concentrate on the final Code stage, consistent with Code gradients exhibiting the largest overlap with the safety subspace (Appendix D).                                     
+
+> Table 7. CSM trigger frequency per adaptation stage on Llama-2-7B-Chat (5 seeds, default ordering).
+> Stage Triggers / 5 seeds Pre-trigger stPost-repair stRecovery ∆
+> After Medical 0/5———After Legal 1/586 .488 .7+2 .3
+> After Code 2/586 .1±0.689 .0±0.5+2 .9±0.4
+> Pooled (non-zero) 386 .2±0.688 .9±0.6+2 .7±0.4
+
+Repair validation. Every trigger restores st above the (1 − τ )s0 = 0 .95 × 91 .4 = 86 .83 
+
+threshold within one Erepair block; no seed required a second block. The pooled post-repair mean ( 88 .9) exceeds the threshold by 2.1 points, giving meaningful headroom against downstream drift. 
+
+Erepair sensitivity. We re-ran the two triggered post-Code seeds with Erepair ∈{50 , 100 , 200 , 400 , 800 }:                                 
+
+> Table 8. Post-repair safety and domain performance on the triggered seeds, as a function of Erepair . Incremental cost scales linearly; the knee lies at Erepair =200 .
+> Erepair Post-repair Safety ↑Domain ∆Added time (min) 50 87 .1±0.7−0.11.3
+> 100 88 .0±0.6−0.22.5
+> 200 ∗88 .9±0.6−0.35.0
+> 400 89 .1±0.5−0.710 .1
+> 800 89 .2±0.5−1.420 .2
+
+Going from 100 →200 gains +0 .9 safety; going from 200 →400 gains only +0 .2 at 2× cost and −0.4 additional domain regression. Erepair =200 is the knee. 
+
+Appendix D. Safety Subspace Stability Across Domains 
+
+Reviewer R4 asked for an analysis of how stable the safety subspace is across sequential adaptations. We compute two quantities: (i) mean cosine similarity between principal subspace directions, and (ii) normalized Grassmannian distance dG =
+
+qP 
+
+> j
+
+θ2 
+
+> j
+
+/pks · (π/ 2) 2,where θj are principal angles. Both are computed layer-wise on Q-projections of Llama-2-7B-Chat (32 layers) and averaged. Adjacent-stage cosine similarity stays ≥ 0.87 and end-to-end remains 0.82 , over two orders of magnitude above the random-subspace null of 0.006 , while dG of 0.24 –0.38 is correspondingly far below the near-unity null of 0.996 . The null is the expectation for Table 9. Stability of the safety subspace V safe                                                         
+
+> iacross adaptation stages. High mean cosine and low dGindicate the subspace evolves smoothly rather than drifting randomly.
+> Transition Mean cos ⟨u, u ′⟩Grassmannian dGMean rank ks
+> θ0→θ1(after Med) 0.91 ±0.03 0.24 ±0.04 8.3
+> θ1→θ2(after Legal) 0.89 ±0.04 0.27 ±0.05 8.1
+> θ2→θ3(after Code) 0.87 ±0.04 0.29 ±0.05 8.2
+> θ0→θ3(end-to-end) 0.82 ±0.05 0.38 ±0.06 —Random-subspace null 0.006 ±0.001 0.996 ±0.001 —
+
+two uniformly-random ks-dimensional subspaces drawn in the ambient LoRA parameter space ( |δi|=131 ,072 for Q-projections; 50 Monte Carlo trials per entry), where both metrics concentrate sharply because ks ≪ | δi|. The intrinsic rank ks is near-constant at approximately 8, confirming that the SVD-truncated incremental update preserves the effective subspace size rather than inflating it. The Code stage produces the largest per-step drift ( dG=0.29 ), matching its higher CSM trigger rate (Appendix C) and suggesting Code-domain gradients interact most with safety-critical directions. 
+
+Appendix E. Adversarial Robustness: All Baselines 
+
+Expanded table for the GCG attack setting described in Section 4.3. Suffixes are optimized for 20 steps, length 20 tokens, 256 candidates/step, on 100 HarmBench prompts, after the full three-domain adaptation.                                 
+
+> Table 10. Refusal rate under GCG adversarial suffixes on Llama-2-7B-Chat, after the default-ordering T=3 pipeline. Mean ±std over 5 seeds.
+> Method Refusal under GCG ↑
+> Standard LoRA 31 .2±3.8
+> O-LoRA 34 .8±3.6
+> EWC + LoRA 36 .4±3.4
+> Safe LoRA 44 .7±2.9
+> Vaccine + LoRA 46 .5±2.8
+> Safety Interleaving 49 .3±2.9
+> SafeGrad + LoRA 54 .6±2.6
+> SafeAnchor 78 .4±2.1
+
+The attack-ranking correlates strongly with the benign-safety ranking in Table 1 (Spearman 
+
+ρ= 0.96 ), but the SafeAnchor →next-best gap widens from 17 .8 points (benign) to 23 .8 points (adversarial). This is consistent with the hypothesis that preserving the safety subspace also preserves the adversarial refusal direction [19] that GCG most effectively targets. 
+
+Appendix F. Hyperparameters and Compute Profile Hyperparameters (defaults for all main-text experiments). Per-component compute profile. All runs use 2 ×NVIDIA A100 40GB with BF16 mixed precision. Wall-clock time is averaged over 5 seeds of the default-ordering pipeline. The 17 .8% OSCA overhead is dominated by the per-layer projection gi − V safe  
+
+> i
+
+(V safe  
+
+> i
+
+)⊤gi
+
+with ks≈8; this is O(|δi| · ks) per layer under the diagonal-block Fisher approximation and parallelizes across layers. The underlying FLOP cost is negligible ( < 10 −6 of the forward pass), so the measured wall-clock overhead reflects PyTorch autograd-hook dispatch and Table 11. Complete hyperparameter specification for SafeAnchor. All main-text numbers use these defaults unless explicitly varied. 
+
+Group Parameter Value 
+
+LoRA Rank r / scaling α 16 / 32 
+
+Target modules {Q, K, V, O } projections Dropout 0.05 
+
+Optimizer AdamW (β1, β 2) (0 .9, 0.999) 
+
+Weight decay 0.01 
+
+Learning rate (peak) 2 × 10 −4
+
+Schedule Cosine, 100 -step warmup Batch size / grad-accum 8 / 2 (effective 16 )Epochs per domain 3
+
+SSI Calibration size Ns 500 BeaverTails [40] Variance threshold ρ 0.90 
+
+Fisher estimator Empirical, per-layer, diagonal blocks OSCA Projection relaxation λ 0.5
+
+Anchor-loss weight γ 0.1
+
+Anchor KL direction Forward (mean-seeking) CSM Probe size 200 HarmBench prompts Tolerance τ 0.05 
+
+Safety classifier LlamaGuard [23] (F1 92 .1% )Repair steps Erepair 200 
+
+Replay weight β 1.0
+
+Table 12. Per-phase wall-clock on Llama-2-7B-Chat. "Share of pipeline" is each phase’s time divided by the full SafeAnchor pipeline time (7h 47min); percentages sum to 100% 
+
+(rounding). In addition to the per-domain components shown, one pipeline run incurs 
+
+∼17 min of fixed overhead (initial s0 evaluation, final full-eval suite, and I/O). The OSCA per-step overhead ( +17 .8% ) is measured against unconstrained-LoRA training-step time. 
+
+Phase Time per domain Share of pipeline SSI (Fisher + eigendecomposition) 12 .4 min 8.0% 
+
+OSCA training ( 3 epochs, ≈938 steps; +17 .8% per-step vs. Std LoRA) 2 h 07 min 81 .6% 
+
+CSM probe evaluation (LlamaGuard) 4.8 min 3.1% 
+
+Conditional replay ( 200 steps, fires 0.20 ×) 1.0 min (amortized) 0.6% 
+
+Post-domain benchmark evaluation ( 8 suites) 5.0 min 3.2% 
+
+Per-domain subtotal 2 h 30 min 96 .5% 
+
+Full pipeline (one seed) ≈ 7 h 47 min ≈1.3× Std LoRA 
+
+Full campaign (5 seeds × 2 models, default ordering) ≈ 160 GPU-h 
+
+non-fused projection ops; a fused-kernel implementation would reduce this to < 5% . SSI cost is amortized once per domain, and CSM is essentially free ( < 1% ).
