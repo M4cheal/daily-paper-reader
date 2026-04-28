@@ -1,0 +1,1527 @@
+Title: Lifecycle-Aware Federated Continual Learning in Mobile Autonomous Systems
+
+URL Source: https://arxiv.org/pdf/2604.20745v1
+
+Published Time: Thu, 23 Apr 2026 01:13:27 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+> 1
+
+# Lifecycle-Aware Federated Continual Learning in Mobile Autonomous Systems 
+
+Beining Wu, Member, IEEE, and Jun Huang, Senior Member, IEEE 
+
+Abstract —Federated continual learning (FCL) allows dis-tributed autonomous fleets to adapt collaboratively to evolving terrain types across extended mission lifecycles. However, current approaches face several key challenges: 1) they use uniform pro-tection strategies that do not account for the varying sensitivities to forgetting on different network layers; 2) they focus primarily on preventing forgetting during training, without addressing the long-term effects of cumulative drift; and 3) they often depend on idealized simulations that fail to capture the real-world heterogeneity present in distributed fleets. In this paper, we propose a lifecycle-aware dual-timescale FCL framework that incorporates training-time (pre-forgetting) prevention and (post-forgetting) recovery. Under this framework, we design a layer-selective rehearsal strategy that mitigates immediate forgetting during local training, and a rapid knowledge recovery strategy that restores degraded models after long-term cumulative drift. We present a theoretical analysis that characterizes heteroge-neous forgetting dynamics and establishes the inevitability of long-term degradation. Our experimental results show that this framework achieves up to 8.3% mIoU improvement over the strongest federated baseline and up to 31.7% over conventional fine-tuning. We also deploy the FCL framework on a real-world rover testbed to assess system-level robustness under realistic constraints; the testing results further confirm the effectiveness of our FCL design. 
+
+Index Terms —Federated Learning, Continual Learning, Plan-etary Exploration, Lifecycle Knowledge Management 
+
+I. I NTRODUCTION 
+
+# MOBILE autonomous fleets are deployed across a range of domains where environments evolve throughout the mission lifecycle, from polar research stations and precision agriculture to planetary exploration [1]–[3]. Among these, planetary exploration missions, especially those on Mars, represent the most demanding instance: they have grown from single probes into coordinated fleets of autonomous rovers that work together to operate across geologically diverse re-gions [4], [5]. In these missions, semantic terrain segmentation plays a vital role in guiding rovers safely across unfamiliar re-gions and helping them recognize sites of scientific interest [6]. Because each rover acquires imagery in a different region, the data observed across the fleet is inherently heterogeneous, and local onboard decision-making requires models that remain up to date with each rover’s own operating conditions. At the same time, the bandwidth and delay limits of the Interplanetary Internet [7], [8] make it impractical to return large volumes of raw data to Earth for centralized training. Federated Learning 
+
+> Beining Wu and Jun Huang are with the Department of Electrical Engineer-ing and Computer Science, South Dakota State University, Brookings, 57006 SD. Email: Wu.Beining@jacks.sdstate.edu., Jun.Huang@sdstate.edu. Manuscript received [Date]; revised [Date].
+
+(FL) has therefore become a natural architectural choice [9]– [12], allowing rover fleets to train shared segmentation models collaboratively while exchanging only model parameters. Yet the reality of long journeys through space reveals a gap in current methods: models must evolve and adapt throughout a long-term mission lifecycle, rather than remain unchanged after their first deployment. As rovers travel through diverse regions, they encounter terrain types that were absent in earlier exploration zones, such as shifts from loose soil to exposed bedrock. In such settings, the fleet must learn new knowledge step by step while retaining to what it has already learned [13]. How-ever, continual adaptation on resource-limited edge devices often leads to catastrophic forgetting . As new knowledge is absorbed, changes to model parameters can cause earlier knowledge to fade and be lost [14], [15]. In FL settings, such a degradation typically occurs at two timescales. At the training-time scale, rovers face immediate conflicts among gradients during local updates, as they seek to learn new tasks without weakening their performance on prior ones [16]. At the long-term scale, repeated federated aggregation of Non-IID models throughout the mission introduces cumulative drift, which slowly erodes the model’s ability to recognize classes learned in earlier stages [17], [18]. These challenges call for federated continual learning (FCL), which enables distributed rover fleets to learn over time without forgetting what was learned before. We term a framework lifecycle-aware when it explicitly coordinates defenses across both temporal phases, coupling training-time forgetting mitigation with long-term degradation recovery through shared operational state. While FCL has been recently investigated in the AI commu-nities [14]–[17], [19]–[27], existing research presents signifi-cant limitations in the following aspects. First, prior rehearsal-based strategies (replay while learning new) ignore the hetero-geneous forgetting sensitivities of deep network layers [14], [15]. Although recent studies have begun to examine layer-wise sensitivity [23]–[25], they still apply uniform protection strategies to all layers. Such a “one-size-fits-all” approach neglects the fact that different layers have distinct plasticity 
+
+and stability requirements. Backbone layers benefit from con-tinued adaptation as representations evolve, whereas classifier layers require strong stabilization to preserve decision bound-aries [26]. As a result, existing rehearsal-based frameworks with uniform or static layer-wise protection cause harmful ef-fects: over-protected layers that should remain adaptable, while under-protected layers that are more prone to forgetting [20]. Second, existing recovery mechanisms, including Low-Rank Adaptation [24], [25], Knowledge Distillation [19], and 
+
+> arXiv:2604.20745v1 [cs.LG] 22 Apr 2026 2
+
+Variational Inference [22], [27], depend heavily on iterative gradient-based optimization. Such methods often require mul-tiple training epochs to converge, making them computation-ally expensive and vulnerable to ongoing multiplicative drift in federated learning [17]. Consequently, prior recovery ap-proaches lack fast mechanisms capable of restoring degraded models with low computational and communication overhead. Third, although several theoretical FCL frameworks have been proposed [16], [21], most current studies are based on simulations that do not account for the strict system hetero-geneity in real-world rover fleets. For example, these simu-lations often overlook differences in onboard storage capacity and the impact of limited communication resources. Therefore, solutions developed through simulation alone cannot guarantee reliable mission deployment in practice. In a nutshell, prior studies on FCL present the following significant research gaps: 1) Current rehearsal-based approaches that employ uniform or static layer-wise protection often result in over-protected layers requiring adaptability, while under-protected layers are more prone to forgetting. 2) Previous recovery methods exhibit slow convergence and are unable to restore degraded models while maintaining low computational and communication overhead. 3) Most existing studies are based on simulations that fail to account for the system heterogeneity in real-world rover fleets. Solutions developed solely through simulation cannot ensure reliable mission deployment in practice. To close the above research gaps, this work aims to design a lifecycle-aware FCL framework that leverages stratified rehearsal for short-term learning and meta-learned recovery for long-term learning to combat catastrophic forgetting. Specifi-cally, we make the following contributions.  
+
+> •
+
+We propose a dual-timescale FCL framework that in-corporates training-time (pre-forgetting) prevention and (post-forgetting) recovery. Under this framework, we de-sign a Layer-Selective Rehearsal (LSR) strategy that mit-igates immediate forgetting during local training, and a Rapid Knowledge Recovery (RKR) strategy that actively restores degraded models after long-term cumulative drift.  
+
+> •
+
+We present a theoretical analysis that characterizes het-erogeneous forgetting dynamics over deep network layers and demonstrates the inevitability of long-term degrada-tion. We also provide a formal justification for the LSR protection design and derive sample-complexity bounds for the performance of RKR compared with retraining.  
+
+> •
+
+We evaluate our FCL framework on three representative Mars terrain datasets (MarsScapes, S5Mars, AI4MARS), achieving up to 8.3% mIoU improvement over the strongest federated baseline and up to 31.7% over conven-tional fine-tuning. We then deploy the FCL framework on a real-world rover testbed to assess system-level robust-ness under realistic constraints, including extreme Non-IID conditions and resource heterogeneity. The testing results further confirm the effectiveness of our FCL design. The remainder of this paper is organized as follows. Sec-tion II briefly summarizes the related studies. Section III describes the system model and formulates the federated class-incremental learning problem. In Section IV, we present our proposed lifecycle-aware defense framework. Section V provides the theoretical analysis of forgetting dynamics and recovery bounds. We discuss the experimental results from both simulations and the physical testbed in Section VI, and draw the conclusion in Section VII. II. R ELATED WORK 
+
+A. Federated Learning in MAS 
+
+For collaborative learning in mobile autonomous sys-tems (MAS), federated learning (FL) trains a decentralized global model by aggregating network parameters from dis-tributed autonomous agents. McMahan et al. [9] propose a communication-efficient aggregation strategy that enables col-laborative training across edge devices without exchanging raw data. Li et al. [10] develop FedProx to address data heterogene-ity across federated agents via introducing proximal terms into the local optimization objective. Recent works [1]–[3], [28]– [31] apply FL to autonomous systems, including vehicular pla-tooning, connected autonomous vehicles, UAV trajectory plan-ning, dual-level UAV–vehicle collaborative learning, precision-agriculture path planning, and communication-efficient feder-ated unlearning for smart agriculture, where distributed agents must collaboratively learn models under communication con-straints and extreme data heterogeneity. A complementary line of work on edge collaborative perception further studies distributed online learning for edge video analytics [32], task-oriented collaborative perception [33], and edge–aerial task-oriented communication for low-altitude navigation [34], while FL on heterogeneous IoT edges under missing modalities has also been investigated [12]. At the wireless and coordination substrate, parallel studies on AoI-aware DRL-based resource allocation [35], SWIPT-assisted D2D energy harvesting [36], fault-tolerant nano-communication switching [37], model-free cooperative optimal output regulation for multi-agent sys-tems [38], and multi-agent reinforcement learning for Stack-elberg security games in MEC [39] underpin the networking and control layer on which such federated autonomous sys-tems operate. Similar challenges arise in planetary exploration missions where rover fleets must collaboratively learn terrain segmentation models across geologically diverse regions while preserving data locality. To enable learning new knowledge continuously in fed-erated settings, He et al. [40] propose federated continual learning via server-side generative replay, though the method assumes identifiable task transitions and focuses on bounding immediate forgetting within individual task stages. Dong et al. 
+
+[21] address federated incremental semantic segmentation by storing old global models for immediate distillation. The above FL methods [9], [10], [21], [40] assume static deployment and are evaluated at task completion, whereas missions require models to adapt throughout the operational lifecycle across multiple temporal scales. A parallel line of work studies learned terrain analysis for Mars rovers. SPOC [41] introduced CNN-based Mars terrain 3
+
+classification and was later integrated into the rover-operations analytics pipeline MAARS [42]. MLNav [43] studies onboard learned navigation under flight-software constraints. Several terrain datasets have been released by the community, includ-ing AI4MARS [44], MarsScapes [45], and S5Mars [46], which we use in our evaluation. These works share an offline, single-rover, non-incremental training assumption: data is collected in situ, returned to Earth for labeling, and used to train a static model that is subsequently uploaded back to the rover. The federated, class-incremental regime that arises over a multi-year mission lifecycle is left open, which is the gap our work targets. 
+
+B. Continual Learning 
+
+Continual learning (a.k.a. incremental learning or lifelong learning) focuses on identifying new categories continuously in dynamic real-world scenarios [16], [47]. A major chal-lenge is catastrophic forgetting, where models learn new categories sequentially and have limited memory for storing old training data. Existing methods fall into regularization-based approaches, generative replay, and exemplar memory construction [14]. Rebuffi et al. [14] propose iCaRL that main-tains a fixed-size exemplar buffer to rehearse old classes during new task training. Buzzega et al. [48] design dark experience replay to store and replay past model predictions. Beyond sample-level rehearsal, recent work on shared spatial mem-ory through predictive coding explores representation-level consolidation mechanisms that complement exemplar-based replay [49]. Recent advances [15], [50] extend incremental learning to semantic segmentation tasks, addressing challenges such as background shift and spatial consistency in dense pre-diction scenarios. Additional works [51]–[54] further develop adaptive strategies for conflict mitigation and instance replay mechanisms. Recent theoretical analyses [17], [55] reveal that catastrophic forgetting exhibits complex dynamics beyond immediate performance degradation, with model myopia and task confusion accumulating inevitably across extended task sequences. Empirical studies [20] further show that different network modules exhibit heterogeneous forgetting patterns, with only a few task-specific parameters sensitive to distri-bution shifts, while others can be shared across tasks. Layer-selective protection in CL has been investigated along two directions. The first applies uniform or pre-specified structural protection, including binary freeze/adapt masks [20] and fixed low-rank adaptation modules at chosen layers [23]. The per-layer allocation in these methods is fixed at the outset and does not change with task dynamics. The second applies post-hoc sensitivity analysis: a one-shot importance score identifies sensitive parameters after a task is completed, and rehearsal is then applied over the selected subset [20]. These methods [20], [23] target centralized settings. Prior incremental learning approaches [14], [15] evaluate forgetting at task completion and do not account for the cumulative degradation induced by repeated federated aggregation under extreme Non-IID conditions. 
+
+C. Lifecycle-Aware Knowledge Management 
+
+In long-term scenarios, knowledge degradation across extended learning sequences remains a challenge despite training-time defense mechanisms. Recent theoretical work [17] reveals that catastrophic forgetting accumulates inevitably as incremental errors compound across sequential tasks. Mem-ory buffer coverage limitations exacerbate this degradation as the number of learned classes grows [55]. A trivial solution to recover from such degradation is to periodically retrain the entire model on memory buffers, but this approach in-curs prohibitive computational overhead and communication costs in resource-constrained autonomous systems. To enable efficient knowledge recovery, meta-learning-based approaches [56] learn transferable adaptation patterns that generalize across tasks. Wang et al. [19] employ episodic replay dis-tillation that simulates task transitions during meta-training, enabling rapid few-shot adaptation through learned correction patterns. Recent works [22], [24] further improve recovery efficiency through parameter-efficient strategies such as low-rank adaptation and variational distillation. These methods [19], [22], [24] assume centralized settings with full model access and do not address the multiplicative degradation induced by repeated federated aggregation under Non-IID conditions. They also treat prevention and recovery as isolated operations rather than coordinating them across temporal scales. III. S YSTEM MODEL AND PROBLEM FORMULATION 
+
+A. System Model 
+
+In a long-term Mars exploration mission, a fleet of K
+
+autonomous rovers, denoted as {C k}Kk=1 , is deployed to conduct scientific investigations under the wireless federated learning framework. Each rover is responsible for collecting data and performing local learning, while a central server 
+
+{S} coordinates collaborative model training through periodic synchronization. Each rover is constrained by its onboard storage capacity Ck and, as such, can retain only a limited vol-ume of historical data for training. The federated architecture adopted here is a consequence of the communication budget rather than a privacy requirement. Even if the aggregation server were placed on Mars rather than on Earth, the relay and surface links between rovers share the same order of bandwidth as the Mars–Earth relay path [57], so raw imagery from multiple rovers cannot be collected at a single node; only model parameters, which constitute a far smaller per-round payload, are compatible with the available link budget. As the mission progresses and rovers operate in new ter-ritories, they encounter previously unseen phenomena and knowledge not present in earlier regions. We model this process as a sequence of learning tasks T tTt=1 , where each task 
+
+T t corresponds to data collected in a newly explored region. Since future tasks may revisit environments where earlier knowledge remains relevant, the learning system must preserve acquired knowledge while incorporating new information, avoiding knowledge override and catastrophic forgetting. The data observed by each rover is inherently heterogeneous due to spatially varying geological and environmental factors. 4
+
+Specifically, each rover Ck samples data from its local distri-bution Pk, and the set of distributions Pk is non-independent and non-identically distributed (Non-IID) across the fleet. These characteristics give rise to learning challenges at two different time scales. At the training-time scale, rovers face immediate optimization challenges in each task as they balance learning new knowledge with preserving existing knowledge through local gradient updates. At the long-term scale, the cumulative effects over sequential tasks lead to progressive performance degradation on early-learned knowledge. 
+
+B. Problem Formulation 
+
+We consider a sequence of tasks, denoted as T = {T t}Tt=1 ,where T is the total number of tasks. For each task t, the dataset is given by T t = {(xti, yti )}N t
+
+> i=1
+
+, where each sample consists of an input RGB image xti ∈ RH×W ×3 and its corresponding pixel-wise label map yti ∈ Y H×W . Each pixel in the mask (label map) is assigned a semantic class from the label space Yt, and N t denotes the number of image-mask pairs in task t. The label space Yt contains Ct new classes that are unique to the current task. For example, in Mars terrain segmentation, Task 0 provides N 0 training samples, each consisting of an RGB image x0 
+
+> i
+
+∈ RH×W ×3 (a 3-channel color image with height H and width W pixels) and its ground-truth label map y0 
+
+> i
+
+∈ Y H×W (a same-sized matrix where each spatial location (h, w ) stores the terrain category of that pixel). Task 0 learns C0 terrain classes 
+
+Y0 = {Soil, Sand, Bedrock }, meaning each pixel is classified as one of these three types. Task 1 then introduces N 1 images with C1 classes Y1 = {Gravel, Rocks }. Although Task 1 provides annotations only for its new classes, the model must be able to segment each pixel into one of the C0 + C1 classes learned so far. In the context of federated continual learning (FCL), a key constraint is that the label spaces for different tasks are strictly non-overlapping, that is, Yt ∩(∪t−1
+
+> j=1
+
+Yj ) = ∅. This formulation reflects a practical reality of the mission lifecycle: as rovers progressively enter new geological regions, they encounter terrain types that were absent from earlier mission stages, and the complete set of terrain categories cannot be predetermined at deployment time. As a result, each new task introduces 
+
+Ct classes that are entirely different from the Co = Pt−1 
+
+> i=1
+
+Ci
+
+classes in previous tasks. This requires the model to incremen-tally expand its segmentation capability to accommodate new classes, while maintaining good performance on previously learned classes. Each rover Ck receives a local subset T tk ⊂ T t consisting of N tk samples drawn from its regional distribution Pk. The local label space Ytk ⊆ Y t contains Ctk classes, and the global label space is formed through the union: Yt = ∪Kk=1 Ytk.The data distributions {P k}Kk=1 are Non-IID due to regional heterogeneity. To mitigate catastrophic forgetting, each rover maintains an exemplar memory buffer Mk that stores repre-sentative image-mask pairs from previously learned classes. The memory capacity |M k| is fixed due to onboard storage constraints. As the number of learned classes Co grows across tasks, the per-class sample allocation |M k|/C o diminishes. The learning process operates over iterative communication rounds. Within each task T t, the training proceeds for R
+
+communication rounds indexed by r = 1 , . . . , R . At round 
+
+r, the server S distributes the current global model Θr,t 
+
+to a selected subset of rovers ˆCr ⊆ {C 1, . . . , CK }. Each selected rover Ck ∈ ˆCr then performs local optimization on the combined dataset T tk ∪ M k, seeking to minimize: 
+
+min 
+
+> Θr,t k
+
+E(x,y)∼T tk
+
+ℓ(fΘk (x), y)
+
++ λE(x,y)∼M k
+
+ℓ(fΘk (x), y),
+
+(1) where fΘk denotes the segmentation model parameterized by 
+
+Θr,t k , ℓ is the pixel-wise cross-entropy loss, and λ balances learning on new task data against rehearsal on memorized sam-ples. Upon receiving the locally updated models {Θr,t k }k∈ ˆCr
+
+from all selected rovers, the server performs federated ag-gregation to obtain the global model for the next round: 
+
+Θr+1 ,t = 1  
+
+> |ˆCr|
+
+P  
+
+> k∈ˆCr
+
+Θr,t k .The main goal of our FCL framework is to maximize segmentation performance in the entire mission lifecycle. To measure this, we use the average mean Intersection over Union (mIoU) calculated over all classes after the final task T is completed, since mIoU gives how well the model maintains segmentation accuracy for all classes seen during the mission. The changes in mIoU over time show two main types of degradation, each linked to a different phase of the mission lifecycle. During training within a task, the rover faces im-mediate conflicts between learning from new task data T tk
+
+and keeping the knowledge already stored in the local model 
+
+Mk. Each local update must balance learning new classes (plasticity) with keeping previous knowledge (stability). As a result, sudden drops in mIoU for earlier tasks right after training on T t can be observed. Over the long term, as the model progresses through the full sequence of tasks, a slower but ongoing degradation appears. Even if strategies during training help reduce immediate forgetting, repeated rounds of local updates and global aggre-gation, especially under strong Non-IID conditions, cause the representations of early-learned classes to drift. This problem becomes more serious as the memory buffer Mk covers less of each class when more classes are learned. Because of this, we observe a steady drop in mIoU for tasks learned earlier, which is due to the repeated accumulation of aggregation errors over the course of the mission. IV. P ROPOSED METHOD 
+
+A. Initial Test and Observation 
+
+To understand catastrophic forgetting in FCL, we conduct a controlled layer replacement experiment to isolate the im-pact of each network layer on performance degradation. The experimental procedure is designed as follows. First, we train a baseline model Θ0 on Task 0. Next, we train a model Θt on Task t using standard FCL. We then replace each layer of Θ0
+
+individually with the corresponding layer from Θt, keeping all other layers fixed. The change in mIoU on Task 0 after each replacement quantifies the specific contribution of that layer to forgetting. 5Input       
+
+> Shallow Layers Deep Layers Segmentation Head
+> Layer 1 (t=T)
+> Layer 2 (t=T)
+> Layer 3 (t=T)
+> Output Segmentation Mask
+> Task 0 Task t-1 Task t
+> Layer 4 (t=T) Layer 4 (t=0)
+> Layer 3 (t=0) Replace Replace
+> Layer 1 (t=0)
+> Layer 2 (t=0) Replace
+> Replace
+> Replace Fc (t=T) Fc (t=0)
+
+(a) Layer replacement Layer mIoU ↑ (∆) Contr.% Shallow Layers 6.5                                       
+
+> L1 7.9 After Task 1 44.7 (-0.3) 8.5 After Task 2 44.0 (-1.0) 7.6 After Task 4 43.6 (-1.4) 7.5 L2 5.0 After Task 1 44.8 (-0.2) 4.9 After Task 2 44.3 (-0.7) 5.3 After Task 4 43.9 (-1.1) 4.9
+> Deep Layers -6.9
+> L3 -8.9 After Task 1 45.4 (+0.4) -9.8 After Task 2 46.3 (+1.3) -9.3 After Task 4 46.5 (+1.5) -7.8 L4 -4.8 After Task 1 45.2 (+0.2) -4.9 After Task 2 45.6 (+0.6) -4.6 After Task 4 45.9 (+0.9) -4.9
+> Segmentation Head 87.1
+> Head 87.1 After Task 1 41.8 (-3.2) 86.6 After Task 2 33.2 (-11.8) 87.1 After Task 4 21.4 (-23.6) 87.5
+> 1
+
+(b) Forgetting analysis 
+
+Fig. 1: Layer-wise sensitivity analysis. (a) Controlled replace-ment experiment where baseline layers from Θ0 are individ-ually replaced with trained layers from Θt. (b) Quantitative forgetting contribution across different layer groups. We base this study on MarsScapes [45], the first panoramic Mars terrain dataset collected by the Curiosity rover at Gale Crater, under extreme Non-IID conditions, using a Dirichlet distribution with β = 0 .1 across K = 30 rovers. Task 0 includes classes 0–4 (Soil, Sand, Bedrock, Gravel, Rocks) and achieves an initial mIoU of 45.0%. Task t introduces new terrain classes, while requiring the retention of Task 0 knowledge through the exemplar memory Mk.The results in Fig. 1 indicate significant variation in the forgetting performance over different network layers. Each layer group’s contribution is reported as its signed ∆mIoU normalized by P 
+
+> l
+
+|∆mIoU l| (unsigned shares sum to ≈ 100% 
+
+up to rounding), which is an empirical counterpart of the κl
+
+in Lemma 1 rather than a numerical identity. Specifically, the segmentation head contributes 87 .1% of the total forgetting magnitude, with mIoU decreasing from 45 .0% to 21 .4% . In contrast, replacing deeper backbone layers yields negative forgetting of −6.9% , improving Task 0 performance from 
+
+45 .0% to 46 .5% . Shallow layers contribute minimally ( 6.5% ), causing a 1.4 pp decrease in mIoU. Note that existing rehearsal-based methods [14], [40], which mitigate forgetting by maintaining memory buffers Mk
+
+and replaying samples from earlier tasks during new task training, apply the same level of protection to all layers. However, our test results demonstrate that this approach is not optimal, because applying uniform rehearsal constraints presents a dilemma: strong constraints limit beneficial adap-tation in the backbone, while weak constraints allow signif-icant forgetting in the segmentation head. This motivates us to design rehearsal mechanisms that enforce stability where necessary and maintain plasticity where it is beneficial. 
+
+B. The Proposed Framework 
+
+The proposed framework is shown in Fig. 2. The framework consists of two components for two different time scales: 
+
+Layer-Selective Rehearsal (LSR) operates during local training by applying stratified corrections via learned generators for shallow, deep, and segmentation head layers, while Rapid Knowledge Recovery (RKR) provides server-side meta-learned recovery when long-term degradation is detected. At the training-time scale, LSR applies heterogeneous protection strategies through learned generators that decouple plasticity and stability requirements across layer groups. At the long-term scale, RKR provides efficient repair mechanisms that restore degraded segmentation head states through learned correction patterns. LSR contributes a stratified, online-learned rehearsal strat-egy for the training-time scale, together with a closed-form suboptimality bound for any uniform-α rehearsal (Theorem 1). RKR contributes a single-pass recovery function meta-trained once on Task 0 and applied without further retraining at subsequent tasks, together with a sample-complexity statement (Corollary 1) that compares its fine-tuning cost against retrain-ing. The design departs from prior layer-selective approaches: protection strengths are continuously stratified ( αs < α d <αc) rather than binary, and the corrections are produced by learned generators conditioned on the current gradient and memory features, so the per-layer adjustment adapts as training proceeds rather than being fixed in advance. The two components are combined because Theorem 2 indicates that training-time prevention alone cannot bound the long-term degradation under Non-IID federated aggregation, so a recovery mechanism is required in addition. 
+
+1) Layer-Selective Rehearsal (LSR): LSR applies layer-aware protection strategies during continual learning. Unlike existing rehearsal methods [48] that impose uniform con-straints on all model parameters, LSR separates the plas-ticity–stability trade-off by allowing the backbone to evolve where beneficial while explicitly stabilizing the segmentation head. To realize this design, LSR employs three learned generator functions, ϕs, ϕ d, ϕ c, which provide adaptive up-date corrections for shallow layers, deep layers, and the segmentation head, respectively. Each generator ϕl, where 
+
+l ∈ { s, d, c }, takes as input compact statistics of the current layer parameters and gradient together with memory-derived features hm, and outputs a correction term ∆θl that modulates the standard gradient update. The resulting corrections differ in magnitude to reflect layer-specific sensitivity: shallow layers receive minimal intervention weighted by αs, deep layers receive moderate guidance weighted by αd, and the segmen-tation head receives strong stabilization weighted by αc, with 
+
+αs < α d < α c. These generators are trained online alongside the model parameters, enabling LSR to adapt continuously as the semantic class space expands over sequential tasks. Each generator ϕl operates on compact per-channel sum-maries of the current layer rather than on its full parameter vector. Let zl denote the concatenation of the per-channel mean and variance of θl, and let gl denote the corresponding per-channel summary of the gradient ∇l. The generator input is [zl; gl; hm], where hm is obtained by globally average-pooling the backbone feature maps over the exemplars in Mk.The generator output is a per-channel modulation factor that is broadcast to all parameters within the same channel to form 6Samples       
+
+> Soil Sand Bedrock
+> Pebble Rock Boulder
+> Outcrop
+> Dust Fines
+> Task t-1 Task t Task t+1
+> Class-Imbalanced Distributions
+> Samples
+> Soil Sand Bedrock
+> Pebble Rock Boulder
+> Outcrop
+> Dust Fines
+> Class-Imbalanced Distributions
+> Task t-1 Task t Task t+1
+> Shallow Deep
+> Lightweight Correction
+> Moderate Guidance
+> Segmentation Head
+> Aggressive Stabilization
+> Output
+> Input
+> Classifier Generator Deep Generator Shallow Generator
+> Shallow Deep
+> Lightweight Correction
+> Moderate Guidance
+> Aggressive Stabilization
+> Output
+> Classifier Generator Deep Generator Shallow Generator
+> Input
+> The l-th Local Rover The K-th Local Rover  . . .  Initial Task Meta-Learner
+> Step 1: Meta-Training on Initial Task
+> Meta-Training Meta-Learner
+> Meta-Learner
+> mIoU
+> Task Index
+> Rapid Recovery
+> Training Epochs
+> Step 2: Rapid Recovery Deployment
+> Performance Drift
+> Server: Recovery Module
+> Segmentation Head
+> mIoU
+
+Fig. 2: Overview of the proposed dual-timescale framework. Left: Layer-Selective Rehearsal (LSR) operates during local training on rovers, applying stratified corrections through learned generators ( ϕs, ϕd, ϕc) that produce adaptive updates for shallow, deep, and segmentation head layers with heterogeneous protection strengths ( αs < α d < α c). Right: Rapid Knowledge Recovery (RKR) is meta-trained on the initial task and deployed when long-term degradation is detected, efficiently restoring segmentation head performance through learned recovery patterns ( ψ). 
+
+∆θl. This design keeps the generator size independent of the layer width and enables ϕl to be instantiated as compact MLPs. The shallow layer generator ϕs makes lightweight correc-tion with minimal architectural complexity. Given the per-channel summaries zs, g s ∈ R2Cs of the shallow-layer pa-rameters and gradient (with Cs the shallow-layer channel count) and the memory encoding hm ∈ Rdm , the generator is instantiated as a compact multi-layer perceptron that produces correction: 
+
+∆θs = ϕs([ zs; gs; hm]; ωs), (2) where [·; ·; ·] denotes concatenation and ωs represents learn-able parameters. The lightweight design reflects the minimal forgetting contribution (6.5%) while preserving plasticity for learning new task features. The deep layer generator ϕd is designed to guide the beneficial evolution observed in sensitivity analysis (-6.9%). It produces corrections that enhance rather than constrain adaptation: 
+
+∆θd = ϕd([ zd; gd; hm]; ωd), (3) where zd, g d ∈ R2Cd are the per-channel summaries of the deep-layer parameters and gradient. The moderately sized MLP learns to amplify update directions that are beneficial for both new task learning and old task preservation, allowing for natural feature evolution while memory-guided corrections prevent drift toward task-specific patterns. The segmentation head generator ϕc implements stabi-lization to address the dominant forgetting source (87.1%). Beyond parameters and gradients, it incorporates preserved knowledge including class prototypes p ∈ RCo×d, the memory-pooled feature hm (backbone-pooled features of the exemplars in Mk, i.e., the same representation used in Eqs. (2)–(3)), and geometric features a capturing inter-class angular relationships: 
+
+∆θc = ϕc([ zc; gc; p; hm; a]; ωc), (4) where zc, g c ∈ R2Cc are the per-channel summaries of the segmentation-head parameters and gradient. The architecture employs multiple specialized encoders for different input modalities, followed by a fusion layer that produces correction 
+
+∆θc. Operating on hm rather than on raw image-mask pairs keeps the input dimensionality tractable for a compact MLP-based generator. The richer input context enables precise boundary preservation while accommodating new class inte-gration. The parameter update for each layer group l integrates standard gradient descent with learned correction weighted by 
+
+αl:
+
+θl ← θl − η∇l + αl∆θl, (5) where η is the learning rate. The stratified weighting αs <αd < αc ensures minimal intervention in shallow layers, moderate guidance in deep layers, and aggressive stabilization in the segmentation head, directly reflecting their respective forgetting contributions. The generators must be trained online rather than pre-trained due to incremental evaluation characteristics of the FCL. After completing task t, models are evaluated on the cumulative test set spanning tasks 0 through t, requiring generators to adapt continuously to the expanding label space. Pre-trained gen-erators with fixed capacity cannot accommodate the growing number of classes and evolving class relationships across T
+
+sequential tasks. During local training on rover Ck at round 
+
+r of task t, we jointly optimize model parameters Θr,t k =
+
+{θs, θ d, θ c} and generator parameters Ω = {ωs, ω d, ω c}. The 7
+
+selective rehearsal loss combines task learning with memory rehearsal: 
+
+Ls = E(x,y)∼T tk
+
+ℓ(fΘ(x), y)
+
++ λE(x,y)∼M k
+
+ℓ(fΘ(x), y), (6) where ℓ denotes pixel-wise cross-entropy loss and λ balances new task learning against old task preservation. The generators are updated to minimize forgetting while enabling model parameters to learn effectively. Note in each communication round that, selected rovers receive global model Θr,t from server S and perform local training with LSR. The generators {ϕs, ϕ d, ϕ c} operate locally during gradient computation, giving corrections that guide parameter updates according to the stratified rule. After local training, rovers transmit updated model parameters to the server for aggregation: Θr+1 ,t = 1  
+
+> |ˆCr|
+
+P  
+
+> k∈ˆCr
+
+Θr,t k . Generator parameters Ω remain local and are not communicated, ensuring minimal overhead beyond standard federated learning. 
+
+2) Rapid Knowledge Recovery (RKR): Although LSR mit-igates forgetting at the training-time scale, long-term degra-dation over sequential tasks remains challenging. This is because, on the one hand, prior work [17], [55] has established that catastrophic forgetting in continual learning is inevitable due to the accumulation of incremental errors over extended task sequences, which are further augmented by repeated aggregation under Non-IID conditions. On the other hand, while fine-tuning on memory buffers can partially restore performance, the communication overhead and computational cost make frequent complete retraining impossible in resource-constrained rovers. To address these issues, we introduce RKR that learns to efficiently restore degraded segmentation head states by leveraging preserved knowledge for targeted corrections. The recovery function ψ operates exclusively on the seg-mentation head to address the dominant forgetting source. Given a degraded segmentation head state θ∗ 
+
+> c
+
+∈ Rdc after task t, the function generates correction ∆θc by integrating multiple sources of preserved knowledge. The architecture employs specialized encoders for degraded parameters ( Es), class prototypes ( Ep), memory exemplars ( Em), and geometric features ( Eg ), which are fused through attention-weighted aggregation. The complete forward pass is formulated as: 
+
+∆θc = ψ(θ∗ 
+
+> c
+
+, p, Mk, a; ξ)= F
+
+ X
+
+> i∈{ s,p,m,g }
+
+exp( q⊤Ei(·)) 
+
+P 
+
+> j
+
+exp( q⊤Ej (·)) · Ei(·)
+
+ , (7) where Es(θ∗ 
+
+> c
+
+), Ep(p), Em(Mk), and Eg (a) produce encoded representations, q is a learnable query vector computing atten-tion weights via softmax, and F denotes the fusion decoder network parameterized by ξ. The recovered segmentation head is obtained as θ+ 
+
+> c
+
+= θ∗ 
+
+> c
+
++ ∆ θc, followed by brief fine-tuning on Mk to stabilize restoration. The recovery function is trained on task 0 using episodic procedures inspired by meta-learning principles [19]. Each episode simulates degradation by partitioning task 0’s label space Y0 into training subset Y− and held-out subset Y+ =
+
+Y0 \ Y −. A degraded segmentation head θ∗ 
+
+> c
+
+is constructed by optimizing only on Y−, inducing artificial forgetting on Y+.The recovery parameters ξ are then optimized through a bi-level objective: 
+
+min  
+
+> ξ
+
+EY−,Y+
+
+ 1
+
+|D Y+ |
+
+X
+
+> (x,y)∈D Y+
+
+ℓ(fθ∗ 
+
+> c+ψ(·;ξ)
+
+(x), y)
+
+ , (8) where θ∗ 
+
+> c
+
+= arg min θc 
+
+> 1
+> |D Y−|
+
+P 
+
+> (x,y)∈D Y−
+
+ℓ(fθc (x), y), DY−
+
+and DY+ denote data distributions over respective label sub-sets, and ℓ is the pixel-wise cross-entropy loss. The above episodic training learns general recovery patterns rather than class-specific corrections, which enables direct transfer to tasks t > 0 without retraining ψ. During deploy-ment phase, each rover monitors cumulative mIoU Ick after completing task t. When performance on early tasks drops be-low threshold τ , the rover invokes recovery by generating ∆θc
+
+using current prototypes p, memory buffer Mk, and geometric features a, then applies the correction θ+ 
+
+> c
+
+= θ∗ 
+
+> c
+
++∆ θc followed by brief fine-tuning. The recovery function parameters ξ
+
+remain constant in all tasks that requires no additional training or communication beyond the initial Task 0 meta-learning phase, maintaining the minimal overhead. 
+
+C. Training Pipeline 
+
+The training pipeline of our framework is presented in 
+
+Algorithm 1 . Task 0 serves as the initialization phase where all rovers train the initial model on their local data and construct memory buffers Mk following iCaRL [14]. Note that the recovery function ψ is trained during Task 0 via the episodic meta-learning procedure described in Section IV-B2, learning transferable recovery patterns that will be applied to all subsequent tasks without retraining. The learned genera-tors {ϕs, ϕ d, ϕ c} are initialized and will be updated online throughout the training. For each task t ≥ 1, the training proceeds through R
+
+communication rounds. At round r, the server S distributes the global model Θr,t to selected rovers ˆCr (blue lines 6-16 of 
+
+Algorithm 1 ). Each selected rover Ck performs local training by sampling batches from T tk ∪ M k and applying LSR. For each batch, the rover computes task gradients and generates layer-wise corrections via the three generators following Equa-tions (2)-(4), then updates parameters according to the strat-ified rule in Equation (5). The generators Ω = {ωs, ω d, ω c}
+
+are jointly optimized with model parameters to minimize the selective rehearsal loss in Eq. (6). After local training, rovers upload their updated models to the server, which performs federated aggregation Θr+1 ,t = 1  
+
+> |ˆCr|
+
+P  
+
+> k∈ˆCr
+
+Θr,t k (orange lines 17-18 of Algorithm 1 ). Generator parameters remain local and are not communicated. After completing all R rounds for task t, each rover evalu-ates its cumulative mIoU on tasks {0, . . . , t } (see green lines 20-28 of Algorithm 1 ). When performance on early tasks drops below threshold τ , RKR is invoked. The rover generates correction ∆θc using the pre-trained recovery function ψ via Equation (7), applies the correction θ+ 
+
+> c
+
+= θ∗ 
+
+> c
+
++ ∆ θc, and performs brief fine-tuning on memory buffer Mk. Since the recovery function parameters ξ remain fixed after Task 0 8
+
+Algorithm 1 Training Lifecycle in FCL ( LSR Training , RKR Triggering , and Aggregation ) 
+
+Input: K rovers {C k}Kk=1 , T tasks, R rounds per task, threshold τ 
+
+> 1:
+
+Task 0 Initialization:  
+
+> 2:
+
+Initialize Θ0,0, memory {M k}, generators {ϕs, ϕ d, ϕ c} 
+
+> 3:
+
+Train recovery function ψ via episodic meta-learning  
+
+> 4:
+
+for t = 1 to T do  
+
+> 5:
+
+for r = 1 to R do  
+
+> 6:
+
+▷ Rovers perform local training with LSR:  
+
+> 7:
+
+for each selected rover Ck ∈ ˆCr do  
+
+> 8:
+
+Receive Θr,t ; Initialize Θr,t k = Θ r,t ; 
+
+> 9:
+
+for each batch (x, y) ∼ T tk ∪ M k do  
+
+> 10:
+
+Compute ∇s, ∇d, ∇c from Ls (Eq. (6));  
+
+> 11:
+
+Generate corrections (Eqs. (2)-(4));  
+
+> 12:
+
+Update layers (Eq. (5));  
+
+> 13:
+
+Update generators Ω; 
+
+> 14:
+
+end for  
+
+> 15:
+
+Upload Θr,t k to server;  
+
+> 16:
+
+end for  
+
+> 17:
+
+▷ Server performs aggregation:  
+
+> 18:
+
+Θr+1 ,t ← 1  
+
+> |ˆCr|
+
+P  
+
+> k∈ˆCr
+
+Θr,t k ; Distribute to rovers;  
+
+> 19:
+
+end for  
+
+> 20:
+
+▷ Long-term recovery triggering:  
+
+> 21:
+
+for each rover Ck do  
+
+> 22:
+
+Evaluate cumulative mIoU Ick; 
+
+> 23:
+
+if Ick < τ then  
+
+> 24:
+
+Generate ∆θc via ψ (Eq. (7));  
+
+> 25:
+
+Apply θ+ 
+
+> c
+
+← θ∗ 
+
+> c
+
++ ∆ θc; 
+
+> 26:
+
+Fine-tune on Mk for few epochs;  
+
+> 27:
+
+end if  
+
+> 28:
+
+end for  
+
+> 29:
+
+end for  
+
+> 30:
+
+return ΘR,T 
+
+training, the process incurs minimal computational overhead and requires no additional communication with the server. V. T HEORETICAL ANALYSIS 
+
+In this section, we establish theoretical foundations that support our dual-timescale framework. We first formalize the forgetting metric and state the necessary assumptions. We then characterize training-time forgetting through layer-wise decomposition and prove the suboptimality of uniform rehearsal strategies. Finally, we analyze long-term degradation inevitability and derive sample complexity bounds for recovery mechanisms. The theoretical analysis in this section is intended to pro-vide qualitative design guidance rather than tight performance bounds. The three results that go beyond standard machinery are: Lemma 1, a layer-wise decomposition of forgetting that provides the structural basis for stratified protection; Theo-rem 1, a closed-form suboptimality bound for any uniform-
+
+α rehearsal; and Theorem 2, a long-term degradation lower bound that couples federated aggregation drift with memory-buffer-coverage dilution. The remaining steps (smoothness-based bounds, gradient-variance decomposition) use standard tools and serve as building blocks for these three results. 
+
+Definition 1 (Task-Level Forgetting) . Let Pt denote the global test distribution for task t. For task t′ < t , the forgetting of task t′ after training on task t is defined as: 
+
+∆t,t ′
+
+:= E(x,y)∼P t′
+
+ℓ(fΘt (x), y)
+
+− E(x,y)∼P t′
+
+ℓ(fΘt′ (x), y). (9) 
+
+The cumulative forgetting at task t is: 
+
+∆t := 1
+
+t
+
+> t−1
+
+X
+
+> t′=0
+
+∆t,t ′
+
+. (10) We now present the assumptions required for our theoretical results. 
+
+Assumption 1 (Layer-wise Smoothness) . For each layer l ∈{s, d, c }, the loss function is Ll-smooth with respect to layer parameters, i.e., for any θl, ˜θl:
+
+∥∇ θl ℓ(fΘ(x), y) − ∇ ˜θl ℓ(f ˜Θ(x), y)∥≤ Ll∥θl − ˜θl∥, (11) 
+
+where Ls, L d, L c are layer-specific smoothness parameters. 
+
+Assumption 2 (Bounded Gradient Variance) . For any model parameters Θ and rover k, the stochastic gradient has bounded variance: 
+
+E(x,y)∼P k
+
+h
+
+∥∇ Θℓ(fΘ(x), y)
+
+− ∇ ΘE[ℓ]∥2i
+
+≤ σ2.
+
+(12) 
+
+Assumption 3 (Distribution Heterogeneity) . The Non-IID degree is characterized by heterogeneity parameter γ2:
+
+1
+
+K
+
+> K
+
+X
+
+> k=1
+
+∇ΘE(x,y)∼P k [ℓ]
+
+− ∇ ΘE(x,y)∼ ¯P [ℓ] 2
+
+≤ γ2,
+
+(13) 
+
+where ¯P = 1
+
+> K
+
+PKk=1 Pk is the average distribution. 
+
+Assumption 4 (Memory Buffer Constraint) . Each rover main-tains a fixed-capacity memory buffer |M k| = M . As tasks accumulate, the per-class coverage diminishes: 
+
+|M k|
+
+Co = M
+
+Pt−1 
+
+> i=0
+
+Ci → 0 as t → ∞ . (14) We acknowledge that the layer-wise smoothness assumption and the bounded gradient variance assumption are ideal-ized conditions when applied to deep segmentation networks trained under strong heterogeneity. The theoretical results in this section should therefore be read as directional in-sight about the design: they indicate which failure modes are structural (layer-wise heterogeneous forgetting, long-term degradation under Non-IID aggregation) rather than artifacts of a particular training run. The experiments in Section VI are intended to provide empirical validation of these qualitative predictions. 9
+
+A. Training-Time Forgetting Characterization 
+
+We now characterize how catastrophic forgetting manifests heterogeneously across network layers and establish the theo-retical foundation for layer-selective rehearsal. 
+
+Lemma 1 (Layer-wise Forgetting Decomposition) . Let Θt′
+
+=
+
+{θt′ 
+
+> s
+
+, θ t′ 
+
+> d
+
+, θ t′ 
+
+> c
+
+} and Θt = {θts, θ td, θ tc} be model states after tasks 
+
+t′ and t > t ′, respectively. Under Assumption 1, there exist layer-wise contribution coefficients κs, κ d, κ c ≥ 0 with κs +
+
+κd + κc = 1 such that: 
+
+∆t,t ′
+
+= X
+
+> l∈{ s,d,c }
+
+κl EPt′
+
+h
+
+ℓ fΘt′,l ←t (x), y
+
+− ℓ fΘt′ (x), yi
+
++ O
+
+
+
+∥Θt − Θt′
+
+∥2
+
+,
+
+(15) 
+
+where Θt′,l ←t := Θ t′
+
+\ { θt′ 
+
+> l
+
+} ∪ { θtl }.Proof. By Taylor expansion of the loss function around Θt′
+
+:
+
+ℓ(fΘt ) − ℓ(fΘt′ ) ≈ X
+
+> l∈{ s,d,c }
+
+⟨∇ θl ℓ, θ tl − θt′ 
+
+> l
+
+⟩
+
++ 12
+
+X
+
+> l
+
+(θtl − θt′ 
+
+> l
+
+)⊤∇2 
+
+> θl
+
+ℓ(θtl − θt′ 
+
+> l
+
+).
+
+(16) Define the layer-wise contribution coefficient as: 
+
+κl := ∥∇ θl ℓ∥ · ∥ θtl − θt′ 
+
+> l
+
+∥
+
+P 
+
+> l′∈{ s,d,c }
+
+∥∇ θl′ ℓ∥ · ∥ θtl′ − θt′ 
+
+> l′
+
+∥ . (17) By construction, P 
+
+> l
+
+κl = 1 . The first-order term captures the impact of replacing individual layers, which corresponds to the controlled layer replacement experiment. The second-order terms are bounded by Assumption 1: for each layer l, we have 
+
+∥(θtl −θt′ 
+
+> l
+
+)⊤∇2 
+
+> θl
+
+ℓ(θtl −θt′ 
+
+> l
+
+)∥ ≤ Ll∥θtl −θt′ 
+
+> l
+
+∥2, yielding the stated 
+
+O(∥Θt − Θt′
+
+∥2) residual. 
+
+Lemma 2 (Gradient Conflict Characterization) . During train-ing on task t, the gradient conflict between new task data and old task memory exhibits layer-wise heterogeneity. For classifier parameters: 
+
+E
+
+h
+
+∥∇ nc − ∇ oc ∥2i
+
+≥ L2
+
+> c
+
+4 ·
+
+ Ct
+
+Co
+
+2
+
+· Ex∼P o [ϕ(x)] 
+
+− Ex∼P n [ϕ(x)] 2
+
+,
+
+(18) 
+
+where ∇nc and ∇oc denote gradients on new and old task data, 
+
+Pn and Po denote new and old data distributions. For deep layer parameters: 
+
+E
+
+h
+
+∥∇ nd − ∇ od∥2i
+
+≤ L2
+
+> d
+
+dd
+
+· E
+
+h
+
+∥xn − xo∥2i
+
+, (19) 
+
+where ϕ(x) denotes backbone features, dd is the deep layer dimension, and xn, xo are samples from new and old distri-butions. Proof. For the classifier with weight matrix Wc ∈
+
+R(Co+Ct)×d, the gradient on new task data primarily updates rows corresponding to new classes. Let ei denote the i-th stan-dard basis vector. The new task gradient can be approximated as: 
+
+∇nc ≈ 1
+
+CtCo+Ct
+
+X
+
+> i=Co+1
+
+ei ⊗ Ex∼P n [ϕ(x)] , (20) while the old task gradient maintains existing class boundaries: 
+
+∇oc ≈ 1
+
+CoCo
+
+X
+
+> i=1
+
+ei ⊗ Ex∼P o [ϕ(x)] . (21) Since {ei} are orthogonal and the two approximations populate disjoint row sets (old-class vs. new-class), the squared-norm difference decomposes into two component squared norms. Applying Lc-Lipschitz continuity with the row-normalization factors 1/C o and 1/C t yields the stated bound in terms of the feature-mean shift ∥Ex∼P o [ϕ(x)] −
+
+Ex∼P n [ϕ(x)] ∥ directly. For deep layers, feature evolution is continuous across tasks. The gradient difference is bounded by: 
+
+∥∇ nd − ∇ od∥ ≤ Ld · 1
+
+√dd
+
+· ∥ E[xn] − E[xo]∥. (22) The 1/√dd factor arises from averaging over dd feature di-mensions. Taking expectations and applying Cauchy-Schwarz inequality yields the stated upper bound. 
+
+Theorem 1 (Suboptimality of Uniform Rehearsal) . Let Rα
+
+apply a uniform weight α to all layers, and let RL apply stratified weights {αs, α d, α c} with αs ≤ αd ≤ αc. We compare the two at matched average regularization, writing 
+
+αc = α(1 + δ) and αd = α(1 − δ′) with κcδ ≈ κdδ′
+
+(LSR redistributes protection across layers without imposing a globally stronger total). Under Assumptions 1 and 2, if 
+
+κc > κ d, then for any task sequence of length T :
+
+E[∆ TL ] ≤
+
+
+
+1 − (κc − κd)( αc − αd)4α
+
+
+
+· E[∆ Tu ],
+
+(23) 
+
+where ∆Tu and ∆TL denote cumulative forgetting under uniform and LSR strategies. Moreover, when κc − κd = Ω(1) and 
+
+αc − αd = Ω( α), LSR achieves a constant factor improvement over uniform rehearsal. Proof. Let ∆tl denote the instantaneous forgetting contribution of layer l at task t. For uniform rehearsal with weight α applied to all layers, the cumulative forgetting decomposes as: 
+
+∆Tu = X
+
+> l∈{ s,d,c }
+
+κl ·
+
+> T
+
+X
+
+> t=1
+
+(1 − α)T −t∆tl , (24) where ∆tl denotes the instantaneous forgetting contribution of layer l at task t. For LSR with stratified weights, we have: 
+
+∆TL = κcTX
+
+> t=1
+
+(1 − αc)T −t∆tc
+
++ κdTX
+
+> t=1
+
+(1 − αd)T −t∆td
+
++ κsTX
+
+> t=1
+
+(1 − αs)T −t∆ts.
+
+(25) 10 
+
+Since αc > α > α d, we have (1 − αc)T −t < (1 − α)T −t <
+
+(1 − αd)T −t. The dominant term corresponds to the classifier due to κc ≫ κd (by Lemma 2). To quantify the improvement, consider setting αc = α(1+ δ)
+
+and αd = α(1 − δ′) where δ, δ ′ > 0. To maintain approxi-mately equal total regularization, we require κcδ ≈ κdδ′. The difference in cumulative forgetting becomes: 
+
+∆Tu − ∆TL
+
+≥ κcTX
+
+> t=1
+
+h
+
+(1 − α)T −t − (1 − αc)T −ti
+
+∆tc
+
+− κdTX
+
+> t=1
+
+h
+
+(1 − αd)T −t − (1 − α)T −ti
+
+∆td.
+
+(26) Using the approximation (1 − α)T −t − (1 − αc)T −t ≈ (T −
+
+t)δα (1 − α)T −t−1 for small δ, and noting that κc∆tc ≫ κd∆td
+
+by Lemma 2, the dominant term yields: 
+
+∆Tu − ∆TL ≥ (κc − κd)δαT (T − 1) 2 ¯∆, (27) where ¯∆ is the average instantaneous forgetting. Dividing by 
+
+∆Tu ≈ T ¯∆ and choosing δ = ( αc −αd)/(2 α) yields the stated bound. 
+
+Remark 1. Theorem 1 indicates that uniform rehearsal al-locates regularization strength in proportion to layer count rather than in proportion to per-layer forgetting contribution. The closed-form factor is derived under the smoothness and bounded-variance assumptions and should be read as a direc-tional statement about when stratification helps; the empirical ablation in Section VI provides the corresponding quantitative check. B. Long-Term Degradation Analysis 
+
+We now analyze the inevitable accumulation of degradation over extended task sequences and establish theoretical foun-dations for recovery mechanisms. 
+
+Lemma 3 (Aggregation-Induced Drift) . Under Assump-tion 3, for each federated aggregation round Θr+1 ,t =  
+
+> 1
+> |ˆCr|
+
+P  
+
+> k∈ˆCr
+
+Θr,t k , the drift relative to the ideal global optimum 
+
+ˆΘ satisfies: 
+
+E
+
+h
+
+∥Θr+1 ,t − ˆΘ∥2i
+
+≤
+
+
+
+1 − η
+
+2L
+
+
+
+E
+
+h
+
+∥Θr,t − ˆΘ∥2i
+
++ 2η2γ2
+
+| ˆCr | ,
+
+(28) 
+
+where η is the learning rate and L = max l Ll.Proof. Each local update can be written as: 
+
+Θr,t k = Θ r,t − η∇Θk E(x,y)∼P k [ℓ]. (29) After aggregation: 
+
+Θr+1 ,t − ˆΘ = Θ r,t − ˆΘ
+
+− η · 1
+
+| ˆCr |
+
+X 
+
+> k∈ˆCr
+
+∇Θk E[ℓ]. (30) Taking norms and applying the smoothness condition from Assumption 1: 
+
+∥Θr+1 ,t − ˆΘ∥2
+
+≤ ∥ Θr,t − ˆΘ∥2 − 2η⟨ ¯∇, Θr,t − ˆΘ⟩
+
++ η2∥ ¯∇∥ 2,
+
+(31) where ¯∇ = 1  
+
+> |ˆCr|
+
+P  
+
+> k∈ˆCr
+
+∇Θk E[ℓ] is the aggregated gradient. By the smoothness assumption, ⟨ ¯∇, Θr,t − ˆΘ⟩ ≥ ∥ Θr,t −
+
+ˆΘ∥2/L when Θr,t is sufficiently close to ˆΘ. Furthermore, by Assumption 3: 
+
+E
+
+h
+
+∥ ¯∇ − ∇ ˆΘE[ℓ]∥2i
+
+≤ γ2
+
+| ˆCr | . (32) Taking expectations and noting that ∇ ˆΘE[ℓ] = 0 at the optimum, we obtain: 
+
+E
+
+h
+
+∥Θr+1 ,t − ˆΘ∥2i
+
+≤
+
+
+
+1 − ηL
+
+
+
+E
+
+h
+
+∥Θr,t − ˆΘ∥2i
+
++ η2γ2
+
+| ˆCr | .
+
+(33) Applying the contraction factor (1 − η/L ) ≤ (1 − η/ (2 L)) 
+
+when η ≤ 1/L completes the proof. 
+
+Theorem 2 (Inevitable Long-Term Degradation) . Consider a FCL setting with T tasks, R rounds per task, and K rovers under Non-IID conditions characterized by γ ≥ γ0 for some constant γ0 > 0. Assume the existence of a perfect training-time defense mechanism such that instantaneous forgetting 
+
+∆ti = 0 for all t ∈ [1 , T ]. Nevertheless, the long-term cumulative degradation satisfies the lower bound: 
+
+E[∆ T ] ≥ Ω
+
+
+
+γ2 · T · R ·
+
+ Co
+
+M
+
+1/2
+
+≥ Ω
+
+
+
+γ20 · T 3/2 · R
+
+
+
+,
+
+(34) 
+
+where M = |M k| is the memory buffer size and ∆ti denotes instantaneous forgetting at task t. The second inequality uses 
+
+Co = Ω( T ).Proof. Even with perfect instantaneous forgetting prevention (∆ti = 0 ), each aggregation round introduces drift according to Lemma 3. Let δr,t denote the drift at round r of task t:
+
+δr,t := E
+
+h
+
+∥Θr+1 ,t − ˆΘr,t ∥2i
+
+≥ η2γ2
+
+K , (35) where ˆΘr,t is the ideal model at that round. Accumulating over T tasks and R rounds per task: 
+
+> T
+
+X
+
+> t=1
+> R
+
+X
+
+> r=1
+
+δr,t ≥ T · R · η2γ2
+
+K . (36) The memory-buffer coverage effect (Assumption 4) implies diminishing rehearsal effectiveness as Co grows. Under iCaRL exemplar selection [14], with only M/C o samples per previ-ously learned class, the memory-based rehearsal gradient ∇m
+
+is a finite-sample class-mean approximation whose magnitude scales on the order of pM/C o relative to the full-data gradient ∇f :
+
+∥∇ m∥ ≲
+
+r MCo ∥∇ f ∥. (37) 11 
+
+This coverage limitation amplifies the effective drift. The actual degradation on old tasks must account for both the parameter drift and the diminished rehearsal effectiveness: 
+
+∆T ≥ Ω
+
+ TX
+
+> t=1
+> R
+
+X
+
+> r=1
+
+δr,t ·
+
+r Co(t)
+
+M
+
+
+
+≥ Ω
+
+ η2γ2T R K · 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+r Co(t)
+
+M
+
+
+
+.
+
+(38) Since Co(t) = Pt−1 
+
+> i=0
+
+Ci ≥ c · t for some constant c > 0
+
+(assuming each task introduces at least a constant number of classes), we have: 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+pCo(t) ≥ 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+√ct = Ω( T 1/2). (39) Substituting back and using γ ≥ γ0 yields: 
+
+∆T ≥ Ω
+
+
+
+γ20 · T 3/2 · R · 1
+
+√M
+
+
+
+. (40) When M is a fixed constant (Assumption 4), this simplifies to the stated bound. Theorem 2 does not argue against the continual-learning formulation; rather, it indicates that training-time prevention alone is insufficient over an extended mission horizon, so that a complete framework must include a recovery mechanism that operates at the long-term scale. The alternatives, either retraining from scratch at each new region or freezing the model after initial deployment, are ruled out respectively by the uplink budget and by the need to remain safe on newly encountered terrain. This observation is the direct motivation for the Rapid Knowledge Recovery component in Section IV. 
+
+Corollary 1 (Sample Complexity of Recovery) . Let the clas-sifier degrade to state θ∗ 
+
+> c
+
+after task t. To recover to an ϵ-approximation of the optimal classifier θ+ 
+
+> c
+
+using recovery function ψ, the required memory buffer size and fine-tuning complexity satisfy: 
+
+|M k| = Ω 
+
+ Co · dc
+
+ϵ2
+
+
+
+,Ef = O
+
+
+
+log 
+
+ 1
+
+ϵ
+
+ 
+
+,
+
+(41) 
+
+where Ef denotes the number of fine-tuning epochs. In con-trast, complete retraining from scratch requires Er = Ω( Co)
+
+epochs to achieve the same accuracy level. Proof. The recovery function ψ learns to generate corrections through episodic meta-learning: 
+
+θ+ 
+
+> c
+
+= θ∗ 
+
+> c
+
++ ∆ θc, ∆θc = ψ(θ∗ 
+
+> c
+
+, p, Mk, a; ξ). (42) By Rademacher-complexity-based uniform-convergence re-sults for multi-output function learning [58, Theorem 6.8 and Chapter 26], to learn a mapping from the combined input space (degraded parameters, prototypes, memory samples, geometric features) to a dc-dimensional output space with Co output classes at error ϵ, the required sample complexity is: 
+
+|M k| = Ω 
+
+ Co · dc
+
+ϵ2
+
+
+
+, (43) where the complexity scales with Co · dc as the recovery function must distinguish correction patterns for Co classes across dc dimensions. This is an informal order-of-magnitude sketch; the sharpest hypothesis-class-dependent constants are not pursued here. After applying the learned correction ∆θc, fine-tuning on 
+
+Mk exhibits exponential convergence due to the warm-start initialization. By strong convexity of the fine-tuning objective in a neighborhood of θ+ 
+
+> c
+
+:
+
+∥θEc − θ+ 
+
+> c
+
+∥2 ≤ (1 − μ)E ∥∆θc∥2, (44) where μ > 0 is the strong convexity parameter and E is the number of fine-tuning epochs. Setting (1 − μ)E ≤ ϵ gives 
+
+E = O(log(1 /ϵ )) .For complete retraining, the model must relearn decision boundaries for all Co classes from scratch. Even with memory buffer Mk, standard training requires traversing the data multiple times to converge, yielding Er = Ω( Co) complexity in the worst case. 
+
+Remark 2. The logarithmic fine-tuning bound in Corol-lary 1 uses strong convexity of the fine-tuning objective in a neighborhood of θ+ 
+
+> c
+
+. This condition is an approximation in the deep-network setting: the objective is only locally well-behaved around a warm-started initialization. Corollary 1 should therefore be read as a directional efficiency statement, and the empirical recovery curves in Section VI provide the corresponding validation. 
+
+VI. P ERFORMANCE EVALUATION 
+
+A. Datasets and Evaluation Metrics 
+
+To evaluate our FCL framework under realistic planetary ex-ploration conditions, we conduct experiments on three publicly available Mars terrain segmentation datasets that represent different operational contexts and domain characteristics. 
+
+MarsScapes [45] is the first panoramic dataset designed for Martian terrain understanding. It consists of 18,460 images at a resolution of 512 by 512, all collected by the Curiosity rover at Gale Crater. The dataset includes pixel-level annotations for nine semantic categories: Soil, Sand, Gravel, Bedrock, Rocks, Tracks, Shadows, Background, and Unknown. These categories are essential for assessing rover traversability, since loose materials can increase mobility risks, while consolidated surfaces are safer for navigation. S5Mars [46] contains 6,000 high-resolution images at 1200 by 1200, also from Curios-ity’s Mastcam. It covers nine categories, including soil, sand, bedrock, rock, ridge, trace, hole, sky, and rover. Notably, 
+
+S5Mars introduces navigation-critical classes such as hole, which represents negative obstacles, and ridge, which indicates terrain undulation. Together, MarsScapes and S5Mars support a thorough evaluation of continual learning within a single mission. To evaluate generalization across missions, we use 
+
+AI4MARS [44], which is NASA’s largest Mars terrain dataset. AI4MARS contains about 35,000 images from the Spirit, Opportunity, and Curiosity rovers, spanning three different landing sites. It provides four categories that are critical for traversability: Soil, Bedrock, Sand, and Big Rock. The domain shift between geological regions and rover platforms 12 
+
+TABLE I: Comparisons of mIoU (%) on MarsScapes dataset [45] under the setting of 5-1. Class IDs: 0-Soil, 1-Sand, 2-Bedrock, 3-Gravel, 4-Rocks, 5-Tracks, 6-Shadows, 7-Background, 8-Unknown. 
+
+Class ID 0 1 2 3 4 5 6 7 8 mIoU Imp. Centralized (upper bound) 57.2 ±.14 53.8 ±.19 41.6 ±.17 41.5 ±.21 28.4 ±.24 25.6 ±.13 14.8 ±.22 15.2 ±.16 15.3 ±.25 32.6 ref. Finetuning + FL 32.6 ±.26 18.4 ±.19 0.0 ±.00 0.0 ±.00 0.0 ±.00 0.0 ±.00 0.0 ±.00 0.0 ±.00 4.2 ±.23 6.1 ⇑ 24.3 PLOP [15] + FL 43.2 ±.18 33.4 ±.24 26.6 ±.13 19.5 ±.27 14.2 ±.16 5.3 ±.31 1.8 ±.19 0.0 ±.28 4.1 ±.22 16.5 ⇑ 13.9 CUE [50] + FL 46.3 ±.21 36.2 ±.15 29.8 ±.28 23.6 ±.17 18.1 ±.24 8.5 ±.12 4.2 ±.29 1.4 ±.16 6.8 ±.25 19.4 ⇑ 11.0 CS 2K [51] + FL 48.5 ±.14 38.8 ±.27 32.2 ±.19 26.4 ±.23 20.6 ±.11 11.1 ±.26 6.3 ±.17 3.1 ±.31 8.5 ±.14 21.7 ⇑ 8.7 CoMBO [52] + FL 50.1 ±.23 40.6 ±.16 33.9 ±.21 28.2 ±.14 22.4 ±.28 13.2 ±.17 12.5 ±.25 4.3 ±.19 5.4 ±.32 23.4 ⇑ 7.0 ADAPT [53] + FL 51.8 ±.17 42.2 ±.29 35.5 ±.14 30.1 ±.26 26.2 ±.18 14.6 ±.23 8.8 ±.12 5.8 ±.27 10.2 ±.21 25.0 ⇑ 5.4 EIR [54] + FL 55.2 ±.12 43.5 ±.21 37.3 ±.26 31.4 ±.15 24.3 ±.23 16.4 ±.19 9.6 ±.28 7.1 ±.14 11.8 ±.17 26.3 ⇑ 4.1 FBL [21] 53.6 ±.24 45.2 ±.13 39.5 ±.18 33.2 ±.29 25.1 ±.15 18.5 ±.22 11.1 ±.16 8.4 ±.25 13.6 ±.11 27.6 ⇑ 2.8 
+
+Ours 55.0 ±.16 51.8 ±.22 39.2 ±.11 39.0 ±.19 26.0 ±.27 23.7 ±.14 12.4 ±.23 13.0 ±.18 13.4 ±.26 30.4 –
+
+TABLE II: Comparisons of mIoU (%) on MarsScapes dataset [45] under the setting of 3-2. 
+
+Class ID 0 1 2 3 4 5 6 7 8 mIoU Imp. Centralized (upper bound) 58.5 ±.15 45.8 ±.22 42.0 ±.13 32.5 ±.18 29.0 ±.25 19.4 ±.14 15.5 ±.20 11.5 ±.23 16.8 ±.16 30.1 ref. Finetuning + FL 46.8 ±.27 16.2 ±.23 0.0 ±.00 0.0 ±.00 0.0 ±.00 8.5 ±.21 0.0 ±.00 3.8 ±.19 5.2 ±.24 8.9 ⇑ 18.9 PLOP [15] + FL 47.8 ±.23 30.4 ±.16 23.2 ±.28 16.3 ±.14 10.6 ±.25 3.4 ±.19 0.0 ±.00 0.0 ±.00 2.8 ±.27 14.9 ⇑ 12.9 CUE [50] + FL 49.6 ±.19 33.2 ±.26 26.5 ±.13 20.1 ±.24 14.4 ±.17 6.2 ±.29 2.6 ±.15 0.0 ±.00 5.1 ±.22 17.5 ⇑ 10.3 CS 2K [51] + FL 51.2 ±.27 35.5 ±.14 29.1 ±.21 22.8 ±.18 17.1 ±.31 8.8 ±.16 4.5 ±.24 1.8 ±.12 0.0 ±.00 19.0 ⇑ 8.8 CoMBO [52] + FL 46.8 ±.16 37.6 ±.28 30.8 ±.17 24.5 ±.23 19.2 ±.14 0.0 ±.00 7.1 ±.21 9.2 ±.32 3.7 ±.18 19.9 ⇑ 7.9 ADAPT [53] + FL 50.4 ±.24 44.3 ±.17 32.2 ±.29 30.6 ±.13 20.4 ±.22 12.1 ±.15 6.2 ±.27 4.4 ±.19 8.5 ±.31 23.2 ⇑ 4.6 EIR [54] + FL 51.8 ±.15 40.8 ±.23 33.6 ±.18 27.4 ±.27 23.1 ±.12 17.7 ±.24 9.3 ±.19 5.6 ±.28 9.8 ±.16 24.3 ⇑ 3.5 FBL [21] 52.2 ±.21 41.5 ±.12 35.2 ±.25 28.2 ±.16 21.8 ±.29 14.8 ±.18 7.6 ±.13 7.4 ±.24 11.1 ±.21 24.4 ⇑ 3.4 
+
+Ours 56.2 ±.18 43.6 ±.27 39.8 ±.14 30.2 ±.22 26.8 ±.17 17.0 ±.31 13.2 ±.23 9.0 ±.15 14.4 ±.19 27.8 –
+
+TABLE III: Comparisons of mIoU (%) on S5Mars dataset [46] under the setting of 5-1. Class IDs: 0-soil, 1-sand, 2-bedrock, 3-rock, 4-ridge, 5-trace, 6-hole, 7-sky, 8-rover. 
+
+Class ID 0 1 2 3 4 5 6 7 8 mIoU Imp. Centralized (upper bound) 74.8 ±.11 66.8 ±.22 58.2 ±.16 43.5 ±.25 36.8 ±.19 39.6 ±.13 28.0 ±.26 25.6 ±.15 27.2 ±.21 44.5 ref. Finetuning + FL 51.2 ±.26 22.4 ±.19 8.6 ±.23 0.0 ±.00 0.0 ±.00 5.8 ±.21 0.0 ±.00 0.0 ±.00 6.2 ±.25 10.5 ⇑ 31.7 PLOP [15] + FL 62.4 ±.19 48.6 ±.26 42.4 ±.14 35.8 ±.31 36.4 ±.22 20.2 ±.18 0.0 ±.00 12.8 ±.15 0.0 ±.00 28.7 ⇑ 13.5 CUE [50] + FL 65.8 ±.23 52.2 ±.14 45.8 ±.28 43.4 ±.17 33.2 ±.25 0.0 ±.00 0.0 ±.00 18.4 ±.32 17.6 ±.19 30.7 ⇑ 11.5 CS 2K [51] + FL 67.4 ±.16 55.6 ±.29 48.6 ±.21 39.4 ±.24 34.8 ±.13 10.8 ±.18 27.8 ±.17 22.6 ±.26 19.4 ±.14 36.3 ⇑ 5.9 CoMBO [52] + FL 64.2 ±.27 57.4 ±.18 52.6 ±.23 40.2 ±.15 32.6 ±.31 28.4 ±.14 23.8 ±.26 26.8 ±.19 0.0 ±.00 36.2 ⇑ 6.0 ADAPT [53] + FL 68.6 ±.14 61.6 ±.23 51.6 ±.17 41.6 ±.28 33.8 ±.19 35.6 ±.26 25.2 ±.22 20.4 ±.13 25.8 ±.31 40.5 ⇑ 1.7 EIR [54] + FL 70.8 ±.21 59.2 ±.15 54.2 ±.29 42.8 ±.18 35.6 ±.24 32.4 ±.17 25.6 ±.31 24.2 ±.22 22.4 ±.16 40.8 ⇑ 1.4 FBL [21] 69.2 ±.18 62.4 ±.27 53.8 ±.14 39.6 ±.23 34.2 ±.16 33.8 ±.32 26.5 ±.19 21.8 ±.25 24.2 ±.21 40.6 ⇑ 1.6 
+
+Ours 72.5 ±.13 64.5 ±.24 55.8 ±.18 41.2 ±.27 34.6 ±.21 37.4 ±.15 25.8 ±.28 23.6 ±.17 24.8 ±.23 42.2 –
+
+in AI4MARS introduces significant data heterogeneity, which presents challenges for federated learning. We consider two experimental settings on MarsScapes and S5Mars. The first, referred to as the 5-1 setting, involves learn-ing 5 base classes, followed by 4 new tasks, each introducing 1 additional class ( T = 5 ). The second, the 3-2 setting, starts with 3 base classes and then adds 3 new tasks, each with 2 classes ( T = 4 ). For AI4MARS, we use a 2-1 setting, where 2 base classes are learned first, followed by 2 new tasks with 1 class each ( T = 3 ). This setup is intended to simulate cross-mission knowledge integration, where new rover deployments encounter terrain types not present in earlier missions. As the main evaluation metric, we use mean Intersection over Union (mIoU) calculated over all classes after the final task. We also report per-class IoU to examine how forgetting patterns vary in different terrain categories. 
+
+B. Implementation Details 
+
+For fair comparison with state-of-the-art continual learning methods under federated settings, we adapt six representative segmentation approaches [15], [50]–[54] to federated learning by incorporating local training and federated aggregation pro-tocols, along with one federated segmentation method [21] and a standard fine-tuning baseline. All adapted baselines share the same FedAvg aggregation as our framework and keep their method-specific mechanisms strictly client-local: PLOP’s [15] KD teacher is the client’s own previous-task model; the exemplar memory in CoMBO [52], CS 2K [51], EIR [54], CUE [50], and ADAPT [53] is per-client and never exchanged; FBL [21] is used in its native federated form. All baselines therefore operate under identical communication budgets. Additionally, to evaluate long-term recovery effi-ciency, we compare against three recovery strategies: low-rank adaptation [24], meta-learning based episodic distillation [19], and variational knowledge distillation [22]. All methods em-ploy the identical segmentation backbone DeepLabV3+ [59] 13 
+
+TABLE IV: Comparisons of mIoU (%) on S5Mars dataset [46] under the setting of 3-2. 
+
+Class ID 0 1 2 3 4 5 6 7 8 mIoU Imp. Centralized (upper bound) 72.5 ±.14 62.5 ±.21 54.2 ±.17 33.8 ±.19 29.0 ±.24 41.8 ±.12 34.2 ±.26 17.8 ±.16 27.7 ±.22 41.5 ref. Finetuning + FL 48.4 ±.28 18.6 ±.24 0.0 ±.00 0.0 ±.00 0.0 ±.00 7.2 ±.22 0.0 ±.00 4.5 ±.18 5.8 ±.26 9.4 ⇑ 29.8 PLOP [15] + FL 51.8 ±.22 37.4 ±.17 31.2 ±.28 24.6 ±.14 20.4 ±.26 10.6 ±.31 0.0 ±.00 6.8 ±.24 6.4 ±.21 21.0 ⇑ 18.2 CUE [50] + FL 55.2 ±.16 41.6 ±.28 34.8 ±.19 32.8 ±.25 22.6 ±.13 0.0 ±.00 0.0 ±.00 10.2 ±.17 8.2 ±.31 22.8 ⇑ 16.4 CS 2K [51] + FL 57.8 ±.24 44.8 ±.15 38.2 ±.27 29.4 ±.18 27.8 ±.21 15.6 ±.16 13.6 ±.32 16.8 ±.23 0.0 ±.00 27.1 ⇑ 12.1 CoMBO [52] + FL 53.6 ±.18 46.6 ±.26 44.4 ±.14 28.8 ±.31 21.8 ±.17 0.0 ±.00 18.8 ±.21 11.6 ±.15 8.8 ±.27 26.0 ⇑ 13.2 ADAPT [53] + FL 58.8 ±.27 52.2 ±.13 40.6 ±.22 31.4 ±.16 24.4 ±.29 25.4 ±.18 15.2 ±.24 13.4 ±.31 13.4 ±.19 30.5 ⇑ 8.7 EIR [54] + FL 60.6 ±.15 48.4 ±.24 42.2 ±.18 32.2 ±.27 23.8 ±.14 21.6 ±.23 17.4 ±.31 15.6 ±.16 14.8 ±.28 30.7 ⇑ 8.5 FBL [21] 59.2 ±.21 50.6 ±.19 43.4 ±.26 30.2 ±.14 26.2 ±.23 23.8 ±.17 16.2 ±.28 14.8 ±.22 13.6 ±.15 30.9 ⇑ 8.3 
+
+Ours 70.2 ±.19 60.2 ±.28 51.8 ±.15 31.6 ±.22 26.8 ±.27 39.6 ±.14 31.8 ±.23 15.8 ±.18 25.0 ±.26 39.2 –
+
+TABLE V: Comparisons of mIoU (%) on AI4MARS dataset [44] under the setting of 2-1. Class IDs: 0-Soil, 1-Bedrock, 2-Sand, 3-Big Rock. 
+
+Class ID 0 1 2 3 mIoU Imp. Centralized (upper bound) 60.2 ±.16 51.0 ±.22 15.0 ±.19 18.6 ±.14 36.2 ref. Finetuning + FL 35.4 ±.28 1.8 ±.21 0.0 ±.00 0.0 ±.00 9.3 ⇑ 24.2 PLOP [15] + FL 42.8 ±.19 13.4 ±.27 0.0 ±.00 0.0 ±.00 14.1 ⇑ 19.4 CUE [50] + FL 46.2 ±.24 19.8 ±.16 0.0 ±.00 0.0 ±.00 16.5 ⇑ 17.0 CS 2K [51] + FL 50.6 ±.17 26.2 ±.31 3.4 ±.22 0.0 ±.00 20.1 ⇑ 13.4 CoMBO [52] + FL 47.8 ±.26 38.4 ±.14 4.2 ±.29 0.0 ±.00 22.6 ⇑ 10.9 ADAPT [53] + FL 54.2 ±.21 33.6 ±.18 8.2 ±.25 0.0 ±.00 24.0 ⇑ 9.5 EIR [54] + FL 59.6 ±.15 32.4 ±.28 7.6 ±.17 0.0 ±.00 24.9 ⇑ 8.6 FBL [21] 56.8 ±.23 42.8 ±.19 10.4 ±.31 8.2 ±.26 29.6 ⇑ 3.9 
+
+Ours 58.4 ±.18 48.2 ±.24 12.6 ±.21 14.6 ±.16 33.5 –Full Retraining Variational Distillation Low-Rank Adaptation Meta-Learning Distillation Ours 0 5 10 15 20 
+
+Training Epochs 
+
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> mIoU (%)
+
+(a) MarsScapes 0 5 10 15 
+
+Training Epochs  
+
+> 20
+> 25
+> 30
+> 35
+> 40
+> 45
+> 50
+> mIoU (%)
+
+(b) S5Mars 0 2 4 6 8 10 12 
+
+Training Epochs  
+
+> 25
+> 30
+> 35
+> 40
+> 45
+> 50
+> 55
+> mIoU (%)
+
+(c) AI4MARS 
+
+Fig. 3: Recovery efficiency comparison across three Mars terrain datasets. with ResNet-50 [60] pretrained on ImageNet [61] to ensure fair evaluation. We follow standard data augmentation strate-gies, including random horizontal flip, random scaling, and random cropping for all experiments. Each client maintains an exemplar memory buffer Mk with a fixed capacity of 200 samples, following the iCaRL protocol [14] to store exemplars whose features are closest to the class mean representation. As new classes arrive, we allocate |M k | 
+
+> Co+Ct
+
+exemplars per class and remove |M k | 
+
+> Co
+
+− |M k | 
+
+> Co+Ct
+
+samples per old class to maintain the fixed buffer size. The Stochastic Gradient Descent (SGD) optimizer is used here, with a momentum value of 0.9 and a weight decay of 1 × 10 −4, in order to encourage stable convergence and regularization during training. For the base task, the learning rate is initialized at 1 × 10 −2, and is subsequently reduced for incremental tasks to better accommodate the changing data distribution. Specifically, a learning rate of 1 × 10 −3 is used for all incremental tasks. In the federated setting, we simulate a fleet consisting of K = 30 rovers, maintaining a fixed client population for the duration of training. This client count is chosen so that the Dirichlet partition at β = 0 .1 produces a suf-ficiently heterogeneous label distribution across clients, such that each rover observes only a small subset of classes and the induced gradient conflicts are representative of the stress regime the framework is designed for. A smaller K at the same 
+
+β yields a milder Non-IID partition and would understate the difficulty of the problem. To capture data heterogeneity that results from regional geological differences, we partition the 14 
+
+TABLE VI: Architecture and parameter counts of the auxiliary modules. “Size” is the FP32 on-device storage footprint; all modules remain local.                       
+
+> Module Architecture Params Size
+> ϕs(shallow) 2-layer MLP 0.11 M 0.4 MB
+> ϕd(deep) 3-layer MLP 0.38 M 1.5 MB
+> ϕc(head) Multi-encoder + Fusion 0.82 M 3.3 MB
+> ψ(recovery) 4-encoder + Attn + Decoder 1.26 M 5.0 MB Total —2.57 M 10.2 MB
+
+data among clients using a Dirichlet distribution, where the concentration parameter is set to β = 0 .3 for MarsScapes and S5Mars, and to β = 0 .1 for AI4MARS, so as to reflect the more pronounced cross-mission domain shift present in AI4MARS. For each task, we conduct R = 5 communication rounds, during which all clients participate in local training. Within each round, every client performs 5 local epochs. The batch size is set to 8, determined by GPU memory limitations when working with high-resolution images. The rehearsal weight is set to λ = 1 .0 in Eq. (6), giving equal importance to new task learning and memory replay, consistent with the equal-weighting convention in iCaRL [14]. All reported mIoU values are averaged over three independent runs with random seeds {42 , 82 , 132 }, and the subscripts in Tables I–V denote the standard deviation across these runs. The four auxiliary modules account for a 10.2 MB on-device footprint, about 9.6% of the baseline segmentation model. None of these parameters enters the communication budget: the LSR generators {ωs, ω d, ω c} remain on each rover and are never transmitted, and the recovery function ψ is broadcast once at the end of Task 0 and remains fixed thereafter. The per-round uplink and downlink of our framework during incremental tasks are therefore identical to those of the FedAvg baseline with iCaRL memory. 
+
+C. Comparison Performance 
+
+Tables I–V present quantitative comparisons against eight representative methods on three Mars terrain datasets under various FCL settings. Our method achieves up to 8.3% mIoU improvement over the strongest federated baseline and up to 31.7% over conventional fine-tuning. Under extreme Non-IID conditions ( β = 0 .1 for AI4MARS), our method outperforms the specialized federated method FBL [21] by 3.9% (33.5% vs 29.6%). On AI4MARS under the 2-1 setting, several baselines report zero IoU on the incremental classes (Sand, Big Rock) because the extreme Non-IID partition assigns only a handful of samples per new class to each rover, and the absence of a federated anti-forgetting mechanism causes the newly learned class to be averaged out during aggregation. The Centralized (upper bound) rows at the top of each table report our framework on the pooled data of all K = 30 clients without federated aggregation, upper-bounding the federated setting (not a joint-training ceiling, since the inter-region distributional shift persists). The 2.2–2.7% gap widens with Non-IID severity (largest on AI4MARS, β = 0 .1). Fig. 3 reports recovery efficiency when long-term degrada-tion is detected, and also serves as the RKR ablation against Low-Rank Adaptation, Meta-Learning Distillation, Variational Distillation, and Full Retraining. This experiment evaluates restoration on a controlled degradation (training frozen after a specific task with the segmentation head re-initialized) against the Task-0 test set, so the absolute mIoU levels are not directly comparable with the cumulative mIoU in Tables I–V. Our RKR function restores performance in 5-8 epochs: MarsScapes recovers from 14.4% to 41.4% in 6 epochs (Fig. 3a), S5Mars from 21.2% to 50.6% in 7 epochs (Fig. 3b), and AI4MARS from 25.4% to 54.1% in 6 epochs (Fig. 3c). In contrast, Full Retraining requires 18 epochs on MarsScapes, 18 epochs on S5Mars, and 11 epochs on AI4MARS to achieve comparable performance. The 2-3 × speedup stems from the recovery patterns learned on Task 0, which transfer zero-shot to all subsequent tasks without retraining. Other recovery methods show intermediate efficiency: Low-Rank Adaptation converges in 10-15 epochs but suffers from capacity limitations in later tasks, Meta-Learning Distillation requires 8-13 epochs with per-task episodic optimization overhead, and Variational Dis-tillation needs 15-20 epochs due to variational approximation constraints. The trigger threshold τ is not hand-tuned per dataset but derived as a fixed fraction (80%) of the Task 0 cumulative mIoU, so the same rule applies across all three datasets and Non-IID regimes. Sweeping τ over {70% , 80% , 90% } on MarsScapes 5-1 yields final mIoU within a 0.8% band ( 29 .7% ,
+
+30 .4% , 30 .5% ) while recovery activations range from 1 to 4
+
+(out of T = 4 incremental tasks); 80% is the communication-efficient operating point, since 90% buys only 0.1% final mIoU at 33% more activations ( 4 vs 3). Across all main experiments, every trigger activation was followed by a positive cumulative mIoU gain, with diminishing returns for later activations (no spurious activations), and no task with end-of-task cumulative mIoU below τ went unrecovered (no missed events); the end-of-task evaluation in Algorithm 1 averages across R = 5 
+
+rounds, which filters single-round noise. 
+
+D. Ablation Studies 
+
+To analyze the effectiveness of each component in Layer-Selective Rehearsal, Table VII presents ablation experiments. We evaluate four ablation variants: Uniform rehearsal applies the same rehearsal weight λ to all network layers without stratification; LSR-w/o ϕc, LSR-w/o ϕd, and LSR-w/o ϕs
+
+indicate our model without the classifier generator, deep layer generator, and shallow layer generator, respectively. When compared with the full LSR framework, all ablation variants degrade performance by 0.4% ∼ 11 .0% mIoU across datasets, which verifies the importance of stratified protection to address heterogeneous forgetting across network layers. Notably, the performance gap between uniform rehearsal and full LSR ( 3.4% ∼ 4.9% mIoU improvement) demon-strates the superiority of stratified protection over conventional uniform strategies. This advantage becomes more noticeable under extreme Non-IID conditions (AI4MARS with β = 0 .1), where the stratified approach achieves 4.9% improvement by appropriately allocating protection budgets according to layer-wise forgetting contributions. 15 
+
+TABLE VII: Ablation study on Layer-Selective Rehearsal across three Mars terrain datasets.                                                                                                             
+
+> Components MarsScapes [45] 5-1 S5Mars [46] 5-1 AI4MARS [44] 2-1 Settings ϕsϕdϕc0-7 8mIoU Imp. 0-7 8mIoU Imp. 0-2 3mIoU Imp. Uniform rehearsal Same λ29.8 12.2 26.8 ⇑3.6 41.8 21.5 38.8 ⇑3.4 34.2 11.8 28.6 ⇑4.9 LSR-w/o ϕc✓✓✗23.5 10.8 21.2 ⇑9.2 34.2 19.8 31.8 ⇑10.4 26.8 9.5 22.5 ⇑11.0 LSR-w/o ϕd✓✗✓31.2 12.8 28.2 ⇑2.2 43.0 23.2 40.0 ⇑2.2 37.5 13.2 31.4 ⇑2.1 LSR-w/o ϕs✗✓✓32.2 13.2 30.0 ⇑0.4 44.0 24.5 41.8 ⇑0.4 39.2 14.2 33.0 ⇑0.5
+> Ours ✓✓✓32.5 13.4 30.4 –44.4 24.8 42.2 –39.7 14.6 33.5 –Edge Server
+> WiFi Access Point
+> Rover Fleet
+> Server Console Client Terminals
+
+Fig. 4: Real-world federated continual learning testbed deployment. 
+
+E. Real-World Validation 1) Experimental Configurations: To validate our lifecycle-aware FCL framework in the full learning lifecycle, we con-struct a physical testbed that enables observation of model evo-lution from initial task training through long-term degradation and recovery, as illustrated in Fig. 4. The testbed consists of one edge coordination server, four autonomous rover clients, and dedicated network infrastructure operating continuously across sequential learning tasks. The server runs on an Ubuntu 22.04 workstation equipped with an Intel Core i7 processor, 16 GB of memory, and an NVIDIA RTX A2000 GPU, executing the Flower federated learning framework to manage feder-ated aggregation throughout the entire training lifecycle. The rover fleet comprises four MentorPi robotic platforms, each powered by a Raspberry Pi 5 with a Cortex-A76 quad-core processor clocked at 2.4 GHz, representing the computational constraints of the mission lifecycle. Network connectivity is provided through a dedicated laptop serving as a WiFi access point, establishing a 192.168.137.0/24 local network using the 802.11ac protocol. Communication between the server and rover clients is facilitated via gRPC protocol over TCP port 8080, enabling bidirectional transmission of model parameters and training metrics during federated rounds. This deployment architecture allows us to validate both temporal scales of our framework: Layer-Selective Rehearsal operating at the training-time scale during each task stage, and Rapid Knowledge Recovery operating at the long-term scale when cumulative degradation is detected across the extended task sequence. The physical deployment enables end-to-end life-cycle observation under realistic edge computing constraints representative of distributed Mars exploration operations. The testbed runs with four rover clients, which corresponds to the number of active Mars surface assets in the deployment scenario considered here (Curiosity, Perseverance, and the surface elements of the Mars Sample Return campaign). The testbed therefore directly represents the operational regime that current and near-term missions present, while the K = 30 
+
+simulation covers a more heterogeneous stress regime. We deploy a pruned DeepLabV3+ [59] with ResNet-50 backbone [60] pretrained on ImageNet [61]. To accommodate the computational and storage constraints of edge devices, we adapt the input resolution to 256 × 256 and construct representative subsets of the dataset while preserving the fundamental characteristics of federated continual learning. For AI4MARS [44], we extract 2,000 images covering all 4 classes (Soil, Bedrock, Sand, Big Rock) and adopt a 1-1-1-1 incremental setting where Task 0 learns the first class, followed by 3 incremental tasks each introducing 1 new class ( T = 4 ). MarsScapes [45] comprises 1,500 images spanning the first 3 classes (Soil, Bedrock, Sand) with a 1-1-1 configuration (T = 3 ), where Task 0 establishes the base model on the first class and subsequent tasks introduce 1 new class each. S5Mars [46] uses 1,200 images across 3 classes (soil, bedrock, rock) with the same 1-1-1 setting ( T = 3 ). Data partitioning across the four rover clients follows a Dirichlet distribution with β =0.1 to simulate extreme Non-IID conditions characteristic of geologically heterogeneous Mars terrain. Each rover maintains a local exemplar memory buffer Mk with capacity allocated heterogeneously to simulate uneven per-client data availability (different traverse durations, on-board prioritization, downlink opportunities) rather than a hardware-level storage limit, with 16 FBL with Meta-Learning Distillation EIR with Meta-Learning Distillation ADAPT with Meta-Learning Distillation Ours   
+
+> (a) MarsScapes (b) S5Mars (c) AI4MARS
+
+Fig. 5: Complete FCL lifecycle evolution across three Mars terrain datasets. exemplars selected via iCaRL [14]. Training employs SGD optimizer with momentum 0.9, learning rate 1 × 10 −3, and batch size 2 per client constrained by CPU memory bandwidth. Each task progresses through 3 federated communication rounds, with each round involving 8 local training epochs on the combined dataset of current task data and memory buffer. All four clients participate synchronously in each round. We evaluate cumulative performance using mean Intersection over Union (mIoU) computed over all learned classes. 
+
+2) Experimental Method: While experiments validate our framework under idealistic conditions, the real-world rover testbed introduces challenges closer to practical deployment scenarios: edge-device resource constraints that limit com-putational capacity, real communication delays in federated coordination, and the complete temporal evolution across extended task sequences. To validate our lifecycle-aware FCL framework under these realistic conditions, we conduct two experiments on the testbed (Fig. 4): (1) Complete FCL Life-cycle Evolution to observe the coordination between Layer-Selective Rehearsal and Rapid Knowledge Recovery over the full training course, and (2) Edge Deployment Robustness to validate performance under heterogeneous client-side storage constraints characteristic of distributed autonomous systems. We compare four methods: our proposed approach combin-ing LSR and RKR, and three strong baselines pairing state-of-the-art continual learning methods (FBL [21], EIR [54], ADAPT [53]) with Meta-Learning Distillation [19] as the recovery strategy. Those three continual learning methods represent the top-performing approaches from simulation ex-periments (Tables I-V), while Meta-Learning Distillation is selected as the most efficient recovery baseline (Fig. 3). Each method executes the complete task sequence ( T = 4 for AI4MARS, T = 3 for MarsScapes and S5Mars) with 3
+
+federated rounds per task. We track the cumulative mIoU evo-lution across all learned classes over communication rounds to observe training-time forgetting patterns. Recovery is triggered uniformly across all methods after the final task is completed to ensure a fair comparison. To validate the robustness of our framework under realistic conditions, we conduct edge deployment experiments in two scenarios. In the first scenario, we evaluate performance under varying Non-IID severity by adjusting the Dirichlet concen-tration parameter across three levels: β = 0 .5 (Moderate), 
+
+β = 0 .3 (Severe), and β = 0 .1 (Extreme), with all clients maintaining fixed 50 -sample buffers. This tests whether LSR’s stratified protection remains effective as gradient conflicts intensify. In the second scenario, we assess adaptability to heterogeneous memory-buffer sizes across the fleet, which simulate uneven per-client data availability rather than hard-ware storage limits. Three configurations are considered: Low heterogeneity where all four clients maintain [45 , 50 , 55 , 50] 
+
+sample buffers ( σ ≈ 4.1), Medium with [40 , 50 , 60 , 50] buffers (σ ≈ 8.2), and High representing the most uneven case with [30 , 50 , 70 , 40] buffers (σ ≈ 16 .3), all under fixed 
+
+β = 0.1 Non-IID setting. This validates whether LSR’s learned generators adapt to varying memory coverage across clients. We compare our method against three state-of-the-art baselines (FBL [21], EIR [54], ADAPT [53]) across all configurations. Each configuration executes the complete task sequence ( T = 4 for AI4MARS, T = 3 for MarsScapes and S5Mars), and measures the cumulative mIoU upon task sequence completion to assess deployment robustness. 
+
+3) Experimental Results: Fig. 5 presents the evolution of model performance across three Mars terrain datasets, each evaluated under edge computing constraints. In the left panels, cumulative mIoU is plotted as new tasks are introduced at rounds 4, 7, 10 (AI4MARS) or rounds 4, 7 (MarsScapes, S5Mars), indicating training-time forgetting patterns. Right panels quantify recovery effectiveness after the final task has been completed. We can see that our method consistently achieves between 2.3% and 3.3% higher mIoU before recov-ery, and between 2.0% and 3.3% higher mIoU after recovery, when compared to FBL with Meta-Learning Distillation. Fig. 6 examines how each method responds to increasing levels of Non-IID severity, with β values set to 0.5, 0.3, and 0.1. As the degree of data heterogeneity increases, all methods experience a decline in performance. However, our approach is able to maintain stronger results, which can be attributed to the stratified protection provided by LSR. In particular, when β =0.1, representing the most severe heterogeneity, our method achieves between 0.8% and 2.5% higher mIoU than FBL. The outcome demonstrates the effectiveness of layer-wise adaptive rehearsal in mitigating the impact of Non-IID data. Fig. 7 investigates the robustness of each method when 17 EIR-Ave EIR ADAPT-Ave ADAPT FBL-Ave FBL Ours-Ave Ours = 0.5 = 0.3 = 0.1 
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> mIoU (%)
+
+(a) MarsScapes = 0.5 = 0.3 = 0.1  
+
+> 0
+> 10
+> 20
+> 30
+> 40
+> mIoU (%)
+
+(b) S5Mars = 0.5 = 0.3 = 0.1  
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> mIoU (%)
+
+(c) AI4MARS 
+
+Fig. 6: Performance under varying Non-IID severity across three Mars terrain datasets. EIR-Ave EIR ADAPT-Ave ADAPT FBL-Ave FBL Ours-Ave Ours Low Med High 
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> mIoU (%)
+
+(a) MarsScapes Low Med High  
+
+> 0
+> 10
+> 20
+> 30
+> 40
+> mIoU (%)
+
+(b) S5Mars Low Med High  
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> mIoU (%)
+
+(c) AI4MARS 
+
+Fig. 7: Performance under varying memory buffer heterogeneity across three Mars terrain datasets. faced with varying degrees of memory buffer heterogeneity, where the standard deviation σ is approximately 4.1 (Low), 8.2 (Medium), and 16.3 (High). As the imbalance in storage allocation becomes more pronounced, baseline methods show a decline in performance, which is primarily due to insufficient memory coverage. In contrast, our method is able to maintain between 0.9% and 5.8% higher mIoU than FBL under con-ditions of high heterogeneity. The improvement is a result of the adaptive generators used in LSR, which help to mitigate the negative effects of uneven memory distribution. We note three limitations of the present testbed. The Rasp-berry Pi 5 client is a proxy for radiation-hardened flight CPUs rather than an exact match; the WiFi 802.11ac link is a proxy for UHF relay links and does not capture the contact-window structure of deep-space operations; and the four-client scale does not directly verify behavior at K ≥ 30 , which is the role of the K = 30 simulation reported earlier in this section. We report these limitations so that the testbed results are read in their intended scope. Real missions can present distributional complexity that goes beyond the non-overlapping class-incremental setting considered in our experiments, including domain-incremental conditions (same label set across geological regions or il-lumination conditions) and class-overlap conditions (a label reappearing with a different sub-distribution). The framework is structurally compatible with both: the LSR generators are conditioned on the current gradient and memory features and can absorb a shift in the input distribution as a new gradient regime, and the RKR episodic meta-training on Task 0 can be augmented with domain-shift perturbations to prepare the recovery function for domain-incremental episodes. No pub-lic Mars benchmark currently covers the domain-incremental setting required to quantify this extension. VII. C ONCLUSION 
+
+In this paper, we have investigated Federated Contin-ual Learning (FCL) in mobile autonomous systems, with Mars terrain segmentation as the primary evaluation sce-nario. We have identified heterogeneous forgetting dynamics in deep network layers and formulated the dual-timescale knowledge-degradation problem induced by repeated federated aggregation. To address these challenges, we have designed a lifecycle-aware FCL framework that coordinates Layer-Selective Rehearsal (LSR) for training-time gradient conflicts and Rapid Knowledge Recovery (RKR) for long-term cumula-tive drift. Our evaluation results, derived from both simulations on three Mars terrain datasets and a physical rover testbed, demonstrate that the proposed framework achieves up to 8.3% mIoU improvement over the strongest federated baseline and up to 31.7% over conventional fine-tuning, while maintaining robustness under extreme Non-IID conditions and resource heterogeneity. The system-level validation on heterogeneous 18 
+
+edge devices confirms the practical applicability of our frame-work for distributed autonomous missions. ACKNOWLEDGMENTS 
+
+This work was supported by the National Science Founda-tion under CNS-2348422. REFERENCES [1] B. Wu, Z. Ding, L. Ostigaard, and J. Huang, “Reinforcement Learning-Based Energy-Aware Coverage Path Planning for Precision Agriculture,” in Proceedings of the ACM Research on Adaptive and Convergent Systems (RACS) , 2025, pp. 1–8. [2] B. Wu, J. Huang, and Q. Duan, “FedTD3: An Accelerated Learning Approach for UAV Trajectory Planning,” in Proceedings of the Interna-tional Conference on Wireless Artificial Intelligent Computing Systems and Applications (WASA) , 2025, pp. 13–24. [3] Z. Ding, J. Huang, Q. Duan, C. Zhang, Y. Zhao, and S. Gu, “A Dual-Level Game-Theoretic Approach for Collaborative Learning in UAV-Assisted Heterogeneous Vehicle Networks,” in Proceedings of the IEEE International Performance, Computing, and Communications Conference (IPCCC) , 2025, pp. 1–8. [4] NASA Science, “Mars Exploration Rovers: Spirit and Opportunity,” https://science.nasa.gov/mission/ mars-exploration-rovers-spirit-and-opportunity/, 2025, accessed: 2025-12-10. [5] ——, “The Mars Report: Special Edition – September 2025,” https:// science.nasa.gov/mars/the-mars-report/2025-september-special-edition/, 2025, accessed: 2025-12-10. [6] V. Z. Sun et al. , “Overview and Results from the Mars 2020 Perseverance Rover’s First Science Campaign on the Jezero Crater Floor,” Journal of Geophysical Research: Planets , vol. 128, no. 8, p. e2022JE007613, 2023. [7] S. V. Khoroshylov and M. O. Redka, “Deep Learning for Space Guidance, Navigation, and Control,” Space Science and Technology ,vol. 27, no. 6, pp. 38–52, 2021. [8] B. Wu, J. Huang, and S. Yu, ““X of Information” Continuum: A Survey on AI-Driven Multi-Dimensional Metrics for Next-Generation Net-worked Systems,” IEEE Communications Surveys & Tutorials , vol. 28, pp. 5307–5344, 2026. [9] B. McMahan, E. Moore, D. Ramage, S. Hampson, and B. A. y Arcas, “Communication-Efficient Learning of Deep Networks from Decentral-ized Data,” in Proceedings of the International Conference on Artificial Intelligence and Statistics (AISTATS) . PMLR, 2017, pp. 1273–1282. [10] T. Li, A. K. Sahu, M. Zaheer, M. Sanjabi, A. Talwalkar, and V. Smith, “Federated Optimization in Heterogeneous Networks,” Proceedings of Machine Learning and Systems (MLSys) , vol. 2, pp. 429–450, 2020. [11] B. Wu, J. Huang, and Q. Duan, “Real-Time Intelligent Healthcare Enabled by Federated Digital Twins With AoI Optimization,” IEEE Network , vol. 40, no. 2, pp. 184–191, 2026. [12] B. Wu, Z. Ding, and J. Huang, “RELIEF: Turning Missing Modalities into Training Acceleration for Federated Learning on Heterogeneous IoT Edge,” arXiv preprint arXiv:2604.04243, 2026. [13] L. Wang, X. Zhang, H. Su, and J. Zhu, “A Comprehensive Survey of Continual Learning: Theory, Method and Application,” IEEE Transac-tions on Pattern Analysis and Machine Intelligence , vol. 46, no. 8, pp. 5362–5383, 2024. [14] S.-A. Rebuffi, A. Kolesnikov, G. Sperl, and C. H. Lampert, “iCaRL: Incremental Classifier and Representation Learning,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 2017, pp. 2001–2010. [15] A. Douillard, Y. Chen, A. Dapogny, and M. Cord, “PLOP: Learning Without Forgetting for Continual Semantic Segmentation,” in Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 2021, pp. 4040–4050. [16] Y. Li, H. Wang, W. Xu, T. Xiao, H. Liu, M. Tu, Y. Wang, X. Yang, R. Zhang, and S. Yu, “Unleashing the Power of Continual Learning on Non-Centralized Devices: A Survey,” IEEE Communications Surveys and Tutorials , 2025. [17] X. Wang, C. Geng, W. Wan, S.-Y. Li, and S. Chen, “Forgetting, Ignorance or Myopia: Revisiting Key Challenges in Online Continual Learning,” Advances in Neural Information Processing Systems , vol. 37, pp. 58 341–58 375, 2024. [18] X. Yang, H. Yu, X. Gao, H. Wang, J. Zhang, and T. Li, “Federated Con-tinual Learning via Knowledge Fusion: A Survey,” IEEE Transactions on Knowledge and Data Engineering , vol. 36, no. 8, pp. 3832–3850, 2024. [19] K. Wang, X. Liu, A. D. Bagdanov, L. Herranz, S. Jui, and J. van de Weijer, “Incremental Meta-Learning via Episodic Replay Distillation for Few-Shot Image Recognition,” in Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 2022, pp. 3729–3739. [20] H. Zhao, T. Zhou, G. Long, J. Jiang, and C. Zhang, “Does Continual Learning Equally Forget All Parameters?” in Proceedings of the Inter-national Conference on Machine Learning (ICML) . PMLR, 2023, pp. 42 280–42 303. [21] J. Dong, D. Zhang, Y. Cong, W. Cong, H. Ding, and D. Dai, “Federated Incremental Semantic Segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .IEEE, 2023, pp. 3934–3943. [22] X. Li, S. Wang, J. Sun, and Z. Xu, “Variational Data-Free Knowledge Distillation for Continual Learning,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 45, no. 10, pp. 12 618–12 634, 2023. [23] F. Qiao and M. Mahdavi, “Learn More, But Bother Less: Parameter Ef-ficient Continual Learning,” Advances in Neural Information Processing Systems (NeurIPS) , vol. 37, pp. 97 476–97 498, 2024. [24] J. He, Z. Duan, and F. Zhu, “CL-LoRA: Continual Low-Rank Adaptation for Rehearsal-Free Class-Incremental Learning,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) .IEEE, 2025, pp. 30 534–30 544. [25] X. Wei, G. Li, and R. Marculescu, “Online-LoRA: Task-Free Online Continual Learning via Low Rank Adaptation,” in Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) . IEEE, 2025, pp. 6634–6645. [26] A. Behrouz, M. Razaviyayn, P. Zhong, and V. Mirrokni, “Nested Learn-ing: The Illusion of Deep Learning Architectures,” in Proceedings of the Thirty-Ninth Annual Conference on Neural Information Processing Systems (NeurIPS) , 2025. [27] H. Batra and R. Clark, “EVCL: Elastic Variational Continual Learning with Weight Consolidation,” arXiv preprint arXiv:2406.15972 (arXiv) ,2024. [28] B. Wu, J. Huang, Q. Duan, L. Dong, and Z. Cai, “Enhancing Vehic-ular Platooning With Wireless Federated Learning: A Resource-Aware Control Framework,” IEEE/ACM Transactions on Networking , 2025. [29] X. Cai, P. Zhao, S. Liu, Y. Fu, C. Li, and F. R. Yu, “Enhancing Federated Learning in Connected and Autonomous Vehicles Through Cost Optimization and Advanced Model Selection,” IEEE Transactions on Intelligent Transportation Systems , 2025. [30] J. Huang, B. Wu, Q. Duan, L. Dong, and S. Yu, “A Fast UAV Tra-jectory Planning Framework in RIS-Assisted Communication Systems With Accelerated Learning via Multithreading and Federating,” IEEE Transactions on Mobile Computing , vol. 24, no. 8, pp. 6870–6885, 2025. [31] U. Pudasaini, Z. Ding, and J. Huang, “Securing Smart Agriculture with Communication-Efficient Federated Unlearning,” in Proceedings of the IEEE International Conference on High Performance Switching and Routing (HPSR) , 2026, pp. 1–8. [32] Z. Fang, S. Hu, J. Wang, Y. Deng, X. Chen, and Y. Fang, “Prioritized Information Bottleneck Theoretic Framework With Distributed Online Learning for Edge Video Analytics,” IEEE Transactions on Networking ,pp. 1–17, 2025. [33] Z. Fang, J. Wang, Y. Ma, Y. Tao, Y. Deng, X. Chen, and Y. Fang, “R-ACP: Real-Time Adaptive Collaborative Perception Leveraging Robust Task-Oriented Communications,” IEEE Journal on Selected Areas in Communications , 2025. [34] Z. Fang, Z. Liu, J. Wang, S. Hu, Y. Guo, Y. Deng, and Y. Fang, “Task-Oriented Communications for Visual Navigation with Edge-Aerial Collaboration in Low Altitude Economy,” in Proceedings of the IEEE Global Communications Conference (GLOBECOM) , 2026. [35] B. Wu, Z. Cai, W. Wu, and X. Yin, “AoI-Aware Resource Management for Smart Health via Deep Reinforcement Learning,” IEEE Access , 2023. [36] C.-C. Xing, Z. Ding, and J. Huang, “A Stochastic Geometry-Based Analysis of SWIPT-Assisted Underlaid Device-to-Device Energy Har-vesting,” ACM SIGAPP Applied Computing Review , vol. 25, no. 4, pp. 18–34, 2026. [37] D. Pan, B.-N. Wu, Y.-L. Sun, and Y.-P. Xu, “A Fault-Tolerant and Energy-Efficient Design of a Network Switch Based on a Quantum-Based Nano-Communication Technique,” Sustainable Computing: In-formatics and Systems , vol. 37, p. 100827, 2023. 19 
+
+[38] B. Wu and W. Wu, “Model-Free Cooperative Optimal Output Regulation for Linear Discrete-Time Multi-Agent Systems Using Reinforcement Learning,” Mathematical Problems in Engineering , vol. 2023, no. 1, p. 6350647, 2023. [39] Z. Ding, J. Huang, and J. Qi, “Learning to Defend: A Multi-Agent Reinforcement Learning Framework for Stackelberg Security Game in Mobile Edge Computing,” in Proceedings of the International Confer-ence on Computing, Networking and Communications (ICNC) , 2026. [40] Z. He, Y. Wang, and Z. Cai, “Federated Continual Learning With Bounded Forgetting via Diffusion-Based Generative Replay in Edge Computing,” IEEE Transactions on Mobile Computing , pp. 1–17, 2025. [41] B. Rothrock, R. Kennedy, C. Cunningham, J. Papon, M. Heverly, and M. Ono, “SPOC: Deep learning-based terrain classification for Mars rover missions,” in AIAA SPACE Forum , 2016, pp. 1–12. [42] M. Ono, B. Rothrock, K. Otsu, S. Higa, Y. Iwashita, A. Didier, T. Islam, C. Laporte, V. Sun, K. Stack et al. , “MAARS: Machine learning-based analytics for automated rover systems,” in Proc. IEEE Aerospace Conference , 2020, pp. 1–17. [43] S. Daftry, N. Abcouwer, T. Del Sesto, S. Venkatraman, J. Song, L. Igel, A. Byon, U. Rosolia, Y. Yue, and M. Ono, “MLNav: Learning to safely navigate on Mars,” IEEE Robotics and Automation Letters , vol. 7, no. 2, pp. 5461–5468, 2022. [44] R. M. Swan, D. Atha, H. A. Leopold, M. Gildner, S. Oij, C. Chiu, and M. Ono, “AI4MARS: A Dataset for Terrain-Aware Autonomous Driving on Mars,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) , 2021. [45] H. Liu, M. Yao, X. Xiao, and H. Cui, “A Hybrid Attention Semantic Segmentation Network for Unstructured Terrain on Mars,” Acta Astro-nautica , vol. 204, pp. 492–499, 2023. [46] J. Zhang, L. Lin, Z. Fan, W. Wang, and J. Liu, “S5Mars: Semi-Supervised Learning for Mars Semantic Segmentation,” IEEE Trans-actions on Geoscience and Remote Sensing , vol. 62, pp. 1–15, 2024. [47] B. Wu, Z. Ding, and J. Huang, “A Review of Continual Learning in Edge AI,” IEEE Transactions on Network Science and Engineering , vol. 13, pp. 6571–6588, 2026. [48] P. Buzzega, M. Boschini, A. Porrello, D. Abati, and S. Calderara, “Dark Experience for General Continual Learning: A Strong, Simple Baseline,” Advances in Neural Information Processing Systems , vol. 33, pp. 15 920–15 930, 2020. [49] Z. Fang, Y. Guo, J. Wang, Y. Zhang, H. An, Y. Wang, and Y. Fang, “Shared Spatial Memory Through Predictive Coding,” arXiv preprint arXiv:2511.04235, 2025. [50] Z. Lin, Z. Wang, and X. Wang, “Towards Continual Universal Segmen-tation,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 2025, pp. 29 417–29 427. [51] W. Cong, Y. Cong, Y. Liu, and G. Sun, “CS 2K: Class-Specific and Class-Shared Knowledge Guidance for Incremental Semantic Segmen-tation,” in Proceedings of the European Conference on Computer Vision (ECCV) . Springer, 2024, pp. 244–261. [52] K. Fang, A. Zhang, G. Gao, J. Jiao, C. H. Liu, and Y. Wei, “CoMBO: Conflict Mitigation via Branched Optimization for Class Incremental Segmentation,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 2025, pp. 25 667– 25 676. [53] Z. Yang, S. Dong, R. Li, N. Song, and G. Lin, “ADAPT: Attentive Self-Distillation and Dual-Decoder Prediction Fusion for Continual Panoptic Segmentation,” in Proceedings of The Thirteenth International Conference on Learning Representations (ICLR) , 2025. [54] H. Yin, T. Feng, F. Lyu, F. Shang, H. Liu, W. Feng, and L. Wan, “Beyond Background Shift: Rethinking Instance Replay in Continual Semantic Segmentation,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 2025, pp. 9839–9848. [55] M. Khademi Nori and I.-M. Kim, “Task Confusion and Catastrophic Forgetting in Class-Incremental Learning: A Mathematical Framework for Discriminative and Generative Modelings,” Advances in Neural Information Processing Systems , vol. 37, pp. 47 678–47 707, 2024. [56] C. Finn, P. Abbeel, and S. Levine, “Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks,” in Proceedings of the International Conference on Machine Learning (ICML) . PMLR, 2017, pp. 1126– 1135. [57] C. D. Edwards, B. W. Arnold, R. P. DePaula, G. J. Kazz, C. H. Lee, and G. K. Noreen, “Relay communications strategies for Mars exploration through 2020,” Acta Astronautica , vol. 59, no. 1–5, pp. 310–318, 2006. [58] S. Shalev-Shwartz and S. Ben-David, Understanding Machine Learning: From Theory to Algorithms . Cambridge, UK: Cambridge University Press, 2014. [59] L.-C. Chen, Y. Zhu, G. Papandreou, F. Schroff, and H. Adam, “Encoder-Decoder with Atrous Separable Convolution for Semantic Image Seg-mentation,” in Proceedings of the European Conference on Computer Vision (ECCV) . Springer, 2018, pp. 801–818. [60] K. He, X. Zhang, S. Ren, and J. Sun, “Deep Residual Learning for Image Recognition,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 2016, pp. 770–778. [61] O. Russakovsky, J. Deng, H. Su, J. Krause, S. Satheesh, S. Ma, Z. Huang, A. Karpathy, A. Khosla, M. Bernstein et al. , “ImageNet Large Scale Visual Recognition Challenge,” International Journal of Computer Vision , vol. 115, no. 3, pp. 211–252, 2015.

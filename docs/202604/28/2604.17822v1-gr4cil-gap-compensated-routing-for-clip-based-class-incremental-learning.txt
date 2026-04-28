@@ -1,0 +1,1736 @@
+Title: GR4CIL: Gap-compensated Routing for CLIP-based Class Incremental Learning
+
+URL Source: https://arxiv.org/pdf/2604.17822v1
+
+Published Time: Tue, 21 Apr 2026 01:55:43 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# GR4CIL: Gap-compensated Routing for CLIP-based Class Incremental Learning 
+
+Tianqi Wang 
+
+Department of COMP The Hong Kong Polytechnic University Hong Kong SAR 
+
+Jingcai Guo ∗
+
+Department of COMP/LSGI The Hong Kong Polytechnic University Hong Kong SAR 
+
+## Abstract 
+
+Class-Incremental Learning (CIL) aims to continuously acquire new categories while preserving previously learned knowledge. Recently, Contrastive Language-Image Pre-trained (CLIP) models have shown strong potential for CIL due to their powerful generalization ability. However, existing methods still face two key challenges: shared-parameter adaptation tends to cause old-knowledge drift, and task-specific knowledge organization often leads to poorly calibrated cross-task responses, making reliable routing difficult. To address these issues, we propose GR4CIL, a framework combining task discrimination and knowledge routing for CLIP-based CIL. GR4CIL preserves task-specific visual knowledge while main-taining an incrementally stable shared textual semantic space, thereby reducing interference across tasks. Moreover, we introduce an orthogonal compensation mechanism to mitigate modality-gap-induced bias, enhance within-task discrimina-tion, and enlarge the score margin between the ground-truth task and competing tasks. As a result, GR4CIL enables more reliable task-aware routing over learned knowledge while retaining the zero-shot generalization capability. Experiments on multiple benchmarks show that GR4CIL consistently outperforms strong baselines. 
+
+## 1 Introduction 
+
+Class-Incremental Learning aims to enable models to continuously evolve their knowledge, while preserving previously acquired capabilities [ 1, 2]. In recent years, pre-trained vision-language models, particularly CLIP [ 3 ], have increasingly been regarded as a promising foundation for CIL due to their strong cross-modal semantic priors and generalization ability [ 4– 8]. However, CLIP’s powerful pre-trained capability does not imply that it can be seamlessly applied to CIL [ 9 ]. To adapt to downstream incremental tasks, the model must continuously absorb new knowledge while mitigating catastrophic forgetting [ 10 ], while retaining its zero-shot transfer ability as much as possible [ 11 ]. To fully realize CLIP in CIL scenarios, two closely related challenges remain insufficiently addressed. The first challenge arises from the continual update of shared parameters. Existing CIL methods typically rely on either full or parameter-efficient fine-tuning to adapt to new tasks [ 4 , 6 , 7 , 12 –14 ]. When learnable parameters are repeatedly used across incremental tasks, the optimization of new tasks inevitably alters the representation structures on which old tasks depend [ 15 ], thereby blurring the knowledge boundaries (see Fig. 1(a)). Therefore, a natural idea is to proactively avoid mutual interference among tasks by separately accommodating task-specific knowledge in different modules. The second challenge lies in inference once knowledge is organized into task-specific structures. After learning task-specific knowledge, the model must determine which learned knowledge should be invoked for a given input without task identity [ 5 , 16 , 17 ]. This turns inference into a routing problem and requires clearer discrimination among competing task-specific modules (see Fig. 1(b)).               
+
+> ∗Corresponding author: Jingcai Guo.
+> arXiv:2604.17822v1 [cs.CV] 20 Apr 2026 Pre-trained
+> CLIP ̂𝜃𝜃 0:𝑇𝑇−1
+> 𝜃𝜃 𝑇𝑇−1 Pre-trained
+> CLIP ̂𝜃𝜃 0:𝑇𝑇
+> 𝜃𝜃 𝑇𝑇
+> Task 𝑇𝑇 − 1
+> 𝒟𝒟 𝑇𝑇−1
+> 𝑍𝑍 𝑇𝑇−1 ∗𝑍𝑍 𝑇𝑇 ∗�𝑍𝑍 𝑇𝑇−1
+> Drift Blur
+> (a)
+> Pre-trained
+> CLIP
+> 𝜃𝜃 0
+> Inference
+> 𝜃𝜃 1𝜃𝜃 𝑇𝑇
+> (b)
+> …
+> 𝑥𝑥 𝑖𝑖
+> Routing Decision
+> Which task-specific knowledge should be used?
+> (c)
+> Shared Text features
+> Image features: Task 1
+> Image Task T
+> Image Task 2
+> Modality gap Imbalance
+> 𝒟𝒟 𝑇𝑇
+> Task 𝑇𝑇
+
+Figure 1: (a) Continual updates of shared parameters cause interference and blur knowledge bound-aries. (b) Organizing knowledge into task-specific modules turns inference into a routing problem. (c) The modality gap in CLIP affects both intra-task discrimination and inter-task routing. At the same time, the incremental adaptation should preserve CLIP’s zero-shot capability as much as possible, so that the learned model remains extensible to broader inference scenarios. [18]. To address the above challenges, we organize knowledge into task-specific modules during in-cremental training, and enable knowledge routing during inference with the aid of an auxiliary out-of-distribution (OOD) detection mechanism [ 19 ]. Specifically, each task branch should respond strongly to its in-distribution samples while suppressing samples from other tasks, which can be interpreted from a task-relative OOD perspective. However, the effectiveness of this paradigm depends not only on whether each task-specific module can provide reliable intra-task discrimination, but also on whether the ground-truth (GT) task can be sufficiently distinguished from competing task-specific knowledge for the same sample during inference [15]. Existing study [ 4] has shown that the intrinsic modality gap in CLIP can affect performance in CIL. Specifically, text and image features typically lie in two separated narrow cones in the feature space, leading to a modality gap [ 20 ]. Under continual adaptation, this gap is further perturbed, which limits the discriminative capability of the text classifier within each task. Moreover, we observe that the modality gaps formed after CIL vary across tasks (see Fig. 1(c) and Sec. 3), causing different task-specific modules to respond unevenly to the same sample. Therefore, from the perspective of modality gap, the key is to introduce a compensation mechanism that strengthens intra-task discrimination and enlarges the advantage of the GT task over competing tasks, enabling more reliable routing. We propose Gap-compensated Routing for CLIP-based CIL (GR4CIL). Specifically, GR4CIL equips the visual branch with task-specific modules, so as to preserve task-exclusive knowledge. On the text branch, GR4CIL learns a shared module to maintain an incremental stable semantic space. Further-more, we introduce an orthogonal compensation mechanism that compensates image representations in the orthogonal complement of the text space, thereby enhancing intra-task discriminability and enlarging the response margin between the GT task and competing tasks. Finally, GR4CIL further incorporates prototype-driven OOD detection to perform task-aware routing. Moreover, GR4CIL leaves a practical interface for extending inference beyond the standard CIL, where learned knowledge may become insufficient and zero-shot generalization can be invoked. Our contributions are threefold: • We propose a replay-free framework for CLIP-based CIL that jointly addresses task-specific knowl-edge learning and task-aware routing. The framework structurally reduces mutual interference among different tasks, while leaving a practical interface for more open inference scenarios. • We design an orthogonal compensation mechanism based on the modality gap to improve intra-task discriminability and increase the response margin between the GT task and competing tasks. We further provide a geometric interpretation and theoretical support for this design. • Extensive experiments on multiple benchmarks demonstrate that our method consistently outper-forms existing approaches without requiring replay samples. 
+
+## 2 Related Work 
+
+CLIP-based CIL. Existing efforts on CIL of pre-trained models generally follow two technical routes: one adapts the model through full fine-tuning [ 21 ], while the other performs parameter-efficient fine-tuning by introducing lightweight modules [ 14 , 22 –24 ]. In CLIP-based CIL, prior works have largely followed this line of development, while further incorporating distillation, prototype con-straints, or feature fusion to mitigate forgetting. Specifically, ZSCL distills the model with additional data [ 25 ]. PROOF enhances learning performance through a feature projection module and cross-modal fusion [ 26 ]. LADA designs an expandable adapter and combines it with feature distillation [ 7]. 2Magmax progressively fine-tunes the full model while using task vectors for fusion [ 27 ]. Although these methods have made progress in alleviating forgetting, most of them are still built upon continual updates of shared parameters, making it difficult to avoid inter-task interference and knowledge drift. 
+
+Task Inference in CIL. When modules are learned for different tasks, the model must determine which task-specific knowledge should be invoked during inference. In such scenarios, task inference is closely related to OOD detection [ 19 ], since the model needs to decide whether an input should be handled by one of the learned tasks or regarded as outside the current knowledge scope [ 15 , 28 –33 ]. In CLIP-based CIL, this direction remains relatively underexplored. Recently, MOE4CL learns a set of experts and performs routing with autoencoders [ 5 ], while LGVLM and AdapterVLM exploit OOD anchors and samples to support inference [ 16 , 17 ]. However, these methods mainly emphasize task-internal module design, while leaving relatively underexplored how to improve the discriminability and score separability of task-specific knowledge, which is crucial for reliable routing. 
+
+Modality Gap. Prior work [ 20 ] has shown that CLIP exhibits a modality gap, where text and image features tend to form two separated narrow cones in the shared feature space. Recent studies have explored reducing this gap to improve downstream cross-modal performance [ 34 – 38 ]. In CLIP-based CIL, MG-CLIP investigates continual adaptation from the perspective of modality gap and uses it to regulate fine-tuning strength [ 4 ]. In contrast, our focus is not to directly shrink the gap itself, but to examine how modality-gap-induced residual bias under continual adaptation limits intra-task discrimination and weakens the separability between the GT task and competing tasks during routing. 
+
+## 3 Preliminaries 
+
+3.1 CLIP-based CIL Problem Setup 
+
+We consider a CIL task sequence based on the CLIP model, denoted as {T 1, T 2, . . . , T T }. The t-th task consists of a training set Dt = {(xti, y ti )}Nt 
+
+> i=1
+
+and a class set Ct, where the classes of different tasks are mutually disjoint, i.e., Ci ∩ C j = ∅ for all i̸ = j [15 ]. During training on task t, the model only has access to the current task data Dt, and task identifiers are unavailable at test time. In this paper, we adopt a pre-trained CLIP model M = ( fv , f t) as the backbone, where fv and ft denote the visual encoder and the text encoder. Given an input image xi and a class prompt p(c), the visual and textual features are represented as vi = fv (xi) and tc = ft(p(c)) . For decision, the cosine similarity score of sample xi for class c is defined as sc(xi) = ⟨vi, tc⟩. After training on the first t tasks, the model is required to recognize all seen classes C1: t = Sti=1 Ci while preserving historical knowledge. 
+
+3.2 Task-wise Inconsistency of Modality Gaps 0 4 8 12 
+
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> Cos Similarity
+> Epoch
+> Pos similarity
+> Neg similarity
+> Inter-modality similarity
+
+Figure 2: Modality gap for a sin-gle task changes during training. 0.10 
+
+> 0.12
+> 0.14
+> 0.16
+> 0.18
+> Final Inter-modality Similarity
+> Task 1 Task 2 Task 3 Task 4 Task5
+
+Figure 3: The final modality gaps are inconsistent. We follow prior work [ 4] to define and measure the modality gap. Given N image features {vi}Ni=1 and C class text features 
+
+{tj }C 
+
+> j=1
+
+for a task, we can use the average cosine similarity over all image-text pairs to measure the inter-modality similarity, i.e., 
+
+sim = 1
+
+> N
+
+PNi=1 1
+
+> C
+
+PC
+
+> j=1
+
+⟨vi, tj ⟩. This quantity reflects the close-ness between the image and text modalities in the shared feature space. We also compute the average similarity of positive and negative image-text pairs, respectively. Continual adaptation to downstream tasks perturbs the modal-ity gap. Taking ImageNet-100 [ 39 ] as an example, we measure the change of overall inter-modality similarity during single-task adaptation. In Fig. 2, as training proceeds, the overall similarity between image and text features gradually decreases. Furthermore, we find that the the similarity of negative pairs drops significantly, dominating the enlargement of the modality gap. Intuitively, this is because downstream training only pulls an image feature closer to its corresponding text feature, while simultaneously pushing it away from a large number of non-matching text features. Prior work has shown that an enlarged modality gap can weaken pre-trained knowledge and limit intra-task discrimination [4]. 3When the model learns task-specific modules, the adaptation process of each task becomes relatively independent. We observe that the modality gaps formed after adaptation are not consistent across tasks, as shown in Fig. 3. As a result, different task-specific modules may respond unevenly to the same sample during unified inference. For example, if a task ends up with a relatively smaller modality gap, some of its negative image-text pairs may still maintain high similarity scores, thereby interfering with the responses of other tasks. This observation suggests that the model should further compensate modality-gap-induced residual bias so as to enhance intra-task discrimination and enlarge the response margin between the GT task and competing tasks during routing. 
+
+## 4 Method 
+
+To preserve task-specific knowledge and support reliable routing, we propose GR4CIL. GR4CIL equips the visual branch with task-specific modules, while maintaining a shared and stable semantic space on the text branch (Sec. 4.1). From the perspective of modality gap, we introduce an orthogonal compensation mechanism to enhance intra-task discriminability and make the GT task more separable from competing tasks (Sec. 4.2). Based on this, GR4CIL performs task-aware routing with unified score competition and prototype-driven OOD detection (Sec. 4.3). Fig. 4 illustrates the pipeline. 
+
+4.1 Decoupled Incremental Knowledge Learning 
+
+To simultaneously avoid inter-task knowledge interference and maintain a stable semantic reference across incremental tasks, GR4CIL learns a shared LoRA [ 40 ] module on the text branch, while assigning task-specific LoRA modules to the visual branch for each task. These LoRA modules are inserted into the Transformer blocks of the encoders and are applied to the key and value weights. We first construct a shared text space, which serves as a stable semantic reference across tasks. Since class prompts remain reusable throughout the incremental process, we explicitly constrain the shared text mapping to preserve the semantics of previously learned classes while keeping newly introduced classes sufficiently separated. Let the current task be the t-th task with class set Ct, and the previous classes are C1: t−1. We denote the shared text LoRA at task t by ϕt
+
+> text
+
+. For each previous class 
+
+c ∈ C 1: t−1, let zc be the cached text feature obtained when the class is first learned and retained as a semantic anchor. Meanwhile, let ttc = ft(p(c); ϕt
+
+> text
+
+) denote its current normalized text feature. To suppress semantic drift in the shared text space, we define the anchor loss as: 
+
+Lanc = 1
+
+|C 1: t−1|
+
+X
+
+> c∈C 1: t−1
+
+ 1 − cos( ttc, zc) , (1) which encourages the semantic representations of previous classes to remain stable. Meanwhile, we impose a bounded separation constraint only on the new classes. Specifically, for each c ∈ C t, we penalize overly high cosine similarity between its text feature and those of the other seen classes c′:
+
+Lsep = 1
+
+|C t|
+
+X
+
+> c∈C t
+
+1
+
+|C 1: t \ { c}| 
+
+X
+
+> c′∈C 1: t\{ c}
+
+max  0, cos( ttc, ttc′ ) − τ  , (2) where τ is a fixed separation threshold. The separation loss prevents newly introduced classes from becoming overly close to existing ones, while avoiding unbounded repulsion once sufficient separation is achieved. This not only differentiates text features to enhance discrimination, but also preserves a unified and controllable angular distribution among different classes. On the visual branch, we assign an independent LoRA module to each task, so that task-specific visual knowledge can be accommodated in a decoupled manner and inter-task interference can be reduced. Let the visual LoRA of task t be denoted by ϕt
+
+> vis
+
+. When learning task t, we freeze all previously learned visual LoRA modules and optimize only the current visual LoRA ϕt 
+
+> vis
+
+together with the shared text LoRA, updated from ϕt−1text to ϕt
+
+> text
+
+. Given an input image xi, its visual feature is denoted by vti = fv (xi; ϕt
+
+> vis
+
+). For each sample (xi, y i) ∈ D t, the cosine similarity score for class c
+
+is sc(xi) = ⟨vti , ttc⟩, and the downstream adaptation objective is: 
+
+Lbase = Lclip + λanc Lanc + λsep Lsep , Lclip = − 1
+
+|D t|
+
+X
+
+> (xi,y i)∈D t
+
+log exp( syi (xi)) 
+
+P 
+
+> c∈C t
+
+exp( sc(xi)) , (3) where λanc and λsep are balancing coefficients, and Lclip is a CLIP-style classification loss. In this way, the shared text branch maintains a stable semantic reference across tasks, while the visual branch preserves task-specific knowledge in a decoupled form. 4Visual Space 1                
+
+> Fish,
+> Snake,
+> ...
+> Cat,
+> Dog,
+> ...
+> ... ...
+> Task 1 Task tTask T
+> Textual
+> Encoder LoRA
+> Previous
+> Text Feature
+> Current
+> Text Feature
+> Shared Textual Space
+> Previous text
+> anchors
+> 1
+> t-1Visual
+> Encoder LoRA t
+> Visual Space t-1
+> Task -specific Visual Space t
+> Current
+> Image Feature
+> Compensation
+> Routing
+> Suppress drift Image
+> prototype s
+> Differentiate
+> and balance
+> semantics
+> Bird, Car, ... A photo of [CLS]
+> Data
+> Encode
+> Textual Space
+> Visual Space
+> Orthogonal
+> Complement
+> OOD Detect and Route
+> Orthogonal
+> compensator logits
+> Text classifier
+> logits
+> Decision
+
+Figure 4: Left: GR4CIL fine-tunes task-specific LoRA modules in the visual branch to accommodate knowledge. In the shared text branch, it anchors the semantics of previous classes while maintaining a unified degree of separation among all text features. Right: To address modality gaps, GR4CIL learns compensation weights in the orthogonal complement of the text space. 
+
+4.2 Orthogonal Compensation Based on Modality Gap 
+
+In Sec. 3.2, we show that continual adaptation enlarges the modality gap within each task, while task-specific learning also leads to gap inconsistency across tasks. As a result, although Sec. 4.1 establishes a stable text space and decoupled task-specific visual features, classification still relies on text features as classifiers. Due to the modality gap, the discriminative structure of the visual features may not be fully covered by the text space, leaving task-relevant residual directions unused and aggravating the competition among task-specific modules during inference. Motivated by this view, GR4CIL introduces a residual compensation in the orthogonal complement of the text space. Conventional image-text classification uses text features as classifiers. However, because the textual and visual subspaces only partially overlap [ 4 ], adaptation based solely on the text classifier can be suboptimal. To clarify this point, we consider a simple approximation-based view. For task t, let the text feature matrix be Tt = [ ttc1 , ttc2 , . . . , ttc|C t| ]. We perform SVD on Tt as Tt = UtΣtV⊤ 
+
+> t
+
+, and take the column space of Ut as the text subspace. The projection matrix onto the text subspace is 
+
+Pt = UtU⊤ 
+
+> t
+
+, while the projection matrix onto its orthogonal complement is P⊥ 
+
+> t
+
+= I − UtU⊤ 
+
+> t
+
+.
+
+Proposition 1. Let W ⋆t denote an ideal linear classifier in the full visual feature space, used here only for analysis. If the classifier is constrained to lie in the text subspace, then its best approximation is W ⋆t, text = PtW ⋆t , and the corresponding approximation error is Et 
+
+> text
+
+= ∥(I − Pt)W ⋆t ∥2 
+
+> F
+
+.
+
+Lemma 1. Let rt = rank( Tt) and ρt = rank( W ⋆t ). Following [ 4], let σ1(W ⋆t ) ≥ σ2(W ⋆t ) ≥ · · · ≥ 
+
+σρt (W ⋆t ) be the singular values of W ⋆t . Then the text-subspace approximation error satisfies 
+
+Et 
+
+> text
+
+= ∥(I − Pt)W ⋆t ∥2 
+
+> F
+
+≥
+
+> ρt
+
+X
+
+> j=rt+1
+
+σ2 
+
+> j
+
+(W ⋆t ). (4) 
+
+Equality holds if and only if the text subspace covers the leading rt left singular directions. 
+
+See the Appendix A for proof. Proposition 1 and Lemma 1 suggest that restricting classification to the text subspace may leave residual discriminative directions uncovered. This motivates learning an additional residual compensation in the orthogonal complement of the text space. In practice, we parameterize this residual term by a task-specific linear head whose column space lies in span( P⊥ 
+
+> t
+
+).Specifically, we introduce a compensation head W t 
+
+> comp
+
+for each task and project it as cW t 
+
+> comp
+
+=
+
+P⊥ 
+
+> t
+
+W t
+
+> comp
+
+. For a sample xi with visual feature vti , the compensation logits are: 
+
+gt(xi) = vt⊤ 
+
+> i
+
+cW t
+
+> comp
+
+, gtc(xi) = gt(xi)
+
+> c
+
+, bsc(xi) = sc(xi) + β g tc(xi), (5) where gtc(xi) denotes the logit of class c from the compensation head and β is a balancing coefficient. Since the compensation head is constrained in the orthogonal complement of the text space, it acts as a residual term and is encouraged to capture directions not covered by the text classifier. The above design can be further justified from the perspective of approximation error in a direct-sum subspace. 5Proposition 2. Let StR ⊆ span( P⊥ 
+
+> t
+
+) be a compensation subspace, and let its projection matrix be PR,t . Since span( Pt) and StR are orthogonal, the best approximation of W ⋆t in subspace 
+
+span( Pt)⊕S tR is W ⋆t, ⊕ = ( Pt +PR,t )W ⋆t , with approximation error: Et 
+
+> ⊕
+
+= ∥(I−Pt −PR,t )W ⋆t ∥2 
+
+> F
+
+.
+
+Corollary 1. Under the condition of Proposition 2, we have Et 
+
+> ⊕
+
+≤ E t
+
+> text
+
+, and the error reduction is 
+
+Et 
+
+> text
+
+− E t 
+
+> ⊕
+
+= ∥PR,t (I − Pt)W ⋆t ∥2 
+
+> F
+
+. (6) 
+
+The approximation error is monotonically non-increasing after introducing orthogonal compensation. 
+
+See the Appendix A for proof. Corollary 1 further suggests that the reduction in approximation error comes from the residual discriminative energy captured in the orthogonal complement, providing a justification for modeling a residual classifier beyond the text subspace. Such compensation may recover discriminative directions not covered by the text classifier, thereby improving intra-task discrimination. Moreover, since the text subspace is induced by the same shared and stabilized text branch, the corresponding compensations are anchored to a common semantic reference, which makes residual responses across tasks more comparable and benefits score separability during inference. In practice, this compensation subspace is parameterized by the head cW tcomp = P⊥ 
+
+> t
+
+W tcomp . Here, P⊥
+
+> t
+
+is computed from the text features of task t. Since the compensation space is high-dimensional and the optimization is non-convex, a suitable initialization is beneficial. To better align the compensation head with the visual space, we initialize W t 
+
+> comp
+
+with the visual class prototypes of the current task. After completing the LoRA learning, we freeze ϕt 
+
+> vis
+
+and ϕt
+
+> text
+
+, initialize and optimize the compensation head of task t. The compensation head is trained with the cross-entropy objective: 
+
+Lcomp = − 1
+
+|D t|
+
+X
+
+> (xi,y i)∈D t
+
+log exp( gtyi (xi)) 
+
+P 
+
+> c∈C t
+
+exp( gtc(xi)) . (7) See the Appendix B for the pseudocode. By learning a modality-gap-guided compensation classifier, GR4CIL compensates for the discriminative deficiency of the text classifier, while providing a more favorable score basis for separating the GT task from competing tasks during task-aware routing. 
+
+4.3 Routing and Inference 
+
+Regarding CIL, after learning task-specific knowledge and compensation, GR4CIL performs inference with unified score competition and prototype-based task awareness. For each class c ∈ C t, we maintain a visual class prototype ptc and use its similarity to the sample feature as an additional OOD cue. Accordingly, for a sample xi, the final score of class c is defined as qc(xi) = bsc(xi)+ γ ⟨vti , ptc⟩,
+
+where γ is a fixed hyper-parameter. This prototype-based OOD cue makes the decision depend not only on text matching and compensation, but also on the consistency between the sample and the class distribution structure. The final prediction is then obtained by byi = arg max c∈C 1: t qc(xi). In this way, routing is realized through score competition among classes from different task-specific branches. The above scoring rule defines the standard unified inference over all seen classes. Beyond CIL setting, we leave an unknown-aware interface that can be used to extend inference toward zero-shot generalization. We equip each task with an acceptance threshold ωt. For task t,we compute the softmax confidence within its own class set Ct and define the task-level maximum softmax probability (MSP) mt(xi) over the scores {qc(xi) | c ∈ C t}. Task t accepts the sample if 
+
+mt(xi) > ω t. A sample is regarded as potentially unknown only when it is rejected by all tasks. In practice, ωt can be estimated from validation data without using future-task or OOD samples. This unknown-aware branch provides a simple interface for extending inference to more open scenarios. For a potentially unknown sample x∗ 
+
+> i
+
+, GR4CIL can optionally leverage the learned knowledge for generalized prediction. Specifically, we extract task-conditioned visual features vt∗ 
+
+> i
+
+from all task-specific branches and define the confidence of task t as rt(x∗ 
+
+> i
+
+) = max c∈C t ⟨vt∗ 
+
+> i
+
+, ptc⟩. We convert these confidences into task weights and perform zero-shot classification over a candidate label set: 
+
+qfuse  
+
+> k
+
+(x∗ 
+
+> i
+
+) = 
+
+> T
+
+X 
+
+> τ=1
+
+ατ (x∗ 
+
+> i
+
+)⟨vτ ∗ 
+
+> i
+
+, tk⟩, αt(x∗ 
+
+> i
+
+) = exp( rt(x∗ 
+
+> i
+
+)) 
+
+PTτ =1 exp( rτ (x∗ 
+
+> i
+
+)) , (8) where tk denotes the text feature of zero-shot class k encoded by the shared text branch. In this way, while the standard CIL prediction is still given by the unified routing rule above, GR4CIL also leaves a practical interface for confidence-based extension beyond the learned label space. In the worst case, the model can fall back to the original CLIP for broader zero-shot inference. 6Table 1: Comparison of CIL performance on four benchmarks. All datasets are split into 10 tasks. ‘Avg’ and ‘Last’ denote the average accuracy (Avg-Acc) and the final accuracy (Last-Acc), respectively. For GR4CIL, we report the mean and standard deviation over three independent runs.                                                                                                                                      
+
+> Method CIFAR-100 ImageNet-R ImageNet100 ImageNet-1K Average Avg Last Avg Last Avg Last Avg Last Avg-Acc Last-Acc L2P++ 81.90 73.08 81.67 75.98 80.51 67.22 79.30 69.60 80.84 71.47 DualPrompt 81.45 72.51 82.01 75.77 80.65 67.38 79.39 69.79 80.88 71.36 CODA 76.98 62.25 78.00 67.52 64.13 34.76 76.99 66.96 74.03 57.87 Aper-Adapter 75.76 63.50 78.65 71.35 85.84 76.40 76.60 68.74 79.21 70.00 Continual-CLIP 75.15 66.68 79.12 72.00 84.98 75.40 72.96 64.44 78.05 69.63 CLAP 74.19 63.45 81.22 75.80 81.07 72.00 75.85 67.36 78.08 69.65 MOE4CL 85.36 78.37 85.28 80.77 86.39 76.66 81.29 72.73 84.58 77.13 MagMax 85.63 79.00 87.13 80.85 86.33 75.92 80.74 71.31 84.96 76.77 MG-CLIP 87.00 80.57 87.58 82.67 87.31 78.38 81.88 73.68 85.94 78.83
+> AdapterVLM 87.98 81.65 88.25 82.51 86.03 77.05 81.60 73.47 85.97 78.67 GR4CIL (Ours) 89.35 83.22 89.50 84.15 87.65 78.64 83.36 75.33 87.47 80.34
+> ±0.26 ±0.28 ±0.16 ±0.11 ±0.29 ±0.33 ±0.30 ±0.31 (+1.50) (+1.51)
+
+## 5 Experiments 
+
+5.1 Experimental Setup Datasets. We evaluate our method on four commonly used CIL benchmarks, including CIFAR-100 [ 41 ], ImageNet-R [ 42 ], ImageNet100 [ 39 ], and ImageNet-1K [ 39 ]. All datasets are evenly divided into 10 sequential tasks under the standard CIL setting. For the comparison under different task sequence lengths, we further construct additional task partitions with 5-task and 20-task settings. 
+
+Baselines. To ensure a fair comparison, we focus exclusively on replay-free CIL methods [ 43 ]. Specifically, we compare GR4CIL with representative CLIP-based methods, including Continual-CLIP [ 44 ], CLAP [ 9 ], MOE4CL [ 5], MagMax [ 27 ], MG-CLIP [ 4], and AdapterVLM [ 17 ]. We further include several advanced vision-only methods, including L2P++ [ 24 ], DualPrompt [ 22 ], CODA [ 23 ], and Aper-Adapter [ 45 ]. All methods adopt the ViT-B/16 weights of OpenAI [ 3] by default. Baseline results are taken from prior papers [4, 17] or reproduced using their publicly available code. 
+
+Evaluation metrics. We adopt average accuracy (Avg-Acc) and final accuracy (Last-Acc) as the primary evaluation metrics for CIL. Let At denote the classification accuracy after learning the t-th task and evaluating on all seen classes up to task t. Then, Avg-Acc is defined as the average accuracy, i.e., 1
+
+> T
+
+PTt=1 At, while Last-Acc denotes the final test accuracy, i.e., AT . To evaluate the OOD detection capability of GR4CIL, we further report Avg-AUROC and Last-AUROC [ 17 ]. Specifically, at the t-th incremental stage, all previously learned classes are regarded as in-distribution (ID) classes, while the classes that have not yet been learned in future tasks are treated as OOD classes. For each test sample, we compute the MSP based on the model output scores and use it for OOD detection [ 46 ]. The AUROC is then computed at each incremental stage, and we finally summarize the results as the average AUROC over all stages (Avg-AUROC) and the AUROC at the final stage (Last-AUROC). 
+
+Implementation details. We follow the basic training protocol of prior work [ 17 ]. We adopt CLIP ViT-B/16 as the pretrained backbone. Balancing coefficients λanc and λsep are set to 1. We use AdamW as the optimizer with a learning rate of 0.005, which is scheduled by cosine annealing. The LoRA rank is set to 24 for both textual and visual branch. The separation threshold τ is set to 0.7. The compensation head is trained separately for each task using Adam with a learning rate of 0.0005. During inference, the coefficients β and γ are both set to 0.2. For more details, see the Appendix C. 
+
+5.2 Comparison Results 
+
+In Table 1, it can be seen that GR4CIL consistently outperforms existing replay-free methods across the four benchmark datasets. Specifically, on CIFAR-100, GR4CIL achieves 89.35% Avg-Acc and 83.22% Last-Acc, surpassing the strongest baseline by 1.37% and 1.57%. On ImageNet-R, it further improves over the best baseline by 1.25% in Avg-Acc and 1.48% in Last-Acc. On the more challenging ImageNet100 and large-scale ImageNet-1K, GR4CIL continues to achieve 7Table 2: Left: Comparison of final accuracy (Last-Acc) under different task sequence lengths on CIFAR-100 and ImageNet-R. Right: Comparison of OOD detection performance, where Avg-AUROC and Last-AUROC are used as evaluation metrics and the task sequence length is set to 10.                                                   
+
+> Method CIFAR-100 ImageNet-R 5-task 20-task 5-task 20-task MOE4CL 78.96 76.20 81.37 79.58 MagMax 82.07 76.84 82.75 80.18 MG-CLIP 81.47 79.31 83.13 82.12 AdapterVLM 83.77 77.62 83.20 80.45 Ours 84.98 79.52 85.32 81.36
+> Method CIFAR-100 ImageNet-R Avg Last Avg Last CODA 80.97 76.36 81.04 75.53 Continual-CLIP 78.43 72.28 80.97 78.10 MOE4CL 80.12 74.76 82.32 76.73 AdapterVLM 88.59 85.89 88.35 82.90 Ours 89.13 87.15 88.75 83.09
+
+Table 3: Left: Zero-shot generalization on unseen datasets. GR4CIL i uses CIFAR-100 for training, and GR4CIL ii uses ImageNet-R. Right: Distance between the image space and classifier spaces.                        
+
+> Method PETS FOOD101 ImageNet-1K CLIP 84.96 83.49 65.41 GR4CIL i 86.23 83.76 66.52 GR4CIL ii 86.72 83.52 66.87 CIFAR100 ImageNet-R ImageNet100 I-T 0.814 0.767 0.811 I-C 0.612 0.670 0.722 I-TC 0.224 0.210 0.420
+
+the best results. These results demonstrate that GR4CIL can still learn more robust task-specific knowledge and maintain stronger performance as new classes are continuously accumulated. To further evaluate the robustness of our method under different incremental granularities, we conduct additional experiments with different task sequence lengths, as reported in Table 2 (left). GR4CIL achieves the best results under both the 5-task and 20-task settings on CIFAR-100, as well as under the 5-task setting on ImageNet-R, while remaining competitive under the 20-task setting on ImageNet-R. These results suggest that GR4CIL generalizes well across different incremental sequences. We further evaluate the OOD detection capability of GR4CIL in Table 2 (right) to examine the feasibility of extending the standard CIL inference beyond the learned label space. In this setting, the samples from all learned classes at the current stage are regarded as ID samples, while the samples belonging to future unseen tasks are treated as OOD samples. The results show that GR4CIL consistently outperforms existing methods in terms of Avg-AUROC and Last-AUROC, indicating that the learned representations capture whether a sample lies inside or outside the currently acquired knowledge scope. Therefore, these results support the feasibility of using the proposed confidence signals as a trigger for extending inference beyond the standard CIL setting. 
+
+5.3 Further Analysis 
+
+Given such a trigger, we next examine whether GR4CIL preserves the zero-shot generalization ability and whether the proposed knowledge fusion can further benefit zero-shot classification on unseen datasets. Specifically, after performing CIL on CIFAR-100 and ImageNet-R, we apply the proposed knowledge fusion to zero-shot classification on Pets [ 47 ], Food101 [ 48 ], and ImageNet-1K. As shown in Table 3 (left), GR4CIL achieves results comparable to or slightly better than those of the original CLIP on multiple unseen datasets, suggesting that GR4CIL can preserve the generalization capability and the proposed fusion interface can sometimes provide additional benefit. Here, the CLIP results correspond to directly using the original pre-trained CLIP, which also serves as the fallback option in our framework. Since different downstream training data may affect zero-shot behavior, GR4CIL can invoke either the fused prediction or, in the worst case, directly fall back to the original CLIP. It shows that GR4CIL leaves a practical interface for extending inference toward more open scenarios. We further examine whether orthogonal compensation helps reduce the discrepancy between the classifier space and the image space. To this end, we measure the distances between the image space and three classifier spaces, namely, the text classifier space (I-T), the compensation classifier space (I-C), and their joint space (I-TC), as reported in Table 3 (right). Specifically, we extract the orthonormal bases of the corresponding subspaces from the image features and classifier weights, and use the mean projection residual of the image-space basis vectors onto each target space as the distance measure, where a smaller value indicates better alignment. The results show that the original text classifier space deviates noticeably from the image space, while the joint space after introducing compensation becomes substantially closer. This observation suggests that orthogonal compensation 80.05    
+
+> 0.07
+> 0.09
+> 0.11
+> 0.13
+> CIFAR100 ImageNet-R ImageNet100
+> w/o compensation w/ compensation
+
+(a) Intra-task confidence w/ and w/o. compensation. 0.01     
+
+> 0.02
+> 0.03
+> 0.04
+> 0.05
+> 0.06
+> CIFAR100 ImageNet-R ImageNet100
+> w/o compensation w/ compensation
+
+(b) Inter-task margin w/ and w/o. compensation. 
+
+Figure 5: Effect of orthogonal compensation on prediction confidence and inter-task margin. Table 4: Ablation study of the main components of GR4CIL on CIFAR-100. 
+
+Method Avg-Acc Last-Acc Avg-AUROC Last-AUROC Base 87.17 79.40 86.46 83.33 + Lanc and Lsep 88.74 80.88 88.30 85.82 + Compensation term 89.13 82.88 88.85 86.64 + Prototype term (Full model) 89.35 83.22 89.13 87.15 
+
+complements discriminative directions not covered by the text classifier, which is consistent with its role in reducing modality-gap-induced mismatch and improving intra-task discriminability. Beyond this geometric analysis, we study how orthogonal compensation affects prediction confidence and cross-task score separation. After introducing compensation, the average intra-task softmax confidence of the GT class consistently increases (see Fig. 5(a)). We also measure the margin between the score of the GT task and the highest competing score from other tasks, and find that this margin is consistently enlarged after compensation, with an average improvement of 20.34% (see Fig. 5(b)). Correspondingly, the average routing accuracy across the three datasets improves from 81.37% to 82.85%. These results indicate that compensation not only improves intra-task discrimination, but also leads to clearer score separation among competing tasks, supporting more reliable routing. Table 5: Analysis of the compen-sation on CIFAR-100. 
+
+Orth Proto Avg-Acc Last-Acc 
+
+× × 86.68 78.64 
+
+✓ × 87.34 79.22 
+
+× ✓ 87.95 80.52 
+
+✓ ✓ 89.35 83.22 20 40 60 Trainable Parameter (M) 
+
+> 18000
+> 20000
+> 22000
+> 24000 GPU Burdens (MiB) GR4CIL AdapterVLM MOE4CL
+
+Figure 6: Computational Cost. Finally, we conduct ablation and component analysis. As shown in Table 4, Lanc , Lsep , the compensation term, and the prototype term all contribute positively to the final performance. We further analyze the design of the compensation module in Table 5, where “Orth” indicates whether the compensation head is constrained in the orthogonal complement of the text space, and “Proto” indicates whether it is initialized with the visual class prototypes. The results show that the orthogonal version consistently outperforms the unconstrained counterpart, suggesting that it is beneficial to model residual discriminative directions beyond the text classifier rather than simply increasing classifier flexibility. Moreover, prototype-based initialization further improves performance in both cases, indicating that initializing the compensation head near the visual structure leads to more effective optimization. We also compare the parameter and memory efficiency in Fig. 6. Specifically, we report the total number of trainable parameters throughout the incremental process and the peak GPU memory usage over both training and inference. The results show that GR4CIL achieves competitive performance with fewer trainable parameters and lower GPU memory burden than other task-specific baselines, indicating a favorable trade-off between effectiveness and efficiency. More detailed analyses of GR4CIL and parameter sensitivity are provided in the Appendix D, E and F. 
+
+## 6 Conclusion 
+
+This paper presents GR4CIL for CIL. The proposed method combines task-specific knowledge preservation, modality-gap compensation, and task-aware routing to reduce inter-task interference and improve unified inference over learned classes. In particular, the proposed compensation mechanism recovers residual discriminative directions beyond the text subspace, leading to better intra-task discrimination and clearer separation among competing task-specific branches. In addition, GR4CIL leaves a practical interface for extending inference beyond the standard CIL setting. Future work may further explore scenarios with ambiguous task boundaries and emerging new classes. 9References 
+
+[1] D. Li, T. Wang, J. Chen, Q. Ren, K. Kawaguchi, and Z. Zeng, “Towards continual learning desiderata via hsic-bottleneck orthogonalization and equiangular embedding,” in Proceedings of the AAAI Conference on Artificial Intelligence , pp. 13464–13473, 2024. [2] D. Li, T. Wang, J. Chen, W. Dai, and Z. Zeng, “Harnessing neural unit dynamics for effective and scalable class-incremental learning,” in International Conference on Machine Learning ,pp. 28688–28705, 2024. [3] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark, et al. , “Learning transferable visual models from natural language supervi-sion,” in International conference on machine learning , pp. 8748–8763, PmLR, 2021. [4] L. Huang, X. Cao, H. Lu, Y. Meng, F. Yang, and X. Liu, “Mind the gap: Preserving and compensating for the modality gap in clip-based continual learning,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 3777–3786, 2025. [5] J. Yu, Y. Zhuge, L. Zhang, P. Hu, D. Wang, H. Lu, and Y. He, “Boosting continual learning of vision-language models via mixture-of-experts adapters,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 23219–23230, 2024. [6] D.-W. Zhou, K.-W. Li, J. Ning, H.-J. Ye, L. Zhang, and D.-C. Zhan, “External knowledge injec-tion for clip-based class-incremental learning,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 3314–3325, 2025. [7] M.-L. Luo, Z.-H. Zhou, T. Wei, and M.-L. Zhang, “LADA: Scalable label-specific CLIP adapter for continual learning,” in Forty-second International Conference on Machine Learning , 2025. [8] L. Huang, X. Cao, H. Lu, and X. Liu, “Class-incremental learning with clip: Adaptive rep-resentation adjustment and parameter fusion,” in European Conference on Computer Vision ,pp. 214–231, Springer, 2024. [9] S. Jha, D. Gong, and L. Yao, “Clap4clip: Continual learning with probabilistic finetuning for vision-language models,” Advances in neural information processing systems , vol. 37, pp. 129146–129186, 2024. [10] R. M. French, “Catastrophic forgetting in connectionist networks,” Trends in Cognitive Sciences ,vol. 3, no. 4, pp. 128–135, 1999. [11] W. Liu, F. Zhu, L. Wei, and Q. Tian, “C-clip: Multimodal continual learning for vision-language model,” in The Thirteenth International Conference on Learning Representations , 2025. [12] P. Gao, S. Geng, R. Zhang, T. Ma, R. Fang, Y. Zhang, H. Li, and Y. Qiao, “Clip-adapter: Better vision-language models with feature adapters,” International journal of computer vision ,vol. 132, no. 2, pp. 581–595, 2024. [13] K. Zhou, J. Yang, C. C. Loy, and Z. Liu, “Learning to prompt for vision-language models,” 
+
+International journal of computer vision , vol. 130, no. 9, pp. 2337–2348, 2022. [14] Y. Wu, H. Piao, L.-K. Huang, R. Wang, W. Li, H. Pfister, D. Meng, K. Ma, and Y. Wei, “SD-loRA: Scalable decoupled low-rank adaptation for class incremental learning,” in The Thirteenth International Conference on Learning Representations , 2025. [15] T. Wang, J. Guo, D. Li, and Z. Chen, “On the discrimination and consistency for exemplar-free class incremental learning,” in Proceedings of the Thirty-Fourth International Joint Confer-ence on Artificial Intelligence, IJCAI-25 (J. Kwok, ed.), pp. 6424–6432, International Joint Conferences on Artificial Intelligence Organization, 8 2025. Main Track. [16] W. Zhang, Y. Huang, W. Zhang, T. Zhang, Q. Lao, Y. Yu, W.-S. Zheng, and R. Wang, “Contin-ual learning of image classes with language guidance from a vision-language model,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 34, no. 12, pp. 13152–13163, 2024. 10 [17] W. Zhang, T. Yu, R. Wang, J. Xie, E. Trucco, W.-S. Zheng, and X. Yang, “Visual class incremental learning with textual priors guidance based on an adapted vision-language model,” 
+
+IEEE Transactions on Multimedia , 2025. [18] M. Li, Y. Chen, Z. Rao, C. Jiang, and J. Guo, “Semantic-guided LoRA Parameters Generation,” 
+
+arXiv e-prints , p. arXiv:2509.10535, Sept. 2025. [19] G. Kim, C. Xiao, T. Konishi, Z. Ke, and B. Liu, “A theoretical study on solving continual learning,” Advances in Neural Information Processing Systems , vol. 35, pp. 5065–5079, 2022. [20] V. W. Liang, Y. Zhang, Y. Kwon, S. Yeung, and J. Y. Zou, “Mind the gap: Understanding the modality gap in multi-modal contrastive representation learning,” Advances in Neural Information Processing Systems , vol. 35, pp. 17612–17625, 2022. [21] G. Zhang, L. Wang, G. Kang, L. Chen, and Y. Wei, “Slca: Slow learner with classifier alignment for continual learning on a pre-trained model,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 19148–19158, 2023. [22] Z. Wang, Z. Zhang, S. Ebrahimi, R. Sun, H. Zhang, C.-Y. Lee, X. Ren, G. Su, V. Perot, J. Dy, et al. , “Dualprompt: Complementary prompting for rehearsal-free continual learning,” in Computer Vision–ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part XXVI , pp. 631–648, Springer, 2022. [23] J. S. Smith, L. Karlinsky, V. Gutta, P. Cascante-Bonilla, D. Kim, A. Arbelle, R. Panda, R. Feris, and Z. Kira, “Coda-prompt: Continual decomposed attention-based prompting for rehearsal-free continual learning,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 11909–11919, 2023. [24] Z. Wang, Z. Zhang, C.-Y. Lee, H. Zhang, R. Sun, X. Ren, G. Su, V. Perot, J. Dy, and T. Pfister, “Learning to prompt for continual learning,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 139–149, 2022. [25] Z. Zheng, M. Ma, K. Wang, Z. Qin, X. Yue, and Y. You, “Preventing zero-shot transfer degradation in continual learning of vision-language models,” in Proceedings of the IEEE/CVF international conference on computer vision , pp. 19125–19136, 2023. [26] D.-W. Zhou, Y. Zhang, Y. Wang, J. Ning, H.-J. Ye, D.-C. Zhan, and Z. Liu, “Learning without forgetting for vision-language models,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [27] D. Marczak, B. Twardowski, T. Trzci´ nski, and S. Cygert, “Magmax: Leveraging model merging for seamless continual learning,” in European Conference on Computer Vision , pp. 379–395, Springer, 2024. [28] P. Morteza and Y. Li, “Provable guarantees for understanding out-of-distribution detection,” in 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , pp. 7831–7840, 2022. [29] Y. Ming, Y. Sun, O. Dia, and Y. Li, “How to exploit hyperspherical embeddings for out-of-distribution detection?,” in International Conference on Learning Representations , 2023. [30] H. Lu, D. Gong, S. Wang, J. Xue, L. Yao, and K. Moore, “Learning with mixture of prototypes for out-of-distribution detection,” in International Conference on Learning Representations ,2024. [31] G. Kim, S. Esmaeilpour, C. Xiao, and B. Liu, “Continual learning based on ood detection and task masking,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops , pp. 3856–3866, 2022. [32] G. Kim, B. Liu, and Z. Ke, “A multi-head model for continual learning via out-of-distribution replay,” in Conference on Lifelong Learning Agents , pp. 548–563, PMLR, 2022. [33] H. Lin, Y. Shao, W. Qian, N. Pan, Y. Guo, and B. Liu, “Class incremental learning via likelihood ratio based task prediction,” in International Conference on Learning Representations , 2024. 11 [34] S. Eslami and G. de Melo, “Mitigate the gap: Improving cross-modal alignment in clip,” in The Thirteenth International Conference on Learning Representations , 2025. [35] M. Mistretta, A. Baldrati, L. Agnolucci, M. Bertini, and A. D. Bagdanov, “Cross the gap: Exposing the intra-modal misalignment in clip via modality inversion,” in The Thirteenth International Conference on Learning Representations , 2025. [36] S. Schrodi, D. T. Hoffmann, M. Argus, V. Fischer, and T. Brox, “Two effects, one trigger: On the modality gap, object bias, and information imbalance in contrastive vision-language models,” in The Thirteenth International Conference on Learning Representations , 2025. [37] Y. Cai, Y. Liu, E. Gao, T. Jiang, Z. Zhang, A. van den Hengel, and J. Q. Shi, “On the value of cross-modal misalignment in multimodal representation learning,” in Advances in Neural Information Processing Systems (NeurIPS) , 2025. [38] S. Yamaguchi, D. Feng, S. Kanai, K. Adachi, and D. Chijiwa, “Post-pre-training for modality alignment in vision-language foundation models,” in Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 4256–4266, 2025. [39] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei, “Imagenet: A large-scale hierarchical image database,” in 2009 IEEE Conference on Computer Vision and Pattern Recognition , pp. 248–255, IEEE, 2009. [40] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, W. Chen, et al. , “Lora: Low-rank adaptation of large language models.,” Iclr , vol. 1, no. 2, p. 3, 2022. [41] A. Krizhevsky, G. Hinton, et al. , “Learning multiple layers of features from tiny images,” 
+
+Handbook of Systemic Autoimmune Diseases , 2009. [42] D. Hendrycks, S. Basart, N. Mu, S. Kadavath, F. Wang, E. Dorundo, R. Desai, T. Zhu, S. Parajuli, M. Guo, et al. , “The many faces of robustness: A critical analysis of out-of-distribution generalization,” in Proceedings of the IEEE/CVF International Conference on Computer Vision ,pp. 8340–8349, 2021. [43] D.-W. Zhou, Q.-W. Wang, H.-J. Ye, and D.-C. Zhan, “A model or 603 exemplars: Towards memory-efficient class-incremental learning,” in International Conference on Learning Repre-sentations , 2023. [44] V. Thengane, S. Khan, M. Hayat, and F. Khan, “Clip model is an efficient continual learner,” 
+
+arXiv preprint arXiv:2210.03114 , 2022. [45] D.-W. Zhou, Z.-W. Cai, H.-J. Ye, D.-C. Zhan, and Z. Liu, “Revisiting class-incremental learning with pre-trained models: Generalizability and adaptivity are all you need,” International Journal of Computer Vision , vol. 133, no. 3, pp. 1012–1032, 2025. [46] D. Hendrycks and K. Gimpel, “A baseline for detecting misclassified and out-of-distribution examples in neural networks,” arXiv preprint arXiv:1610.02136 , 2016. [47] O. M. Parkhi, A. Vedaldi, A. Zisserman, and C. Jawahar, “Cats and dogs,” in 2012 IEEE conference on computer vision and pattern recognition , pp. 3498–3505, IEEE, 2012. [48] L. Bossard, M. Guillaumin, and L. Van Gool, “Food-101–mining discriminative components with random forests,” in European conference on computer vision , pp. 446–461, Springer, 2014. 12 A Theoretical Proofs and Clarification 
+
+Feasible set in the text subspace. For task t, let the text feature matrix be Tt = UtΣtV⊤ 
+
+> t
+
+, and let 
+
+Pt = UtU⊤ 
+
+> t
+
+be the orthogonal projector onto the text subspace span( Ut). Define the feasible set of linear classifiers constrained to the text subspace as: 
+
+Wtext  
+
+> t
+
+=
+
+n
+
+W ∈ Rd×|C t| : col( W ) ⊆ span( Ut)
+
+o
+
+.
+
+A.1 Proof of Proposition 1. Proof. Recall Proposition 1: let W ⋆t denote an ideal linear classifier in the full visual feature space, used only for analysis. If the classifier is constrained to lie in the text subspace, then its best approximation is: 
+
+W ⋆t, text = PtW ⋆t ,
+
+and the corresponding approximation error is 
+
+Et 
+
+> text
+
+= ∥(I − Pt)W ⋆t ∥2 
+
+> F
+
+.
+
+We consider the constrained approximation problem 
+
+min  
+
+> W∈W text
+> t
+
+∥W − W ⋆t ∥2 
+
+> F
+
+.
+
+Since Pt is the orthogonal projector onto span( Ut), we decompose W ⋆t into its projection onto the text subspace and its orthogonal residual: 
+
+W ⋆t = PtW ⋆t + ( I − Pt)W ⋆t .
+
+Therefore, 
+
+W − W ⋆t = ( W − PtW ⋆t ) − (I − Pt)W ⋆t .
+
+By orthogonality, the Frobenius norm admits the Pythagorean decomposition: 
+
+∥W − W ⋆t ∥2 
+
+> F
+
+= ∥W − PtW ⋆t ∥2 
+
+> F
+
++ ∥(I − Pt)W ⋆t ∥2 
+
+> F
+
+.
+
+The second term is independent of W , and the first term is minimized if and only if: 
+
+W = PtW ⋆t .
+
+Hence the best approximation in the text subspace is: 
+
+W ⋆t, text = PtW ⋆t ,
+
+and the optimal approximation error is: 
+
+Et 
+
+> text
+
+= min  
+
+> W∈W text
+> t
+
+∥W − W ⋆t ∥2 
+
+> F
+
+= ∥(I − Pt)W ⋆t ∥2 
+
+> F
+
+.
+
+This completes the proof. 
+
+A.2 Proof of Lemma 1. Proof. Recall that for task t, the text feature matrix admits the SVD Tt = UtΣtV⊤ 
+
+> t
+
+, and the orthogonal projector onto the text subspace is Pt = UtU⊤ 
+
+> t
+
+. Let rt = rank( Tt) and ρt = rank( W ⋆t ).Denote the singular values of W ⋆t by: 
+
+σ1(W ⋆t ) ≥ σ2(W ⋆t ) ≥ · · · ≥ σρt (W ⋆t ) > 0.
+
+By Proposition 1, the text-subspace approximation error is: 
+
+Et 
+
+> text
+
+= ∥(I − Pt)W ⋆t ∥2 
+
+> F
+
+.
+
+Since Pt is an orthogonal projector, we have: 
+
+∥(I − Pt)W ⋆t ∥2 
+
+> F
+
+= ∥W ⋆t ∥2 
+
+> F
+
+− ∥ PtW ⋆t ∥2 
+
+> F
+
+.
+
+13 Next, define the positive semidefinite matrix: 
+
+Mt := W ⋆t W ⋆⊤ 
+
+> t
+
+⪰ 0.
+
+Then, 
+
+∥PtW ⋆t ∥2 
+
+> F
+
+= tr  (PtW ⋆t )⊤(PtW ⋆t )
+
+= tr  W ⋆⊤ 
+
+> t
+
+PtW ⋆t
+
+
+
+= tr  PtW ⋆t W ⋆⊤
+
+> t
+
+
+
+= tr( PtMt).
+
+Note that Mt has eigenvalues: 
+
+λj (Mt) = σ2 
+
+> j
+
+(W ⋆t ), j = 1 , . . . , ρ t,
+
+with the remaining eigenvalues being zero. Since Pt is a rank-rt orthogonal projector, by the equivalent trace maximization result for symmetric positive semidefinite matrices, 
+
+tr( PtMt) ≤
+
+> rt
+
+X
+
+> j=1
+
+λj (Mt) = 
+
+> rt
+
+X
+
+> j=1
+
+σ2 
+
+> j
+
+(W ⋆t ). (9) Therefore, 
+
+Et 
+
+> text
+
+= ∥W ⋆t ∥2 
+
+> F
+
+− tr( PtMt)
+
+≥
+
+> ρt
+
+X
+
+> j=1
+
+σ2 
+
+> j
+
+(W ⋆t ) −
+
+> rt
+
+X
+
+> j=1
+
+σ2 
+
+> j
+
+(W ⋆t )=
+
+> ρt
+
+X
+
+> j=rt+1
+
+σ2 
+
+> j
+
+(W ⋆t ).
+
+This proves the desired lower bound. Moreover, equality holds if and only if 
+
+tr( PtMt) = 
+
+> rt
+
+X
+
+> j=1
+
+λj (Mt),
+
+which is equivalent to Pt projecting onto the eigenspace associated with the top rt eigenvalues of 
+
+Mt. Since the eigenvectors of Mt = W ⋆t W ⋆⊤ 
+
+> t
+
+are exactly the left singular vectors of W ⋆t , equality holds if and only if the text subspace span( Pt) covers the leading rt left singular directions of W ⋆t .This completes the proof. 
+
+Feasible set in the direct-sum subspace. Let StR ⊆ span( P⊥ 
+
+> t
+
+) be a compensation subspace for task t, and let PR,t denote the orthogonal projector onto StR. Define the feasible set of classifiers constrained to the direct-sum subspace span( Pt) ⊕ StR as: 
+
+W⊕ 
+
+> t
+
+=
+
+n
+
+W ∈ Rd×|C t| : col( W ) ⊆ span( Pt) ⊕ StR
+
+o
+
+.
+
+A.3 Proof of Proposition 2. Proof. Since StR ⊆ span( P⊥ 
+
+> t
+
+), the two subspaces span( Pt) and StR are orthogonal. Therefore, 
+
+PtPR,t = PR,t Pt = 0 ,
+
+and Pt + PR,t is exactly the orthogonal projector onto the direct-sum subspace span( Pt) ⊕ StR.Consider the constrained approximation problem: 
+
+min  
+
+> W∈W ⊕
+> t
+
+∥W − W ⋆t ∥2 
+
+> F
+
+.
+
+For any feasible W ∈ W ⊕ 
+
+> t
+
+, we have: 
+
+W = ( Pt + PR,t )W. 
+
+14 Decompose the ideal classifier W ⋆t into its projection onto the direct-sum subspace and its orthogonal residual: 
+
+W ⋆t = ( Pt + PR,t )W ⋆t + ( I − Pt − PR,t )W ⋆t .
+
+Hence, 
+
+W − W ⋆t =  W − (Pt + PR,t )W ⋆t
+
+ − (I − Pt − PR,t )W ⋆t .
+
+By the Pythagorean theorem for the Frobenius norm, 
+
+∥W − W ⋆t ∥2 
+
+> F
+
+= ∥W − (Pt + PR,t )W ⋆t ∥2 
+
+> F
+
++ ∥(I − Pt − PR,t )W ⋆t ∥2 
+
+> F
+
+.
+
+The second term is independent of W , and the first term is minimized if and only if: 
+
+W = ( Pt + PR,t )W ⋆t .
+
+Therefore, the best approximation of W ⋆t in the direct-sum subspace is: 
+
+W ⋆t, ⊕ = ( Pt + PR,t )W ⋆t ,
+
+with approximation error: 
+
+Et 
+
+> ⊕
+
+= min  
+
+> W∈W ⊕
+> t
+
+∥W − W ⋆t ∥2 
+
+> F
+
+= ∥(I − Pt − PR,t )W ⋆t ∥2 
+
+> F
+
+.
+
+This completes the proof. 
+
+A.4 Proof of Corollary 1. Proof. By Proposition 1 and Proposition 2, we have 
+
+Et 
+
+> text
+
+= ∥(I − Pt)W ⋆t ∥2 
+
+> F
+
+, Et 
+
+> ⊕
+
+= ∥(I − Pt − PR,t )W ⋆t ∥2 
+
+> F
+
+.
+
+Since StR ⊆ span( P⊥ 
+
+> t
+
+), the projector PR,t acts within the orthogonal complement of span( Pt).Thus, 
+
+(I − Pt)W ⋆t = PR,t (I − Pt)W ⋆t + ( I − Pt − PR,t )W ⋆t ,
+
+where the first term lies in StR and the second term lies in the orthogonal complement of span( Pt) ⊕
+
+StR. These two terms are column-wise orthogonal, and hence, 
+
+∥(I − Pt)W ⋆t ∥2 
+
+> F
+
+= ∥PR,t (I − Pt)W ⋆t ∥2 
+
+> F
+
++ ∥(I − Pt − PR,t )W ⋆t ∥2 
+
+> F
+
+.
+
+Therefore, 
+
+Et 
+
+> text
+
+− E t 
+
+> ⊕
+
+= ∥PR,t (I − Pt)W ⋆t ∥2 
+
+> F
+
+≥ 0,
+
+which immediately implies: 
+
+Et 
+
+> ⊕
+
+≤ E t
+
+> text
+
+.
+
+This completes the proof. The above result can be further characterized in terms of the singular-value tail energy of W ⋆t .
+
+A.5 Singular-value form of the direct-sum approximation error. 
+
+Let: 
+
+rt = rank( Tt), kt = rank( PR,t ) = dim( StR), mt = rt + kt.
+
+Then Pt + PR,t is a rank-mt orthogonal projector. Let ρt = rank( W ⋆t ), and denote the singular values of W ⋆t by: 
+
+σ1(W ⋆t ) ≥ σ2(W ⋆t ) ≥ · · · ≥ σρt (W ⋆t ) > 0.
+
+Then, 
+
+Et 
+
+> ⊕
+
+= ∥(I − Pt − PR,t )W ⋆t ∥2 
+
+> F
+
+≥
+
+> ρt
+
+X
+
+> j=mt+1
+
+σ2 
+
+> j
+
+(W ⋆t ).
+
+15 Proof. Define Mt = W ⋆t W ⋆⊤ 
+
+> t
+
+⪰ 0. Since Pt + PR,t is a rank-mt orthogonal projector, we have: 
+
+Et 
+
+> ⊕
+
+= ∥W ⋆t ∥2 
+
+> F
+
+− ∥ (Pt + PR,t )W ⋆t ∥2
+
+> F
+
+= ∥W ⋆t ∥2 
+
+> F
+
+− tr  (Pt + PR,t )Mt
+
+.
+
+By the equivalent trace maximization result, 
+
+tr  (Pt + PR,t )Mt
+
+ ≤
+
+> mt
+
+X
+
+> j=1
+
+λj (Mt) = 
+
+> mt
+
+X
+
+> j=1
+
+σ2 
+
+> j
+
+(W ⋆t ).
+
+Substituting this into the above identity yields: 
+
+Et 
+
+> ⊕
+
+≥
+
+> ρt
+
+X
+
+> j=1
+
+σ2 
+
+> j
+
+(W ⋆t ) −
+
+> mt
+
+X
+
+> j=1
+
+σ2 
+
+> j
+
+(W ⋆t ) = 
+
+> ρt
+
+X
+
+> j=mt+1
+
+σ2 
+
+> j
+
+(W ⋆t ).
+
+Equality holds if and only if the direct-sum subspace span( Pt) ⊕ StR covers the leading mt left singular directions of W ⋆t .
+
+A.6 Singular-value upper bound on the error reduction. 
+
+Under the same notation, the improvement brought by orthogonal compensation satisfies 
+
+Et 
+
+> text
+
+− E t 
+
+> ⊕
+
+≤
+
+> mt
+
+X
+
+> j=rt+1
+
+σ2 
+
+> j
+
+(W ⋆t ).
+
+Proof. 
+
+Et 
+
+> text
+
+− E t 
+
+> ⊕
+
+≤
+
+> ρt
+
+X
+
+> j=rt+1
+
+σ2 
+
+> j
+
+(W ⋆t ) −
+
+> ρt
+
+X
+
+> j=mt+1
+
+σ2 
+
+> j
+
+(W ⋆t )=
+
+> mt
+
+X
+
+> j=rt+1
+
+σ2 
+
+> j
+
+(W ⋆t ).
+
+This proves the claim. 
+
+A.7 Theory-to-practice clarification. 
+
+The theoretical results are intended as a geometric justification of the proposed design, rather than an exact description of the optimization procedure. In particular, the classifier W ⋆t is introduced only as an ideal linear classifier in the full visual feature space for analysis, and is not explicitly learned in practice. Proposition 1 and Lemma 1 show that, if classification is restricted to the text subspace, the uncovered discriminative energy is quantified by the projection residual and its singular-value tail. Proposition 2 and Corollary 1 further show that introducing an additional subspace in the orthogonal complement can reduce this approximation error. In practice, for task t, the text subspace is constructed from the current task text feature matrix 
+
+Tt. Specifically, we compute the SVD of Tt and use its left singular vectors to form the projector 
+
+Pt = UtU⊤ 
+
+> t
+
+. The compensation head is then parameterized as: 
+
+cW t 
+
+> comp
+
+= P⊥ 
+
+> t
+
+W t
+
+> comp
+
+,
+
+so that its column space is constrained to lie in the orthogonal complement of the text subspace. In this way, the learnable compensation head serves as a practical parameterization of the residual modeling discussed in the theory. We emphasize that the theory does not claim that the learned compensation head exactly recovers the optimal residual subspace or achieves the singular-value bound in practice. Instead, it explains why modeling an additional classifier in the orthogonal complement is well motivated whenever the text subspace does not fully cover the discriminative structure of the visual space. 16 B Algorithms Details 
+
+B.1 Training algorithm of GR4CIL. Training procedure. For each task, GR4CIL is trained in two stages. We first learn the current task-specific visual LoRA together with the shared text LoRA using the base objective in Eq. 3, while freezing previously learned visual LoRAs. After that, we freeze the learned visual and text branches, and train the orthogonal compensation head using Eq. 7. 
+
+Algorithm 1 Training Procedure of GR4CIL 
+
+Require: Task sequence {D 1, . . . , DT }; pretrained CLIP (fv , f t); shared text LoRA ϕtext ; task-specific visual LoRA bank {ϕt
+
+> vis
+
+}Tt=1 
+
+Ensure: Learned ϕtext ; task-specific {ϕt
+
+> vis
+
+, cW t
+
+> comp
+
+, ptc}Tt=1 ; cached text anchors {zc} 
+
+> 1:
+
+Initialize shared text LoRA ϕtext and empty memory for text anchors  
+
+> 2:
+
+for t = 1 to T do  
+
+> 3:
+
+Initialize current visual LoRA ϕt 
+
+> vis
+> 4:
+
+Freeze all previous visual LoRAs {ϕτ
+
+> vis
+
+}t−1  
+
+> τ=1
+> 5:
+
+Stage 1: Incremental knowledge learning  
+
+> 6:
+
+for e = 1 to Epoch base do  
+
+> 7:
+
+for each mini-batch (xi, y i) in Dt do  
+
+> 8:
+
+Compute current-task visual features vti = fv (xi; ϕt
+
+> vis
+
+) 
+
+> 9:
+
+Compute text features {ttc}c∈C 1: t with shared text LoRA ϕtext  
+
+> 10:
+
+Compute Lanc using cached anchors of previous classes  
+
+> 11:
+
+Compute Lsep over current-task classes  
+
+> 12:
+
+Compute Lbase = Lclip + λanc Lanc + λsep Lsep  
+
+> 13:
+
+Update ϕt 
+
+> vis
+
+and ϕtext  
+
+> 14:
+
+end for  
+
+> 15:
+
+end for  
+
+> 16:
+
+Cache text anchors zc for newly learned classes c ∈ C t 
+
+> 17:
+
+Compute visual class prototypes {ptc}c∈C t from current-task features  
+
+> 18:
+
+Stage 2: Orthogonal compensation learning  
+
+> 19:
+
+Freeze ϕt 
+
+> vis
+
+and ϕtext  
+
+> 20:
+
+Build text feature matrix Tt = [ ttc1 , . . . , ttc|C t| ] 
+
+> 21:
+
+Compute Pt = UtU⊤ 
+
+> t
+
+from the SVD of Tt, and set P⊥ 
+
+> t
+
+= I − Pt 
+
+> 22:
+
+Initialize W t 
+
+> comp
+
+with current-task visual prototypes {ptc}c∈C t 
+
+> 23:
+
+for e = 1 to Epoch comp do  
+
+> 24:
+
+for each mini-batch (xi, y i) in Dt do  
+
+> 25:
+
+Compute vti = fv (xi; ϕt
+
+> vis
+
+) 
+
+> 26:
+
+Compute cW t 
+
+> comp
+
+= P ⊥ 
+
+> t
+
+W t 
+
+> comp
+> 27:
+
+Compute compensation logits gt(xi) = vt⊤ 
+
+> i
+
+cW t 
+
+> comp
+> 28:
+
+Compute Lcomp  
+
+> 29:
+
+Update W t 
+
+> comp
+> 30:
+
+end for  
+
+> 31:
+
+end for  
+
+> 32:
+
+Save ϕt
+
+> vis
+
+, cW t
+
+> comp
+
+, and {ptc}c∈C t 
+
+> 33:
+
+end for B.2 Unified inference for CIL. Unified inference. Under the standard CIL setting, GR4CIL performs closed-set prediction over all seen classes via unified score competition across task-specific branches. For an input sample, each learned task-specific visual branch produces a task-conditioned visual feature, which is then combined with the text classifier, orthogonal compensation head, and prototype term to form the final class score. The prediction is obtained by taking the maximum score over all seen classes. 17 Algorithm 2 Unified Inference of GR4CIL 
+
+Require: Test sample x; learned shared text branch; task-specific visual LoRAs {ϕt
+
+> vis
+
+}Tt=1 ; compen-sation heads {cW t
+
+> comp
+
+}Tt=1 ; class prototypes {ptc}; seen class sets {C t}Tt=1 
+
+Ensure: Predicted label by 
+
+> 1:
+
+for t = 1 to T do  
+
+> 2:
+
+Compute task-conditioned visual feature vt = fv (x; ϕt
+
+> vis
+
+) 
+
+> 3:
+
+for each class c ∈ C t do  
+
+> 4:
+
+Compute text score sc(x) = ⟨vt, tc⟩ 
+
+> 5:
+
+end for  
+
+> 6:
+
+Compute compensation logits gt(x) = vt⊤ cW t 
+
+> comp
+> 7:
+
+for each class c ∈ C t do  
+
+> 8:
+
+Compute compensated score bsc(x) = sc(x) + β g tc(x) 
+
+> 9:
+
+Compute final score qc(x) = bsc(x) + γ ⟨vt, ptc⟩ 
+
+> 10:
+
+end for  
+
+> 11:
+
+end for  
+
+> 12:
+
+by = arg max c∈C 1: T qc(x) 
+
+> 13:
+
+return by
+
+B.3 Algorithm interfaces for more open scenarios. 
+
+It should be emphasized that the core formulation of GR4CIL still corresponds to the standard CIL setting. The training and unified inference procedures described in Appendix B already constitute the main body of the proposed method. Beyond this, GR4CIL naturally leaves a confidence-based extension interface: when none of the learned task branches can provide sufficiently reliable responses to an input, the model may further extend inference toward a more general prediction mode, rather than being restricted to closed-set decisions within the learned label space. A prior work, MoE-Adapters [ 5 ], introduced the Distribution Discriminative Auto-Selector (DDAS), whose core idea is likewise to first determine whether a sample can be sufficiently explained by the currently learned tasks based on distribution-aware confidence. When the existing task knowledge is insufficient, the sample is then routed to the frozen CLIP for zero-shot prediction. Similar to that work, we do not view this component as a complete solution to open-world inference, but rather as a practical interface beyond the standard CIL pipeline. The key difference is that DDAS relies on additionally trained task-specific autoencoders and a reference autoencoder for routing, whereas GR4CIL directly reuses the task-aware scores and prototype-based confidence already produced during standard CIL inference, so that this interface remains unified with the main routing mechanism. In addition, we further introduce a knowledge-fusion strategy, which enhances zero-shot generalization to a certain extent. More specifically, GR4CIL further interprets the task-aware scores and prototype-based confidence as a task-relative OOD signal. For a given task branch, samples from other tasks can themselves be regarded as relatively OOD. Based on this view, when all task branches fail to produce sufficiently confident responses, GR4CIL can optionally trigger a generalized prediction branch that performs knowledge-fusion prediction over a given candidate label set. If this extension branch is not used, the original CLIP can still be naturally retained as a fallback predictor. Therefore, from the perspective of positioning, we emphasize that GR4CIL leaves a practical interface beyond standard CIL, rather than directly claiming to have fully solved open-world inference. The OOD detection and zero-shot generalization experiments in the main text are primarily intended to demonstrate the potential feasibility of this interface: the former shows that the model can indeed provide a relatively reliable trigger signal, while the latter indicates that, once the interface is activated, the model still retains a certain level of generalized prediction capability. A more detailed limitation is provided in Appendix G. 18 C Implementation and Evaluation Details 
+
+C.1 Implementation details. 
+
+Unless otherwise specified, we largely follow the training protocol of AdapterVLM [ 17 ] in our implementation details, including the same CLIP ViT-B/16 backbone, LoRA architecture, visual-side data augmentation, text-side prompt design, and optimizer configuration for LoRA training. All input images are resized to 224 × 224 . During training, the data augmentation consists of random horizontal flipping, and random rotation with an angle range of [0 ◦, 10 ◦]. During evaluation, images are resized to 224 × 224 without stochastic augmentation. For incremental knowledge learning, the LoRA rank is set to 24 for both the visual and textual branches. We use AdamW as the optimizer with a learning rate of 0.005 and a cosine annealing schedule. The balancing coefficients λanc and λsep are both set to 1, and the separation threshold τ is set to 0.7. For CIFAR100 and ImageNet-R, each task is trained for 70 epochs, while for ImageNet100 and ImageNet-1K each task is trained for 10 epochs. The batch size is set to 64 for all experiments. For orthogonal compensation learning, after completing the LoRA training we freeze the current visual branch and the shared text branch, and train the compensation head separately. The compensation head is optimized by Adam with a learning rate of 0.0005. For CIFAR100 and ImageNet-R, the compensation head is trained for 3 epochs per task, while for ImageNet100 and ImageNet-1K it is trained for 5 epochs per task. During inference, the coefficients β and γ are both set to 0.2. Task prototypes are constructed from the mean of normalized visual features of the current task, and both prototypes and features are L2-normalized before use. All experiments are conducted on one NVIDIA RTX 4090 GPU. 
+
+C.2 Baseline sources and reproduction details. 
+
+For fair comparison, we mainly refer to the reported results of MG-CLIP [ 4] and AdapterVLM [ 17 ], while reproducing the missing or unmatched settings using their released codebases. In particular, AdapterVLM originally reports results under the mean class recall (MCR) metric, which are not fully consistent with our setting. At the same time, it has not been tested on ImageNet100 and ImageNet-1K. Therefore, we reproduce AdapterVLM using its source code and evaluate it with the same metrics as in the main text. In all comparisons, we keep the CLIP ViT-B/16 backbone unchanged to reduce discrepancies caused by differences in backbone or evaluation protocol. 
+
+C.3 Details of subspace-distance metric. 
+
+To analyze the geometric relationship between the text classifier, the compensation classifier, and the principal discriminative directions of image features, we further compute several directional subspace-distance metrics. Specifically, we first extract orthonormal bases from the image features, the text classifier, and the compensation classifier. For the image features, we first apply L2 normalization to each sample feature, and then perform SVD to obtain a principal subspace that preserves 95% of the cumulative energy, denoted by Bi. For the text classifier matrix and the compensation matrix, we treat their row vectors as discriminative directions and extract orthonormal bases via SVD, denoted by Bt and Bc, respectively. The joint subspace Bt∪c is obtained by concatenating Bt and Bc and then re-orthogonalizing the resulting basis. Based on these bases, we define the directional distance as: 
+
+d(Bsrc , B tgt ) = 1
+
+rsrc 
+
+> rsrc
+
+X
+
+> j=1
+
+∥bj − Ptgt bj ∥2 , Ptgt = Btgt B⊤
+
+> tgt
+
+,
+
+where Bsrc = [ b1, . . . , b rsrc ] is an orthonormal basis of the source subspace and Ptgt is the orthogonal projector onto the target subspace. This metric measures how much the directions in the source subspace cannot be explained by the target subspace. Therefore, a smaller value indicates that the target subspace better covers the principal directions of the source subspace. Note that this metric is directional and is generally not symmetric, i.e., d(B1, B 2)̸ = d(B2, B 1).In this paper, we mainly report d(Bi, B t) (I-T), d(Bi, B c) (I-C), and d(Bi, B t∪c) (I-TC). Here, 
+
+d(Bi, B t) characterizes the mismatch between the image discriminative subspace and the text classi-19 fier subspace, while d(Bi, B t∪c) measures how well the joint text-compensation space covers the image discriminative directions. A smaller d(Bi, B t∪c) than d(Bi, B t) indicates that the proposed compensation mechanism effectively reduces the geometric discrepancy between the image space and the text classifier space. See Table 3 (right) in the main text for the results. 
+
+C.4 Details of computational cost metric. 
+
+The computational cost reported in the main text mainly includes two metrics: the number of trainable parameters and the GPU memory usage. For the parameter metric, we count the total number of trainable parameters throughout the whole incremental process. Specifically, for our method, the shared text LoRA is counted only once, while the task-specific visual LoRAs and the compensation heads are accumulated across tasks. Additional storage such as prototypes and cached text anchors is also included in the parameter count. For the memory metric, we report the maximum peak GPU memory observed over both training and inference throughout the entire incremental process. All methods are measured under the same batch size to reduce discrepancies caused by implementation settings. 
+
+## D Additional Routing Analysis 
+
+This section provides a more direct evaluation of routing behavior under the standard CIL setting. While the main text analyzes routing through score margins and compensation effects, here we explicitly define routing accuracy and examine how it evolves throughout the incremental process. 
+
+D.1 Definition of routing accuracy. 
+
+In our framework, routing is not performed by an additional task predictor, but is instead implicitly realized through unified class-level score competition across all learned task-specific branches. For a test sample xi, the model first produces the final prediction over all learned classes: 
+
+byi = arg max 
+
+> c∈C 1: T
+
+qc(xi),
+
+where qc(xi) denotes the final class score in the unified inference rule of the main text. Since each class c belongs to one and only one incremental task, the predicted class byi naturally determines a predicted task, denoted by t(byi). Similarly, the GT label yi belongs to the task t(yi).Based on this, we define the routing accuracy as whether the task implied by the final prediction matches the task of the GT class: 
+
+RA = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+1[t(byi) = t(yi)] ,
+
+where N is the number of test samples and 1(·) is the indicator function. This definition does not require an additional task-level classifier, since under the standard CIL setting the predicted task is uniquely determined by the predicted class. Compared with only analyzing the score margin between the GT task and competing tasks, routing accuracy more directly measures whether a sample is assigned to the correct task branch. Therefore, it serves as a direct complement to the margin analysis in the main text and allows us to verify whether the proposed compensation mechanism truly improves task-level discrimination under unified inference. 
+
+D.2 Per-stage routing curves. 
+
+We analyze the stage-wise evolution of routing accuracy on CIFAR100, ImageNet-R, and Ima-geNet100 under the 10-step incremental setting. Specifically, we compare three variants: (1) using only the text classifier, (2) augmenting the text classifier with the prototype-based OOD term, and (3) the full model with both the prototype-based OOD term and the compensation module. Fig. 7 show that the original text classifier consistently yields the lowest routing accuracy across all three datasets, suggesting that relying only on the text classifier is insufficient to provide clear score separability among competing task branches. After introducing the prototype-based OOD 20 80                              
+
+> 82
+> 84
+> 86
+> 88
+> 90
+> 92
+> 94
+> 96
+> 98
+> 100
+> 1234567891 0
+> GR4CIL
+> GR4CIL w/o compensation
+> GR4CIL w/o compensation and OOD term
+> 82
+> 84
+> 86
+> 88
+> 90
+> 92
+> 94
+> 96
+> 98
+> 100
+> 1234567891 0
+> GR4CIL
+> GR4CIL w/o compensation
+> GR4CIL w/o compensation and OOD term
+> 78
+> 80
+> 82
+> 84
+> 86
+> 88
+> 90
+> 92
+> 94
+> 96
+> 98
+> 100
+> 1234567891 0
+> GR4CIL
+> GR4CIL w/o compensation
+> GR4CIL w/o compensation and OOD term
+> (a) CIFAR100 (b) ImageNet-R (c) ImageNet100
+
+Figure 7: Per-stage routing accuracy on CIFAR100, ImageNet-R, and ImageNet100 under the 10-step setting. We compare three variants: text classifier only, text classifier with the OOD term, and the full model with both the OOD term and the compensation module. The results show that the OOD term already improves routing, while the compensation module further enhances task-level score separability and leads to more accurate routing across stages. term, the routing accuracy is improved at most stages, indicating that the task-internal confidence induced by prototype similarity indeed helps distinguish in-distribution samples of the current task from task-relative OOD samples coming from other learned tasks. On top of this, the full model with the compensation module further improves routing accuracy, and such improvements remain relatively stable across incremental stages. This suggests that orthogonal compensation not only improves intra-task discrimination, but also strengthens the score boundary between the GT task and competing tasks, thereby promoting clearer score separation across different task branches. Overall, these stage-wise results are consistent with the margin analysis in the main text and further validate the effectiveness of the proposed compensation mechanism for task-level routing under unified inference. 
+
+## E Shared Semantic Reference Analysis 
+
+E.1 Anchor preservation across tasks. 
+
+Table 6: Anchor preservation across tasks measured by the average cosine similarity between the final text features and the originally cached text anchors. Dataset Average Cosine Similarity CIFAR100 0.9987 ImageNet-R 0.9933 ImageNet100 0.9969 To examine whether the shared text branch maintains a stable semantic reference throughout incre-mental learning, we further compute the average cosine similarity between the final text features of historical classes and their originally cached text anchors. Specifically, for each historical class c, let 
+
+zc denote its cached text anchor at the time when it is first learned, and let tTc denote its text feature re-encoded by the shared text branch after the whole incremental process. We measure the semantic preservation of each class by: 
+
+cos( tTc , zc),
+
+and report the average value over all classes. The results are summarized in Table 6. The average cosine similarities are 0.9987, 0.9933, and 0.9969 on CIFAR100, ImageNet-R, and ImageNet100, respectively. Such consistently high similarity indicates that the shared text branch preserves the semantic anchors of historical classes remarkably 21 well throughout the incremental process, thereby providing a relatively stable shared semantic reference across tasks. By storing visual knowledge in task-specific modules while maintaining relatively stable textual knowledge in the shared text branch, GR4CIL structurally reduces inter-task interference and thereby alleviates catastrophic forgetting during incremental learning. 
+
+E.2 Text-subspace and Compensation-space similarity 
+
+Table 7: Average adjacent-task subspace distances under different separation settings. Here, w/o 
+
+denotes the variant without the anchor and separation losses. τ is the separation threshold. Lower values indicate more similar subspaces. 
+
+w/o τ = 0 .5 τ = 0 .6 τ = 0 .7 τ = 0 .8
+
+Compensation-space distance 0.8788 0.8696 0.8624 0.8565 0.8541 Text-space distance 0.8860 0.9241 0.9089 0.8895 0.8782 To further understand whether the shared text branch provides a relatively consistent semantic reference across tasks, we analyze the similarity between adjacent tasks in both the text subspace and the compensation subspace. Specifically, for each task, we extract orthonormal bases from the task-specific text features and compensation heads via SVD. For two adjacent tasks, we then compute their subspace distance using a symmetric directional distance, defined as the average of the two directional distances in both directions. Concretely, for two bases B1 and B2, the directional distance d(B1, B 2) measures the average residual norm when each basis vector in B1 is projected onto the subspace spanned by B2. We calculate both d(B1, B 2) and d(B2, B 1) and take the average. A smaller value therefore indicates that the two subspaces are more similar. In Table 7, we report the average adjacent-task distances of the text subspace and the compensation subspace under different separation settings. We compare the variant without the anchor and separation losses (denoted as w/o ) and the variants using different separation thresholds. The adjacent-task text-space distance gradually decreases as the separation threshold increases, indicating that the shared text branch becomes more consistent across neighboring tasks. This trend is intuitive, since a looser separation constraint makes the learned text subspaces less isolated from each other and therefore more similar across tasks. A similar tendency can also be observed in the compensation space: as the text-space distance becomes smaller, the adjacent-task compensation-space distance also tends to decrease. This suggests that when different tasks are anchored to a more consistent semantic reference, their compensation heads are more likely to be learned in comparable residual spaces, thereby improving cross-task comparability during unified inference. At the same time, the w/o setting reveals that merely obtaining relatively close text subspaces is not sufficient. Although its text-space distance is already relatively small, the corresponding compensation-space distance does not exhibit the same stable trend as the regularized variants. This suggests that the anchor and separation losses do more than simply reduce semantic drift; they also help regularize inter-class relationships across tasks, which makes the learned compensation spaces more structured and comparable. Finally, these results also indicate an inherent trade-off. Stronger cross-task semantic consistency usually leads to more similar text and compensation spaces, but overly weak separation may also harm intra-task discrimination and, in turn, affect competition among task branches. Therefore, the separation design should be understood as balancing two objectives: maintaining a stable shared semantic reference across tasks and preserving sufficient task-internal discriminability. 
+
+## F Parameter Analysis 
+
+We first analyze the effect of the separation threshold τ , as summarized in Table 8. As τ increases from 0.5 to 0.7, Avg-Acc, Last-Acc, and Last-Routing Accuracy all improve consistently; when 
+
+τ is further increased to 0.8, the performance drops again. This trend suggests that τ controls a trade-off between task-internal discriminability and cross-task semantic consistency. A smaller τ
+
+imposes a stronger separation constraint, which improves intra-task discrimination but weakens the 22 semantic consistency of the shared text space across tasks. As a result, the learned compensation spaces become less comparable, which may eventually hurt cross-task competition and routing. In contrast, a larger τ makes the shared text space more consistent across tasks and thus benefits the comparability of the compensation space, but an overly weak separation constraint may lead to insufficient intra-task discrimination. Therefore, intermediate values such as 0.6 or 0.7 provide a better balance between these two factors, yielding better and more stable classification and routing performance. In our experiments, we use τ = 0 .7 as the default setting, since it achieves the best Avg-Acc and Last-Acc while matching the best routing accuracy. Table 8: Effect of the separation threshold τ on classification and routing performance on CIFAR-100. 
+
+τ Avg-Acc Last-Acc Last-Routing Accuracy 0.5 89.06 82.44 82.82 0.6 89.70 83.20 83.68 0.7 89.77 83.24 83.68 
+
+0.8 89.24 82.80 83.18 We further study the effect of the compensation coefficient β and the prototype coefficient γ, as summarized in Table 9. When both coefficients are small, the performance is consistently weaker, indicating that neither the compensation term nor the prototype-based confidence cue can be fully utilized. Increasing either β or γ from 0.1 to 0.2 already leads to clear improvements, showing that both components contribute positively to unified inference. The best overall performance is achieved at (β, γ ) = (0 .2, 0.2) , suggesting that a moderate and balanced weighting between residual compensation and prototype-based task awareness is most effective. When either weight is further increased to 0.5, the performance drops again. This indicates that overly strong compensation may disturb the relatively stable semantic basis provided by the text classifier, while an excessively large prototype term may overemphasize task-specific distribution cues in the final decision. Table 9: Effect of the compensation coefficient β and the prototype coefficient γ on CIFAR100. 
+
+(β, γ ) Avg-Acc Last-Acc Last-Routing Accuracy 
+
+(0 .1, 0.1) 89.55 82.56 83.04 
+
+(0 .1, 0.2) 89.75 82.98 83.44 
+
+(0 .2, 0.1) 89.73 82.96 83.44 
+
+(0 .2, 0.2) 89.77 83.24 83.68 
+
+(0 .2, 0.5) 89.67 83.20 83.60 
+
+(0 .5, 0.2) 89.71 83.10 83.40 
+
+(0 .5, 0.5) 89.59 82.94 83.36 
+
+## G Limitation 
+
+Although GR4CIL achieves strong performance under the standard CIL setting and naturally leaves a practical interface for extension toward more open scenarios, the current framework still has several limitations. First, the extension interface mainly relies on task-level confidence estimation to determine whether the currently learned knowledge is sufficient to explain an input, and its behavior may therefore still be affected by threshold selection. We thus view it as an extensible entry point beyond standard CIL, rather than a complete solution to open-world inference. Second, the current formulation assumes relatively clear task boundaries during the incremental process. In scenarios where task boundaries are ambiguous, the existing task-specific organization and routing mechanism still require further extension. Nevertheless, its potential OOD-awareness remains closely related to the problem of discovering new tasks under task-agnostic settings, which also suggests a possible direction for future development. Finally, although the proposed method already demonstrates favorable efficiency in terms of parameter count and GPU memory usage, the task-specific visual modules and compensation heads still accumulate as the number of tasks grows. Therefore, further reducing the long-term task-specific overhead remains an important direction for future work. 23
