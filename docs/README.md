@@ -6,65 +6,61 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-28
-- 运行时间：2026-04-28 20:28:15 UTC
+- 最新运行日期：2026-04-29
+- 运行时间：2026-04-29 21:12:28 UTC
 - 运行状态：成功
-- 本次总论文数：14
-- 精读区：3
+- 本次总论文数：13
+- 精读区：2
 - 速读区：11
 
 ### 今日简报（AI）
-- 今日共生成 14 篇推荐（精读 3 篇，速读 11 篇）
-- 精读：《Ramen: Robust Test-Time Adaptation of Vision-Language Models with Active Sample Selection》（10.0/10）, 《Discriminator-Guided Adaptive Diffusion for Source-Free Test-Time Adaptation under Image Corruptions》（10.0/10）
-- 速读：《EV-CLIP: Efficient Visual Prompt Adaptation for CLIP in Few-shot Action Recognition under Visual Challenges》（7.0/10）, 《A General Representation-Based Approach to Multi-Source Domain Adaptation》（7.0/10）, 《$M^2$-VLA: Boosting Vision-Language Models for Generalizable Manipulation via Layer Mixture and Meta-Skills》（7.0/10）
-- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
-- 详情：[/202604/28/README](/202604/28/README)
+今日精选 13 篇前沿论文，重点聚焦视觉语言智能体的空间推理优化与移动端物理感知自适应技术。
+推荐关注 SpatiO 通过测试时编排提升 VLM 空间推理能力的方案，以及 PI-TTA 在移动设备上实现鲁棒人体活动识别的物理信息自适应方法。
+建议开发者深入研究测试时自适应（TTA）与跨具身策略，以提升模型在复杂现实场景中的泛化与推理表现。
+- 详情：[/202604/29/README](/202604/29/README)
 
 ### 精读区论文标签
-1. [Ramen: Robust Test-Time Adaptation of Vision-Language Models with Active Sample Selection](/202604/28/2604.21728v2-ramen-robust-test-time-adaptation-of-vision-language-models-with-active-sample-selection)  
-   标签：评分：10.0/10、query:tta
-   evidence：通过主动样本选择实现视觉语言模型的鲁棒测试时间自适应
-2. [Discriminator-Guided Adaptive Diffusion for Source-Free Test-Time Adaptation under Image Corruptions](/202604/28/2604.23636v1-discriminator-guided-adaptive-diffusion-for-source-free-test-time-adaptation-under-image-corruptions)  
-   标签：评分：10.0/10、query:tta
-   evidence：针对图像损坏的无源测试时间自适应框架，利用扩散先验。
-3. [Majorization-Guided Test-Time Adaptation for Vision-Language Models under Modality-Specific Shift](/202604/28/2604.24602v1-majorization-guided-test-time-adaptation-for-vision-language-models-under-modality-specific-shift)  
-   标签：评分：10.0/10、query:tta
-   evidence：模态特定偏移下视觉语言模型的测试时间自适应。
+1. [SpatiO: Adaptive Test-Time Orchestration of Vision-Language Agents for Spatial Reasoning](/202604/29/2604.21190v2-spatio-adaptive-test-time-orchestration-of-vision-language-agents-for-spatial-reasoning)  
+   标签：评分：9.0/10、query:tta
+   evidence：视觉语言智能体的自适应测试时间编排
+2. [PI-TTA: Physics-Informed Source-Free Test-Time Adaptation for Robust Human Activity Recognition on Mobile Devices](/202604/29/2604.25435v1-pi-tta-physics-informed-source-free-test-time-adaptation-for-robust-human-activity-recognition-on-mobile-devices)  
+   标签：评分：9.0/10、query:tta
+   evidence：提出了一种针对流式非独立同分布数据的无源测试时间自适应方法，以处理时间偏移。
 
 ### 速读区论文标签
-1. [EV-CLIP: Efficient Visual Prompt Adaptation for CLIP in Few-shot Action Recognition under Visual Challenges](/202604/28/2604.22595v1-ev-clip-efficient-visual-prompt-adaptation-for-clip-in-few-shot-action-recognition-under-visual-challenges)  
+1. [AdaTracker: Learning Adaptive In-Context Policy for Cross-Embodiment Active Visual Tracking](/202604/29/2604.20305v1-adatracker-learning-adaptive-in-context-policy-for-cross-embodiment-active-visual-tracking)  
+   标签：评分：7.5/10、query:tta
+   evidence：利用基于历史的上下文调制实现跨机器人实体的自适应上下文策略
+2. [Large Language Models Explore by Latent Distilling](/202604/29/2604.24927v1-large-language-models-explore-by-latent-distilling)  
+   标签：评分：7.5/10、query:tta
+   evidence：在测试阶段训练轻量级蒸馏器，通过建模表示转换来优化大语言模型的解码
+3. [Lever: Inference-Time Policy Reuse under Support Constraints](/202604/29/2604.20174v2-lever-inference-time-policy-reuse-under-support-constraints)  
    标签：评分：7.0/10、query:tta
-   evidence：针对CLIP在多样场景和视角下的高效视觉提示自适应
-2. [A General Representation-Based Approach to Multi-Source Domain Adaptation](/202604/28/2604.23790v1-a-general-representation-based-approach-to-multi-source-domain-adaptation)  
+   evidence：需求变化下的推理时间策略重用
+4. [Agent-Centric Visual Reinforcement Learning under Dynamic Perturbations](/202604/29/2604.24661v1-agent-centric-visual-reinforcement-learning-under-dynamic-perturbations)  
    标签：评分：7.0/10、query:tta
-   evidence：基于通用表示的领域自适应与分布偏移处理方法
-3. [$M^2$-VLA: Boosting Vision-Language Models for Generalizable Manipulation via Layer Mixture and Meta-Skills](/202604/28/2604.24182v1-m2-vla-boosting-vision-language-models-for-generalizable-manipulation-via-layer-mixture-and-meta-skills)  
+   evidence：针对强化学习智能体在动态视觉扰动和非平稳现实环境偏移下的适应问题。
+5. [Agent-Centric Visual Reinforcement Learning under Dynamic Perturbations](/202604/29/2604.24661v2-agent-centric-visual-reinforcement-learning-under-dynamic-perturbations)  
    标签：评分：7.0/10、query:tta
-   evidence：使用层混合技术提升机器人操作中VLA模型的泛化能力
-4. [ReaLB: Real-Time Load Balancing for Multimodal MoE Inference](/202604/28/2604.19503v2-realb-real-time-load-balancing-for-multimodal-moe-inference)  
+   evidence：针对视觉强化学习中的动态视觉扰动和非平稳实时环境偏移。
+6. [Temporal Taskification in Streaming Continual Learning: A Source of Evaluation Instability](/202604/29/2604.21930v1-temporal-taskification-in-streaming-continual-learning-a-source-of-evaluation-instability)  
    标签：评分：6.5/10、query:tta
-   evidence：多模态MoE推理的实时负载均衡与精度调整
-5. [Lifecycle-Aware Federated Continual Learning in Mobile Autonomous Systems](/202604/28/2604.20745v1-lifecycle-aware-federated-continual-learning-in-mobile-autonomous-systems)  
+   evidence：探讨了流式数据学习中的评估不稳定性，这是在线自适应的核心挑战。
+7. [Towards Adaptive Continual Model Merging via Manifold-Aware Expert Evolution](/202604/29/2604.22464v1-towards-adaptive-continual-model-merging-via-manifold-aware-expert-evolution)  
    标签：评分：6.5/10、query:tta
-   evidence：在扩展任务周期内协同适应不断演变的地形类型
-6. [GR4CIL: Gap-compensated Routing for CLIP-based Class Incremental Learning](/202604/28/2604.17822v1-gr4cil-gap-compensated-routing-for-clip-based-class-incremental-learning)  
+   evidence：无需密集重训练的顺序任务集成自适应模型合并技术
+8. [EV-CLIP: Efficient Visual Prompt Adaptation for CLIP in Few-shot Action Recognition under Visual Challenges](/202604/29/2604.22595v1-ev-clip-efficient-visual-prompt-adaptation-for-clip-in-few-shot-action-recognition-under-visual-challenges)  
+   标签：评分：6.5/10、query:tta
+   evidence：针对多样化场景和视角的CLIP高效视觉提示自适应
+9. [SAMoRA: Semantic-Aware Mixture of LoRA Experts for Task-Adaptive Learning](/202604/29/2604.19048v1-samora-semantic-aware-mixture-of-lora-experts-for-task-adaptive-learning)  
    标签：评分：6.0/10、query:tta
-   evidence：增量学习中的共享参数自适应和知识路由
-7. [Stability Implies Redundancy: Delta Attention Selective Halting for Efficient Long-Context Prefilling](/202604/28/2604.18103v1-stability-implies-redundancy-delta-attention-selective-halting-for-efficient-long-context-prefilling)  
+   evidence：该论文提出了一种基于MoE和LoRA的任务自适应学习框架，在方法论上与测试时间自适应策略相关。
+10. [Self Knowledge Re-expression: A Fully Local Method for Adapting LLMs to Tasks Using Intrinsic Knowledge](/202604/29/2604.22939v1-self-knowledge-re-expression-a-fully-local-method-for-adapting-llms-to-tasks-using-intrinsic-knowledge)  
    标签：评分：6.0/10、query:tta
-   evidence：监控层级更新动态以选择性停止稳定标记
-8. [Denoising, Fast and Slow: Difficulty-Aware Adaptive Sampling for Image Generation](/202604/28/2604.19141v1-denoising-fast-and-slow-difficulty-aware-adaptive-sampling-for-image-generation)  
+   evidence：使用无标注数据对大语言模型进行任务无关的自适应
+11. [See Further, Think Deeper: Advancing VLM's Reasoning Ability with Low-level Visual Cues and Reflection](/202604/29/2604.24339v1-see-further-think-deeper-advancing-vlms-reasoning-ability-with-low-level-visual-cues-and-reflection)  
    标签：评分：6.0/10、query:tta
-   evidence：推理时图像生成的难度感知自适应采样
-9. [ShadowPEFT: Shadow Network for Parameter-Efficient Fine-Tuning](/202604/28/2604.19254v1-shadowpeft-shadow-network-for-parameter-efficient-fine-tuning)  
-   标签：评分：6.0/10、query:tta
-   evidence：用于模型自适应的中心化参数高效微调框架
-10. [EmbodiedMidtrain: Bridging the Gap between Vision-Language Models and Vision-Language-Action Models via Mid-training](/202604/28/2604.20012v1-embodiedmidtrain-bridging-the-gap-between-vision-language-models-and-vision-language-action-models-via-mid-training)  
-   标签：评分：6.0/10、query:tta
-   evidence：将VLM适配到具身领域以构建VLA
-11. [SSL-R1: Self-Supervised Visual Reinforcement Post-Training for Multimodal Large Language Models](/202604/28/2604.20705v1-ssl-r1-self-supervised-visual-reinforcement-post-training-for-multimodal-large-language-models)  
-   标签：评分：6.0/10、query:tta
-   evidence：多模态大语言模型的自监督强化学习后训练
+   evidence：通过推理过程中的视觉反馈和反思机制增强多模态大模型的推理能力
 
 
 <div class="dpr-home-promo-card">
