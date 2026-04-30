@@ -6,61 +6,56 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-29
-- 运行时间：2026-04-29 21:12:28 UTC
+- 最新运行日期：2026-04-30
+- 运行时间：2026-04-30 20:48:21 UTC
 - 运行状态：成功
-- 本次总论文数：13
-- 精读区：2
-- 速读区：11
+- 本次总论文数：11
+- 精读区：6
+- 速读区：5
 
 ### 今日简报（AI）
-今日精选 13 篇前沿论文，重点聚焦视觉语言智能体的空间推理优化与移动端物理感知自适应技术。
-推荐关注 SpatiO 通过测试时编排提升 VLM 空间推理能力的方案，以及 PI-TTA 在移动设备上实现鲁棒人体活动识别的物理信息自适应方法。
-建议开发者深入研究测试时自适应（TTA）与跨具身策略，以提升模型在复杂现实场景中的泛化与推理表现。
-- 详情：[/202604/29/README](/202604/29/README)
+- 今日共生成 11 篇推荐（精读 6 篇，速读 5 篇）
+- 精读：《Lyapunov-Guided Self-Alignment: Test-Time Adaptation for Offline Safe Reinforcement Learning》（9.0/10）, 《When to Vote, When to Rewrite: Disagreement-Guided Strategy Routing for Test-Time Scaling》（9.0/10）
+- 速读：《Hierarchical adaptive control for real-time dynamic inference at the edge》（8.0/10）, 《Instruction-Evidence Contrastive Dual-Stream Decoding for Grounded Vision-Language Reasoning》（6.0/10）, 《SIEVES: Selective Prediction Generalizes through Visual Evidence Scoring》（6.0/10）
+- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
+- 详情：[/202604/30/README](/202604/30/README)
 
 ### 精读区论文标签
-1. [SpatiO: Adaptive Test-Time Orchestration of Vision-Language Agents for Spatial Reasoning](/202604/29/2604.21190v2-spatio-adaptive-test-time-orchestration-of-vision-language-agents-for-spatial-reasoning)  
+1. [Lyapunov-Guided Self-Alignment: Test-Time Adaptation for Offline Safe Reinforcement Learning](/202604/30/2604.26516v1-lyapunov-guided-self-alignment-test-time-adaptation-for-offline-safe-reinforcement-learning)  
    标签：评分：9.0/10、query:tta
-   evidence：视觉语言智能体的自适应测试时间编排
-2. [PI-TTA: Physics-Informed Source-Free Test-Time Adaptation for Robust Human Activity Recognition on Mobile Devices](/202604/29/2604.25435v1-pi-tta-physics-informed-source-free-test-time-adaptation-for-robust-human-activity-recognition-on-mobile-devices)  
+   evidence：利用自我对齐实现离线安全强化学习的测试时间自适应
+2. [When to Vote, When to Rewrite: Disagreement-Guided Strategy Routing for Test-Time Scaling](/202604/30/2604.26644v1-when-to-vote-when-to-rewrite-disagreement-guided-strategy-routing-for-test-time-scaling)  
    标签：评分：9.0/10、query:tta
-   evidence：提出了一种针对流式非独立同分布数据的无源测试时间自适应方法，以处理时间偏移。
+   evidence：测试时间缩放与策略路由
+3. [Pref-CTRL: Preference Driven LLM Alignment using Representation Editing](/202604/30/2604.23543v1-pref-ctrl-preference-driven-llm-alignment-using-representation-editing)  
+   标签：评分：8.0/10、query:tta
+   evidence：通过表示编辑进行测试时间对齐
+4. [DynProto: Dynamic Prototype Evolution for Out-of-Distribution Detection](/202604/30/2604.23729v1-dynproto-dynamic-prototype-evolution-for-out-of-distribution-detection)  
+   标签：评分：8.0/10、query:tta
+   evidence：在测试期间动态学习分布外（OOD）原型
+5. [Compute Aligned Training: Optimizing for Test Time Inference](/202604/30/2604.24957v1-compute-aligned-training-optimizing-for-test-time-inference)  
+   标签：评分：8.0/10、query:tta
+   evidence：优化训练目标以对齐测试时推理策略
+6. [SWAN: World-Aware Adaptive Multimodal Networks for Runtime Variations](/202604/30/2604.26181v1-swan-world-aware-adaptive-multimodal-networks-for-runtime-variations)  
+   标签：评分：8.0/10、query:tta
+   evidence：针对运行时变化的感知世界的自适应多模态网络
 
 ### 速读区论文标签
-1. [AdaTracker: Learning Adaptive In-Context Policy for Cross-Embodiment Active Visual Tracking](/202604/29/2604.20305v1-adatracker-learning-adaptive-in-context-policy-for-cross-embodiment-active-visual-tracking)  
-   标签：评分：7.5/10、query:tta
-   evidence：利用基于历史的上下文调制实现跨机器人实体的自适应上下文策略
-2. [Large Language Models Explore by Latent Distilling](/202604/29/2604.24927v1-large-language-models-explore-by-latent-distilling)  
-   标签：评分：7.5/10、query:tta
-   evidence：在测试阶段训练轻量级蒸馏器，通过建模表示转换来优化大语言模型的解码
-3. [Lever: Inference-Time Policy Reuse under Support Constraints](/202604/29/2604.20174v2-lever-inference-time-policy-reuse-under-support-constraints)  
-   标签：评分：7.0/10、query:tta
-   evidence：需求变化下的推理时间策略重用
-4. [Agent-Centric Visual Reinforcement Learning under Dynamic Perturbations](/202604/29/2604.24661v1-agent-centric-visual-reinforcement-learning-under-dynamic-perturbations)  
-   标签：评分：7.0/10、query:tta
-   evidence：针对强化学习智能体在动态视觉扰动和非平稳现实环境偏移下的适应问题。
-5. [Agent-Centric Visual Reinforcement Learning under Dynamic Perturbations](/202604/29/2604.24661v2-agent-centric-visual-reinforcement-learning-under-dynamic-perturbations)  
-   标签：评分：7.0/10、query:tta
-   evidence：针对视觉强化学习中的动态视觉扰动和非平稳实时环境偏移。
-6. [Temporal Taskification in Streaming Continual Learning: A Source of Evaluation Instability](/202604/29/2604.21930v1-temporal-taskification-in-streaming-continual-learning-a-source-of-evaluation-instability)  
-   标签：评分：6.5/10、query:tta
-   evidence：探讨了流式数据学习中的评估不稳定性，这是在线自适应的核心挑战。
-7. [Towards Adaptive Continual Model Merging via Manifold-Aware Expert Evolution](/202604/29/2604.22464v1-towards-adaptive-continual-model-merging-via-manifold-aware-expert-evolution)  
-   标签：评分：6.5/10、query:tta
-   evidence：无需密集重训练的顺序任务集成自适应模型合并技术
-8. [EV-CLIP: Efficient Visual Prompt Adaptation for CLIP in Few-shot Action Recognition under Visual Challenges](/202604/29/2604.22595v1-ev-clip-efficient-visual-prompt-adaptation-for-clip-in-few-shot-action-recognition-under-visual-challenges)  
-   标签：评分：6.5/10、query:tta
-   evidence：针对多样化场景和视角的CLIP高效视觉提示自适应
-9. [SAMoRA: Semantic-Aware Mixture of LoRA Experts for Task-Adaptive Learning](/202604/29/2604.19048v1-samora-semantic-aware-mixture-of-lora-experts-for-task-adaptive-learning)  
+1. [Hierarchical adaptive control for real-time dynamic inference at the edge](/202604/30/2604.26470v1-hierarchical-adaptive-control-for-real-time-dynamic-inference-at-the-edge)  
+   标签：评分：8.0/10、query:tta
+   evidence：测试时间分布偏移下的实时动态推理自适应控制
+2. [Instruction-Evidence Contrastive Dual-Stream Decoding for Grounded Vision-Language Reasoning](/202604/30/2604.25809v1-instruction-evidence-contrastive-dual-stream-decoding-for-grounded-vision-language-reasoning)  
    标签：评分：6.0/10、query:tta
-   evidence：该论文提出了一种基于MoE和LoRA的任务自适应学习框架，在方法论上与测试时间自适应策略相关。
-10. [Self Knowledge Re-expression: A Fully Local Method for Adapting LLMs to Tasks Using Intrinsic Knowledge](/202604/29/2604.22939v1-self-knowledge-re-expression-a-fully-local-method-for-adapting-llms-to-tasks-using-intrinsic-knowledge)  
+   evidence：视觉语言推理的解码框架
+3. [SIEVES: Selective Prediction Generalizes through Visual Evidence Scoring](/202604/30/2604.25855v1-sieves-selective-prediction-generalizes-through-visual-evidence-scoring)  
    标签：评分：6.0/10、query:tta
-   evidence：使用无标注数据对大语言模型进行任务无关的自适应
-11. [See Further, Think Deeper: Advancing VLM's Reasoning Ability with Low-level Visual Cues and Reflection](/202604/29/2604.24339v1-see-further-think-deeper-advancing-vlms-reasoning-ability-with-low-level-visual-cues-and-reflection)  
+   evidence：多模态大模型在分布外视觉问答场景中的选择性预测
+4. [Atomic-Probe Governance for Skill Updates in Compositional Robot Policies](/202604/30/2604.26689v1-atomic-probe-governance-for-skill-updates-in-compositional-robot-policies)  
    标签：评分：6.0/10、query:tta
-   evidence：通过推理过程中的视觉反馈和反思机制增强多模态大模型的推理能力
+   evidence：机器人技能库的领域自适应与测试时分析
+5. [STARRY: Spatial-Temporal Action-Centric World Modeling for Robotic Manipulation](/202604/30/2604.26848v1-starry-spatial-temporal-action-centric-world-modeling-for-robotic-manipulation)  
+   标签：评分：6.0/10、query:tta
+   evidence：VLA策略与世界模型增强的动作生成
 
 
 <div class="dpr-home-promo-card">
