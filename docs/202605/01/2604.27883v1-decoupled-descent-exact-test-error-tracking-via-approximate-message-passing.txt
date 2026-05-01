@@ -1,0 +1,5819 @@
+Title: Decoupled Descent: Exact Test Error Tracking Via Approximate Message Passing
+
+URL Source: https://arxiv.org/pdf/2604.27883v1
+
+Published Time: Fri, 01 May 2026 01:15:13 GMT
+
+Number of Pages: 43
+
+Markdown Content:
+DECOUPLED DESCENT: EXACT TEST ERROR TRACKING VIA APPROXIMATE MESSAGE PASSING 
+
+MAX LOVIG 
+
+Statistics and Data Science, Yale University; max.lovig@yale.edu 
+
+Abstract. In modern parametric model training, full-batch gradient descent (and its variants) suffers due to progressively stronger biasing towards the exact realization of training data; this drives the systematic “generalization gap”, where the train error becomes an unreliable proxy for test error. Existing approaches either argue this gap is benign through complex analysis or sacrifice data to a validation set. In contrast, we introduce decoupled descent (DD), a novel theory-based training algorithm that satisfies a train-test identity—enforcing the train error to asymptotically track the test error for stylized Gaussian mixture models. Within this specific regime, leveraging approximate message passing theory, DD iteratively cancels the biases due to data reuse, rigorously demonstrating the feasibility of zero-cost validation and 100% data utilization. Moreover, DD is governed by a low-dimensional state evolution recursion, rendering the dynamics of the algorithm transparent and tractable. We validate DD on XOR classification, yielding superior performance compared to GD; additionally, we implement noisy MNIST and non-linear probing of CIFAR-10, demonstrating that even when our stylized assumptions are relaxed, DD narrows the generalization gap compared to GD. 
+
+1
+
+> arXiv:2604.27883v1 [math.ST] 30 Apr 2026 2
+
+CONTENTS 
+
+1. Introduction 32. The Train-Test Identity And Its Algorithmic Consequences 42.1. Correcting Full-batch GD 42.2. The Train-Test Identity 52.3. Natural Algorithmic Consequences 53. Decoupled Descent 53.1. Main Result: The State Evolution Of Decoupled Descent 64. Algorithm Design 84.1. Pure Decoupled Descent 85. Applications 85.1. Improved Training On The XOR Model 95.2. Varying Layer Widths For Classifying Zeros And Eights For MNIST Data 95.3. Training A MLP Head On CIFAR-10 ResNet Embeddings For Classifying Cats And Dogs 10 6. Discussion And Conclusion 11 Acknowledgements 13 References 13 Appendix A. Deferred Theory 15 A.1. Notation 15 A.2. A Method Of Descent Under The Train-Test Identity 15 A.3. Deferred Examples 15 A.4. Main Assumption 16 A.5. The Asymptotic Test Error 16 A.6. Full Definition Of State Evolution 17 A.7. Approximate Message Passing And Proving Lemma 3.6 17 A.8. The Proof Of Theorem 3.8 30 A.9. The State Evolution Of Pure DD 30 A.10. Taylor Expansion Of (Pure) DD 31 A.11. The Benefits of Damping For Test Error Critical Points 36 Appendix B. Deferred Applications 38 B.1. Faithful Test Error Tracking In Signal-less Learning 38 B.2. The XOR Training Iterations 38 B.3. A Run-time Analysis For The MNIST Problem 41 B.4. Implementation of MNIST Problem With Nine Hidden Layers 41 B.5. Whitening Technique For CIFAR-10 Embedding Vectors 42 B.6. Data Collection and Attribution 42 3
+
+1. Introduction 
+
+Consider training data (X, y ) = ( xi, y i)i∈[n] ∈ Rn×d where xi ∈ Rd and yi ∈ R are i.i.d. (xi, y i) ∼ Px,y .We model this data using a parametric function Mβ : Rd → R with parameters β ∈ Rp under the loss function L(Mβ (x), y ) : R × R → R. We learn β by descending the objective 
+
+L(β) = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+L(Mβ (xi), y i), (1.1) using some variant of gradient descent (GD). The desired goal, however, is not to directly minimize (1.1) but to minimize the test error , i.e. with (ˇ x, ˇy) ∼ Px,y , minimize 
+
+ˇL(β) = Eˇx, ˇy [L(Mβ (ˇ x), ˇy)] . (1.2) In the classical regime of n → ∞ with d, p fixed, L(β) is consistent for ˇL(β). Unfortunately, as seen below, in the modern regime of n, d → ∞ with n ≍ d ≍ p, the convergence L(β) → ˇL(β) fails. 
+
+Example 1.1. Consider high-dimensional linear regression, for n i.i.d. samples xi ∼ N (0 , Id d/d )
+
+with labels yi = 0 . We fit Mβ (x) = x⊤β for β ∈ Rd under MSE loss L( ˆy, y ) = ( ˆy − y)2 = ( x⊤β)2.Initializing β1 independent of (X, y ) and setting M = X⊤X, the GD update β2 = ( Id − ηX ⊤X)β1
+
+has train (1.1) and test (1.2) errors, 
+
+L(β2) = β⊤ 
+
+> 1
+
+(Id − ηM )M (Id − ηM )β1/n, ˇL(β2) = β⊤ 
+
+> 1
+
+(Id − ηM )(Id − ηM )β1/d. 
+
+If n → ∞ with d bounded then M/n → Id d/d almost surely so L(β2) → ˇL(β2); however, when 
+
+n, d → ∞ with n ≍ d, M no longer concentrates to the identity and thus L(β2) − ˇL(β2)̸ → 0.
+
+Consequently, in modern scaling regimes, a decrease in the training objective for GD may not represent a decrease in test error. Previous work on GD must either justify that this mismatch is benign or sacrifice a portion of the training data to validate test error performance. In this work, we construct a class of algorithms termed decoupled descent (DD). For a set of stylized high-dimensional problems DD satisfies a train-test identity—any mismatch between 
+
+(1.1) and (1.2) is forbidden . Consequently, this method allows for validation without sacrificing any training data. 
+
+Theorem 1.2 (Informal version of Theorem 3.8) . For n i.i.d. draws (xi)i∈[n] from a d-dimensional Gaussian mixture with finitely many modes and responses (yi)i∈[n], any DD iterate βt satisfies 
+
+Training Error (βt) − Test Error (βt) → 0, almost surely as n, d → ∞ with n/d → α.
+
+As a benefit of Theorem 1.2, DD enables zero-cost validation , meaning the training iterate with the lowest train error also has the lowest test error asymptotically. By eliminating the need for the validation set, users achieve 100% data utilization. Moreover, techniques such as hyperparameter tuning and early stopping on the train error immediately translate performance improvements to the population-level test error. DD originates from a carefully designed approximate message passing (AMP) algorithm [ 7, 10 , 13 ]. Thus, DD admits a tractable low-dimensional law for the train and test error. This permits a simple physical interpretation for DD’s dynamics and gives rigorous asymptotic guarantees on the behavior of the test error, enabling a principled way to implement descent algorithms. While modern practice uses stochastic gradients, eliminating the full-batch generalization gap is a fundamental first step. To conclude this section, we outline our contributions below. – We introduce a family of training algorithms, termed decoupled descent , for a set of stylized learning problems with Gaussian mixture data, parametric models and general loss functions, covering a wide range of supervised learning tasks. 4
+
+– In contrast to GD, where the training error is a biased proxy that worsens over time, we show that parameters trained by any DD algorithm enforce the train error to asymptotically equal the test error at each iterate. – We derive a sequence of low-dimensional recursions that track the algorithm’s dynamical trajectory. This provides insight into how DD algorithms explicitly control the test error. – We illustrate the effectiveness of DD using various applications: 
+
+– XOR Classification: Validates DD under stylized model assumptions and demonstrates better test error performance compared to GD. 
+
+– Noisy MNIST (0 vs. 8): Demonstrates that DD is robust to different noise distribu-tions and that the train-test identity is consistent across varying ratios of parameter count to data dimension. 
+
+– CIFAR-10 Probing: Applies DD to (possibly whitened) ResNet-18 embeddings. Although the train-test identity is not exact, DD narrows the generalization gap compared to GD despite the lack of Gaussian structure. We provide an overview of the notation for this paper in Section A.1. 2. The Train-Test Identity And Its Algorithmic Consequences 
+
+2.1. Correcting Full-batch GD. Let the i-th row (or element) of X ∈ Rn×d and y ∈ Rn have 
+
+(xi, y i) ∼ Px,y where Px is a Gaussian mixture with modes μ1, . . . , μ J ; conditioned on mode j, we have yi ∼ Pj independent of the Gaussian realization (see (3.1) for more details). Consider parameter 
+
+β = ( θ, a ) where θ ∈ Rd×L and a ∈ RL′
+
+(with L, L ′ bounded) alongside a parametric function 
+
+Mθ,a (x) = Ma(x⊤θ) with Ma : RL → R. We use the following shorthand. 
+
+Definition 2.1. Given a parametric model Mθ,a (x) = Ma(x⊤θ) = Ma(h) and loss function L, let 
+
+Ψ( h, y, a ) = L(Ma(h), y, a ) and further define its derivatives, ∇hΨ( h, y, a ) : RL × R × RL′
+
+→ RL,
+
+∇aΨ( h, y, a ) : RL × R × RL′
+
+→ RL′
+
+, and Hessian ∇2
+
+> h
+
+Ψ( h, y, a ) : RL × R × RL′
+
+→ RL×L. Moreover, when h ∈ Rn×L and y ∈ Rn, each of the above functions is its corresponding row-wise application, for example Ψ( h, y, a )i = Ψ( hi, y i, a ).We then run full-batch GD, depending on learning rate parameters η, γ > 0, by the iteration 
+
+ht = Xθ t, ˆht = ∇hΨ
+
+
+
+ht, y, a t
+
+
+
+, θt+1 = θt − ηX ⊤ˆht, at+1 = at − γn
+
+> n
+
+X
+
+> i=1
+
+∇aΨ( ht, y i, a t).
+
+As explained in the introduction, this algorithm produces iterates θt, a t where the training error does not track the test error. We correct this behavior using the following pure decoupled descent 
+
+iteration, 
+
+ht = Xθ t+η
+
+> t−1
+
+X
+
+> s=1
+
+ˆhs, ˆht = ∇hΨ
+
+
+
+ht, y, a t
+
+
+
+,θt+1 = θt−η
+
+
+
+X⊤ˆht−α
+
+ 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∇2
+
+> h
+
+Ψ
+
+
+
+ht,i , y i, a t
+
+ 
+
+θt
+
+
+
+, at+1 = at− γn
+
+> n
+
+X
+
+> i=1
+
+∇aΨ
+
+
+
+ht,i , y i, a t
+
+
+
+.
+
+(2.1) DD adds the correction terms η Pt−1 
+
+> s=1
+
+ˆhs, ηα 
+
+ 1
+
+> n
+
+Pni=1 ∇2
+
+> h
+
+Ψ
+
+
+
+ht,i , y i, a t
+
+ 
+
+applied to the pre-activation 
+
+Xθ t and gradient of θt, respectively. These terms cancel correlations due to reuse of data matrix X,avoiding the train-test disconnect that GD suffered from in the introduction. 5
+
+2.2. The Train-Test Identity. Next, we codify the notion of train and test error equality from Theorem 1.2. Consider the algorithm A(X, y ) 7 → (h1, . . . , h T , θ 1, . . . , θ T , a 1, . . . , a T ) where, for each 
+
+t ∈ [T ], (ht, θ t, a t) ∈ Rn×L × Rd×L × RL′
+
+. When A represents training for a parametric model, ht
+
+represents the pre-activations of our n samples input into Mat , depending on the parameters at.Then, θt represents the parameter we apply to new test examples at time t of training. The algorithm 
+
+A satisfies the train-test identity if the following holds: Let (X, y ) have i.i.d. rows (xi, y i) ∼ Px,y specified in Section 2.1, ( ˇx, ˇy) ∼ Px,y and L be a loss function. For all t ∈ [T ], the following limit holds almost surely with respect to the data (X, y ),
+
+lim 
+
+> n,d →∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+L(Mat (ht,i ), y i) − Eˇx, ˇy[L(Mat (ˇ x⊤θt), ˇy)] = 0 .
+
+Notably, the train-test identity does not require the loss to decrease. Assuming the train-test identity holds, Appendix A.2 provides a method to monotonically decrease the test error. 2.3. Natural Algorithmic Consequences. Algorithms satisfying the train-test identity (for example pure DD) can implement a “zero-cost validation” phenomenon. Standard practice saves an ϵ proportion of the data to estimate the test error with the average of the trained model’s loss on the unseen validation set. This introduces a frustrating tradeoff where one wants ϵ to be small to maximize the data involved in training but not too small where the estimator for the test error becomes unreliable. Thus, a zero-cost validation method, i.e. when all data points are used directly in training, is desirable. This suggests the train-test identity as an algorithmic principle for training parameters; some benefits of this principle are given below. – Early Stopping (Online): Denoting Et = 1
+
+> n
+
+Pni=1 L(Mat (ht,i ), y i), let Dt = Et+1 − ET
+
+and ˜Dt = log (Et+1 ) − log (Et). Stopping when Dt ≥ ϵ or ˜Dt ≤ log (1 − ϵ) provides a certificate that the subsequent update will not improve the test error by the specified threshold. In particular, ϵ = 0 guarantees the test error is non-increasing during training. – Early Stopping (Offline): Save a subsequence of iterates T ⊆ [T ] and select the specific parameters (θt∗ , a t∗ ) that minimize the train loss Et across the saved time steps. – Initializations/Hyperparameter Tuning: Conduct many parallel runs with varying initializations or hyperparameters (e.g. η, γ ) and select the configuration that minimizes the train error, and by the train-test identity, minimizes the test error. – Architecture Search: Optimize model complexity (dimension L or architecture Ma) by selecting the run with the lowest train error; this equivalently identifies the optimal test error architecture. We expect an online method for architecture selection is also possible. 3. Decoupled Descent 
+
+Data Model and Parametric Function. For bounded J ∈ N, signal vectors μ1, . . . , μ J , response laws P1, . . . , PJ , and class probabilities p1, . . . , p J , consider the Gaussian mixture classification model, 
+
+(xi, y i) ∼
+
+
+
+N
+
+ μj
+
+d , Id d
+
+d
+
+
+
+⊗ Pj
+
+
+
+with probability pj . (3.1) We then define the matrix-vector pair X ∈ Rn×d, y ∈ Rn where the i-th row of X and y are i.i.d. draws xi and yi. We consider the limit n, d → ∞ with n/d → α. The data matrix X is commonly seen in mean field analysis of Gaussian mixture models [ 20 ]. Specific statistical problems using data (3.1) are provided in Example A.1. 
+
+Remark 3.1 . This work requires that J is bounded, we expect this can be relaxed to a J → ∞ limit after the limit n, d → ∞ . This naturally follows by designing finer and finer discrete distribution approximations to a low-dimensional data-generating process. Such a low-dimensional process is 6
+
+seen in Example A.1 (3) where we could instead consider signal vectors μ ∼ cv with v ∈ Rd and c
+
+is endowed some prior distribution supported on a compact interval. Although the finite mixture assumption on the signal is stylized, it establishes a rigorous framework for isolating and correcting data-reuse bias in high-dimensional dynamics. For parameters θ ∈ Rd×L and a ∈ RL′
+
+, with L, L ′ bounded, define Mθ,a (x) : Rd → R with 
+
+Mθ,a (x) = Ma(x⊤θ), where Ma : RL → R uses parameter a. To evaluate the performance of this model, we consider a loss function L( ˆy, y ) : R × R → R. Specific parametric model and loss pairs following this format are given in Example A.2. 
+
+Training Protocol. Now, we introduce the general family of DD algorithms. 
+
+Definition 3.2. Let functions g : RL × R × RL′
+
+→ RL, f : RL × R × RL′
+
+→ RL′
+
+and hyperparameters 
+
+η0, η 1, γ 0, γ 1 parameterize decoupled descent . When h ∈ Rn×L and y ∈ Rn, we denote g(h, y, a )i =
+
+g(hi, y i, a ) for each i ∈ [n] as the row wise application of g; consider the iteration, 
+
+ht = Xθ t + η1
+
+> t−1
+
+X
+
+> s=1
+
+η(t−1) −s 
+
+> 0
+
+ˆhs, ˆht = g(ht, y, a t)˜θt = X⊤ˆht − α 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∇hg(ht,i , y i, a t)
+
+!
+
+θt
+
+θt+1 = η0θt − η1 ˜θt, at+1 = γ0at − γ1
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+f (ht,i , y i, a t).
+
+(3.2) To provide a streamlined analysis of DD algorithms, we make strong assumptions on the above setting. We describe them informally below, see Appendix A.4 for the formal statement. 
+
+Assumption 3.3 (Informal Version Of Assumption A.3) . Assume that: (1) The rows of (X, y ) are i.i.d. from distribution (3.1) where n, d → ∞ with n/d → α ∈ (0 , ∞).Moreover, we assume that d−1μ⊤ 
+
+> j
+
+μk → χj,k almost surely as n, d → ∞ .(2) Initializations θ1, a 1 are data-independent with bounded limiting norms and signal alignment. (3) Uniformly over y, the functions f, g (and ∇hf, ∇hg) are Lipschitz and bounded in h and a.(4) Ψ is (C4, C 2) ∩ Lip in (h, a ) with bounded expected derivatives under distribution (3.1). 
+
+Remark 3.4 (Universality and more general activation functions) . As DD is a designed AMP algorithm, we conjecture our results are robust to relaxations of Assumption 3.3. Indeed, AMP is known to exhibit universality and we empirically demonstrate this robustness in Section 5, for example: (1) Previous works allow one to replace the Gaussian noise in (3.1) with mean zero, variance 
+
+1/d , independent (but not identical) sub-Gaussian noise [ 26 , 5, 3]. We expect our results to hold under this change in noise. (2) Previous works relax the bounded and Lipschitz requirement for the activation/loss functions 
+
+f, g and Ψ [ 19 , 23 , 6], although truncating a desired function and considering a bounded Lipschitz extension can give a suitable analysis. 3.1. Main Result: The State Evolution Of Decoupled Descent. We begin by providing an asymptotically representation of the test error. 7
+
+Definition 3.5. Given mj,θ ∈ RL for j ∈ [J], Ωθ ∈ RL×L and ¯a ∈ RL′
+
+, define 
+
+test (m1,θ , . . . , m J,θ , Ωθ, ¯a) = 
+
+> J
+
+X
+
+> j=1
+
+pj E ˇZθ ∼N (0 ,Ωθ )ˇYj ∼Pj
+
+[L(M¯a(mj,θ + ˇZθ), ˇYj )] .
+
+It is easy to see that for trained parameters θ, a with almost sure limits d−1μ⊤ 
+
+> j
+
+θ → mj,θ , d−1θ⊤θ → Ωθ,
+
+a → ¯a, we have that lim d→∞ Eˇx, ˇy[L(Mθ,a ( ˇx), ˇy)] = test (m1,θ , . . . , m J,θ , Ωθ, ¯a) almost surely. This is proven in Appendix A.5. We now present the main technical lemma of this work, the state evolution of decoupled descent. For simplicity, we defer the full low-dimensional system of recursive equations describing the state evolution parameters to Appendix A.6. 
+
+Lemma 3.6. If Assumption 3.3 holds and ϕ : RL × R × RL′
+
+→ R, f, g are suitably regular (see Assumption A.7), then almost surely for (ht, a t, θ t)t∈[T ] from (3.2) ,
+
+lim 
+
+> n→∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ(ht,i , y i, a t) = 
+
+> J
+
+X
+
+> j=1
+
+pj E[ϕ(mj,t + Gt, Y j , ¯at)] , Gt ∼ N (0 , Ωt[t, t ]) , Yj ∼ Pj ,
+
+where Ωt, Σt, Ξt, m j,t , ¯at are given by the following almost sure limits as n, d → ∞ with n/d → α,
+
+1
+
+d μ⊤ 
+
+> j
+
+θt → mj,t , 1
+
+d θ⊤ 
+
+> t
+
+θt → Ωt[t, t ], 1
+
+d θ⊤ 
+
+> t
+
+˜θt → Ξt[t, t ], 1
+
+d ˜θ⊤ 
+
+> t
+
+˜θt → αΣt[t, t ], at → ¯at.
+
+Remark 3.7 (Finite Sample Guarantees) . Again, basing our descent algorithm in approximate message passing has the benefits of appealing to prior AMP literature, specifically one can endow the above lemma with finite sample guarantees using works [24, 17, 23, 2]. The proof of Lemma 3.6 follows by a change of variables to traditional AMP algorithms and is deferred to Appendix A.7. As a consequence, we have the following theorem that confirms DD satisfies the train-test identity. 
+
+Theorem 3.8. Consider the state evolution variables in Definition 3.6 and test from Definition 3.5. If Assumption 3.3 holds and g, f are suitably regular (Assumption A.7), the following holds almost surely for the iterates (ht, a t, θ t)t∈[T ] from (3.2) and (ˇ x, ˇy) are drawn from distribution (3.1) ,
+
+lim 
+
+> n→∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+L(Mat (ht,i ), y i) = test (m1,t , . . . , m J,t , Σt[t, t ], ¯at),
+
+as a consequence, the train-test identity holds for DD, i.e. almost surely, 
+
+lim 
+
+> n,d →∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+L(Mat (ht,i ), y i) − lim  
+
+> d→∞
+
+Eˇx, ˇy[L(Mat (ˇ x⊤θ), ˇy)] = 0 .
+
+The proof of this statement is deferred to Appendix A.8. We sketch the proof of Theorem 3.8 below. 
+
+Proof Sketch : We rewrite DD, via a change of variables, as a non-separable matrix-valued AMP algorithm [ 4, 19 ]. This establishes that the coordinate-wise average of ϕ applied to ht is governed by a low-dimensional set of recursive equations (Appendix A.6). Choosing ϕ = Ψ , this average (with respect to iterate θt) only depends on the almost sure limits of d−1μ⊤ 
+
+> j
+
+θt and d−1θ⊤ 
+
+> t
+
+θt. These moments evolve identically as if we trained on the data X(t) = S + Z(t) at time t where Z(t) is a fresh Gaussian matrix and S has rows independently assigned μj /d with probability pj . Due to this behavior, the training error must be the test error since DD essentially evaluates on a fresh independent data set at each update. 8
+
+Remark 3.9 . A dynamical mean field theory (DMFT) analysis of overfitting in full-batch GD is given in [ 21 , Equations (C.7)-(C.10)]. This description contains complex “response function” terms represented by the integration of a two-time correlation matrix which accounts for the reuse of the data matrix. By implementing DD with AMP, however, our algorithm is self correcting in the sense that the response function is zero, admitting a simpler analysis than DMFT methods. This simplicity also allows for better physical interpretation and insight into algorithmic design. 4. Algorithm Design 
+
+The choice of g, f in algorithm (3.2) controls the state evolution variables, and in turn, the asymptotic test error test t = test (m1,t , . . . , m J,t , ΩT [t, t ], ¯at) by Theorem 3.8. This means that given g, f we can calculate test t exactly by simulations. Thus, given candidate function classes G and F, with a budgeted run-time T , the optimal g∗, f ∗ is found by running |F||G| total simulations and selecting the run that minimized min t∈[T ] test t. Unfortunately, to run these simulations, we require exact knowledge of the data generating processes (3.1) . Therefore, it is desirable to select g, f which produce low test error independent of the data generating process. 4.1. Pure Decoupled Descent. Using (3.2) , we recover pure DD from Section 2 by selecting 
+
+g = ∇hΨ, f = ∇aΨ, η0 = γ0 = 1 and η1 = γ1 = η. See (2.1) for the exact iteration and Appendix A.9 for the corresponding state evolution. Traditionally in the analysis of GD, we consider a Taylor expansion on the train error when the learning rate η → 0. Because pure DD satisfies the train-test identity, in contrast to GD, we can directly expand the asymptotic test error. With Gt defined by the state evolution in Appendix A.9 and Yj ∼ Pj from (3.1), let 
+
+Gt =
+
+
+
+E[∇aΨ( mj,t + Gt, Y j , ¯at)] 
+
+
+
+> j∈[J]
+
+, Ut =
+
+
+
+E[∇hΨ( mj,t + Gt, Y j , ¯at)] 
+
+
+
+> j∈[J]
+
+,
+
+and denote χ = ( χj,k )j,k ∈[J] and p = ( pj )j∈[J] such that (diag( p)χdiag( p)) j,k = pj χj,k pk.
+
+Theorem 4.1. Let pure DD satisfy the conditions of Assumption 3.3 and Assumption A.7 for sufficiently small η up to bounded time T ∈ N. As η → 0, test t+1 satisfies the following Taylor expansion with state evolution parameters corresponding to the state evolution recursion (A.17) ,
+
+test t+1 = test t − η∥Gtp∥22 − ηα ∥Ut(diag( p)χdiag( p)) 1/2∥2F (4.1) 
+
+− η
+
+2
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , Ξt[t, t ] + Ξ t[t, t ]⊤E
+
++ ϵt, (4.2) 
+
+where sup t∈[T ] |ϵt| ≤ Cη 2 as η → 0 (where C depends on constants in Assumption A.7). 
+
+Notice the terms in (4.1) are non-positive, meaning that they directly lead to a decrease in the test error. The remaining term in (4.2) , however, may be positive. We describe methods to bound the impact of this term in Remark A.18. The proof of Theorem 4.1 is deferred to Appendix A.10 alongside a general Taylor expansion for generic choices of g, f and learning rate parameters. To give insight on the global convergence properties of DD, we describe fixed points of DD algorithms and compare them to critical points of the test error in Appendix A.11. 5. Applications 
+
+Below we present three applications of decoupled descent, a fourth application on the signal-less regression problem from the introduction is deferred to Appendix B.1. Experiments were conducted on a M4 Mac mini (2024, 10-core CPU, 10-core GPU) with 16GB of unified memory. 9
+
+Figure 1. Summary statistics for 20 XOR runs ( n = d = 1000 ): GD (left) vs. DD (right) with η = 0 .05 and SNR λ = 1 (upper left), λ = 4 (upper right) and λ = 8 
+
+(bottom). Blue/red denote train/test error; solid lines are medians, shaded areas are interquartile ranges, and dotted lines show min/max. Low SNR ( λ = 1 ): GD overfits (low train/high test error); DD stabilizes both near log (2) , reflecting the non-informative regime. Medium SNR ( λ = 4 ): DD maintains train-test parity, outperforming GD’s overfit solution. High SNR ( λ = 8 ): Signal dominates noise; both algorithms achieve similar performance. 5.1. Improved Training On The XOR Model. We consider a high-dimensional variant of the XOR problem ( J = 4 , pj = 1 /4) with n i.i.d. data points with the following signal vectors dependent on fixed v ∈ Rd/ 2, μ1 = [ v, v ], μ 2 = [ −v, −v], μ 3 = [ −v, v ], μ 4 = [ v, −v], where yj = 0 for j ∈ { 1, 2}
+
+and yj = 1 for j ∈ { 3, 4}.We fit model Ma,θ 1,θ 2 (x) = σ(a(x⊤θ1)( x⊤θ2)) , where θ1 ∈ Rd, θ2 ∈ Rd, a ∈ R and σ(x) = 11+ e−x ,under cross entropy loss (i.e. L( ˆy, y ) = −y log ( ˆy) − (1 − y) log (1 − ˆy)). These parameters are initialized at θ11 ∼ N (0 , Id d), θ21 ∼ N (0 , Id d) and a1 ∼ N (0 , 1) independently. Both GD and DD iterations for this problem are given in Appendix B.2. Figure 1 plots the train and test errors for GD and DD when each vi = λ with λ ∈ { 1, 4, 8} as a signal to noise ratio (SNR) parameter. In all cases, DD maintains the train-test identity. In low SNR regimes (λ ∈ { 1, 4}), DD outperforms GD and maintains the train-test identity while GD rapidly overfits; for high SNR regimes, DD matches GD’s performance because, under the λ → ∞ limit, the signal dominates the noise and the effect of memorization is negligible. We also provide an example of zero-cost validation hyperparameter tuning from Section 2. We fix the value of at = 1 in Ma and train θ1 and θ2 with a damped variant of pure DD given in Appendix B.2; this training model incorporates varying η0 and represents weight regularization for the parameters. In Figure 2, we run 20 shared replications of the XOR data and plot the train-test error for each choice of η0 ∈ { 1, 0.9, 0.8} (recalling η0 = 1 is pure DD). We can see that our zero-cost validation method is successful, each run demonstrates the train-test identity, and we observe that some weight regularization is beneficial in this case. 5.2. Varying Layer Widths For Classifying Zeros And Eights For MNIST Data. We apply DD to a simple MNIST binary classification test (i.e. zeros vs. eights). For the train data, we sample 
+
+n = 800 digits (grayscale images of dimension d = 784 ) from all zeros and eights in the MNIST data 10 
+
+η0 = 1 .0 η0 = 0 .9 η0 = 0 .8
+
+Figure 2. Summary statistics for 50 XOR runs ( n = d = 1000 ) of damped DD (defined in Appendix B.2): η = 0 .05 , fixed at = 1 , λ = 4 and η0 = 1 (left), η0 = 0 .9
+
+(middle) and η0 = 0 .8 (right). Blue/red colors and line type are equivalent to Figure 1. No Regularization : η0 = 1 (pure DD) gives an initial decrease in the loss but suffers from inflated values of Ωt[t, t ] for later iterations (note, the early stopping technique of Section 2 would be helpful in this case). Mild Regularization : η0 = 0 .9
+
+finds a good balance in weight regularization which controls variance inflation while achieving good test error and training stability. High Regularization : η0 = 0 .8
+
+regularizes too strongly and leads to an estimator that is too conservative, leading to a larger train-test error. set, rescale by SNR λ/d , and inject mean zero, variance 1/d , discrete noise, 
+
+δ−√2/√d wp 1/4, δ√2/√d wp 1/4, δ0 wp 1/2, (5.1) (instead of the standard Gaussian noise from distribution (3.1) ). The test set is all zero and eight digits in MNIST with identical processing; this experiment verifies if the train-test identity of decoupled descent demonstrates universality phenomena similar to AMP algorithms and is robust when the data is not immediately represented by J mixture modes. Additionally, to see if the train-test identity for decoupled descent degrades as L increases in size, we train a two-layer network (hidden widths L ∈ { 3, 9, 27 }, tanh activation, sigmoid output) using cross entropy loss and learning rate η = 1 . We directly implemented this training procedure in Pytorch 
+
+using a special MLP class (see Appendix B.4 for details) and thus utilized the default PyTorch 
+
+initializations for our parameters. Figure 3 plots the train-test error for these three models, we see the train-test identity still holds regardless of the size of the hidden layer, the discrete (instead of Gaussian) noise and a possibly more complex signal distribution. 
+
+Remark 5.1 (On computational complexity) . Recall implementing pure DD required two correction terms. Term η Pt−1 
+
+> s=1
+
+ˆhs adds O(n) storage but no computational overhead, trivial compared to the size of the data. The Hessian term ηα   1
+
+> n
+
+Pni=1 ∇2
+
+> h
+
+Ψ( ht,i , y i, a t) requires a per-iteration Jacobian. This Hessian overhead is a negligible, d independent constant—the necessary mechanism for DD to maintain the train-test identity. It is also worth noting that using standard auto-differentiation allows the process of deriving the Hessian automatically, avoiding the process of deriving the correction term on a case by case basis. For completeness, we provide some comparative run-times between GD and pure DD for the L = 9 case in Appendix B.3. 5.3. Training A MLP Head On CIFAR-10 ResNet Embeddings For Classifying Cats And Dogs. We finally consider a modern CIFAR-10 classification task. The goal of this task is to classify images as either pictures of cats (CIFAR-10 class 3) or dogs (CIFAR-10 class 5). We note that the DD algorithms in this section were also natively implemented using Pytorch ’s torch.autograd 
+
+function (See Appendix B.4 for the MNIST example, the CIFAR-10 example is similar). 11 
+
+Figure 3. MNIST zeros vs. eights train/test errors ( d = 784 , n = 800 , λ = 30 )over 20 replications: GD (left) vs. DD (right) with discrete noise from distribution (5.1) . Blue/red denote train/test error; solid lines are medians, shaded areas are IQRs, dotted lines are min/max. We run a two layer network with hidden layers (L ∈ { 3, 9, 27 }). The train-test error identity continues to hold as L grows and when the Gaussian noise is replaced with this discrete counterpart. The data matrix for this application is wildly different from Assumption A.3. Instead of noisy images, we use pre-trained ResNet-18 embeddings of dimension d = 512 . We sample n = 800 random embedded vectors from the full pool of embedded cat and dog vectors from CIFAR-10 for both the training and testing set independently. Then, we train a two layer MLP classification head with hidden layer width five and tanh activation using both GD and pure DD. The motivation for using DD on these vectors is from Gaussian equivalence theory [ 12 ] which postulates one can analyze the intermediate layers of a trained network with Gaussian surrogates. We consider increasingly stronger “whitening” over our training and testing data. In all cases, we standardize the embedding vectors by subtracting their coordinate-wise mean and dividing by the coordinate-wise standard deviation (with respect to only the training distribution). A detailed explanation of the whitening procedures are deferred to Appendix B.5, informally we have (1) 
+
+Vanilla , rescaling features by 1/√d; (2) ZCA (Train) , applying whitening computed solely on training data [ 14 ]; and (3) Joint ZCA , whitening across the combined train-test pool to prevent covariance drift. These procedures should be interpreted as increasingly stronger processing steps to make the embedded vectors of the train and test set seem more Gaussian. We can see the training and test curves for both GD and pure DD in Figure 4. Although DD has reduced the generalization gap, it is larger than previous examples as we have not injected random noise in the data set and therefore are unlikely to satisfy Assumption 3.3 completely. This suggests a more general method to apply DD to models with non-independent noise structures. 6. Discussion And Conclusion 
+
+To conclude, we presented a novel machine learning training algorithm and demonstrated it solves the train-test error disconnect present in full-batch GD. We additionally provided some initial guidance on how to design such algorithms and gave empirical validation of their success. 12 
+
+Figure 4. Train/test errors for CIFAR-10 (cats vs. dogs). GD (left) vs. DD (right). Blue/red denote train/test error; solid lines are medians, shaded areas cover the inter-quartile range, dotted lines show min/max, and title is the method of whitening (see Section 5.3). DD reduces overfitting effects compared to GD for training a classification head to ResNet-18 embeddings. 
+
+Limitations While DD guarantees an exact asymptotic train-test identity, the practical deployment faces several constraints. The proofs assume Gaussianity on the data X, although some relaxation is expected (Remark 3.4 (1)). Real-world data, however, contains structured correlations that do not satisfy our assumptions. Our results are asymptotic and would benefit from specified finite sample rates (Appendix 3.7). We require full-batch training which rules out stochastic methods like SGD; this additionally introduces DD memory and computational overhead due to the correction terms which can result in ≈ L× longer step times (Appendix B.3). We have only considered models with a wide first layer and finite subsequent layers; over-parameterization of later layers may break the train-test identity, although we do not see this in simulations (Section 5.2). Finally, we do not implement a mechanism in DD to represent signal drift, a common second source of overfitting. 
+
+Broader Impacts When Assumption 3.3 approximately holds, DD offers three benefits to practi-tioners: (1) Our zero-validation principle maximizes data utilization, vital in domains where data is scarce or expensive to collect. (2) The number of training runs can be limited by embedding hyper-parameter tuning into training dynamics. (3) Exact test error tracking gives a honest assessment of generalization, preventing the deployment of overfitted models. 
+
+Future Directions We present three future directions. Orthogonally Invariant Noise : Can DD extend to data with dependent elements [ 29 , 8, 18 ] with symmetry properties? It remains open whether the standard Onsager term’s partial success on CIFAR-10 is a coincidence or a general property of embedding vectors. Stochastic DD : To reduce the full-batch computational overhead, can recent DMFT derivations for SGD [ 9, 22 ] inform a mini-batch DD iteration, greatly expanding its practical applicability. Large-Width Networks : DD currently requires finite-width subsequent layers, adapting deep AMP/DMFT frameworks [ 28 , 11 , 27 ] to DD with multiple d-scaling layers would increase the applicability of these results. 13 
+
+Acknowledgements 
+
+Thanks to Zhou Fan for the many helpful discussions and support on this project. 
+
+References 
+
+[1] Z. D. Bai and Y. Q. Yin. Limit of the smallest eigenvalue of a large dimensional sample covariance matrix. The Annals of Probability , 21(3), July 1993. ISSN 0091-1798. DOI: https://doi.org/10.1214/aop/1176989118. URL http://dx.doi.org/10.1214/aop/1176989118. [2] Zhigang Bao, Qiyang Han, and Xiaocong Xu. A leave-one-out approach to approximate message passing. The Annals of Applied Probability , 35(4), August 2025. ISSN 1050-5164. DOI: https://doi.org/10.1214/25-aap2186. URL http://dx.doi.org/10.1214/25-aap2186. [3] Mohsen Bayati, Marc Lelarge, and Andrea Montanari. Universality in polytope phase transitions and message passing algorithms. The Annals of Applied Probability , 25(2), apr 2015. DOI: https://doi.org/10.1214/14-aap1010. [4] Raphaël Berthier, Andrea Montanari, and Phan-Minh Nguyen. State evolution for approximate message passing with non-separable functions. Information and Inference: A Journal of the IMA , 9(1):33–79, January 2019. ISSN 2049-8772. DOI: https://doi.org/10.1093/imaiai/iay021. URL http://dx.doi.org/10.1093/imaiai/iay021. [5] Wei-Kuo Chen and Wai-Kit Lam. Universality of approximate message passing algo-rithms. Electronic Journal of Probability , 26(none), January 2021. ISSN 1083-6489. DOI: https://doi.org/10.1214/21-ejp604. URL http://dx.doi.org/10.1214/21-ejp604. [6] Yatin Dandi, David Gamarnik, Francisco Pernice, and Lenka Zdeborová. Sequential dynamics in ising spin glasses, 2025. [7] David L. Donoho, Arian Maleki, and Andrea Montanari. Message passing algorithms for compressed sensing: I. motivation and construction. In IEEE Information Theory Workshop 2010 (ITW 2010) , page 1–5. IEEE, January 2010. DOI: https://doi.org/10.1109/itwksps.2010.5503193. URL http://dx.doi.org/10.1109/itwksps.2010.5503193. [8] Zhou Fan. Approximate message passing algorithms for rotationally invariant matrices. The Annals of Statistics , 50(1), February 2022. ISSN 0090-5364. DOI: https://doi.org/10.1214/21-aos2101. URL http://dx.doi.org/10.1214/21-aos2101. [9] Zhou Fan and Leda Wang. High-dimensional learning dynamics of multi-pass stochastic gradient descent in multi-index models, 2026. [10] Oliver Y. Feng, Ramji Venkataramanan, Cynthia Rush, and Richard J. Samworth. A Unifying Tutorial on Approximate Message Passing . Now Publishers, 2022. ISBN 9781638280057. DOI: https://doi.org/10.1561/9781638280057. URL http://dx.doi.org/10.1561/9781638280057. [11] Cédric Gerbelot and Raphaël Berthier. Graph-based approximate message passing it-erations. Information and Inference: A Journal of the IMA , 12(4):2562–2628, Sep-tember 2023. ISSN 2049-8772. DOI: https://doi.org/10.1093/imaiai/iaad020. URL http://dx.doi.org/10.1093/imaiai/iaad020. [12] Sebastian Goldt, Bruno Loureiro, Galen Reeves, Florent Krzakala, Marc M’ezard, and Lenka Zdeborov’a. The gaussian equivalence of generative models for learning with shal-low neural networks. In Mathematical and Scientific Machine Learning , 2020. URL https://api.semanticscholar.org/CorpusID:235165686. 14 
+
+[13] A. Javanmard and A. Montanari. State evolution for general approximate message pass-ing algorithms, with applications to spatial coupling. Information and Inference , 2(2): 115–144, October 2013. ISSN 2049-8772. DOI: https://doi.org/10.1093/imaiai/iat004. URL http://dx.doi.org/10.1093/imaiai/iat004. [14] Agnan Kessy, Alex Lewin, and Korbinian Strimmer. Optimal whitening and decorrelation. The American Statistician , 72(4):309–314, January 2018. ISSN 1537-2731. DOI: https://doi.org/10.1080/00031305.2016.1277159. URL http://dx.doi.org/10.1080/00031305.2016.1277159. [15] Alex Krizhevsky, Geoffrey Hinton, et al. Learning multiple layers of features from tiny images. Technical report, University of Toronto, 2009. [16] Yann LeCun, Léon Bottou, Yoshua Bengio, and Patrick Haffner. Gradient-based learning applied to document recognition. Proceedings of the IEEE , 86(11):2278–2324, 1998. [17] Gen Li and Yuting Wei. A non-asymptotic framework for approximate message passing in spiked models, 2023. [18] Songbin Liu and Junjie Ma. Unifying amp algorithms for rotationally-invariant models, 2024. [19] Max Lovig, Tianhao Wang, and Zhou Fan. On universality of non-separable approximate message passing algorithms, 2025. [20] Francesca Mignacco, Florent Krzakala, Pierfrancesco Urbani, and Lenka Zdeborová. Dynamical mean-field theory for stochastic gradient descent in gaussian mixture classification*. Journal of Statistical Mechanics: Theory and Experiment , 2021(12):124008, December 2021. ISSN 1742-5468. DOI: https://doi.org/10.1088/1742-5468/ac3a80. URL http://dx.doi.org/10.1088/1742-5468/ac3a80. [21] Andrea Montanari and Pierfrancesco Urbani. Dynamical decoupling of generalization and overfitting in large two-layer networks, 2025. [22] Sota Nishiyama and Masaaki Imaizumi. High-dimensional limit of stochastic gradient flow via dynamical mean-field theory, 2026. [23] Galen Reeves. Dimension-free bounds for generalized first-order methods via gaussian coupling, 2025. [24] Cynthia Rush and Ramji Venkataramanan. Finite sample analysis of approximate message passing algorithms. IEEE Transactions on Information Theory , 64(11):7264–7286, nov 2018. DOI: https://doi.org/10.1109/tit.2018.2816681. [25] Sophia Sklaviadis, Thomas Moellenhoff, Andre F. T. Martins, Mario A. T. Figueiredo, and Mohammad Emtiyaz Khan. A stein identity for q-gaussians with bounded support, 2026. [26] Tianhao Wang, Xinyi Zhong, and Zhou Fan. Universality of approximate message passing algorithms and tensor networks. The Annals of Applied Probability , 34(4), August 2024. ISSN 1050-5164. DOI: https://doi.org/10.1214/24-aap2056. URL http://dx.doi.org/10.1214/24-aap2056. [27] Yizhou Xu, TianQi Hou, ShanSuo Liang, and Marco Mondelli. Approxi-mate message passing for multi-layer estimation in rotationally invariant mod-els. In 2023 IEEE Information Theory Workshop (ITW) , page 294–298. IEEE, April 2023. DOI: https://doi.org/10.1109/itw55543.2023.10160238. URL http://dx.doi.org/10.1109/itw55543.2023.10160238. 15 
+
+[28] Greg Yang and Edward J. Hu. Tensor programs iv: Feature learning in infinite-width neural networks. In International Conference on Machine Learning (ICML) , pages 11727–11737. PMLR, 2021. [29] Xinyi Zhong, Tianhao Wang, and Zhou Fan. Approximate message passing for orthogo-nally invariant ensembles: multivariate non-linearities and spectral initialization. Infor-mation and Inference: A Journal of the IMA , 13(3), July 2024. ISSN 2049-8772. DOI: https://doi.org/10.1093/imaiai/iaae024. URL http://dx.doi.org/10.1093/imaiai/iaae024. 
+
+Appendix A. Deferred Theory 
+
+A.1. Notation. Let [n] = {1, . . . , n }; R and N denote the real and natural numbers, with (·)k as the k-fold Cartesian product. For M ∈ Rn×L, Mi ∈ RL denotes the i-th row. For a block matrix M ,
+
+M [r, s ] is its (r, s )-th block. vec (·) and mat (·) represent standard vectorization and matricization. 
+
+∇k 
+
+> (·)
+
+is the k-fold partial derivative. Norms ∥ · ∥ 2, ∥ · ∥ ∞, ∥ · ∥ F , ∥ · ∥ op are the Euclidean, infinity, Frobenius, and operator norms. 11{·} is the indicator function and δx is the Dirac distribution at 
+
+x ∈ R. ⊗, ⊙, ⟨· , ·⟩ denote Kronecker, Hadamard, and inner products (where ⊗ additionally means the independent product of two probability measures). eB ∈ Rn is (eB )i = 1 1{i ∈ B}. O, o, Θ represent standard asymptotic notation with n-dependent growth. A.2. A Method Of Descent Under The Train-Test Identity. Suppose an algorithm A satisfies the train-test identity and generates the iterate (θt, h t, a t). In addition, there exists a number of updates (θ(k)
+
+> t+1
+
+, h (k)
+
+> t+1
+
+, a (k)
+
+> t+1
+
+)k∈[K] generated by K different algorithms (A(k))k∈[K], each maintaining the train-test identity. Each algorithm A(k) produces an update with training error 
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+L(Ma(k)
+
+> t+1
+
+(h(k)
+
+> t+1 ,i
+
+), y i). (A.1) And, by the train-test identity, (A.1) is an asymptotically consistent estimator for the test error of update (θ(k)
+
+> t+1
+
+, h (k)
+
+> t+1
+
+, a (k)
+
+> t+1
+
+), i.e. Eˇx, ˇy[L(Ma(k)
+
+> t+1
+
+( ˇx⊤θ(k)
+
+> t+1
+
+), ˇy)] . Therefore, reducing the test error at step 
+
+t + 1 follows by choosing the update that minimizes (A.1) , so long as one exists. Other algorithms which do not satisfy the train-test identity can fundamentally never offer such a guarantee due to the train-test disconnect from the introduction. A.3. Deferred Examples. Example A.1. Many common learning problems can be realized by the above data model. (1) The signal-less regression model from the introduction is given with J = 1 , μj = 0 and Pj = δ0
+
+(i.e. a Dirac measure at zero). (2) A simple classification problem with flipped class noise has J = 2 , μ1 = v and μ2 = −v, and for some ϵ ∈ (0 , 1/2) ) we set P1 = (1 − ϵ)δ−1 + ϵδ 1 and P2 = (1 − ϵ)δ1 + ϵδ −1 with class probabilities p1 = p2 = 1 /2.(3) A discrete-valued regression problem has J being some large constant, say 100 . We let μj = jv 
+
+with v ∈ Rd. Then let Pj be the convolution of δc1j+c2 and Pnoise where c1, c 2 ∈ R and Pnoise 
+
+is the response’s noise distribution, finally we can let p1, . . . , p J be some arbitrary prior over data examples. (4) An XOR classification problem has J = 4 , μ1 = [ v, v ], μ 2 = −[v, v ], μ 3 = [ −v, v ], μ 4 = [ v, −v]
+
+with v ∈ Rd/ 2, Pj = δ0 for j ≤ 2 and Pj = δ1 otherwise. Let each pj = 1 /4.
+
+Example A.2. Many architectures utilized in practice can be used under our parametric models. Each example below is trained using either MSE loss 12 (ˆ y − y)2 or MAD loss |ˆy − y| for simplicity. (1) A simple linear regression model is given by Mθ,a (x) = x⊤θ.16 
+
+(2) A generalized linear model is given by Mθ,a (x) = σ(x⊤θ) for a link function σ : R → R.(3) Let L = L′, and let σ, ϕ : R → R be applied element-wise, a two-layer network is given by Mθ,a (x) = ϕ(σ(x⊤θ)a). Deeper networks of finite width are given by setting a =(vec (W1), . . . , vec (Wk−1), w k) where Wi ∈ RL×L for i ∈ [k − 1] , wk ∈ RL and selecting 
+
+Mθ,a (x) = ϕ(σ(· · · σ(σ(x⊤θ)W1) · · · Wk−1)wk).(4) Corresponding to Example A.1 (4), we could consider a model for the XOR problem with 
+
+L = 2 , θ = ( θ1, θ 2), L ′ = 1 and selecting Mθ,a (x) = a(x⊤θ1)( x⊤θ2).
+
+A.4. Main Assumption. Assumption A.3. The following hold when both n, d → ∞ , with n/d → α ∈ (0 , ∞) fixed: (1) [Data Composition] In distribution (3.1) , for each j, k ∈ [J], Pj has bounded moments of all orders, pj ∈ [0 , 1] and lim d→∞ d−1μ⊤ 
+
+> j
+
+μk exists. Further, each row of data (X, y ) ∈ Rn×d × Rn
+
+is drawn i.i.d. from distribution (3.1). (2) [Initialization Limits] Initialization θ1 is independent of the data (X, y ) and lim d→∞ d−1θ⊤ 
+
+> 1
+
+θ1 =¯θ2 almost surely. For each j ∈ [J], lim d→∞ d−1θ⊤ 
+
+> 1
+
+μj = mj, 1 almost surely. The norm of the initialization ∥a1∥2 is uniformly bounded. (3) [DD Lipschitzness] Uniformly over y ∈ R, the functions f (h, y, a ), g(h, y, a ) and their derivatives ∇hf (h, y, a ), ∇hg(h, y, a ) are Lipschitz and bounded in h and a.(4) [Model And Loss Smoothness] Let Ψ( h, y, a ) from Definition 2.1, uniformly over y ∈ R:(a) Ψ is Lipschitz, four times continuously differentiable with respect to h and twice continuously differentiable with respect to a.(b) Let ω ∈ RL×L be a covariance matrix with bounded operator norm, vectors m ∈ RL
+
+and a ∈ RL′
+
+with ∥m∥2, ∥a∥2 bounded, and let h = m + ω1/2G where G ∼ N (0 , Id L).For each class j ∈ [J] with Yj ∼ Pj , there exists a bounded constant C > 0 where, 
+
+max  ∥E[∇2
+
+> a
+
+Ψ( h, Y j , a )] ∥op , ∥E[∇h∇aΨ( h, Y j , a )] ∥op , ∥E[∇2
+
+> h
+
+Ψ( h, Y j , a )] ∥op 
+
+ ≤ C
+
+max  ∥E[∇2
+
+> h
+
+∇aΨ( h, Y j , a )] ∥F, ∥E[∇3
+
+> h
+
+Ψ( h, Y j , a )] ∥F, ∥E[∇4
+
+> h
+
+Ψ( h, Y j , a )] ∥F
+
+ ≤ C
+
+A.5. The Asymptotic Test Error. We prove the following proposition. 
+
+Proposition A.4. If Assumption A.3 holds and lim d→∞ μ⊤ 
+
+> j
+
+θ/d = mj,θ , lim d→∞ θ⊤θ/d = Ω θ,
+
+lim n,d →∞ a = ¯a almost surely for trained parameters (θ, a ), then there exists a deterministic function 
+
+test depending only on the aforementioned limits such that, 
+
+lim  
+
+> d→∞
+
+Eˇx, ˇy[L(Mθ,a (ˇ x), ˇy)] = test (m1,θ , . . . , m J,θ , Ωθ, ¯a).
+
+Proof. Consider the test error from (1.2) with β = ( θ, a ) denoting ˇL(θ, a ) = Eˇx, ˇy[L(Mθ,a ( ˇx), ˇy)] 
+
+where (ˇ x, ˇy) are drawn from distribution (3.1), we write 
+
+lim 
+
+> d→∞
+
+ˇL(θ, a ) = lim 
+
+> d→∞
+> J
+
+X
+
+> j=1
+
+pj E[L(Ma(μ⊤ 
+
+> j
+
+θ/d + ˇZθ), ˇYj )] ,
+
+where ˇZθ ∼ N (0 , θ ⊤θ/d ) and ˇYj ∼ Pj . Under the assumption that μ⊤ 
+
+> j
+
+θ/d , θ⊤θ/d and a have almost sure limits mj,θ (for each j ∈ [J]), Ωθ and ¯a respectively, we have that 
+
+lim 
+
+> d→∞
+
+ˇL(θ, a ) = 
+
+> J
+
+X
+
+> j=1
+
+pj E ˇZθ ∼N (0 ,Ωθ )ˇYj ∼Pj
+
+[L(M¯a(mj,θ + ˇZθ), ˇYj )] , (A.2) by dominated convergence as Assumption 3.3 assumes Ψ( h, y, a ) = L(Ma(h), y j ) is Lipschitz. Noting the right hand side of (A.2) is from Definition 3.5 gives the proof. ■17 
+
+A.6. Full Definition Of State Evolution. As we see momentarily, DD can be equivalently written as an AMP algorithm, thus off-the-shelf AMP results immediately provide a distributional character-ization of the pre-activations h1, . . . , h t ∈ Rn×L and parameters θ1, . . . , θ t ∈ Rd×L, a1, . . . , a t ∈ RL′
+
+.This description is given by a set of low-dimensional recursive equations termed state evolution .Informally, we derive a recursion of variables Ωt, Σt, Ξt, m1,t , . . . , m J,t , ¯at which represent the almost sure limits of (self-)overlaps between θt, μ j and ˜θt alongside the limiting value of at.
+
+Definition A.5. Let (Pj )j∈[J], (χj,k )j,k ∈[J], (pj )j∈[J] be from Assumption A.3 (1) , (mj, 1)j∈[J], ¯θ2 be the limits from Assumption A.3 (2) and let g, f be the functions from Assumption A.3 (3). Define the following state evolution parameters mj,t ∈ RL for j ∈ [J], t ∈ [T ], block matrices 
+
+Σt, Ωt ∈ (RL×L)(t+1) ×(t+1) , Ξt ∈ (RL×L)t×t and ¯at ∈ RL′
+
+for t ∈ [T ] recursively as follows. Recall the indexing [r, s ] denotes the (r, s )-th L × L block of a given matrix, we have 
+
+Σt[r, s ] = 
+
+> J
+
+X
+
+> j=1
+
+pj E[g(Gr + mj,r , Y j , ¯ar)g(Gs + mj,s , Y j , ¯as)⊤]
+
+ℓj,t = pj E[g(Gt + mj,t , Y j , ¯at)] Ξt[r + 1 , s ] = η0Ξt−1[r, s ] − η1
+
+
+
+αΣt[r, s ] + α2
+
+> J
+
+X
+
+> j,k =1
+
+χj,k ℓj,r ℓ⊤
+
+> k,s
+
+
+
+Ωt+1 [r + 1 , s + 1] = η20 Ωt[r, s ] − η0η1
+
+
+
+Ξt[r, s ] + Ξ t[s, r ]⊤
+
++ η21
+
+
+
+αΣt[r, s ] + α2
+
+> J
+
+X
+
+> j,k =1
+
+χj,k ℓj,r ℓ⊤
+
+> k,s
+
+
+
+mj,t +1 = η0mj,t − η1α
+
+> J
+
+X
+
+> k=1
+
+χj,k ℓk,t 
+
+¯at+1 = γ0¯at − γ1
+
+> J
+
+X
+
+> j=1
+
+pj E[f (Gt + mj,t , Y j , ¯at)] 
+
+with indices r, s ∈ [t] and j ∈ [J]. The expectations are taken over Yj ∼ Pj , the random vectors 
+
+Gt ∼ N (0 , Ωt[t, t ]) , and the pairs (Gr, G s) ∼ N 
+
+
+
+0,
+
+h Ωt[r,r ] Ω t[r,s ]Ωt[s,r ] Ω t[s,s ]
+
+i 
+
+. The system is initialized with 
+
+¯a1 = a1, Ωt[1 , 1] = Ω 1[1 , 1] = ¯θ2, Ξt[1 , s ] = α PJj=1 mj, 1ℓ⊤
+
+> j,s
+
+, and Ωt+1 [1 , s + 1] = η0Ωt[1 , s ] −
+
+η1Ξt[1 , s ] = Ω t+1 [s + 1 , 1] ⊤.
+
+Remark A.6 . As a special case of Definition A.5, we have the recursion, 
+
+Ωt+1 [t + 1 , t + 1] = η20 Ωt[t, t ] − η1η0(Ξ t[t, t ] + Ξ t[t, t ]⊤) + η21
+
+αΣt[t, t ] + α2
+
+> J
+
+X
+
+> j,k =1
+
+χj,k ℓj,t ℓ⊤
+
+> k,t
+
+ .
+
+A.7. Approximate Message Passing And Proving Lemma 3.6. For Lemma 3.6 and Theorem 3.8, we require the following assumption. 
+
+Assumption A.7. Uniformly over y ∈ R, function ϕ(h, y, a ) : RL × R × RL′
+
+→ R is Lipschitz in h
+
+and a. Moreover, there exists a bounded constant C > 0, independent of t, where the matrices from Definition A.5 satisfy max t∈[T ] max( ∥Σ−1 
+
+> t
+
+∥op , ∥Ω−1 
+
+> t
+
+∥op , ∥ΣT [t, t ]∥op , ∥ΩT [t, t ]∥op ) ≤ C.A.7.1. Relating Back To AMP. Consider the original DD algorithm dependent on the activation functions g : RL × R × RL′
+
+→ RL and f : RL × R × RL′
+
+→ R and hyperparameters η0, η 1, γ 0, γ 1 from 18 
+
+Equation (3.2), we repeat the algorithm below for convenience below, 
+
+ht = Xθ t + η1
+
+> t−1
+
+X
+
+> s=1
+
+η(t−1) −s 
+
+> 0
+
+ˆhs
+
+ˆht = g(ht, y, a t)˜θt = X⊤ˆht − α 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∇hg(ht,i , y i, a t)
+
+!
+
+θt
+
+θt+1 = η0θt − η1 ˜θt
+
+at+1 = γ0at − γ1
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+f (ht,i , y i, a t).
+
+(A.3) Note, the above algorithm is invariant to a permutation of the rows of X, thus we fix a representation with X = 1 
+
+> d
+
+S + Z = 1
+
+> d
+
+PJj=1 eBj μ⊤ 
+
+> j
+
++ Z where B1, . . . , B J partition [n] and Z is an element-wise independent Gaussian matrix with Zij ∼ N (0 , 1/d ). Moreover, by Assumption A.3 (1) , we have the almost sure limits lim n→∞ |Bj |/n = pj .Therefore, we can equivalently write (A.3) as, 
+
+ht =
+
+> J
+
+X
+
+> j=1
+
+eBj
+
+μ⊤ 
+
+> j
+
+θt
+
+d + Zθ t + η1
+
+> t−1
+
+X
+
+> s=1
+
+η(t−1) −s 
+
+> 0
+
+ˆhs
+
+ˆht = g(ht, y, a t)˜θt =
+
+> J
+
+X
+
+> j=1
+
+μj
+
+nde⊤
+
+> Bj
+
+ˆht
+
+n + Z⊤ˆht − α 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∇hg(ht,i , y i, a t)
+
+!
+
+θt
+
+θt+1 = η0θt − η1 ˜θt
+
+at+1 = γ0at − γ1
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+f (ht,i , y i, a t).
+
+We prove Lemma 3.6 in three steps. 
+
+(1) We replace μ⊤  
+
+> jθt
+> d
+
+, e⊤ 
+
+> Bj
+> ˆht
+> d
+
+and at by pre-specified vectors m⊤
+
+> j,t
+
+, ℓ ⊤ 
+
+> j,t
+
+∈ R1×L and ¯at ∈ RL′
+
+respectively. Moreover, with ˜Z ∈ Rn×d, we couple Z = α1/2 ˜Z and replace Z by α1/2 ˜Z noting that ˜Z has independent N (0 , 1/n ) entries. We then analyze the following frozen algorithm, recalling that α = n/d ,
+
+hfrozen  
+
+> t
+
+=
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤ 
+
+> j,t
+
++ α1/2 ˜Zθ frozen  
+
+> t
+
++ η1
+
+> t−1
+
+X
+
+> s=1
+
+η(t−1) −s 
+
+> 0
+
+ˆhfrozen 
+
+> s
+
+ˆhfrozen  
+
+> t
+
+= g(hfrozen  
+
+> t
+
+, y, ¯at)˜θfrozen  
+
+> t
+
+= α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤ 
+
+> j,t
+
++ α1/2 ˜Z⊤ˆhfrozen  
+
+> t
+
+− α 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∇hg(hfrozen  
+
+> t,i
+
+, y i, ¯at)
+
+!
+
+θfrozen 
+
+> t
+
+θfrozen  
+
+> t+1
+
+= η0θfrozen  
+
+> t
+
+− η1 ˜θfrozen  
+
+> t
+
+.
+
+(A.4) The state evolution for this algorithm is given in Appendix A.7.2. 19 
+
+(2) We prove that if m⊤
+
+> j,t
+
+, ℓ⊤ 
+
+> j,t
+
+and ¯at are the almost sure limits of μ⊤  
+
+> jθt
+> d
+
+, e⊤ 
+
+> Bj
+> ˆht
+> d
+
+and at respectively, then for a suitable class of test functions, say represented by ϕ : Rn×(L·T ) × Rn × RL′·T → Rn and 
+
+φ : Rd×(L·T ) × RL′·T → Rn, we have that both, 
+
+lim 
+
+> n→∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ(h1, . . . , h T , y, a 1, . . . , a T )i − 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ(hfrozen 1 , . . . , h frozen  
+
+> T
+
+, y, ¯a1, . . . , ¯aT )i = 0 
+
+and 
+
+lim 
+
+> n→∞
+
+1
+
+d
+
+> d
+
+X
+
+> i=1
+
+φ(˜θ1, . . . , ˜θT , a 1, . . . , a T )i − 1
+
+d
+
+> d
+
+X
+
+> i=1
+
+φ(˜θfrozen 1 , . . . , ˜θfrozen  
+
+> T
+
+, ¯a1, . . . , ¯aT )i = 0 ,
+
+almost surely. This is the content of Appendix A.7.3. (3) We derive the desired almost sure limits mj,t , ℓj,t and ¯at in Appendix A.7.4. Combining these three steps proves Lemma 3.6. A.7.2. A Re-parameterized State Evolution. For this subsection, we drop the superscript frozen for notational convenience. We continue with our analysis of (A.4), consider the change of variables 
+
+zt = α−1/2
+
+ht −
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,t
+
+ , ht = α1/2zt +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,t
+
+wt = α−1/2
+
+˜θt − α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,t
+
+ , ˜θt = α1/2wt + α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,t
+
+.
+
+(A.5) Then, to analyze algorithm (A.4) , it suffices to analyze the following algorithm and undo the above change of variables, 
+
+zt = ˜Zθ t + α−1/2η1
+
+> t−1
+
+X
+
+> s=1
+
+η(t−1) −s 
+
+> 0
+
+ˆhs
+
+ˆht = g
+
+α1/2zt +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,t
+
+, y, ¯at
+
+
+
+wt = ˜Z⊤ˆht − α1/2
+
+ 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∇hg
+
+α1/2wt + α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,t
+
+
+
+> i
+
+, y i, ¯at
+
+ θt
+
+θt+1 = ηt
+
+> 0
+
+θ1 − η1
+
+> t
+
+X
+
+> s=1
+
+ηt−s
+
+> 0
+
+α1/2ws + α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,s
+
+ ,
+
+(A.6) where the final equality comes from unrolling the recursion of θt+1 = η0θt − η1 ˜θt and changing variables. Then, we denote 
+
+G(zt) = g α1/2zt +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,t
+
+, y, ¯at
+
+!
+
+Ft(w1, . . . , w t) = ηt
+
+> 0
+
+θ1 − η1
+
+> t
+
+X
+
+> s=1
+
+ηt−s 
+
+> 0
+
+α1/2ws + α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,s
+
+! (A.7) 20 
+
+Now, treating y, μ 1, . . . , μ J , e B1 , . . . , e Bj , θ 1 as fixed vectors, we can equivalently write (A.6) as, 
+
+zt = ˜Zθ t −
+
+> t
+
+X
+
+> s=1
+
+ˆhsB⊤
+
+> t,s
+
+ˆht = G(zt)
+
+wt = ˜Z⊤ˆht − θtC⊤
+
+> t
+
+θt+1 = Ft(wt),
+
+(A.8) where, denoting the derivative with respect to a specified variable (·) as ∂(·),
+
+Bt,s = 1
+
+n
+
+> d
+
+X
+
+> i=1
+
+∂ws,i Ft−1(w1,i , . . . , w t−1,i ) = 1
+
+d α−1
+
+> d
+
+X
+
+> i=1
+
+∂ws,i Ft−1(w1,i , . . . , w t−1,i )= −η1η(t−1) −s 
+
+> 0
+
+α−1/2Id 
+
+Ct = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∂zt,i G(zt,i ) = α1/2n−1
+
+> n
+
+X
+
+> i=1
+
+∇hg(α1/2zt,i + m⊤
+
+> j(i),t
+
+, y i, ¯at)⊤,
+
+with j(i) mapping a coordinate i ∈ [n] to its corresponding block index of B1, . . . , B J . Note, we can immediately check that G is Lipschitz as g is Lipschitz in zt (see Assumption A.3 (3)) where, 
+
+∥G(zt) − G(˜ zt)∥F = g
+
+α1/2zt +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,t
+
+, y, ¯at
+
+ − g
+
+α1/2 ˜zt +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,t
+
+, y, ¯at
+
+
+
+> F
+
+≤ L∥α1/2(zt − ˜zt)∥F
+
+≤ (Lα 1/2)∥zt − ˜zt∥F,
+
+and Ft is clearly Lipschitz in w1, . . . , w t as it is a linear function of w1, . . . , w t with bounded coefficients. We can then see that algorithm (A.8) is a full-history matrix-valued extension of the non-separable AMP theory from [ 4] (or see [ 19 ] for a full-history vector-valued AMP algorithm). Using the standard construction of reformatting the vector amp iterates (temporarily overloading the definition of the iterates zt, w t) (z1, w 1), . . . , (zt·L, w t·L) ∈ R2×n into matrix amp iterates zmat  
+
+> t
+
+and wmat  
+
+> t
+
+with 
+
+zmat  
+
+> t
+
+= [ z(t−1)+1 , . . . , z t·L−1], wmat  
+
+> t
+
+= [ w(t−1)+1 , . . . , w t·L−1],
+
+we can conclude that (A.8) uses the correct Onsager correction terms and is a valid rectangular AMP algorithm. We leave further details of matrix valued AMP iterates to the survey [ 10 , Section 6.7] and [ 13 ]. We then have the following low dimensional prescription of the iterates (zt, w t)t∈[T ]
+
+from (A.8). 
+
+Definition A.8. Given the functions G, F t from (A.7) and deterministic vector θ1, with initialization  
+
+> α−1
+> d
+
+θ⊤ 
+
+> 1
+
+θ1 = Ω z
+
+> 1
+
+, we recursively define the sequence of matrices Σw 
+
+> 1
+
+, . . . , ΣwT , Ωz
+
+> 2
+
+, . . . , ΩzT +1 with 
+
+Σwt [r, s ] = 1
+
+n E[G(Zr)⊤G(Zs)] , r, s ∈ [t](Zr, Z s) ∼ N 
+
+
+
+0,
+
+Ωzt [r, r ] Ωzt [r, s ]Ωzt [s, r ] Ωzt [s, s ]
+
+
+
+⊗ Id n
+
+
+
+Ωzt+1 [r + 1 , s + 1] = 1
+
+n E[Fr(W1, . . . , W r)⊤Fs(W1, . . . , W s)] , r, s ∈ [t]= α−1
+
+d E[Fr(W1, . . . , W r)⊤Fs(W1, . . . , W s)] 21 
+
+Ωzt+1 [1 , s + 1] = α−1
+
+d θ⊤ 
+
+> 1
+
+E[Fs(W1, . . . , W s)] = Ω zt+1 [s + 1 , 1] ⊤, s ∈ [t]Ωzt+1 [1 , 1] = Ω z
+
+> 1
+
+(W1, . . . , W t) ∼ N (0 , Σwt ⊗ Id d) .
+
+Lemma A.9 ([ 19 ], Theorem 3.3 (extended to matrix-valued AMP algorithms)) . Let ϕ1, ϕ 2 :
+
+Rn×(L·T ) → Rn, φ 1, φ 2 : Rd×(L·T ) → Rd each be uniformly Lipschitz function in n, d . Let (zt, w t)
+
+be the iteration (A.8) , and denote (Z1, . . . , Z T ) ∼ N (0 , ΩzT ⊗ Id n), (W1, . . . , W T ) ∼ N (0 , ΣwT ⊗ Id d)
+
+from Definition A.8. If max t∈[T ] max (∥Σwt ∥op , ∥(Σ wt )−1∥op , ∥Ωzt ∥op , ∥(Ω zt )−1∥op ) is bounded almost surely, then the following limits hold almost surely, 
+
+lim 
+
+> n→∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ(z1, . . . , z T )i − lim 
+
+> n→∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+E[ϕ(Z1, . . . , Z T )i] = 0 lim 
+
+> d→∞
+
+1
+
+d
+
+> d
+
+X
+
+> i=1
+
+φ(w1, . . . , w T )i − lim 
+
+> d→∞
+
+1
+
+d
+
+> d
+
+X
+
+> i=1
+
+E[φ(W1, . . . , W T )i] = 0 ,
+
+where ϕ(·)i = ϕ1(·)iϕ2(·)i and φ(·)i = φ1(·)iφ2(·)i.
+
+Definition A.10. Let Assumption A.3 hold with (Pj )j∈[J] from Assumption A.3 (1) , ¯θ2 from Assumption A.3 (2), and g be from Assumption A.3 (3). Given initialization ˇΩ1 = ¯θ2, sequences (mj,t )j∈[J],t ∈[T ], (ℓj,t )j∈[J],t ∈[T ] and ( ¯at)t∈[T ], we recursively define the sequence of matrices ˇΣ1, . . . , ˇΣT , ˇΩ2, . . . , ˇΩT +1 with 
+
+ˇΣt[r, s ] = 
+
+> J
+
+X
+
+> j=1
+
+pj E[g( ˇZr + mj,r , Y j , ¯ar)g( ˇZs + mj,s , Y j , ¯as)⊤], r, s ∈ [t]( ˇZr, ˇZs) ∼ N 
+
+
+
+0,
+
+ ˇΩt[r, r ] ˇΩt[r, s ]ˇΩt[s, r ] ˇΩt[s, s ]
+
+ 
+
+ˇΞt[r + 1 , s ] = η0 ˇΞt−1[r, s ] − η1
+
+
+
+α ˇΣt[r, s ] + α2
+
+> J
+
+X
+
+> j,k =1
+
+χj,k ℓj,r ℓ⊤
+
+> k,s
+
+
+
+, r ∈ [t − 1] , s ∈ [t]ˇΞt[1 , s ] = α
+
+> J
+
+X
+
+> j=1
+
+mj, 1ℓ⊤
+
+> j,s
+
+, s ∈ [t]ˇΩt+1 [r + 1 , s + 1] = η20 ˇΩt[r, s ]−η0η1
+
+ˇΞt[r, s ]+ ˇΞt[s, r ]⊤
+
++η21
+
+
+
+α ˇΣt[r, s ]+ α2
+
+> J
+
+X
+
+> j,k =1
+
+χj,k ℓj,r ℓ⊤
+
+> k,s
+
+
+
+r, s ∈ [t]ˇΩt+1 [1 , s + 1] = η0 ˇΩt[1 , s ] − η1 ˇΞt[1 , s ] = ˇΩt+1 [s + 1 , 1] ⊤, s ∈ [t]ˇΩt+1 [1 , 1] = ¯θ2,
+
+Corollary A.11. Let (ht, ˆht, ˜θt, θ t) be the iteration from (A.4) and let Assumption A.3 hold. The following limits hold almost surely, for j ∈ [J], r, s, t ∈ [T ],
+
+lim 
+
+> d→∞
+
+1
+
+d μ⊤ 
+
+> j
+
+θt − 1
+
+d μ⊤ 
+
+> j
+
+E[( α1/2 ˇWt + α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,t
+
+)] = 0 lim 
+
+> d→∞
+
+1
+
+d θ⊤ 
+
+> r
+
+θs = ˇΩT [r, s ]22 
+
+lim 
+
+> d→∞
+
+1
+
+d θ⊤ 
+
+> r
+
+˜θs = ˇΞ[ r, s ]lim 
+
+> n→∞
+
+1
+
+n ˆh⊤ 
+
+> r
+
+ˆhs = ˇΣT [r, s ],
+
+where ( ˇW1, . . . , ˇWT ) ∼ N (0 , ˇΣT ⊗ Id d) from Definition A.10 and Yj ∼ Pj .Moreover, if ¯ϕ(h, y, a, j ) : RL × R × RL′
+
+× [J] → R is a Lipschitz function in h uniformly over y, a, j ,then the following limit also holds almost surely, 
+
+lim 
+
+> n,d →∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+¯ϕ(ht,i , y i, ¯at, j (i)) = X
+
+> j∈[J]
+
+pj E[ ¯ϕ(mj,t + ˇZt, Y j , ¯at, j )] ,
+
+where j(i) maps coordinate i to its block Bj with i ∈ Bj and ( ˇZ1, . . . , ˇZT ) ∼ N (0 , ˇΩT ) from Definition A.10. Proof. First, we prove the following inductive claim, for all t ∈ [T ], there exists almost sure limits 
+
+˜Ωzt , ˜Σwt of Ωzt , Σwt as d → ∞ which are recursively defined by the following system initialized at 
+
+˜Ωz 
+
+> 1
+
+= α−1 ¯θ2 (with ¯θ2 from Assumption A.3) where Yj ∼ Pj ,
+
+˜Σwt [r, s ] = 
+
+> J
+
+X
+
+> j=1
+
+pj E[g(α1/2 ˜Zr + mj,r , Y j , ¯ar)g(α1/2 ˜Zs + mj,s , Y j , ¯as)⊤], r, s ∈ [t]( ˜Zr, ˜Zs) ∼ N 
+
+
+
+0,
+
+ ˜Ωzt [r, r ] ˜Ωzt [r, s ]˜Ωzt [s, r ] ˜Ωzt [s, s ]
+
+ 
+
+˜Ξt[r + 1 , s ] = η0 ˜Ξt−1[r, s ] − η1
+
+
+
+α ˜Σwt [r, s ] + α2
+
+> J
+
+X
+
+> j,k =1
+
+χj,k ℓj,r ℓ⊤
+
+> k,s
+
+
+
+, r, s ∈ [t]˜Ξt[1 , s ] = α
+
+> J
+
+X
+
+> j=1
+
+mj, 1ℓ⊤
+
+> j,s
+
+, s ∈ [t]˜Ωzt+1 [r + 1 , s + 1] = ˜Ωzt [r, s ]−α−1 ˜Ξt[r, s ]−α−1 ˜Ξt[s, r ]⊤+α−1
+
+α ˜Σwt [r, s ]+ α2
+
+> J
+
+X
+
+> j,k =1
+
+χj,k ℓj,r ℓ⊤
+
+> k,s
+
+
+
+,r, s ∈ [t]˜Ωzt+1 [1 , s + 1] = η0 ˜Ωzt [1 , s ] − α−1η1 ˜Ξt[1 , s ] = ˜Ωt+1 [s + 1 , 1] ⊤, s ∈ [t]˜Ωzt+1 [1 , 1] = α−1 ¯θ2.
+
+(A.9) We proceed by induction. For each t ∈ [T ], we first prove the almost sure limit of Ωzt and then the almost sure limit of Σwt , deriving the limits of intermediate variables in Definition A.8 between these steps. The base case follows immediately as lim d→∞ Ωz 
+
+> 1
+
+= lim d→∞ α−1 θ⊤  
+
+> 1θ1
+> d
+
+= α−1 ¯θ2 by Assumption A.3. Then, with Z1 ∼ N (0 , Ωz 
+
+> 1
+
+⊗ Id n), we write that 
+
+Σw 
+
+> 1
+
+= 1
+
+n E
+
+g
+
+α1/2Z1 +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j, 1
+
+, y, ¯a1
+
+
+
+> ⊤
+
+g
+
+α1/2Z1 +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j, 1
+
+, y, ¯a1
+
+
+
+=
+
+> J
+
+X
+
+> j=1
+
+|Bj |
+
+n
+
+1
+
+|Bj |
+
+X
+
+> i∈Bj
+
+E[g(α1/2Z⊤ 
+
+> 1,i
+
++ mj(i),1, y i, ¯a1)g(α1/2Z⊤ 
+
+> 1,i
+
++ mj(i),1, y, ¯a1)⊤].23 
+
+Then, applying the strong law of large numbers on the set of coordinates i ∈ Bj for the random variables yi ∼ Pj , the continuous mapping theorem for the almost sure limit lim n→∞ |Bj |/n = pj ,and the continuous mapping theorem applied to the variance Z1,i (i.e. Ωz
+
+1 with almost sure limit ˜Ωz
+
+1)using that g is a continuous function, gives that the almost sure limit of Σw
+
+1 is 
+
+˜Σw
+
+1 =
+
+JX
+
+j=1 
+
+pj E[g(α1/2 ˜Z1 + mj, 1, Y j , ¯a1)g(α1/2 ˜Z1 + mj, 1, Y j , ¯a1)⊤],
+
+where ˜Z1 ∼ N (0 , ˜Ωz
+
+1).Now, we assume the inductive claim holds up to time t − 1, i.e. the matrices ˜Ωzt−1 and ˜Σwt−1 are the almost sure limits of the matrices Ωzt−1 and Σwt−1 respectively. Recall the choice of functions G, F t from (A.7), we can then rewrite Ωzt , with r, s ∈ [t − 1] , as 
+
+Ωzt [r + 1 , s + 1] = α−1
+
+d E
+
+"
+
+ηr 
+
+> 0
+
+θ1−η1
+
+> r
+
+X
+
+> p=1
+
+ηr−p 
+
+> 0
+
+α1/2Wp+α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,p
+
+!!⊤
+
+ηs 
+
+> 0
+
+θ1−η1
+
+> s
+
+X
+
+> q=1
+
+ηs−q 
+
+> 0
+
+α1/2Wq +α
+
+> J
+
+X
+
+> k=1
+
+μk ℓ⊤
+
+> k,q
+
+!!# 
+
+= α−1
+
+d E
+
+"( 
+
+η0 ηr−10 θ1−η1
+
+> r−1
+
+X
+
+> p=1
+
+η(r−1) −p 
+
+> 0
+
+α1/2Wp+α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,p
+
+!! | {z }
+
+> Ar−1
+
+−η1 α1/2Wr +α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,r
+
+!| {z }
+
+> Br
+
+)⊤
+
+×
+
+(
+
+η0 ηs−10 θ1−η1
+
+> s−1
+
+X
+
+> q=1
+
+η(s−1) −q 
+
+> 0
+
+α1/2Wq +α
+
+> J
+
+X
+
+> k=1
+
+μk ℓ⊤
+
+> k,q
+
+!! | {z }
+
+> As−1
+
+−η1 α1/2Ws+α
+
+> J
+
+X
+
+> k=1
+
+μk ℓ⊤
+
+> k,s
+
+!| {z }
+
+> Bs
+
+)# 
+
+= α−1 1
+
+d
+
+
+
+E[η20 A⊤
+
+> r−1
+
+As−1 − η0η1(A⊤
+
+> r−1
+
+Bs + B⊤ 
+
+> r
+
+As−1) + η21 B⊤ 
+
+> r
+
+Bs]
+
+
+
+where (W1, . . . , W t−1) ∼ N (0 , Σwt−1 ⊗ Id d). Moreover, we have the following simplifications, 
+
+α−1
+
+d E[A⊤
+
+r−1As−1] = Ω zt−1[r, s ], (As Ar−1 is Fr−1(W1, . . . , W r) and similarly for As−1)
+
+1
+
+d E[A⊤
+
+r−1Bs] = 1
+
+d E
+
+ηr−10 θ1 − η1
+
+r−1X
+
+p=1 
+
+η(r−1) −p
+
+0 Bp
+
+
+
+⊤
+
+Bs
+
+ ,
+
+1
+
+d E[B⊤
+
+r As−1] = 1
+
+d E
+
+B⊤
+
+r
+
+ηs−10 θ1 − η1
+
+s−1X
+
+q=1 
+
+η(s−1) −q
+
+0 Bq
+
+ ,
+
+1
+
+d E[B⊤
+
+r Bs] = 1
+
+d
+
+αE[W ⊤
+
+r Ws]+ α3/2
+
+JX
+
+k=1 
+
+E[Wr]⊤μkℓ⊤
+
+k,r +α3/2
+
+JX
+
+j=1 
+
+ℓj,r μ⊤
+
+j E[Ws]+ α2
+
+JX
+
+j,k =1 
+
+ℓj,r μ⊤
+
+j μkℓ⊤
+
+k,s 
+
+
+
+= α E[W ⊤
+
+r Ws]
+
+d + α2
+
+JX
+
+j,k =1 
+
+ℓj,r 
+
+μ⊤
+
+j μk
+
+d ℓ⊤
+
+k,s 
+
+= αΣwt−1[r, s ] + α2
+
+JX
+
+j,k =1 
+
+ℓj,r 
+
+μ⊤
+
+j μk
+
+d ℓ⊤
+
+k,s 24 
+
+as E[Wr] = 0 . This in turn implies that, 
+
+Ωzt [r + 1 , s + 1] = η20 Ωzt−1[r, s ] − α−1η0η1(Ξ zt−1[r, s ] + Ξ zt−1[s, r ]⊤)+ α−1η21
+
+αΣwt−1[r, s ] + α2
+
+> J
+
+X
+
+> j,k =1
+
+ℓj,r 
+
+μ⊤ 
+
+> j
+
+μk
+
+d ℓ⊤
+
+> k,s
+
+ , (A.10) where, with initialization Ξzt [1 , s ] = 1 
+
+> d
+
+θ⊤ 
+
+> 1
+
+E[Bs] and r ∈ [t − 2] , s ∈ [t − 1] , we recursively define, 
+
+Ξzt−1[r + 1 , s ] = 1
+
+d E
+
+η0θ1 − η1
+
+> r
+
+X
+
+> p=1
+
+ηr−pθ, 0 Bp
+
+
+
+> ⊤
+
+Bs
+
+
+
+= 1
+
+d E
+
+η0
+
+η0θ1 − η1
+
+> r−1
+
+X
+
+> p=1
+
+η(r−1) −pθ, 0 Bp
+
+ − η1Br
+
+
+
+> ⊤
+
+Bs
+
+
+
+= η0Ξzt−2[r, s ] − η1
+
+1
+
+d E
+
+h
+
+B⊤ 
+
+> r
+
+Bs
+
+i
+
+= η0Ξzt−2[r, s ] − η1
+
+αΣwt−1[r, s ] + α2
+
+> J
+
+X
+
+> j,k =1
+
+ℓj,r 
+
+μ⊤ 
+
+> j
+
+μk
+
+d ℓ⊤
+
+> k,s
+
+ .
+
+By the inductive hypothesis, we have the covariance matrix Σwt−1 has the almost sure limit ˜Σwt−1 and the covariance matrix Ωzt−1 has the almost sure limit ˜Ωzt−1. Thus, under equation (A.10) , we apply the strong law of large numbers on the coordinates i ∈ Bj for the independent random variables 
+
+yi ∼ Pj , the continuous mapping theorem for the almost sure limit lim n→∞ |Bj |/n = pj , limit 
+
+lim d→∞   
+
+> μ⊤
+> jμk
+> d
+
+= χj,k from Assumption A.3 (1) and limit lim d→∞ θ⊤  
+
+> 1μj
+> d
+
+= mj, 1 from Assumption A.3 (2) to give that Ωzt has the following almost sure limit, with r, s ∈ [t − 1] ,
+
+˜Ωzt [r + 1 , s + 1] = η20 ˜Ωzt−1[r, s ] − α−1η0η1(˜Ξt−1[r, s ] + ˜Ξt−1[s, r ]⊤)+ α−1η21
+
+α ˜Σwt−1[r, s ] + α2
+
+> J
+
+X
+
+> j,k =1
+
+χj,k ℓj,r ℓ⊤
+
+> k,s
+
+ ,
+
+where we recursively define, with r ∈ [t − 2] and s ∈ [t − 1] ,
+
+˜Ξt−1[r + 1 , s ] = η0 ˜Ξt−2[r, s ] − η1
+
+α ˜Σwt−1[r, s ] + α2
+
+> J
+
+X
+
+> j,k =1
+
+χj,k ℓj,r ℓ⊤
+
+> k,s
+
+ ,
+
+with ˜Ξt−1[1 , s ] = α PJj=1 mj, 1ℓ⊤
+
+> j,s
+
+.Moreover, we can write 
+
+Ωzt [1 , s + 1] = α−1
+
+d θ⊤ 
+
+> 1
+
+E
+
+"
+
+η0
+
+ηs−10 θ1 − η1
+
+> s−1
+
+X
+
+> q=1
+
+η(s−1) −q 
+
+> 0
+
+α1/2Wq + α
+
+> J
+
+X
+
+> k=1
+
+μkℓ⊤
+
+> k,q
+
+!
+
+− η1 α1/2Ws + α
+
+> J
+
+X
+
+> k=1
+
+μkℓ⊤
+
+> k,s
+
+! # 
+
+= η0Ωzt−1[1 , s ] − α−1η1Ξzt−1[1 , s ]25 
+
+as E[Wq] = 0 , which can be argued identically as above to have the almost sure limit, 
+
+˜Ωzt [1 , s + 1] = η0 ˜Ωzt−1[1 , s ] − α−1η1 ˜Ξt−1[1 , s ].
+
+As a final step, we can use the aforementioned argument on the convergence of Ωz 
+
+> 1
+
+to give that 
+
+Ωzt [1 , 1] has the almost sure limit ˜Ωzt [1 , 1] = ˜Ωz
+
+> 1
+
+[1 , 1] .Then, we can write Σwt as, 
+
+Σwt [r, s ] = 1
+
+n E
+
+g
+
+α1/2Zr +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,r
+
+, y, ¯ar
+
+ g
+
+α1/2Zs +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,s
+
+, y, ¯as
+
+
+
+=
+
+> J
+
+X
+
+> j=1
+
+|Bj |
+
+n
+
+1
+
+|Bj |
+
+X
+
+> i∈Bj
+
+E[g(α1/2Zr,i + mj(i),r , y i, ¯ar)⊤g(α1/2Zs,i + mj(i),s , y i, ¯as)⊤]
+
+where (Z1, . . . , Z t) ∼ N (0 , Ωzt ⊗ Id n).An application of the strong law of large numbers over the block Bj where each yi ∼ Pj independently and the continuous mapping theorem on the covariance of Zr,i and Zs,i , using that g is a continuous function, then gives that Σwt has the almost sure limit, 
+
+˜Σwt [r, s ] = 
+
+> J
+
+X
+
+> j=1
+
+pj E[g(α1/2 ˜Zr + mj,r , Y j , ¯ar)g(α1/2 ˜Zs + mj,s , Y j , ¯as)⊤],
+
+where ( ˜Zr, ˜Zs) ∼ N 
+
+
+
+0,
+
+ ˜Ωzt [r, r ] ˜Ωzt [r, s ]˜Ωzt [s, r ] ˜Ωzt [s, s ]
+
+ 
+
+. This proves the inductive claim. Recalling system (A.9) , we can relate this system back to Definition A.10 by considering the change of variables ˇZt = α1/2 ˜Zt, ˇΩt+1 = α ˜Ωzt+1 , ˇΞt = ˜Ξt and ˇΣt = ˜Σwt . Recall the reparameterization (A.5) ,where, for any two functions ϕ, φ given in Lemma A.9, we can write 
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ(h1, . . . , h T )i = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ
+
+α1/2z1 +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j, 1
+
+, . . . , α 1/2zT +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,T
+
+
+
+> i
+
+,
+
+or 
+
+1
+
+d
+
+> d
+
+X
+
+> i=1
+
+φ(˜θ1, . . . , ˜θT ) = 1
+
+d
+
+> d
+
+X
+
+> i=1
+
+φ
+
+α1/2w1 + α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j, 1
+
+, . . . , α 1/2wT + α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,T
+
+
+
+> i
+
+.
+
+Notice, if both ϕ1, ϕ 2 and φ1, φ 2 are L-Lipschitz in their first argument then the following functions are Lα 1/2 Lipschitz with respect to either z1, . . . , z T or w1, . . . , w T , for both i ∈ { 1, 2},
+
+(z1, . . . , z T ) 7 → ϕi
+
+α1/2z1 +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j, 1
+
+, . . . , α 1/2zT +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,T
+
+
+
+(w1, . . . , w T ) 7 → φi
+
+α1/2w1 + α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j, 1
+
+, . . . , α 1/2wT + α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,T
+
+ .
+
+Therefore, by Lemma A.9 and the aforementioned change of variables between system (A.9) and Definition A.10, we have almost surely that 
+
+lim 
+
+> n→∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ(h1, . . . , h T )i − lim 
+
+> n→∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ
+
+ ˇZ1 +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j, 1
+
+, . . . , ˇZT +
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤
+
+> j,T
+
+
+
+> i
+
+= 0 , (A.11) 26 
+
+or 
+
+lim 
+
+> d→∞
+
+1
+
+d
+
+> d
+
+X
+
+> i=1
+
+φ(˜θ1, . . . , ˜θT )i− lim 
+
+> d→∞
+
+1
+
+d
+
+> d
+
+X
+
+> i=1
+
+φ
+
+α1/2 ˇW1+α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j, 1
+
+, . . . , α 1/2WT +α
+
+> J
+
+X
+
+> j=1
+
+μj ℓ⊤
+
+> j,T
+
+
+
+> i
+
+= 0 ,
+
+(A.12) where ( ˇZ1, . . . , ˇZT ) ∼ N (0 , ˇΩT ⊗ Id n) and ( ˇW1, . . . , ˇWT ) ∼ N (0 , ˇΣT ⊗ Id d).Each of the limits in the statement of the lemma follow immediately from the following choice of ϕ and φ, using equations (A.11) or (A.12) and using the identicality of the row distribution of 
+
+ˇZ1, . . . , ˇZT and ˇW1, . . . , ˇWT (recalling that φ(·)i = φ1(·)iφ2(·)i and similarly for ϕ): 
+
+1
+
+d μ⊤ 
+
+> j
+
+˜θt, φ(˜θ1, . . . , ˜θT )i = μj,i ˜θt,i 
+
+1
+
+d θ⊤ 
+
+> r
+
+θs, φ(˜θ1, . . . , ˜θT )i =
+
+ηr
+
+> 0
+
+θ1 − η1
+
+> r
+
+X
+
+> p=1
+
+ηr−p 
+
+> 0
+
+˜θp,i 
+
+ηs
+
+> 0
+
+θ1 − η1
+
+> s
+
+X
+
+> q=1
+
+ηs−q 
+
+> 0
+
+˜θq,i 
+
+
+
+1
+
+d θ⊤ 
+
+> r
+
+˜θs, φ(˜θ1, . . . , ˜θT )i =
+
+ηr
+
+> 0
+
+θ1 − η1
+
+> r
+
+X
+
+> p=1
+
+ηr−p 
+
+> 0
+
+˜θp,i 
+
+ ˜θs
+
+1
+
+n ˆh⊤ 
+
+> r
+
+ˆhs, ϕ(h1, . . . , h T )i = g(hr,i , y i, ¯ar)g(hs,i , y i, ¯as) (A.13) and, for the first three limits, invoking the law of large numbers on row-wise independent laws of ˇW1, . . . , ˇWt, ˇZ1, . . . , ˇZt to relate back to Definition A.10. Note, (A.13) , and more generally the statement on 1
+
+> n
+
+Pni=1 ¯ϕ(ht,i , y i, ¯at, j ) = PJj=1  
+
+> |Bj|
+> n
+
+P
+
+> i∈Bj
+
+¯ϕ(ht, y, ¯at, j )i (where ¯ϕ is applied row-wise) in the statement of this corollary follows by selecting (ϕ1)i = ¯ϕ(·, y i, ¯at, j ) (or g(·, y i, ¯at)) for each 
+
+i ∈ [n] and ϕ2 being the all ones vector (or g(·, y i, ¯at)) and using equation (A.11) . Then an application of the continuous mapping theorem for the almost sure limit lim n→∞ |Bj |/n , the identicality of the row distribution of ˇZ1, . . . , ˇZT , alongside the strong law of large numbers applied to the block Bj
+
+where each yi ∼ Pj independently proves the claim. ■
+
+We conclude this section by observing that Definition A.10, with the exception of the updates on the frozen state evolution parameters, is equivalent Definition A.5. A.7.3. Convergence of Lower-order Recursions Of mj,t , ℓ j,t And ¯at. Let ˜m⊤ 
+
+> j,t
+
+= μ⊤  
+
+> jθt
+> d
+
+and ˜ℓ⊤ 
+
+> j,t
+
+= e⊤ 
+
+> Bj
+> ˆht
+> d
+
+,consider the following algorithm equivalent to (A.3), 
+
+ht =
+
+> J
+
+X
+
+> j=1
+
+eBj ˜m⊤ 
+
+> j,t
+
++ Zθ t + η1
+
+> t−1
+
+X
+
+> s=1
+
+η(t−1) −s 
+
+> 0
+
+ˆhs
+
+ˆht = g(ht, y, a t)˜θt =
+
+> J
+
+X
+
+> j=1
+
+αμ j ˜ℓ⊤ 
+
+> j,t
+
++ Z⊤ˆht − α 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∇hg(ht,i , y i, a t)
+
+!
+
+θt
+
+θt+1 = η0θt − η1 ˜θt
+
+at+1 = γ0at − γ1
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+f (ht,i , y i, a t).
+
+We prove the following. 27 
+
+Lemma A.12. Assume that almost surely the following limits exist, lim d→∞ ˜mj,t = mj,t ∈ RL,
+
+lim d→∞ ˜ℓj,t = ℓj,t ∈ RL and lim d→∞ at = ¯at. If ϕ1, ϕ 2 : Rn×(L·T ) × Rn × RL′·T → Rn, φ1, φ 2 :
+
+Rd×(L·T ) × RL′·T → Rn are Lipschitz in their first argument (and third argument for ϕ1, ϕ 2, both uniformly over the second argument y ∈ Rn), then we have that almost surely, 
+
+lim 
+
+> n→∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ(h1, . . . , h T , y, a 1, . . . , a T )i − 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ(hfrozen 1 , . . . , h frozen  
+
+> T
+
+, y, ¯a1, . . . , ¯aT )i = 0 
+
+and 
+
+lim 
+
+> n→∞
+
+1
+
+d
+
+> d
+
+X
+
+> i=1
+
+φ(˜θ1, . . . , ˜θT , a 1, . . . , a T )i − 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ϕ(˜θfrozen 1 , . . . , ˜θfrozen  
+
+> T
+
+, ¯a1, . . . , ¯aT )i = 0 ,
+
+where ϕ(·)i = ϕ1(·)iϕ2(·)i and φ(·)i = φ1(·)iφ2(·)i.Proof. We proceed by induction on t ∈ [T ] to prove the iterates of the original and frozen algorithm have a vanishing difference in two-norm almost surely as n, d → ∞ with n/d → α. Specifically, we prove the following limits hold almost surely, 
+
+lim 
+
+> n→∞
+
+1
+
+n ∥ht − hfrozen  
+
+> t
+
+∥22 = 0 , lim 
+
+> n→∞
+
+1
+
+n ∥ˆht − ˆhfrozen  
+
+> t
+
+∥22 = 0 , (A.14) 
+
+lim 
+
+> d→∞
+
+1
+
+d ∥˜θt − ˜θfrozen  
+
+> t
+
+∥22 = 0 , lim 
+
+> d→∞
+
+1
+
+d ∥θt+1 − θfrozen  
+
+> t+1
+
+∥22 = 0 . (A.15) 
+
+Base Case ( t = 1 ): By initialization, θ1 = θfrozen 1 . Evaluating the pre-activations gives, 
+
+h1 − hfrozen 1 =
+
+
+
+> J
+
+X
+
+> j=1
+
+eBj ˜m⊤ 
+
+> j, 1
+
++ Zθ 1
+
+ −
+
+
+
+> J
+
+X
+
+> j=1
+
+eBj m⊤ 
+
+> j, 1
+
++ Zθ frozen 1
+
+
+
+=
+
+> J
+
+X
+
+> j=1
+
+eBj ( ˜ mj, 1 − mj, 1)⊤.
+
+Since lim d→∞ ˜mj, 1 = mj, 1 almost surely, and that lim n→∞ ∥eBj ∥22/n = pj ∈ [0 , 1] from Assumption A.3 (1) (with J being n-independent), we have lim n→∞ 1 
+
+> n
+
+∥h1 − hfrozen 1 ∥22 = 0 almost surely. Thus, as the function g is Lipschitz with respect to input h1, a 1 (for some bounded constant C > 0), we have that 
+
+1
+
+n ∥ˆh1 − ˆhfrozen 1 ∥22 = 1
+
+n ∥g(h1, y, a 1) − g(hfrozen 1 , y, ¯a1)∥22
+
+≤ C
+
+ 1
+
+n ∥h1 − hfrozen 1 ∥22 + ∥a1 − ¯a1∥22
+
+
+
+.
+
+Therefore, as an immediate consequence of lim n→∞ 1 
+
+> n
+
+∥h1 − hfrozen 1 ∥22 = 0 and lim d→∞ a1 = ¯a1, we have lim n→∞ 1 
+
+> n
+
+∥ˆh1 − ˆhfrozen 1 ∥22 = 0 almost surely. 
+
+Inductive Step: Assume equations (A.14) and (A.15) hold for all s ≤ t. We first consider the update for ˜θt:
+
+˜θt − ˜θfrozen  
+
+> t
+
+= α
+
+> J
+
+X
+
+> j=1
+
+μj (˜ℓj,t − ℓj,t )⊤ + Z⊤(ˆht − ˆhfrozen  
+
+> t
+
+)
+
+− α
+
+
+
+⟨∇ hg(ht, y, a t)⟩ θt −
+
+D
+
+∇hg(hfrozen  
+
+> t
+
+, y, ¯at)
+
+E
+
+θfrozen 
+
+> t
+
+
+
+,
+
+where ⟨·⟩ is a shorthand for the empirical average over n coordinates. We bound the two-norm of each of these three terms separately: 28 
+
+(1) Signal Term: Since lim d→∞ ˜ℓj,t = ℓj,t and 1 
+
+> d
+
+∥μj ∥22 = O(1) by Assumption A.3 (1) , we immediately have lim d→∞ 1 
+
+> d
+
+∥α PJj=1 μj (˜ℓj,t − ℓj,t )⊤∥22 = 0 almost surely. (2) Noise Term: Since Z ∈ Rn×d is a matrix with independent N (0 , 1/d ) entries, the operator norm ∥Z∥op is almost surely bounded [1] as n, d → ∞ . Thus, almost surely, 
+
+lim 
+
+> d→∞
+
+1
+
+d ∥Z⊤(ˆht − ˆhfrozen  
+
+> t
+
+)∥22 ≤ lim 
+
+> d→∞
+
+∥Z∥2op 
+
+d ∥ˆht − ˆhfrozen  
+
+> t
+
+∥22 = lim  
+
+> d→∞
+
+α∥Z∥2op 
+
+1
+
+n ∥ˆht − ˆhfrozen  
+
+> t
+
+∥22 = 0 ,
+
+where the final equality applied the inductive hypothesis on ˆht.(3) Onsager Term: Adding and subtracting ⟨∇ hg(hfrozen  
+
+> t
+
+, y, ¯at)⟩θt, we have by the triangle inequality and Cauchy-Schwarz, 
+
+α2
+
+d ⟨∇ hg(ht, y, a t)⟩θt − ⟨∇ hg(hfrozen  
+
+> t
+
+, y, ¯at)⟩θfrozen 
+
+> t
+> 22
+
+≤ 2α2 ⟨∇ hg(ht, y, a t)⟩ − ⟨∇ hg(hfrozen  
+
+> t
+
+, y, ¯at)⟩ 2op 
+
+∥θt∥22
+
+d
+
++ 2 α2 ⟨∇ hg(hfrozen  
+
+> t
+
+, y, ¯at)⟩ 2op 
+
+∥θt − θfrozen  
+
+> t
+
+∥22
+
+d .
+
+By Assumption A.3 (3) , ∇hg is Lipschitz in both h and a. Thus, the operator norm difference 
+
+⟨∇ hg(ht, y, a t)⟩ − ⟨∇ hg(hfrozen  
+
+> t
+
+, y, ¯at)⟩ 2op vanishes almost surely by the inductive hypothesis on ht and the almost sure convergence of lim n→∞ at = ¯at. Since 1 
+
+> d
+
+∥θt∥22 = O(1) almost surely (by the inductive hypothesis and Corollary A.11), the first term vanishes. The second term vanishes because 1 
+
+> d
+
+∥θt − θfrozen  
+
+> t
+
+∥22 → 0 by the inductive hypothesis, and the empirical average of ∇hg is bounded. Therefore, 1 
+
+> d
+
+∥˜θt − ˜θfrozen  
+
+> t
+
+∥22 → 0.By the linear update θt+1 = η0θt − η1 ˜θt, we trivially obtain 1 
+
+> d
+
+∥θt+1 − θfrozen  
+
+> t+1
+
+∥22 → 0.Similarly, evaluating the update for ht+1 ,
+
+ht+1 − hfrozen  
+
+> t+1
+
+=
+
+> J
+
+X
+
+> j=1
+
+eBj ( ˜ mj,t +1 − mj,t +1 )⊤ + Z(θt+1 − θfrozen  
+
+> t+1
+
+)+ η1
+
+> t
+
+X
+
+> s=1
+
+ηt−s 
+
+> 0
+
+(ˆhs − ˆhfrozen  
+
+> s
+
+).
+
+Applying the assumed limits for ˜mj,t +1 , the bounded operator norm of Z, and the inductive hypothesis on the past ˆhs iterates, we find lim n→∞ 1 
+
+> n
+
+∥ht+1 − hfrozen  
+
+> t+1
+
+∥22 = 0 almost surely. 
+
+Convergence of Test Functions: We now prove that almost sure convergence of the iter-ates implies the almost sure convergence of the test functions. Consider ϕ(·)i = ϕ1(·)iϕ2(·)i
+
+where ϕ1, ϕ 2 : Rn×(L·T ) × Rn × RL′·T → Rn are Lipschitz functions satisfying the statement of the Lemma. For notational simplicity, we abbreviate ϕ(h1, . . . , h T , y, a 1, . . . , a T ) as ϕ(h) and . 
+
+ϕ(hfrozen 1 , . . . , h frozen  
+
+> T
+
+, y, ¯a1, . . . , ¯aT ) as ϕ(hfrozen ).We then have that, 
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+(ϕ(h)i − ϕ(hfrozen )i) = 1
+
+n ϕ1(h)⊤ϕ2(h) − ϕ1(hfrozen )⊤ϕ2(hfrozen )
+
+≤ 1
+
+n
+
+
+
+ϕ1(h)⊤ϕ2(h) − ϕ1(h)⊤ϕ2(hfrozen ) + ϕ1(h)⊤ϕ2(hfrozen ) − ϕ1(hfrozen )⊤ϕ2(hfrozen )
+
+
+
+(A.16) 29 
+
+By the Cauchy-Schwarz inequality, the first term is bounded by, 
+
+ 1
+
+n ∥ϕ1(h)∥22
+
+1/2  1
+
+n ∥ϕ2(h) − ϕ2(hfrozen )∥22
+
+1/2
+
+.
+
+Because ϕ1 is Lipschitz (for some constant C > 0) in h, a we have that 
+
+1
+
+n ∥ϕ1(h)∥22 = 1
+
+n ∥ϕ1(h) − ϕ1(hfrozen ) + ϕ1(hfrozen )∥22
+
+≤ 2
+
+n ∥ϕ1(h) − ϕ1(hfrozen )∥22 + 2
+
+n ∥ϕ1(hfrozen )∥22
+
+≤ 2C 1
+
+n ∥h − hfrozen ∥2 
+
+> F
+
++
+
+> T
+
+X
+
+> t=1
+
+∥at − ¯at∥22
+
+!
+
++ 2
+
+n ∥ϕ1(hfrozen )∥22
+
+and using the inductive hypothesis, the assumed almost sure convergence of at and Corollary A.11 on 2 
+
+> n
+
+∥ϕ1(hfrozen )∥22 implies that it is almost surely bounded by a constant. Moreover, using that ϕ2 is Lipschitz (for some bounded Lipschitz constant C > 0) in both argument h1, . . . , h T and a1, . . . , a T ,we have that 
+
+1
+
+n ∥ϕ2(h) − ϕ2(hfrozen )∥22 = 1
+
+n ∥ϕ2(h, y, a 1, . . . , a T ) − ϕ2(hfrozen , y, ¯a1, . . . , ¯aT )∥22
+
+≤ C 1
+
+n ∥h − hfrozen ∥2 
+
+> F
+
++
+
+> T
+
+X
+
+> t=1
+
+∥at − ¯at∥22
+
+!
+
+.
+
+As we have previously shown that ( 1 
+
+> n
+
+∥h − hfrozen ∥2 
+
+> F
+
+) converges to 0 almost surely, then the first term of (A.16) converges to zero almost surely. Applying the symmetric argument to the second term in (A.16) gives the desired almost sure limit for ϕ.An identical argument gives the exact same result for φ( ˜θ1, . . . , ˜θT , a 1, . . . , a T ). This completes the proof. ■
+
+A.7.4. The Almost Sure Limits mj,t , ℓj,t And ¯at. To avoid confusion with the function ϕ used in the appendix, we denote the test function in Lemma 3.6 as ¯ϕ.Combining Corollary A.11 and Lemma A.12, the proof of Lemma 3.6 follows after observing that Assumption A.7 can allow ¯ϕ to be utilized in both Corollary A.11 and Lemma A.12 with the identification of ϕ1 = ¯ϕ (applied row-wise) and ϕ2 being the all ones vector. As Definition A.8 and Definition A.5 are identical up to the frozen state evolution parameters, and have proven we can replace ˜mj,t , ˜ℓj,t and at by the frozen sequence of their respective almost sure limits, we are done once we identify the recursions for the almost sure limits of ˜mj,t , ˜ℓj,t and at.For the case of ˜mj,t , we have that, 
+
+˜mj,t +1 = θ⊤
+
+> t+1
+
+μj
+
+d = η0 ˜mj,t − η1
+
+˜θ⊤ 
+
+> t
+
+μj
+
+d ,
+
+recursively plugging in the almost sure limit of 1 
+
+> d
+
+μ⊤ 
+
+> j
+
+˜θt from Corollary A.11 and that E[ ˇWt] = 0 , we have that for each s ∈ [T ],
+
+lim 
+
+> d→∞
+
+˜θ⊤ 
+
+> s
+
+μj
+
+d = lim  
+
+> d→∞
+
+α
+
+> J
+
+X
+
+> k=1
+
+μ⊤ 
+
+> k
+
+μj
+
+d ℓk,s = α
+
+> J
+
+X
+
+> k=1
+
+χj,k ℓk,s ,30 
+
+by the assumed limit of μ⊤  
+
+> jμk
+> d
+
+= μ⊤  
+
+> kμj
+> d
+
+in Assumption A.3 (1) . Thus, we have that almost surely that 
+
+lim d→∞ ˜mj,t = mj,t defined by the recursion 
+
+mj,t +1 = η0mj,t − η1
+
+> J
+
+X
+
+> k=1
+
+αχ j,k ℓk,t .
+
+Similarly, using that ˜ℓj,t = e⊤ 
+
+> Bj
+> ˆht
+> d
+
+= |Bj | 
+
+> n
+> 1
+> |Bj|
+
+P
+
+> i∈Bj
+
+ˆht,i = |Bj | 
+
+> n
+> 1
+> |Bj|
+
+P 
+
+> i∈Bj
+
+g(ht,i , y i, a t), we have the almost sure limit, 
+
+ℓj,t = pj E[g(Zt + mj,t , Y j , ¯at)] ,
+
+where Zt ∼ N (0 , ˇΩt[t, t ]) .As a final note, using that at+1 = γ0at − γ1
+
+PJj=1   
+
+> |Bj|
+> n
+> 1
+> |Bj|
+
+P 
+
+> i∈Bj
+
+f (ht,i , y i, a t), and thus by Corollary A.11 with ϕ1 = f and ϕ2 being the all ones vector (recalling from Assumption A.3 (3) that f is Lipschitz in its first argument), we have the following almost sure limit, 
+
+¯at+1 = γ0¯at − γ1
+
+> J
+
+X
+
+> j=1
+
+pj E[f (Gt + mj,t , Y j , ¯at)] ,
+
+noting that ¯a1 = a1 and we assumed in Assumption A.3 (2) that ∥a1∥2 is bounded and that f is bounded from Assumption A.3 (3), meaning that each limit has ∥¯at∥2 bounded for t ∈ [T ].Combining these almost sure limits with the state evolution recursion from Definition A.10, we obtain the state evolution in Definition A.5 and thus conclude Lemma 3.6. A.8. The Proof Of Theorem 3.8. 
+
+Proof Of Theorem 3.8. Under Assumption A.3, we have that Assumption A.7 holds for the choice of ϕ(h, y, a ) = L(Ma(h), y ). Invoking Lemma 3.6 gives the following almost surely, 
+
+lim 
+
+> n→∞
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+L(Mat (ht,i ), y i) = 
+
+> J
+
+X
+
+> j=1
+
+pj E[L(M¯at (mj,t + Gt), Y j )] , Gt ∼ N (0 , Ωt[t, t ]) , Yj ∼ Pj ,
+
+it is then immediate that lim n→∞ 1
+
+> n
+
+Pni=1 L(Mat (ht,i ), y i) = test (m1,t , . . . , m J,t , Ωt[t, t ], ¯at) from Definition 3.5, invoking Proposition A.4 concludes the proof. ■
+
+A.9. The State Evolution Of Pure DD. Using Definition A.5, we can specify the state evolution for this algorithm. We abbreviate ∇hΨr,j = ∇hΨ( mj,r + Gr, Y j , ¯ar) where G1, . . . , G t ∼ N (0 , Ωt),
+
+Yj ∼ Pj and define Vr,s = αΣt[r, s ] + α2 PJj,k =1 χj,k pj pkE[∇hΨr,j ]E[∇hΨs,k ]⊤. With identical initializations from Definition A.5 and indices r, s ∈ [t], we recursively define, 
+
+Σt[r, s ] = 
+
+> J
+
+X
+
+> j=1
+
+pj E[∇hΨr,j ∇hΨ⊤ 
+
+> s,j
+
+]Ξt[r + 1 , s ] = Ξ t−1[r, s ] − ηV r,s 
+
+Ωt+1 [r + 1 , s + 1] = Ω t[r, s ] − η(Ξ t[r, s ] + Ξ t[s, r ]⊤) + η2Vr,s 
+
+mj,t +1 = mj,t − ηα 
+
+> J
+
+X
+
+> k=1
+
+χj,k pkE[∇hΨt,k ]¯at+1 = ¯ at − η
+
+> J
+
+X
+
+> j=1
+
+pj E[∇aΨ( mj,t + Gt, Y j , ¯at)] .
+
+(A.17) 31 
+
+A.10. Taylor Expansion Of (Pure) DD. Lemma A.13. Let μ ∈ RL, Σ ∈ RL×L and c ∈ R. Then for X ∼ N (cμ, Σ) , the following identities hold, 
+
+∇μE[f (X)] = cE[∇xf (x)|x=X ]
+
+∇ΣE[f (X)] = 12 E[∇2
+
+> x
+
+f (x)|x=X ]
+
+∇2
+
+> μ
+
+E[f (X)] = c2E[∇2
+
+> x
+
+f (x)|x=X ]
+
+∇2ΣE[f (X)] = 14 E[∇4
+
+> x
+
+f (x)|x=X ]
+
+∇μ∇ΣE[f (X)] = c
+
+2 E[∇3
+
+> x
+
+f (x)|x=X ].
+
+Proof. See [25, Equation (2)]. ■
+
+Lemma A.14. Suppose Assumption A.3 holds. Let T be the space of all θ = ( ¯a, m 1, . . . , m J , ω ) where 
+
+∥¯a∥2 ≤ C, ∥mj ∥2 ≤ C, and ∥ω−1∥op ≤ C, ∥ω∥op ≤ C for some constant C > 0. If G ∼ N (0 , Id L)
+
+and Yj ∼ Pj , then the expectations of the derivatives of Ψ( mj + ω1/2G, Y j , ¯a) with respect to ¯a, mj ,and ω exist, and the expectation operator can be interchanged with the derivative operator. Proof. To interchange the expectation and derivative, it suffices to show that the partial derivatives of Ψ( mj + ω1/2G, Y j , ¯a) with respect to ¯a, mj , and ω are uniformly bounded by an integrable function for all θ ∈ T .Let x = mj + ω1/2G. By Assumption A.3 (4) (a), Ψ is Lipschitz with respect to h and a. Therefore, the gradients ∇hΨ and ∇aΨ exist almost everywhere and are uniformly bounded by constant L > 0.Thus, each of the following derivatives satisfy 
+
+∥∇ ¯aΨ∥2 = ∥∇ aΨ∥2 ≤ L
+
+∥∇ mj Ψ∥2 = ∥∇ hΨ∥2 ≤ L
+
+∥∇ ωΨ∥F ≤ ∥∇ hΨ∥2∥∇ ω(ω1/2G)∥op ≤ L · C′∥G∥2,
+
+where C′ > 0 is a constant bounding the derivative of the matrix square root uniformly over the domain T ; such a constant exists by the assumption that max( ∥ω−1∥op , ∥ω∥op ) ≤ C.We construct the dominating function H(G) = max (L, L · C′∥G∥2). Because G ∼ N (0 , Id L), the second moment ∥G∥2 is bounded. Thus, H(G) is integrable and bounds the parameter derivatives independently of θ ∈ T , allowing the interchange of expectation and differentiation. ■
+
+Lemma A.15. Let Assumption A.3 (4) hold for a bounded constant C > 0, the operator norm of the block Hessian matrix ∇2
+
+> a,m, vec( ω)
+
+E[Ψ( m + ω1/2G, Y j , a )] is bounded by a constant C′ > 0 depending only on C.Proof. We can expand the matrix ∇2
+
+> a,m, vec( ω)
+
+E[Ψ] into the following 3 × 3 block matrix, 
+
+
+
+∇2
+
+> a
+
+E[Ψ( m+ω1/2G, y, a )] ∇a∇mE[Ψ( m+ω1/2G, y, a )] ∇a∇vec( ω)E[Ψ( m+ω1/2G, y, a )] 
+
+∇m∇aE[Ψ( m+ω1/2G, y, a )] ∇2
+
+> m
+
+E[Ψ( m+ω1/2G, y, a )] ∇m∇vec( ω)E[Ψ( m+ω1/2G, y, a )] 
+
+∇vec( ω)∇aE[Ψ( m+ω1/2G, y, a )] ∇vec( ω)∇mE[Ψ( m+ω1/2G, y, a )] ∇2vec( ω)E[Ψ( m+ω1/2G, y, a )] 
+
+ .
+
+Applying the derivative identities from Lemma A.13, each block in the above matrix becomes one of E[∇2
+
+> a
+
+Ψ] , E[∇h∇aΨ] , E[∇2
+
+> h
+
+Ψ] , 12 E[∇2
+
+> h
+
+∇aΨ] , 12 E[∇3
+
+> h
+
+Ψ] , and 14 E[∇4
+
+> h
+
+Ψ] , where we have suppressed the input for notational simplicity. 32 
+
+Assumption A.3 (4) guarantees the operator or Frobenius norm of each of these derivatives is bounded by C. Because the operator norm of any block matrix is bounded by the summed operator norms of its block matrices and the Frobenius norm strictly upper-bounds the operator norm, the operator norm of the entire block matrix is bounded by a finite linear combination of constant C, concluding the proof. ■
+
+Theorem A.16. Let T ∈ N finite. Consider algorithm (3.2) ; recall the state evolution variables (specifically Ωt, mj,t and ¯at) from Definition A.5 and test t = test (m1,t , . . . , m J,t , Ωt[t, t ], ¯at) from Definition 3.5. Let ϵ = max (|1 − η0|, |1 − γ0|, η 1, γ 1). If Assumption A.3 and Assumption A.7 (with respect to g, f )hold for sufficiently small ϵ > 0, then in the limit ϵ → 0, test t satisfies the following expansion with 
+
+Gt ∼ N (0 , Ωt[t, t ]) ,
+
+test t+1 = test t
+
+− (1 − γ0)
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇aΨ( mj,t + Gt, Y j , ¯at)] , ¯at
+
+E
+
+(A.18) 
+
+− γ1
+
+> J
+
+X
+
+> j,j ′=1
+
+pj pj′
+
+D
+
+E[∇aΨ( mj,t + Gt, Y j , ¯at)] , E[f (mj′,t + Gt, Y j′ , ¯at)] 
+
+E
+
+(A.19) 
+
+− (1 − η0)
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇hΨ( mj,t + Gt, Y j , ¯at)] , m j,t 
+
+E
+
+(A.20) 
+
+−η1α
+
+> J
+
+X
+
+> j,j ′=1
+
+pj χj,j ′ pj′
+
+D
+
+E[∇hΨ( mj,t +Gt, Y j , ¯at)] , E[g(mj′,t +Gt, Y j′ , ¯at)] 
+
+E
+
+(A.21) 
+
+− η0(1 − η0)
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , Ωt[t, t ]
+
+E
+
+(A.22) 
+
+− 12 η0η1
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , Ξt[t, t ] + Ξ t[t, t ]⊤E
+
+(A.23) 
+
++ δt,
+
+where sup t∈[T ] |δt| ≤ Cϵ 2 as ϵ → 0.Remark A.17 (Physical Interpretation Of The First Order Expansion) . The generalization error expansion from Theorem A.16 decomposes the local behavior of DD optimization into distinct physical terms. Connecting to works in spin glasses, one can interpret the order parameters mj,t and 
+
+Ωt[t, t ] as the magnetization (with respect to external field vectors μ1, . . . , μ J ) and self-overlap of the parameter θt respectively. In addition, each of terms (A.18) -(A.23) has the following physical interpretation: – Equations (A.18) and (A.20) correspond to weight decay due to the introduction of a non-zero damping factor of 1 − γ0 and 1 − η0 respectively. – Equation (A.19) enforces the representation of the model Ma to align the low-dimensional signal a with the loss landscape through the use of function f .– Equation (A.21) drives the signal acquisition of each of the vectors μ1, . . . , μ J by θ using the function g. Notice, the presence of χj,j ′ and α incorporates the overlap structure and data aspect ratio natively into the path of the optimization trajectory. 33 
+
+– Equations (A.22) and (A.23) govern the variance inflation of the relative noise in the directions perpendicular to μ1, . . . , μ J . The first term represents the effect of damping. The second term, through unrolling the definition of Ξt[t, t ], can be seen as cumulative correlation of the current gradient direction with the direction of past gradient evaluations. Each of these effects is compared to the relative scale of the expected Hessian of the post-activations corresponding to the iterate θt, eliciting the intuition that flat regions of the loss landscape suffer from little inflation while steep regions are subject to strong inflation. 
+
+Proof Of Theorem A.16. By Definition 3.5, the value of test t+1 can be written as, 
+
+test t+1 =
+
+> J
+
+X
+
+> j=1
+
+pj E[L(M¯at+1 (mj,t +1 + (Ω t+1 [t+1 , t +1]) 1/2G), Y j )] ,
+
+where G ∼ N (0 , Id L) and Yj ∼ Pj . For convenience, we abbreviate Ωs[s, s ] = ωs for all s ∈ [t + 1] .Using the recursive definitions of mj,t +1 , ¯at+1 from Definition A.5 and ωt+1 from Remark A.6, we have that 
+
+test t+1 =
+
+> J
+
+X
+
+> j=1
+
+pj E[L(M¯at+∆¯ a(( mj,t + ∆ mj ) + ( ωt + ∆ ω)1/2G), Y j )] =
+
+> J
+
+X
+
+> j=1
+
+pj E[Ψ(( mj,t + ∆ mj ) + ( ωt + ∆ ω)1/2G, Y j , ¯at + ∆¯ a)] ,
+
+where we define (recalling ℓk,t from Definition A.5) 
+
+∆¯ a = −(1 − γ0)¯ at − γ1A, 
+
+∆mj = −(1 − η0)mj,t − η1Bj ,
+
+∆ω = −(1 − η20 )ωt − η0η1(Ξ t[t, t ] + Ξ t[t, t ]⊤) + η21
+
+αΣt[t, t ] + α2
+
+> J
+
+X
+
+> k,k ′=1
+
+χk,k ′ ℓk,t ℓ⊤
+
+> k′,t
+
+
+
+A =
+
+> J
+
+X
+
+> j=1
+
+pj E[f (mj,t + ω1/2 
+
+> t
+
+G, Y j , ¯at)] ,Bj = α
+
+> J
+
+X
+
+> k=1
+
+χj,k pkE[g(mk,t + ω1/2 
+
+> t
+
+G, Y k, ¯at)] 
+
+ℓk,t = pj E[g(mk,t + mk,t , Y k, ¯at)] ,
+
+with (G1, . . . , G t) ∼ N (0 , Ωt) implicit in the definition of Σt and Ξt.By Assumption A.3 (3) , the functions f, g are bounded, therefore each of A, (Bj )j∈[J], (ℓj,t )j∈[J] are element-wise bounded which further implies that ∥A∥2, ∥Bj ∥2, ∥ℓj,t ∥2 are bounded (dependent on dimension L) for all j ∈ [J].Moreover, by Assumption A.7 the operator norm of the matrices ωt = Ω t[t, t ] = Ω T [t, t ] and Σt[t, t ] = ΣT [t, t ] have bounded operator norm independent of t, and therefore the values of ∥ωt∥F , ∥Σt[t, t ]∥F
+
+are bounded independent of t ∈ [T ]. Invoking Lemma 3.6, we have that lim d→∞ θ⊤  
+
+> t˜θt
+> d
+
+= Ξ[ t, t ], then using that 
+
+θ⊤ 
+
+> t
+
+˜θt
+
+d F
+
+≤ θt
+
+√d F
+
+˜θt
+
+√d F
+
+=
+
+s
+
+Tr 
+
+ θ⊤ 
+
+> t
+
+θt
+
+d
+
+vuutTr ˜θ⊤ 
+
+> t
+
+˜θt
+
+d
+
+!34 
+
+and the limiting values of lim d→∞ θ⊤  
+
+> tθt
+> d
+
+= ωt and lim d→∞   
+
+> ˜θ⊤
+> t˜θt
+> d
+
+= αΣt[t, t ], we have that ∥Ξt[t, t ]∥F
+
+is also bounded independent of t. Therefore, each term of ∆ ¯a, ∆mj (for each j ∈ [J]) and ∆ω is bounded by Cϵ (for some constant C > 0 when ϵ is sufficiently small) uniformly over t ∈ [T ].Now, define 
+
+G(¯ a, m 1, . . . , m J , ω ) = 
+
+> J
+
+X
+
+> j=1
+
+pj E[Ψ( mj + ω1/2G, Y j , ¯a)] .
+
+By Taylor’s theorem, there exists a point ξ = ( ξ¯a, ξ (mj )j∈[J] , ξ ω) on the line connecting ( ¯at, (mj,t )j∈[J], ω t)
+
+to (¯ at+1 , (mj,t +1 )j∈[J], ω t+1 ) such that, 
+
+G(¯ at+1 , m 1,t +1 , . . . , m J,t +1 , ω t+1 ) = G(¯ at, m 1,t , . . . , m J,t , ω t)+ ∇G (¯ at, m 1,t , . . . , m J,t , vec( ωt)) ⊤
+
+∆¯ a, ∆m1, . . . , ∆mJ , vec(∆ ω)
+
+
+
++ 12
+
+
+
+∆¯ a, ∆m1, . . . , ∆mJ , vec(∆ ω)
+
+⊤
+
+∇2G(ξ)
+
+×
+
+
+
+∆¯ a, ∆m1, . . . , ∆mJ , vec(∆ ω)
+
+
+
+,
+
+(A.24) where both the gradient and Hessian are with respect to (¯ a, m 1, . . . , m J , vec( ω)) .Notice the matrix ∇2G(ξ) is a finite linear combination of the Hessian matrices from Lemma A.15. Recall from Definition A.5 that each state evolution parameter is a derived by a recursion of expecta-tions over the functions g, f . Using the boundedness of these functions and the boundedness of the initialization ∥a1∥2 = ∥¯a1∥2, we can therefore conclude that each of ∥¯at∥2, ∥¯at+1 ∥2, max j∈[J] ∥mj,t ∥2,
+
+max j∈[J] ∥mj,t +1 ∥2, ∥ωt∥op , ∥ωt+1 ∥op are bounded. Thus, the corresponding values for ξ are also bounded due to being a linear interpolation of the above iterates. Then, applying the triangle equality on the operator norm of ∇2G(ξ) to each j-term and using Assumption A.3 (4) (b) to invoke Lemma A.15, we have that ∥∇ 2G(ξ)∥op ≤ C for some constant 
+
+C > 0. Moreover, as we previously concluded that (∆ ¯a, ∆m1, . . . , ∆mJ , ∆ω) is bounded by Cϵ for sufficiently small ϵ uniformly over t, each second order term in (A.24) is of order ϵ2 uniformly over 
+
+t ∈ [T ].It remains to compute the first order Taylor expansion. Using Lemma A.14 to interchange expectation and derivative, we can calculate, 
+
+∇¯aG(¯ a, m 1, . . . , m J , ω ) = 
+
+> J
+
+X
+
+> j=1
+
+pj E
+
+h
+
+∇¯aΨ( mj + ω1/2G, Y j , ¯a)
+
+i
+
+, (A.25) 
+
+∇mj G(¯ a, m 1, . . . , m J , ω ) = pj E
+
+h
+
+∇hΨ( mj + ω1/2G, Y j , ¯a)
+
+i
+
+, (A.26) 
+
+∇ωG(¯ a, m 1, . . . , m J , ω ) = 12
+
+> J
+
+X
+
+> j=1
+
+pj E
+
+h
+
+∇2
+
+> h
+
+Ψ( mj + ω1/2G, Y j , ¯a)
+
+i
+
+, (A.27) where the latter two derivatives follow from Lemma A.13. Using (A.25) , the first order contribution from ∆¯ a gives, 
+
+⟨∇ ¯aG, ∆¯ a⟩ = −(1 − γ0)
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇aΨ( mj,t + Gt, Y j , ¯at)] , ¯at
+
+E35 
+
+− γ1
+
+> J
+
+X
+
+> j,k =1
+
+pj pk
+
+D
+
+E[∇aΨ( mj,t + Gt, Y j , ¯at)] , E[f (mk,t + Gt, Y k, ¯at)] 
+
+E
+
+.
+
+This produces terms (A.18) and (A.19) . Using (A.26) , the first order contribution from ∆mj gives, 
+
+> J
+
+X
+
+> j=1
+
+⟨∇ mj G, ∆mj ⟩ = −(1 − η0)
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇hΨ( mj,t + Gt, Y j , ¯at)] , m j,t 
+
+E
+
+− η1α
+
+> J
+
+X
+
+> j,k =1
+
+pj χj,k pk
+
+D
+
+E[∇hΨ( mj,t + Gt, Y j , ¯at)] , E[g(mk,t + Gt, Y k, ¯at)] 
+
+E
+
+.
+
+This produces terms (A.20) and (A.21). Using (A.27), The first order contribution from ∆ω gives, 
+
+⟨∇ ωG, ∆ω⟩ = − 12 (1 − η20 )
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , ω t
+
+E
+
+− 12 η0η1
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , Ξt[t, t ] + Ξ t[t, t ]⊤E
+
++ 12 η21
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , α Σt[t, t ] + α2
+
+> J
+
+X
+
+> k,k ′=1
+
+χk,k ′ ℓk,t ℓ⊤
+
+> k′,t
+
+E
+
+= −η0(1 − η0)
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , ω t
+
+E
+
+− 12 η0η1
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , Ξt[t, t ] + Ξ t[t, t ]⊤E
+
++ 12 η21
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t +Gt, Y j , ¯at)] , α Σt[t, t ]+ α2
+
+> J
+
+X
+
+> k,k ′=1
+
+χk,k ′ ℓk,t ℓ⊤
+
+> k′,t
+
+E
+
+(A.28) 
+
+− 12 (1 − η0)2
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , ω t
+
+E
+
+(A.29) 
+
+= −η0(1 − η0)
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , ω t
+
+E
+
+− 12 η0η1
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , Ξt[t, t ] + Ξ t[t, t ]⊤E
+
++ δt,
+
+where sup t∈[T ] |δt| ≤ Cϵ 2 for some constant C > 0 for sufficiently small ϵ. The final inequality in the above display follows by rewriting (A.29) using (1 − η20 ) = (1 − η0)2 + 2 η0(1 − η0), and using the inequality ⟨M1, M 2⟩ ≤ ∥ M1∥F ∥M2∥F to absorb term (A.28) using the η21 prefactor. This second argument is allowed by the assumed boundedness of ∥E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] ∥F (Assumption A.3 (4) (b)), the boundedness of ∥ωt∥F , ∥Σt[t, t ]∥F independent of time t ∈ [T ] and recognizing that 
+
+∥ℓk,t ℓ⊤
+
+> k′,t
+
+∥F ≤ ∥ ℓk,t ∥F ∥ℓk′,t ∥F is bounded as ℓk,t is an expectation over g, a bounded function. This produces terms (A.22) and (A.23). Combining all first order contributions and bounding the second order remainder by the ϵ2 order remainder δt (say by enlarging its bound by 2Cϵ 2) completes the proof. ■36 
+
+Proof of Theorem 4.1. First, we invoke Theorem A.16 with the choice of η0, γ 0 = 1 , η1 = γ1 = η,
+
+g = ∇hΨ, f = ∇aΨ. This gives the Taylor expansion 
+
+test t+1 = test t
+
+− η
+
+> J
+
+X
+
+> j,j ′=1
+
+pj pj′
+
+D
+
+E[∇aΨ( mj,t + Gt, Y j , ¯at)] , E[∇aΨ( mj′,t + Gt, Y j′ , ¯at)] 
+
+E
+
+− ηα 
+
+> J
+
+X
+
+> j,j ′=1
+
+pj χj,j ′ pj′
+
+D
+
+E[∇hΨ( mj,t + Gt, Y j , ¯at)] , E[∇hΨ( mj′,t + Gt, Y j′ , ¯at)] 
+
+E
+
+− η
+
+2
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , Ξt[t, t ] + Ξ t[t, t ]⊤E
+
++ ϵt,
+
+where sup t∈[T ] |ϵt| ≤ Cη 2 for constant C > 0 for sufficiently small η > 0. Using the notation given in the statement of Theorem 4.1 and simplifying the above equation gives the proof. ■
+
+Used as an important step in the proof of Theorem A.16, we present a high level observation that allows one control the norm of the matrix Ξ[ t, t ] in the Taylor expansion of Theorem 4.1. 
+
+Remark A.18 . Observe, the first term on line (4.2) need not be negative and may increase the test error. Moreover, unrolling Ξt[t, t ] from Definition A.5, this term is equal to, 
+
+η
+
+> J
+
+X
+
+> j=1
+
+pj
+
+D
+
+E[∇2
+
+> h
+
+Ψ( mj,t + Gt, Y j , ¯at)] , α 
+
+> J
+
+X
+
+> k=1
+
+mk, 1ℓ⊤ 
+
+> k,t
+
+− η
+
+> t−1
+
+X
+
+> s=1
+
+
+
+αΣt[s, t ] + α2
+
+> J
+
+X
+
+> a,b =1
+
+χa,b ℓa,s ℓ⊤
+
+> b,t
+
+E 
+
+.
+
+It is not clear the above summation is bounded independent of time t. Thankfully, the assumption that Σt[t, t ] and Ωt[t, t ] have bounded operator norms (and thus bounded Frobenius norms) from Assumption A.7 allows for such control. Indeed, using the limits from Lemma 3.6 and 
+
+θ⊤ 
+
+> t
+
+˜θt
+
+d F
+
+≤ θt
+
+√d F
+
+˜θt
+
+√d F
+
+,
+
+we have that ∥Ξt[t, t ]∥F , and thus the term in (4.2) by Assumption A.3 (4) , is bounded in the n, d 
+
+limit. A.11. The Benefits of Damping For Test Error Critical Points. Further tuning hyperparam-eters in (3.2) can give favorable global behavior as well. 
+
+Theorem A.19. Let g = ∇hΨ and f = ∇aΨ in Algorithm (3.2) , with η, γ ∈ (0 , 1) , consider the one dimensional hyperparameter subspace over c ∈ R+,
+
+η0 = 1 − η, η1 = cη, γ0 = 1 , γ1 = γ, . 
+
+Any fixed point (m∗
+
+> 1
+
+, . . . , m ∗ 
+
+> J
+
+, Ω∗, ¯a∗) of Definition A.5, must satisfy the equations 
+
+m∗ 
+
+> j
+
+= −cα 
+
+> J
+
+X
+
+> k=1
+
+χj,k pkE[g(m∗ 
+
+> k
+
++ G∗, Y k, ¯a∗)] 
+
+!
+
+(A.30) 
+
+0 = −
+
+> J
+
+X
+
+> j=1
+
+pj E[f (m∗ 
+
+> j
+
++ G∗, Y j , ¯a∗)] , (A.31) 
+
+where Yj ∼ Pj and G∗ ∼ N (0 , Ω∗). Moreover, for any deterministic vector v ∈ Rd perpendicular to 
+
+(μj )j∈[J], any iterate θ produced by the above fixed point must satisfy lim d→∞ d−1v⊤θ = 0 .37 
+
+Proof. Assume the fixed point given in the statement of the theorem. Using the equations of mj,t +1 
+
+and ¯at+1 for the given fixed point, we have that (m∗ 
+
+> j
+
+)j∈[J], Ω∗, ¯a∗ satisfy the following system, 
+
+m∗ 
+
+> j
+
+= η0m∗ 
+
+> j
+
+− η1α
+
+> J
+
+X
+
+> k=1
+
+χj,k pkE[g(m∗ 
+
+> k
+
++ G∗, Y k, ¯a∗)] ¯a∗ = γ0¯a∗ − γ1
+
+> J
+
+X
+
+> j=1
+
+pj E[f (m∗ 
+
+> j
+
++ G∗, Y j , ¯a∗)] ,
+
+where Yj ∼ Pj and G∗ ∼ N (0 , Ω∗). Rearranging these equations and simplifying gives the fixed point condition in the theorem. Note, by adding a dummy signal vector μJ+1 = v, p J+1 = 0 where 
+
+v ⊥ μj for j ∈ [J] into distribution (3.1) , we can also conclude the second statement in the theorem, i.e. that m∗ 
+
+> J+1
+
+= 0 , as χJ+1 ,k = 0 for all k ∈ [J] and η0 ∈ (0 , 1) . ■
+
+Let (θ∗, a ∗) be a critical point for the test error, assume that H∗ = PJj=1 pj E[∇2
+
+> h
+
+Ψ( μ⊤ 
+
+> j
+
+θ∗/d +
+
+Z⊤θ∗, Y j , a )] is invertible and isotropic when Z ∼ N (0 , 1/d ). Then, there exists a c ∈ R+ where (A.30) and (A.31) are equivalent to projected critical point conditions on (θ∗, a ∗).A test error critical point satisfies ∇aEˇx, ˇy
+
+L(Ma∗ (ˇ x⊤θ∗), ˇy) = 0 and ∇θEˇx, ˇy
+
+L(Ma∗ (ˇ x⊤θ), ˇy) = 0 
+
+with ( ˇx, ˇy) drawn from distribution (3.1) . Expanding (3.1) in terms of the mixture on μ1, . . . , μ J ,interchanging expectation and derivative by Lemma A.14, we equivalently write this system as, 
+
+> J
+
+X
+
+> j=1
+
+pj E[∇aΨ( μ⊤ 
+
+> j
+
+θ∗/d + Z⊤θ∗, Y j , a ∗)] = 0 , (A.32) 
+
+−
+
+> J
+
+X
+
+> j=1
+
+pj μj E[∇hΨ( μ⊤ 
+
+> j
+
+θ∗/d + Z⊤θ∗, Y j , a ∗)] = θH ∗, (A.33) where Z ∼ N (0 , Id d/d ). As H∗ is invertible, for any deterministic vector v ∈ Rd, (A.33) implies that, 
+
+v⊤θ∗
+
+d = −
+
+ JX
+
+> j=1
+
+pj
+
+v⊤μj
+
+d E[∇hΨ( μ⊤ 
+
+> j
+
+θ∗/d + Z⊤θ∗, Y j , a ))] 
+
+
+
+(H∗)−1. (A.34) There are two cases of interest: (1) If v = μj for some j ∈ [J], assuming that lim d→∞ μ⊤ 
+
+> j
+
+θ∗/d = mj,θ ∗ ,
+
+lim d→∞ (θ∗)⊤θ∗/d = Ω θ∗ , lim n,d →∞ a∗ = ¯aθ∗ , and replacing (H∗)−1 = ( c∗)−1Id for some constant 
+
+c∗ > 0 by the isotropic assumption, asymptotically solving (A.34) is equivalent to, 
+
+mj,θ = −c∗
+
+> J
+
+X
+
+> k=1
+
+χj,k pkE[∇hΨ( mk,θ ∗ + G, Y j , ¯aθ∗ ))] , G ∼ N (0 , Ωθ∗ ); (A.35) (2) If v is perpendicular to the span of (μj )j∈[J], then assuming that lim d→∞ v⊤θd = m⊥ almost surely, we have the asymptotic equation 
+
+m⊥ = 0 . (A.36) Next, under the same limits a, μ ⊤ 
+
+> j
+
+θ/d and θ⊤θ/d , (A.32) is asymptotically equivalent to, 
+
+> J
+
+X
+
+> j=1
+
+pj E[∇¯aΨ( mj,θ ∗ + G, Y j , ¯aθ∗ )] = 0 , G ∼ N (0 , Ωθ∗ ) . (A.37) 38 
+
+Comparing (A.35) , (A.36) and (A.37) with mj,θ ∗ = m∗ 
+
+> j
+
+for each j ∈ [J], Ωθ∗ = Ω ∗ and ¯aθ∗ = ¯a∗, and selecting c = ( c∗α)−1, the statement of Theorem A.19 is identical to the set of equations (A.32) and (A.35). 
+
+Remark A.20 (Adaptive Hessian estimation) . Note, in the case where H∗ is not isotropic, one naturally would incorporate the Hessian Ht into a DD algorithm, the data-based estimate of 
+
+ˆHt = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∇2
+
+> h
+
+Ψ( ht,i , y i, a t),
+
+is already calculated for the correction term in both pure DD and is expected to be an asymptotically exact estimate of Ht. But, this requires a time-inhomogeneous choice of g = gt; such an extension to our results is possible but is left to future work. 
+
+Appendix B. Deferred Applications 
+
+B.1. Faithful Test Error Tracking In Signal-less Learning. Recall this problem from the introduction, consider n i.i.d. data points xi ∼ N (0 , Id d/d ) and yi = 0 , generating the data (X, y ).Let Mθ(x) = x⊤θ with θ ∈ Rd initialized at θ1 ∼ N (0 , Id d) and trained under loss L( ˆy, y ) = 12 ( ˆy −y)2
+
+(rescaled for convenience), realized by distribution (3.1) with J = 1 and μ1 being the zero vector. We run the following algorithms: 
+
+GD (Damped) Pure DD 
+
+ht = Xθ t
+
+˜θt = X⊤ht
+
+θt+1 = θt − η ˜θt
+
+ht = Xθ t + η1
+
+> t−1
+
+X
+
+> s=1
+
+η(t−1) −s 
+
+> 0
+
+ˆhs
+
+˜θt = X⊤ht − αθ t
+
+θt+1 = η0θt − η1 ˜θt
+
+Figure 5 plots the train and test errors for GD and pure DD ( η0 = 1 , η 1 = η). We immediately see the train-test disconnect in GD is corrected in both DD algorithms. Note, for pure DD, the train-test error explodes. This is predicted from the variance inflation terms in Ωt from Definition A.5 and occurs because this problem has no signal. Specifically, we can use Remark A.6 to conclude the variance recursion (and thus the test error recursion) takes form, 
+
+Ωt+1 [t + 1 , t + 1] = η20 Ωt[t, t ] − η1η0(Ξ t[t, t ] + Ξ t[t, t ]⊤) + η21 αΩt[t, t ],
+
+which may or may not be a contraction depending on the choices of η0, η 1.This naturally leads into relying on the zero-cost validation feature of DD. We consider the following one dimensional subspace dependent on η,
+
+η0 = 1 − η, η1 = cη. (B.1) We then sweep the value of c over some specified range for a fixed data realization. The results of many individual replications of this experiment are given in Figure 6. Again, for each simulation the train-test identity holds perfectly as expected and the trajectory of the test error is tracked by the state evolution prediction. Moreover, since each of these replications used the same dataset, we can optimize over the hyperparameter c by selecting whichever algorithm gets the optimal training (and thus test) error. B.2. The XOR Training Iterations. 39 
+
+Figure 5. Summary stats for 100 signal-less regression runs ( n = 200 , d = 800 ): GD (top) vs. DD (bottom) with η = 0 .05 . Blue/red denote train/test error; solid lines are medians, shaded areas are interquartile ranges, and dotted lines show min/max. Notice, by design, the trajectories of the train and test error are identical for pure DD while they significantly diverge for GD. 
+
+GD Pure DD 
+
+(h1 
+
+> t
+
+, h 2 
+
+> t
+
+) = X(θ1 
+
+> t
+
+, θ 2 
+
+> t
+
+)ˆyt = σ(at(h1 
+
+> t
+
+⊙ h2 
+
+> t
+
+)) ˆh1 
+
+> t
+
+= (ˆ yt − y) ⊙ (ath2 
+
+> t
+
+)ˆh2 
+
+> t
+
+= (ˆ yt − y) ⊙ (ath1 
+
+> t
+
+)
+
+θ1 
+
+> t+1
+
+= θ1 
+
+> t
+
+− ηX ⊤ˆh1
+
+> t
+
+θ2 
+
+> t+1
+
+= θ2 
+
+> t
+
+− ηX ⊤ˆh2
+
+> t
+
+at+1 = at − η(ˆ yt − y)⊤(h1 
+
+> t
+
+⊙ h2 
+
+> t
+
+)/n 
+
+(h1 
+
+> t
+
+, h 2 
+
+> t
+
+) = X(θ1 
+
+> t
+
+, θ 2 
+
+> t
+
+) + η
+
+> t−1
+
+X
+
+> s=1
+
+(ˆh1 
+
+> s
+
+, ˆh2 
+
+> s
+
+),
+
+ˆyt = σ(at(h1 
+
+> t
+
+⊙ h2 
+
+> t
+
+)) ,
+
+ˆh1 
+
+> t
+
+= (ˆ yt − y) ⊙ (ath2 
+
+> t
+
+)ˆh2 
+
+> t
+
+= (ˆ y − y) ⊙ (ath1 
+
+> t
+
+),Ht = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ˆyt,i (1 − ˆyt,i )a2
+
+> t
+
+(h2
+
+> t,i
+
+)2 h1
+
+> t,i
+
+h2
+
+> t,i
+
+h1
+
+> t,i
+
+h2 
+
+> t,i
+
+(h1
+
+> t,i
+
+)2
+
+
+
++(ˆ yt,i −yi)
+
+ 0 at
+
+at 0
+
+!
+
+˜θt = X⊤(ˆh1 
+
+> t
+
+, ˆh2 
+
+> t
+
+) − α(θ1 
+
+> t
+
+, θ 2 
+
+> t
+
+)Ht
+
+(θ1
+
+> t+1
+
+, θ 2
+
+> t+1
+
+) = ( θ1 
+
+> t
+
+, θ 2 
+
+> t
+
+) − η ˜θt
+
+at+1 = at − η(ˆ yt − y)⊤(h1 
+
+> t
+
+⊙ h2 
+
+> t
+
+)/n 40 
+
+Figure 6. An example of hyperparameter tuning with DD over 100 individual replications, in each figure is the train and test error for damped pure DD algorithm in the signal-less regression problem with n = 800 , d = 800 , η = 0 .05 and we sweep c
+
+over the sub-space given in (B.1) . Blue lines refer to train error and red lines refer to test error; the solid line is the median error, the shaded region is the range from the 25 -th to 75 -th quartiles and the dotted lines are the minimum and maximum error runs. This represents an application where multiple instances of DD are run on the same data set and, because the train-test identity, we get a zero-cost validation method to selecting good hyperparameters that aid in training. 
+
+Damped Variant Of Pure DD (Fixed at = 1 )
+
+(h1 
+
+> t
+
+, h 2 
+
+> t
+
+) = X(θ1 
+
+> t
+
+, θ 2 
+
+> t
+
+) + η1
+
+> t−1
+
+X
+
+> s=1
+
+η(t−1) −s 
+
+> 0
+
+(ˆh1 
+
+> s
+
+, ˆh2 
+
+> s
+
+),
+
+ˆyt = σ(h1 
+
+> t
+
+⊙ h2 
+
+> t
+
+),
+
+ˆh1 
+
+> t
+
+= (ˆ yt − y) ⊙ (h2 
+
+> t
+
+)ˆh2 
+
+> t
+
+= (ˆ yt − y) ⊙ (h1 
+
+> t
+
+),Ht = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ˆyt,i (1 − ˆyt,i )
+
+(h2
+
+> t,i
+
+)2 h1
+
+> t,i
+
+h2
+
+> t,i
+
+h1
+
+> t,i
+
+h2 
+
+> t,i
+
+(h1
+
+> t,i
+
+)2
+
+
+
++(ˆ yt,i −yi)
+
+0 11 0
+
+!
+
+˜θt = X⊤(ˆh1 
+
+> t
+
+, ˆh2 
+
+> t
+
+) − α(θ1 
+
+> t
+
+, θ 2 
+
+> t
+
+)Ht
+
+(θ1
+
+> t+1
+
+, θ 2
+
+> t+1
+
+) = η0(θ1 
+
+> t
+
+, θ 2 
+
+> t
+
+) − η1 ˜θt41 
+
+Figure 7. Empirical density estimates for runtime on a width-9 two-layer neural network (25 replications, 500 epochs). Left: Distribution of per-epoch clock time (ms) for GD vs. DD. Right: Total training time (s) per replication for the MNIST zeros/eights problem. B.3. A Run-time Analysis For The MNIST Problem. Figure 7 tracks the “wall clock” time per epoch (i.e. a single full batch) for our width-nine hidden layer model at both the per epoch level and for total training time. Although our implementation of DD suffers from a ≈ L× constant factor overhead, we believe the practical benefits of DD (including use of the full training set) may outweigh this computational penalty. A variant of DD mimicking SGD may further reduce this overhead (Section 6; future directions). B.4. Implementation of MNIST Problem With Nine Hidden Layers. Below is our imple-mentation of the MNIST zeros/eights problem for a width-nine hidden layer model.  
+
+> 1
+
+import time, math, torch, numpy as np  
+
+> 2
+
+import torch.nn as nn, torch.nn.functional as F  
+
+> 3
+
+from torchvision import datasets, transforms  
+
+> 45
+
+def get_data(train):  
+
+> 6
+
+d = datasets.MNIST("./data", train=train, download=True, transform=transforms.ToTensor())  
+
+> 7
+
+m = (d.targets == 0) | (d.targets == 8)  
+
+> 8
+
+return d.data[m].float() / 255.0, (d.targets[m] == 8).float()  
+
+> 910
+
+x_tr, y_tr = get_data(True)  
+
+> 11
+
+x_test, y_test = get_data(False)  
+
+> 12 13
+
+N, T, H, lr, lam, reps = 800, 500, 9, 1, 30, 20  
+
+> 14
+
+device = "mps" if torch.backends.mps.is_available() else "cpu"  
+
+> 15
+
+x_test, y_test = x_test.unsqueeze(1).to(device), y_test.to(device)  
+
+> 16
+
+alpha = N / 784  
+
+> 17 18
+
+def inject_noise(x, lam):  
+
+> 19
+
+D = x.shape[-1] * x.shape[-2]  
+
+> 20
+
+p = torch.rand_like(x)  
+
+> 21
+
+z = torch.where(p < 0.25, -math.sqrt(2/D), torch.where(p < 0.5, math.sqrt(2/D), 0.0))  
+
+> 22
+
+return (lam / D) * x + z.to(x.device)  
+
+> 23 24
+
+class DecoupledMLP(nn.Module):  
+
+> 25
+
+def __init__(self):  
+
+> 26
+
+super().__init__()  
+
+> 27
+
+self.fc1, self.fc2 = nn.Linear(784, H, bias=False), nn.Linear(H, 1, bias=False)  
+
+> 28
+
+def forward(self, x, mem=0):  
+
+> 29
+
+z = self.fc1(x.view(x.size(0), -1)) + mem  
+
+> 30
+
+return self.fc2(torch.tanh(z)).squeeze(1), z 42  
+
+> 31 32
+
+dd_err = np.zeros((2, reps, T))  
+
+> 33
+
+dd_time = []  
+
+> 34 35
+
+for r in range(reps):  
+
+> 36
+
+idx = torch.randperm(len(x_tr))[:N]  
+
+> 37
+
+x_n, y_n = inject_noise(x_tr[idx].unsqueeze(1).to(device), lam), y_tr[idx].to(device)  
+
+> 38
+
+x_te_n = inject_noise(x_test, lam)  
+
+> 39 40
+
+m_dd, mem = DecoupledMLP().to(device), torch.zeros(N, H, device=device)  
+
+> 41
+
+t0 = time.time()  
+
+> 42
+
+for t in range(T):  
+
+> 43
+
+logits, z = m_dd(x_n, mem)  
+
+> 44
+
+loss = F.binary_cross_entropy_with_logits(logits, y_n)  
+
+> 45
+
+h_hat = torch.autograd.grad(loss, z, create_graph=True)[0]  
+
+> 46 47
+
+J_bar = torch.stack([torch.autograd.grad(h_hat[:, i].sum(), z, retain_graph=True)[0].mean(dim=0) for i in range(H)]) ,→ 
+
+> 48 49
+
+with torch.no_grad():  
+
+> 50
+
+m_dd.fc2.weight -= lr * torch.autograd.grad(loss, m_dd.fc2.weight, retain_graph=True)[0] ,→ 
+
+> 51
+
+theta = m_dd.fc1.weight  
+
+> 52
+
+m_dd.fc1.weight.copy_(theta - lr * (h_hat.t() @ x_n.view(N, -1) - alpha * (J_bar @ theta))) ,→ 
+
+> 53
+
+mem += lr * h_hat.detach()  
+
+> 54 55
+
+dd_err[0, r, t] = loss.item()  
+
+> 56
+
+with torch.no_grad(): dd_err[1, r, t] = F.binary_cross_entropy_with_logits(m_dd(x_te_n)[0], y_test).item() ,→ 
+
+> 57
+
+dd_time.append(time.time() - t0) 
+
+B.5. Whitening Technique For CIFAR-10 Embedding Vectors. We considered the following pre-processing steps, which approach the conditions of Assumption A.3 to varying degrees: – Vanilla (no whitening): Features are rescaled by a 1/√d factor (assuming the embedding vectors have Gaussian entries). This leaves correlations between coordinates of the embedding vectors which our current DD algorithm does not account for. – ZCA (whitening) on the train data: We compute the empirical covariance matrix Σtrain =  
+
+> 1
+> N−1
+
+XT
+
+> train
+
+Xtrain exclusively on the training set and compute the eigen-decomposition Σtrain =
+
+V ΛV T . We construct the Zero-phase Component Analysis (ZCA) [ 14 ] matrix Wtrain =
+
+V (Λ) −1/2V T , which is then applied to both the train and test data using X′ = XW train and 
+
+ˇX′ = ˇXW train . Finally, we apply the 1/√d normalization from the Vanilla bullet. – Joint ZCA (whitening) on train and test data: To prevent drift in the covariance between the train and test sets, we concatenate both data sets to form a joint covariance matrix Σjoint .The resulting Wjoint is applied to all data with, 
+
+X′
+
+ˇX′
+
+
+
+=
+
+XW joint 
+
+ˇXW joint 
+
+
+
+.
+
+Finally, we apply the 1/√d normalization from the Vanilla bullet. B.6. Data Collection and Attribution. This work utilized both the MNIST and CIFAR-10 
+
+datasets, standard benchmarks in the high-dimensional statistics and machine learning literature. – MNIST: A collection of 70 , 000 handwritten digit images [ 16 ]. The dataset is available under the Creative Commons Attribution-Share Alike 3.0 license. 43 
+
+– CIFAR-10: Consists of 60 , 000 32 × 32 color images in 10 classes [ 15 ]. The dataset is used in accordance with the researchers’ terms at the University of Toronto.
