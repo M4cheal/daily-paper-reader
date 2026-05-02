@@ -1,0 +1,1736 @@
+Title: Auto-FlexSwitch: Efficient Dynamic Model Merging via Learnable Task Vector Compression
+
+URL Source: https://arxiv.org/pdf/2604.28109v1
+
+Published Time: Fri, 01 May 2026 01:22:18 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+> 1
+
+# Auto-FlexSwitch: Efficient Dynamic Model Merging via Learnable Task Vector Compression 
+
+Junqi Gao 1, Dazhi Zhang 1, Zhichang Guo 1,† , Biqing Qi 2, Yi Ran 1, Wangmeng Zuo 1
+
+Abstract —Model merging has attracted attention as an effec-tive path toward multi-task adaptation by integrating knowledge from multiple task-specific models. Among existing approaches, dynamic merging mitigates performance degradation caused by conflicting parameter updates across tasks by flexibly combining task-specific parameters at inference time, thereby maintaining high performance. However, these methods require storing in-dependent parameters for each task, resulting in prohibitive storage overhead. To address this issue, we first experimentally demonstrate that the fine-tuned weight increments (referred to as task vectors) exhibit an impulse-like activation pattern and high robustness to low-bit representations. Driven by this insight, we propose T-Switch, which decomposes task vectors into three compact components: a binary sparse mask (indicating activation positions), a sign vector (representing parameter polarity), and a scalar scaling factor, achieving high-fidelity approximation at high compression ratios. We then introduce Auto-Switch, a training-free merging scheme that automatically composes task vectors via feature similarity retrieval. Building on this, we develop Auto-Switch, a training-free merging scheme that automatically assembles task vectors through feature similarity retrieval. Furthermore, to transform task vector sparsification and quantization from static rules to adaptive learning, we pro-pose FlexSwitch, a learnable framework which jointly optimizes the compression strategy for each model unit via Learnable Gating Sparsification (LGS) and Bit-width Adaptive Selection (BAS), while employing the Sparsity-Aware Storage Strategy (SASS) to select the optimal storage encoding structure. Finally, by incorporating a K-Nearest Neighbor (KNN) inference scheme with a learnable low-rank metric, we present Auto-FlexSwitch, a dynamic model merging approach that supports highly efficient task vector compression. Experiments across diverse model ar-chitectures and downstream benchmarks demonstrate its strong performance with substantial storage savings. 
+
+Index Terms —Model Merging, Dynamic Merging, Task Vector Compression, Multi-task Adaptation, Parameter Efficiency 
+
+I. I NTRODUCTION 
+
+# WITH the rapid growth of various open-source com-munities [1], [2], an increasing number of pre-trained and fine-tuned models are widely shared [3]–[5]. Deploying these models directly to address specific tasks has become a mainstream practice. Yet, in the face of diverse task scenarios, maintaining a dedicated model for each task incurs prohibitive storage and deployment overhead, rendering it impractical, especially in resource-constrained contexts. To address this challenge, model merging [6], [7] offers a promising solution. By integrating the parameters of multiple task-specific models 
+
+> 1
+
+School of Mathematics, Harbin Institute of Technology, Harbin, P. R. China; 2Shanghai Artificial Intelligence Laboratory, Shanghai, P. R. China.  
+
+> †
+
+Corresponding author: Zhichang Guo. Emails: gjunqi97@gmail.com; zhangdazhi@hit.edu.cn; mathgzc@hit.edu.cn; qibiqing7@gmail.com; yi.ran@hit.edu.cn; cswmzuo@gmail.com. 
+
+into a single unified model, knowledge from different tasks can be effectively consolidated, thereby enhancing the model’s adaptability and performance in multi-task settings. Model merging approaches can be broadly categorized into two types. The first is static merging [6]–[8], where the model weights remain fixed during inference. However, due to dis-tributional discrepancies among different tasks, the directions of the task-specific incremental weights (also known as task vectors) often conflict with one another, limiting the merged model’s performance across individual tasks. Consequently, a single static merged model struggles to adapt to dynamically changing task data. In contrast, dynamic merging methods [9], [10] flexibly adjust the merging strategy by dynamically composing task vectors based on the input, enabling the model to adaptively emphasize the relevant task vector in response to varying tasks, thereby naturally alleviating directional conflicts among task vectors. Nevertheless, these methods introduce a new trade-off: they typically require maintaining task-specific parameter components (such as task vectors or masks), leading to cumulative storage overhead. Therefore, achieving a better trade-off between performance and storage efficiency has become critical to the broader practical adoption of dynamic merging approaches. Against this backdrop, our work aims to develop a dynamic merging framework that simultaneously achieves high performance and high storage efficiency, offer-ing an effective solution to the aforementioned challenges. To achieve this goal, a natural approach is to efficiently compress the task vectors maintained for each task without compromising performance. To this end, we explore high-efficiency compression and storage mechanisms for task vec-tors through the lenses of sparsification and quantization, upon which we build a high-performance dynamic merging method. However, the efficacy of this compression scheme hinges on a critical premise: task vectors possess an inherent structural capacity for sparsification and quantization. We begin by conducting an experimental analysis to verify this premise. Regarding sparsifiability, we systematically investigate the relationship between the magnitude of parameters in the task vector and their contribution to the target task. Specifically, we find that the parameters exhibit an impulse-like activation pat-tern: only those whose magnitudes exceed a certain activation threshold make a significant contribution to the task. Inter-estingly, pruning the remaining parameters not only preserves task accuracy but can even lead to further performance gains. As the pruning ratio increases, this performance improvement shows a continuous upward trend, only beginning to decay after the ratio exceeds 70% . This phenomenon provides strong evidence that task vectors possess an inherent structural capac-
+
+> arXiv:2604.28109v1 [cs.LG] 30 Apr 2026 2
+
+ity for sparsification. We further explore the quantizability of the sparse task vectors obtained after magnitude-based pruning. Specifically, by replacing non-zero parameters with their signs (binary quantization) and restoring the original vector scale via L2-norm scaling, we observe that the model’s performance on target tasks is effectively maintained. Notably, as the sparsity increases, the performance gap between the binarized and the original sparse task vectors consistently narrows. This suggests that highly sparse task vectors are robust to magnitude preci-sion, where binary sign information alone suffices to sustain performance, thus validating their intrinsic quantizability. Building on these findings, we propose Task Switch (T-Switch), a method for constructing lightweight task vectors. It explicitly decomposes the task vector into three compact components: a switch knob formed by a single scaling fac-tor, an activation switch instantiated by a binarized mask vector that specifies the sparsity rate, and a polarity switch instantiated by a binarized sign vector. This decomposition enables an extremely compact and efficient encoding of task-specific knowledge while preserving the original performance, theoretically yielding at least a 16 × reduction in storage overhead. Based on this, we further introduce Auto-Switch, a training-free dynamic merging approach. It constructs a query set using the features from a small number of instances of the target task, and performs similarity retrieval over this set based on the input features to compute the combination weights for T-Switch, thereby enabling task-adaptive model merging. Inspired by the three-component structure of T-Switch, we further contemplate: Can the construction for lightweight task vectors be transformed from relying on fixed rules (such as a preset sparsity rate, hard binarization, and static scaling) into an adaptive construction mechanism driven by end-to-end optimization , thereby automatically learning the optimal sparsity level, quantization bit-width, and magnitude calibra-tion for the task vectors of each model module? 
+
+Driven by this vision, we first design Learnable Gating 
+
+Sparsification (LGS). This method equips task vectors of each model module with a learnable magnitude threshold and employs a temperature-controlled sigmoid function to generate continuous gating signals, enabling differentiable sparsifica-tion, while a learnable scaling factor is introduced to calibrate the overall magnitude after sparsifying. Validation experiments demonstrate that LGS can achieve performance comparable to, or even surpassing, full-parameter fine-tuning at an average sparsity rate of 97% . Subsequently, we introduce Bit-width 
+
+Adaptive Selection (BAS) to allocate the optimal quantization bit-width for each model module’s task vector. Furthermore, to maximize storage efficiency, we propose a Sparsity-Aware 
+
+Storage Strategy (SASS). It employs a grouped COO format for the task vector parameters and adaptively selects the optimal group configuration based on the actual sparsity ratio, thereby maximizing the utilization of the compressed task vector’s sparsity to achieve smaller storage footprint. Building on these component designs, we organically in-tegrate LGS, BAS, and SASS to propose the FlexSwitch framework for constructing learnable lightweight task vectors. FlexSwitch jointly optimizes the sparse structure and quan-tization bit-width of each model module via LGS and BAS while maintaining performance, and automatically selects the optimal storage encoding structure using SASS to minimize actual storage overhead. In contrast to T-Switch’s reliance on fixed sparsity, hard binarization, and static scaling, FlexSwitch achieves higher compression and better task performance. Finally, we introduce a K-Nearest Neighbor (KNN) inference mechanism with a learnable low-rank metric to enable more accurate retrieval for lightweight task vectors, forming Auto-FlexSwitch, an adaptive merging scheme that supports highly efficient task vector compression. To comprehensively evaluate the proposed method, we verify its advantages in balancing merging performance with low storage overhead on multi-task benchmarks across various model architectures and downstream scenarios. Additionally, we assess the potential of FlexSwitch as a lightweight storage strategy for fine-tuned Large Language Model (LLM) weights. Compared to our previous conference version [11], this paper extends and improves the work in the following aspects: (i) proposes FlexSwitch, a lightweight task vector framework that adaptively sparsifies and quantizes task vectors of different modules via LGS and BAS, jointly optimizing sparsity and bit-width while preserving performance; (ii) designs SASS, a storage strategy for sparsified-quantized task vectors that stores each module’s task vector in a grouped COO format and adap-tively selects the optimal group count based on the actual spar-sity ratio, maximally exploiting sparsity to reduce storage; (iii) further proposes Auto-FlexSwitch, a dynamic merging scheme that integrates a K-nearest neighbor inference mechanism with a learnable low-rank metric, achieving accurate task vector assignment with lower retrieval overhead; (iv) conducts more systematic evaluations across broader model architectures and more diverse downstream scenarios to more comprehensively verify the effectiveness of the proposed methods. The main contributions of this work are as follows:  
+
+> •
+
+Through controlled experiments, we reveal the impulse-like activation pattern of task vectors and their high toler-ance for low-bit representations, offering critical insights for designing efficient task vector compression methods.  
+
+> •
+
+Building on these observations, we design T-Switch, a simple method that constructs lightweight task vectors us-ing three compact components. Furthermore, we propose Auto-Switch, a dynamic merging scheme that automates merging via retrieval from a small query set.  
+
+> •
+
+We propose FlexSwitch, a framework that jointly opti-mizes the sparsity structure and quantization bit-width of task vectors through learnable gating and adaptive bit-width selection. To our knowledge, this is the first learnable framework simultaneously optimizing sparsity and bit-width allocation for task vectors.  
+
+> •
+
+We design SASS, which automatically selects the optimal group configuration from different group count settings of the grouped COO format based on the actual sparsity ratio of each module’s task vector, thereby fully exploiting the sparsity for storage efficiency.  
+
+> •
+
+We propose Auto-FlexSwitch, a dynamic merging method integrating a KNN mechanism with a learnable low-rank metric for more accurate and efficient task vector as-3
+
+signment. Its effectiveness is extensively validated across diverse model architectures and downstream scenarios. II. R ELATED WORKS 
+
+A. Model Merging 
+
+Model merging aims to integrate multiple task-specific fine-tuned models into a unified model, providing an effi-cient solution for multi-task adaptation. Based on whether the merging strategy adjusts dynamically according to input samples, existing research can be broadly categorized into static merging and dynamic merging. Static merging methods assume that the merged weights remain invariant during inference. Early research, grounded in Linear Mode Connectivity theory [12]–[14], demonstrated the feasibility of consolidating knowledge from multiple models via weight interpolation. This catalyzed a series of subsequent developments, ranging from early attempts like weight averag-ing [15] and task arithmetic [6] to more sophisticated reweight-ing strategies. Notable examples include Fisher-information-based weighted averaging [7], [16], formulating merging as an optimization problem [8], [17], [18], and feature matching guided merging [19], [20]. However, static merging is inher-ently susceptible to interference due to conflicting parameter update directions across different tasks. To mitigate this, methods such as DARE [21] and Ties-Merging [22] explore sparsification to alleviate inter-task conflicts; nevertheless, static merging still struggles to fully bypass the interference caused by directional misalignments. In contrast, dynamic merging effectively mitigates inter-task conflicts by adaptively combining task-specific parameters based on input samples. Such approaches either implement flexible knowledge reorganization via task masks [10] or task-specific components [9] on carefully constructed shared weights, or partition layers for static and dynamic merging based on feature similarity [23]. While these methods enhance multi-task performance, they necessitate maintaining expert parameters for each task, leading to substantial storage over-head. Therefore, how to preserve the advantages of dynamic merging while drastically reducing storage overhead through efficient compression and ensuring stability across varying intensities remains a critical open problem. 
+
+B. Fine-tuned Weight Compression 
+
+As the scale of model parameters continues to grow, the storage overhead of fine-tuned weights has become in-creasingly prominent. Sparsification and quantization, as two mainstream techniques for weight compression, have been widely explored. Early research promoted incremental weight sparsification during the fine-tuning process by directly incor-porating sparsification regularization [24]–[26]. Other works have introduced indicative metrics to guide sparsification, such as leveraging Fisher information [27], gradient information [28], or feature activations [29] to measure the importance of parameters across different positions. The above approaches primarily perform compression during the training process. In contrast, some studies have attempted to directly apply quan-tization approximations to post-training fine-tuned weights [30], [31]. However, the quantization methods employed in these studies are often direct and fixed, lacking adaptive bit-rate allocation for different modules based on the specific characteristics of the fine-tuned weights. More importantly, they do not explore the synergistic advantages of combining quantization with sparsification, nor has a joint sparsification-quantization compression technique been established within the context of model merging. III. P ROPOSED METHOD 
+
+A. Problem Formulation 
+
+Given a pre-trained model f (·; Θ) parameterized by weights 
+
+Θ = θl Ll=1 , where θl ∈ Rnl denotes the weight vector of the l-th module and PLl=1 nl = n represents the total number of the model parameters. Consider a set of tasks {T k}Kk=1 . For each task Tk, the corresponding fine-tuned model parameters are denoted as Θk = {θlk}Ll=1 . The task vector for task Tk is then computed as τk = {τ lk | τ lk = θlk − θl}Ll=1 . The objective of model merging is to combine the pre-trained model with the set of task vectors {τk}Kk=1 to obtain a merged model that performs well across all tasks, formulated as: 
+
+min  
+
+> M
+
+E(x,y )∈∪ Kk=1 Tk ℓ  f  x; M  Θ, {τk}Kk=1 
+
+ , y  , (1) where (x, y ) ∈ ∪ Kk=1 Tk denotes an input-label pair from the joint distribution of all tasks, and M is the merging operation, ranging from simple linear combinations [6] to more complex merging after certain preprocessing of the task vectors [21]. 
+
+B. Efficient Dynamic Merging with Lightweight Task Switches 1) The Sparsifiability of Task Vectors: We first explore the sparsity properties of task vectors by examining the relationship between parameter magnitude and its contribu-tion to the target task. Intuitively, parameters that undergo significant shifts during fine-tuning are more likely to carry critical task-specific information. Moreover, prior research has established the efficacy of magnitude-based metrics for assessing parameter importance [32], [33]. To validate the applicability of this criterion to task vectors, we design the following impulse activation function to retain parameters within different magnitude ranges in a task vector: 
+
+gm(τ lk,j ) = 
+
+1, if τ lk,j > γ l 
+
+> +
+
+or τ lk,j < γ l
+
+> −
+
+0 else , (2) where γl 
+
+> +
+
+> 0 and γl 
+
+> −
+
+< 0 denote the upper and lower activation thresholds for the task vector components of the l-th module, respectively, and τ lk,j represents the j-th element of the task vector τ lk. Building upon this, we define the global im-pulse activation operator as Gm(τk) ≜ {τ lk ⊙ gm(τ lk)}Ll=1 and 
+
+gm(τ lk) ∈ { 0, 1}nl is a module-level mask whose elements are given by (gm(τ lk)) j = gm(τ lk,j ). We then conduct experiments using CLIP-ViT-B/32 [34] as the backbone across a multi-task benchmark comprising eight visual tasks: SUN397 [35], Cars [36], RESISC45 [37], EuroSAT [38], SVHN [39], GTSRB [40], MNIST [41], and DTD [42]. By varying the pruning rate 
+
+α, we investigate the impact of task vector parameters within 40.0 0.2 0.4 0.6 0.8 1.0                                                    
+
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> Accuracy (%)
+> SUN397
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> Cars
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> 60
+> 70
+> 80
+> 90
+> 100
+> RESISC45
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> EuroSAT
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Pruning Ratio
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> SVHN
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Pruning Ratio
+> 20
+> 40
+> 60
+> 80
+> 100
+> GTSRB
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Pruning Ratio
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> MNIST
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Pruning Ratio
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> DTD
+> 0.4 0.5 0.6 0.6
+> 78.0
+> 78.6
+> 79.2
+> 79.8
+> 80.4
+> 0.2 0.4 0.6 0.8
+> 76.0
+> 77.0
+> 78.0
+> 79.0
+> 80.0
+> 0.4 0.5 0.6 0.7 0.8
+> 97.2
+> 97.8
+> 98.4
+> 99.0
+> 99.6
+> 0.4 0.5 0.6 0.6
+> 78.6
+> 79.2
+> 79.8
+> 80.4
+> Individual Random Retention Low-Magnitude Retention High-Magnitude Retention
+
+Fig. 1. Accuracy ( %) trends of the three control strategies C1 , C2 , and C3 across the eight visual tasks on the ViT-B/32 model as a function of the pruning rate α. The horizontal dashed lines (Individual) represent the original fine-tuning accuracy for each task. The insets highlight the regions where specific tasks exhibit performance substantially exceeding the fine-tuning baseline (by more than 0.2% ). 
+
+different magnitude ranges on performance. Specifically, we establish three control groups as follows: 
+
+C1 (High-Magnitude Retention) : Let γl 
+
+> +
+
+and γl 
+
+> −
+
+be the 
+
+α-quantiles of the positive and negative elements of τ lk,respectively, thereby pruning the α × 100% proportion of elements with the smallest magnitudes and retaining only the task vector parameters with larger absolute values. The activated task vector is denoted as ˆτk = Gm(τk).
+
+C2 (Low-Magnitude Retention) : In contrast to C1, this group employs the mask (1 − gm(τ lk)) to prune high-magnitude pa-rameters, preserving only the low-magnitude elements within the interval [γl
+
+> −
+
+, γ l
+
+> +
+
+], i.e., ˆτk = {τ lk ⊙ (1 − gm(τ lk)) }Ll=1 .
+
+C3 (Random Retention) : Elements of the task vector are randomly pruned at a rate of α, serving as a null control without a specific pruning strategy. We evaluate the performance of models equipped with task vectors derived from the three strategies C1 , C2 , and 
+
+C3 across a range of pruning rates α ∈ { 0.1, 0.2, . . . , 0.9}.For C3 , considering its inherent randomness, we calculate the average performance over three independent trials. As illustrated in Fig. 1, under the condition of C1 , model per-formance across all corresponding tasks remains stable with increasing α and exhibits no significant degradation until a visible decline emerges after α > 0.7. Notably, on four tasks including SUN397, Cars, GTSRB, and DTD, performance initially shows a gradual upward trend as α increases and even surpasses the original individual fine-tuned models (In-dividual) before declining after α > 0.7. In contrast, under 
+
+C2 , performance drops sharply from the outset and continues to decrease rapidly as α increases. Furthermore, while the performance decline under C3 is more moderate compared to the condition of C2 , the inflection point of performance declining appears earlier and the decline is more pronounced than under C1 , with a clearly accelerating rate of degradation. These comparative observations indicate that a small num-ber of high-magnitude parameters carry the most of task-specific knowledge, demonstrating a typical pulse-activation characteristic. Specifically, only when the parameter magni-tude exceeds a certain threshold does it contribute significantly to the target task. Pruning the remaining low-magnitude pa-rameters not only avoids significant performance decline but can even enhance performance while facilitating task vector sparsification. This conclusion confirms that task vectors possess an inherent sparse structure that can be effectively leveraged through the simple sparsification strategy pre-sented in C1 . For clarity, we refer to this strategy as P-Spar (Pulse-Sparsification) in the following sections. 
+
+2) The Quantifiability of Task Vectors: In this section, we investigate the quantifiability of task vectors. Previous studies have demonstrated that model performance is highly depen-dent on the qualitative direction of parameter updates, while exhibiting significant robustness to the specific value variations among elements along these directions [31], [43]. Building on this insight, we attempt to further apply binary approximation to the sparsified task vectors. Specifically, we decompose each task vector τ lk into three compact components: a binary sparse mask indicating activation positions, a binary sign vector representing parameter polarity, and a scalar scaling factor. This leads to the following approximation form: 
+
+eτ lk = ∥τ lk ⊙ gm(τ lk)∥2
+
+∥gm(τ lk) ⊙ gb(τ lk)∥2
+
+∗ gm(τ lk) ⊙ gb(τ lk), (3) where gb(τ lk) is the sign vector corresponding to the task vector τ lk, with its elements defined as 
+
+ gb(τ lk) 
+
+> j
+
+= gb(τ lk,j ) ≜
+
+ 1, if τ lk,j > 0
+
+−1, if τ lk,j ≤ 0 . (4) The approximation scheme in Eq. (3) implies that task vec-tors can be efficiently encoded using two binary vectors and a floating-point scalar. If such low-bit representations can retain most of the performance of the original task vector, it suggests that task vectors possess an inherent quantizable structure, which can be combined with sparsification to achieve high storage efficiency. To evaluate the feasibility of this approx-imation (referred to as B-Approx), we apply it to each task vector using the sparse masks generated by P-Spar at various pruning rates α. We then test the corresponding performance across the model and datasets described in Section III-B1, comparing the results against both the individual fine-tuning baselines and the task vectors sparsified by P-Spar alone. 50.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9                                                                 
+
+> 72
+> 74
+> 76
+> 78
+> 80
+> 82
+> 84
+> Accuracy (%)  Individual: 79.23
+> SUN397
+> 79.23
+> 78.95
+> 79.24
+> 78.96
+> 79.26
+> 79.00
+> 79.30
+> 79.09
+> 79.40
+> 79.21
+> 79.57
+> 79.34
+> 79.71
+> 79.47
+> 79.40
+> 79.34
+> 78.09
+> 78.13
+> 73.88
+> 73.95
+> P-Spar
+> B-Approx
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+> 72
+> 74
+> 76
+> 78
+> 80
+> 82
+> 84
+> Individual: 77.66
+> Cars
+> 77.66
+> 75.18
+> 77.70
+> 75.15
+> 77.73
+> 75.43
+> 78.10
+> 75.99
+> 78.54
+> 76.77
+> 79.13
+> 77.58
+> 79.51
+> 78.50
+> 79.90
+> 79.33
+> 78.73
+> 78.72
+> 74.44
+> 74.41
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+> 88
+> 90
+> 92
+> 94
+> 96
+> 98
+> 100 Individual: 96.11
+> RESISC45
+> 96.11
+> 95.75
+> 96.14
+> 95.70
+> 96.11
+> 95.71
+> 96.11
+> 95.83
+> 96.17
+> 95.89
+> 96.22
+> 95.97
+> 96.06
+> 96.10
+> 95.87
+> 95.89
+> 95.02
+> 95.03
+> 90.48
+> 90.76
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+> 97.0
+> 97.5
+> 98.0
+> 98.5
+> 99.0
+> 99.5
+> 100.0
+> Individual: 99.78
+> EuroSAT
+> 99.78
+> 99.67
+> 99.78
+> 99.70
+> 99.78
+> 99.74
+> 99.78
+> 99.74
+> 99.78
+> 99.74
+> 99.78
+> 99.74
+> 99.78
+> 99.74
+> 99.67
+> 99.70
+> 99.41
+> 99.37
+> 97.37
+> 97.41
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+> 92
+> 93
+> 94
+> 95
+> 96
+> 97
+> 98
+> 99
+> 100
+> Accuracy (%)  Individual: 97.46
+> SVHN
+> 97.46
+> 96.84
+> 97.46
+> 97.01
+> 97.47
+> 97.12
+> 97.47
+> 97.24
+> 97.48
+> 97.29
+> 97.46
+> 97.33
+> 97.44
+> 97.31
+> 97.31
+> 97.21
+> 96.98
+> 96.88
+> 93.26
+> 92.96
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+> 90
+> 92
+> 94
+> 96
+> 98
+> 100
+> Individual: 98.73
+> GTSRB
+> 98.73
+> 98.30
+> 98.74
+> 98.31
+> 98.75
+> 98.33
+> 98.80
+> 98.42
+> 98.88
+> 98.50
+> 98.99
+> 98.61
+> 98.96
+> 98.70
+> 98.95
+> 98.80
+> 98.22
+> 98.21
+> 92.80
+> 93.47
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+> 98.6
+> 98.8
+> 99.0
+> 99.2
+> 99.4
+> 99.6
+> 99.8
+> Individual: 99.69
+> MNIST
+> 99.69
+> 98.81
+> 99.68
+> 98.98
+> 99.67
+> 99.23
+> 99.67
+> 99.50
+> 99.70
+> 99.63
+> 99.69
+> 99.68
+> 99.68
+> 99.70
+> 99.66
+> 99.66
+> 99.65
+> 99.68
+> 99.28
+> 99.26
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+> 65.0
+> 67.5
+> 70.0
+> 72.5
+> 75.0
+> 77.5
+> 80.0
+> 82.5
+> 85.0
+> 87.5
+> Individual: 79.41
+> DTD
+> 79.41
+> 78.99
+> 79.41
+> 79.10
+> 79.52
+> 79.04
+> 79.41
+> 79.10
+> 79.57
+> 79.10
+> 79.79
+> 79.52
+> 79.84
+> 79.36
+> 79.36
+> 79.20
+> 76.91
+> 76.86
+> 67.61
+> 67.82
+
+Fig. 2. Performance comparison of the ViT-B/32 model equipped with task vectors processed by P-Spar and B-Approx under different pruning rates α across the eight vision tasks. The blue bars represent the task vectors treated solely with P-Spar, while the red bars denote the results of applying further B-Approx. The purple dashed line (Individual) indicates the baseline accuracy of full fine-tuning on each task. 
+
+As illustrated by the experimental results in Fig. 2, B-Approx effectively preserves the performance of the task vec-tors prior to approximation with small accuracy degradation. The largest discrepancy occurs on the Cars dataset at α = 0 .1,where the model performance degrades by 2.55% between the sparsified task vectors before and after B-Approx. More remarkably, as the pruning rate α increases, the performance gap between the task vectors before and after B-Approx exhibits a consistent downward trend across all tasks. This phenomenon is particularly salient on the Cars, GTSRB, and MNIST datasets. Notably, on GTSRB with α = 0 .9, the task vector after B-Approx even outperforms the version using only P-Spar. Furthermore, the performance improvements brought by increased α complement the narrowing gap between pre-and post-approximation task vectors. This synergy enables the quantized task vectors to surpass the original Individual fine-tuning baselines on datasets such as SUN397, Cars, GTSRB, MNIST, and DTD. These findings strongly suggest that task vectors possess an inherent quantizable property. This char-acteristic can be leveraged by combining quantization with sparsification to construct highly lightweight approximations of task vectors, which ensuring not only strong performance but also achieves a 16-fold reduction in storage overhead, requiring only two binary vectors and a float scalar. 
+
+3) Dynamic Merging with Binary Task Vectors: a) T-Switch: Inspired by the aforementioned findings, we propose T-Switch, a method for constructing lightweight task vectors as illustrated in Fig. 3. By leveraging the intrinsic sparsifiability and quantizability of task vectors, T-Switch enables efficient storage and dynamic application of multi-task capabilities through a series of lightweight ’switches.’ Specifically, for the task vector τ lk of the k-th task in the 
+
+l-th model module, we apply the binarized approximation defined in Eq. (3), deconstructing it into a task switch Slk =
+
+{Alk, Plk, β lk} composed of three compact components: 1) 
+
+Activation Switch Alk = gm(τ lk) ∈ { 0, 1}nl
+
+, which activates task vector parameters contributing most to Ti; 2) Polarity Switch Plk = gb(τ lk) ∈ {− 1, 1}nl
+
+, representing the direction of the task vector for task Ti at this module; and 3) Switch Knob βlk = ∥τ lk ⊙Alk ∥2
+
+∥Alk ⊙Plk ∥2 , which provides an approximate scaling of the binarized task vector relative to the full-precision one. With these three components, T-Switch achieves efficient task vector storage while preserving task performance. 
+
+b) Auto-Switch: Since tasks associated with real-world data may change dynamically, we aim to empower T-Switch with the capabilities of autonomous switching and reconfigu-ration. While existing dynamic merging strategies often rely on complex, explicitly designed routing modules [9], [23], we introduce Auto-Switch, a training-free dynamic merging mechanism based on inference-time queries. We first construct a set of query sets Qk = {f ex (x; Θ) |
+
+(x, y ) ∈ Ek}, k = 1, 2, . . . , K using a small portion of exemplar data Ek = {(xi, y i)}Ni=1 ⊂ T k from each task Tk,where f ex denotes the feature extraction prior to the linear classifier. Note that since the query set only requires input examples, no label information is needed. For each input 
+
+x, we perform a KNN search within the global query set 
+
+Q = ∪Kk=1 Qk to search for the set Nx consisting of the 
+
+C nearest neighbors to f ex (x; Θ) in Q. This allows us to automatically assign weights to different task switches and perform model merging: 
+
+ˆΘ(x) = M
+
+
+
+Θ, {τk}Kk=1 
+
+
+
+=
+
+(
+
+θl +
+
+KX
+
+k=1 
+
+βlkwk(x) ∗ Alk ⊙ Plk
+
+)Ll=1 
+
+,
+
+(5) where wk(x) = |Q k ∩N x||N x| denotes the dynamic weight assigned to the switch of task Tk, and | · | represents the cardinality of the set. By eliminating the need for an explicitly parameterized router, Auto-Switch offers greater flexibility and enables com-position without any additional training. Furthermore, since the mechanism requires only a small number of sample feature vectors to be stored rather than raw input data, it further reduces the storage footprint. 
+
+C. Adaptive Merging with Learnable Lightweight Task Vectors 
+
+Inspired by the three-component design of T-Switch and the inherent sparsifiability and quantizability of task vectors demonstrated in our previous experiments, we aim to further exploit the potential of these structural properties for more efficient task vector storage. Through an experimental analysis 6Compression Stage           
+
+> +
+> - 0...
+> Task Vectors
+> = 1 = 0 = -1
+> T-Switch Process
+> Param value
+> ...
+> +
+> -
+> ...
+> Sparsification ①
+> Fixed Sparsity Ratio
+> Activation Switch
+> ②Binary Approximation
+> Polarity Switch Switch Knob
+> FlexSwitch Process
+> Learnable Sparsity Ratio
+> LGS Components
+> Differentiable
+> Gating
+> BAS Components
+> Bit Width
+> Probability  Quant
+> Mixing
+> Optimization
+> Sparsified &
+> Quantized
+> Task Vector
+> 8 bits
+> Size  Count  Bitmap
+> bits
+> Elements (Grouped COO)
+> SASS Storage
+> Inference Stage
+> Auto-Switch
+> Seed Data Task 1
+
+...    
+
+> Feature Extraction
+> ...
+> Query Set
+> Switch
+> Switch
+> Auto-FlexSwitch
+> Seed Data
+> Feature Extraction
+> Center Set
+> Training Projection
+
+...  
+
+> Switch
+> Switch
+> Task 1
+> 8 bits
+> Fig. 3. Overview of the proposed methods. The left side illustrates the compression pipelines of T-Switch and FlexSwitch for constructing lightweight task vectors, and the right side illustrates the inference processes of Auto-Switch and Auto-FlexSwitch for dynamic merging.
+
+of these components, we observe a distinct heterogeneity across various model modules regarding their optimal sparsity ratios, quantization precision, and magnitude scaling coef-ficients for different tasks. This suggests that the globally uniform, static configuration of T-Switch still leaves room for efficiency gains through adaptive optimization. Specifically, we identify three key areas for improvement: (1) the non-uniformity of sparse structures, (2) inter-module differences in precision sensitivity, and (3) the suboptimality of the ℓ2
+
+magnitude calibration criteria. To address these, we propose the FlexSwitch framework, which shifts the construction of lightweight task vectors from a fixed-rule-based approach to an end-to-end, optimization-driven adaptation. This frame-work automatically learns the most suitable sparsity rate, bit-width, and scaling factor for each module within every model layer. Furthermore, it dynamically selects the corresponding storage format based on the resulting sparsity patterns and bit-width configurations. Consequently, FlexSwitch maximizes task vector storage efficiency under the constraint of minimal performance degradation. This section elaborates on these aspects in a progressive manner. 
+
+1) Sensitivity Analysis across Tasks and Modules: a) Motivation and Setup: Considering the functional heterogeneity across different layers and modules of the pre-trained model [44], as well as the unique characteristics of different tasks, the task vectors corresponding to specific modules or layers under varying task contexts are expected to exhibit distinct behaviors in terms of parameter redundancy, quantization sensitivity, and the adaptability of magnitude calibration. To validate this, we design the following sensitivity analysis experiments using CLIP-ViT-B/32 as the base model, following the three-component structure of T-Switch: 
+
+Exp I: Sparsity Sensitivity Probing. We sequentially apply P-Spar with a ratio of α = 0 .9 across two dimensions: ❶
+
+Module-type level, targeting one specific module type across all layers at a time; and ❷ Layer-wise level, targeting the set of all modules within a single layer. For each probed configuration, we measure the performance drop of the model loaded with the resulted task vectors compared to the original fine-tuned model on each task, while keeping all other mod-ules unchanged. This probing experiment aims to reveal the variation in sparsity sensitivity across different modules and layers under different tasks. 
+
+Exp II: Precision Sensitivity Probing. Following the same two observation dimensions used in Exp I , we apply bina-rization approximation (i.e., B-Approx with α = 0 ) to the task vectors of target modules/layers without any sparsification, and evaluate the resulting performance drop on each task relative to the original fine-tuned model. This experiment is designed to probe the varying sensitivity of various modules and layers to extreme quantization precision. 
+
+Exp III: Magnitude Calibration Bias Probing. In this setup, we apply B-Approx with α = 0 to all task vectors of all modules across all layers simultaneously. The key difference lies in introducing a tuning factor η ∈ { 0.1, 0.2, . . . , 2.0} to recalibrate each switch knob individually, i.e., βlk ← βlk · η,and evaluating the performance drop under each η on each task. This experiment aims to investigate the divergent scaling requirements across different tasks and verify whether the static ℓ2 norm-based calibration criteria deviate from the optimal scaling magnitude for each task. 
+
+b) Observations and Analysis: Based on the results of Exp I and Exp II presented in Fig. 4, we derive three key observations. 1) At the module level, whether performing sparsification or quantization approximation, the four modules including attn_in_proj_weight ,
+
+attn_out_proj_weight , mlp_c_fc_weight , and 
+
+mlp_c_proj_weight exhibit higher sensitivity than other modules. Sparsification or quantization applied to these modules tends to cause more pronounced performance fluctuations. 2) At the layer level, deeper layers demonstrate relatively lower tolerance to sparsification and quantization. 7Cars 
+
+> DTD
+> EuroSAT
+> GTSRB
+> MNIST
+> RESISC45
+> SUN397
+> SVHN
+> attn_in_proj_bias
+> attn_in_proj_weight
+> attn_out_proj_bias
+> attn_out_proj_weight
+> ln_1_bias
+> ln_1_weight
+> ln_2_bias
+> ln_2_weight
+> ln_post_bias
+> ln_post_weight
+> mlp_c_fc_bias
+> mlp_c_fc_weight
+> mlp_c_proj_bias
+> mlp_c_proj_weight
+> Exp I (Module Type Level)
+> Cars
+> DTD
+> EuroSAT
+> GTSRB
+> MNIST
+> RESISC45
+> SUN397
+> SVHN
+> layer_0
+> layer_1
+> layer_2
+> layer_3
+> layer_4
+> layer_5
+> layer_6
+> layer_7
+> layer_8
+> layer_9
+> layer_10
+> layer_11
+> Exp I (Layer Level)
+> Cars
+> DTD
+> EuroSAT
+> GTSRB
+> MNIST
+> RESISC45
+> SUN397
+> SVHN
+> attn_in_proj_bias
+> attn_in_proj_weight
+> attn_out_proj_bias
+> attn_out_proj_weight
+> ln_1_bias
+> ln_1_weight
+> ln_2_bias
+> ln_2_weight
+> ln_post_bias
+> ln_post_weight
+> mlp_c_fc_bias
+> mlp_c_fc_weight
+> mlp_c_proj_bias
+> mlp_c_proj_weight
+> Exp II (Module Type Level)
+> Cars
+> DTD
+> EuroSAT
+> GTSRB
+> MNIST
+> RESISC45
+> SUN397
+> SVHN
+> layer_0
+> layer_1
+> layer_2
+> layer_3
+> layer_4
+> layer_5
+> layer_6
+> layer_7
+> layer_8
+> layer_9
+> layer_10
+> layer_11
+> Exp II (Layer Level)
+> -0.020
+> -0.015
+> -0.010
+> -0.005
+> 0.000
+> Accuracy Drop
+> -0.010
+> -0.005
+> 0.000
+> 0.005
+> 0.010
+> Accuracy Drop
+> 0.000
+> 0.002
+> 0.004
+> 0.006
+> Accuracy Drop
+> -0.002
+> -0.001
+> 0.000
+> 0.001
+> 0.002
+> 0.003
+> Accuracy Drop
+
+Fig. 4. Heatmaps illustrating the sensitivity of different modules/layers to sparsification and quantization. The horizontal axis represents task names, while the vertical axis denotes module types or layer indices. The color indicates the extent of performance degradation (expressed in decimal form, with negative values indicating performance improvements) of the model after applying the corresponding operation to the task vectors of specific modules or layers, compared to the original fine-tuned model. The two plots on the left present the experimental results of Exp I , while the two on the right display the results of Exp II .0.1 0.3 0.5 0.7 0.9 1.0 1.1 1.3 1.5 1.7 1.9 
+
+Tuning Factor         
+
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Accuracy Drop (%)
+> Tasks
+> Cars (optimal = 0.8 )
+> DTD (optimal = 0.9 )
+> EuroSAT (optimal = 1.1 )
+> GTSRB (optimal = 1.0 )
+> MNIST (optimal = 0.7 )
+> RESISC45 (optimal = 1.0 )
+> SUN397 (optimal = 1.0 )
+> SVHN (optimal = 1.1 )
+
+Fig. 5. Line charts illustrating the performance degradation across different downstream tasks as the tuning factor η ∈ [0 .1, 2.0] varies. Star markers denote task-specific optima (minimum performance drop). The bold vertical dashed line marks η = 1 .0, where no tuning is applied. 
+
+Extreme approximations in the deeper stages (Layers 7–11) often result in more pronounced performance degradation, whereas similar operations on shallower layers (Layers 0-5) do not lead to significant performance drops and can even yield some performance improvements. 3) The sensitivity across different modules and layers vary depending on the task. Furthermore, the results of Exp III shown in Fig. 5 reveal that only three tasks (SUN397, GTRSB, and RESISC45) achieve optimal performance with η = 1 .0, while other tasks require either further amplification or reduction of the original 
+
+ℓ2 scaling factor to reach their optima, with the optimal values differing across tasks. Synthesizing these observations, we identify three critical bottlenecks limiting the representation efficiency of task vectors: 1) Non-uniformity of sparse structures : Different mod-ules across layers exhibit varying tolerance to sparsifi-cation, making a globally uniform sparsity ratio prone to causing performance degradation in sensitive layers or spatial waste in redundant layers. 2) Inter-module differences in precision sensitivity :Modules display varying sensitivity to quantization rep-resentations, making it challenging to balance storage efficiency and performance across layers/modules with a uniformly extreme quantization bit-width. 3) Suboptimality of the ℓ2 magnitude calibration cri-teria : Static scaling based on ℓ2 norm ratios merely pursues approximation in physical magnitude, yet such scaling calibration is often suboptimal. Motivated by these insights, we seek to extend T-Switch by transitioning from a construction mode reliant on fixed rules to an adaptive and learnable optimization paradigm, thereby enabling the automated allocation of the most suitable sparsity ratio, quantization bit-width, and scaling factor for the task vector of each module within every layer. 
+
+2) Learnable Sparsification via Differentiable Gating: We first introduce the LGS mechanism to enable optimization of sparsity ratios. It assigns a set of learnable positive and negative element thresholds to the task vector τ lk of each module to construct a soft sparsification gating vector. To ensure that the positive and negative thresholds always remain within the value range of their corresponding signed elements, we first examine the positive and negative elements of the vector and calculate the lower and upper bounds for the absolute values of the positive elements, [vl, +
+
+k, min , v l, +
+
+k, max ], as well as those for the negative elements, [vl, −
+
+k, min , v l, −
+
+k, max ]. We then assign a set of learnable positive and negative threshold logits sl, +
+
+k ∈ R and sl, −
+
+k ∈ R, and construct the positive and negative element thresholds tl, +
+
+k and tl, −
+
+k as follows: 
+
+tl, +
+
+k = vl, +
+
+k, min + φ
+
+
+
+sl, +
+
+k
+
+
+
+· rl, +
+
+k, max , rl, +
+
+k, max = vl, +
+
+k, max − vl, +
+
+k, min ,tl, −
+
+k = vl, −
+
+k, min + φ
+
+
+
+sl, −
+
+k
+
+
+
+· rl, −
+
+k, max , rl, −
+
+k, max = vl, −
+
+k, max − vl, −
+
+k, min ,
+
+(6) where φ(·) : R → (0 , 1) is a normalized smooth mapping function of the form φ(x) = 1
+
+π arctan ( x) + 0 .5, which ensures that the parameterization strategy shown in Eq. (6) strictly constrains the positive and negative thresholds tl, +
+
+k
+
+and tl, −
+
+k within the element range of their corresponding signs. Meanwhile, its gradient decay rate is only O(1 /x 2), a property that effectively expands the effective search radius of the threshold parameters sl, ±
+
+k during optimization. Considering that the sparsification process inevitably alters the shape of task vectors, the scaling factor should be coupled with the sparsification strategy to facilitate co-evolution. To this end, we introduce a learnable scaling weight κlk and combine it with the thresholds to construct a differentiable gating vector fMlk
+
+that unifies sparsity filtering and norm-rescaling as follows: 
+
+fMlk = σSoft  κlk
+
+ · Mlk,
+
+Mlk =
+
+"
+
+σSig τ lk − 1ltl, +
+
+k
+
+ρ · rl, +
+
+k, max 
+
+!
+
++ σSig −1ltl, −
+
+k − τ lk
+
+ρ · rl, −
+
+k, max 
+
+!# 
+
+, (7) where σSoft (·) and σSig (·) denote the Softplus and Sigmoid functions, respectively. 1l is an all-ones vector with the same dimension as τ lk. The temperature parameter ρ ∈ (0 , 1] , which regulates mask smoothness, is combined with tl, +
+
+k and tl, −
+
+k
+
+to eliminate scaling effects, ensuring its controllability. As 
+
+ρ → 0, Mlk approaches an ideal 0-1 mask, where elements 890 92 94 96 98                                  
+
+> 69
+> 72
+> 75
+> 78
+> Accuracy (%)
+> SUN397
+> 90 92 94 96 98
+> 66
+> 69
+> 72
+> 75
+> 78
+> Cars
+> 90 92 94 96 98
+> 75
+> 80
+> 85
+> 90
+> 95
+> RESISC45
+> 90 92 94 96 98
+> 72
+> 80
+> 88
+> 96
+> EuroSAT
+> 90 92 94 96 98
+> Sparsity Rate (%)
+> 72
+> 80
+> 88
+> 96
+> Accuracy (%)
+> SVHN
+> 90 92 94 96 98
+> Sparsity Rate (%)
+> 72
+> 80
+> 88
+> 96
+> GTSRB
+> 90 92 94 96 98
+> Sparsity Rate (%)
+> 90.0
+> 92.5
+> 95.0
+> 97.5
+> 100.0
+> MNIST
+> 90 92 94 96 98
+> Sparsity Rate (%)
+> 54
+> 60
+> 66
+> 72
+> 78
+> DTD
+> LGS+KL LGS+MSE LGS+CKA P-Spar P-Spar+L2-scaling Original ACC
+
+Fig. 6. Accuracy of models equipped with task vectors sparsified by LGS with different performance preserving losses and P-Spar across different tasks under different sparsity levels. The dashed line represents the performance of the original fine-tuned model. LGS results are averaged over three trials. 
+
+within the interval (−tl, − 
+
+> k
+
+, t l, + 
+
+> k
+
+) vanish toward 0, while those outside converge to 1. σSoft (κlk) serves as a non-negative scaling factor, acting as an adaptive “switch knob”. This gating mechanism provides an evolutionary path from smooth func-tional approximation to hard-thresholding logic, enabling the joint adaptive optimization of the sparsification strategy and scaling coefficients via backpropagation. To balance the degree of sparsity with performance degradation during optimization, the objective function of LGS is defined as follows: 
+
+LLGS  
+
+> k
+
+(Bk) = 
+
+PLl=1 Mlk 1
+
+PLl=1 nl
+
++ λLPer  
+
+> k
+
+(Bk) , (8) where the first term promotes structural sparsity by minimizing the magnitudes of elements within each Mlk, normalized to the range [0 , 1] based on the parameter count nl of each respective module. Bk = {xi}Bi=1 denotes a batch of input examples sampled from the k-th task. LPer  
+
+> k
+
+is the performance preservation loss, maintaining predictive consistency between the model with sparsified task vector and the original fine-tuned model, and λ is a hyperparameter that controls the intensity of performance preservation. It is well-compatible with current mainstream alignment metrics used for knowledge distillation. Specifically, we consider the following types: 
+
+Probability distribution alignment . This criterion aligns the model’s predictive behavior by matching the output probability distributions. As the most widely adopted measure in this con-text [45]–[47], we employ Kullback-Leibler (KL) divergence [48] as the representative metric. In our setting, its specific form is defined as: 
+
+LKL  
+
+> k
+
+(Bk) = T 2
+
+B
+
+> B
+
+X
+
+> i=1
+> Ck
+
+X
+
+> j=1
+
+qi,j log qi,j 
+
+pi,j 
+
+, (9) where qi,j and pi,j denote the j-th element of the probability vectors qi and pi, respectively. qi = Softmax (f (xi; Θk)/T )
+
+represents the output probability of the original fine-tuned model for input xi, while pi = Softmax (f (xi; Θ + ˆ τk)/T )
+
+corresponds to the model equipped with the soft-sparsified task vector ˆτk =
+
+n
+
+τ lk ⊙ fMlk
+
+oLl=1 
+
+. Following common practice [49], [50], we set the temperature T = 4 . Ck denotes the dimension of the output logits for the k-th task. 
+
+Numerical Metric Alignment . This criterion aligns model responses by constraining the absolute magnitude of the output values. We employ MSE as the metric, defined as: 
+
+LMSE  
+
+> k
+
+(Bk) = 1
+
+B
+
+> B
+
+X
+
+> i=1
+
+∥f (xi; Θk) − f (xi; Θ + ˆ τk)∥22 . (10) 
+
+Structural Consistency Alignment . This criterion ensures that the sparsified model preserves the structured information of the original fine-tuned model within the output space. We employ Centered Kernel Alignment (CKA) to quantify the structural consistency between the outputs of different models: 
+
+LCKA  
+
+> k
+
+(Bk) = 1 −
+
+F⊤ 
+
+> k
+
+H ˆFk
+
+> 2
+> F
+
+F⊤ 
+
+> k
+
+HF k F ˆF⊤ 
+
+> k
+
+H ˆFk F
+
+, (11) where Fk = [ f (x1; Θk), . . . , f (xB ; Θk)] ⊤ ∈ RB×Ck and 
+
+ˆFk = [ f (x1; Θ + ˆ τk), . . . , f (xB ; Θ + ˆ τk)] ⊤ ∈ RB×Ck denote the output matrices of the original model and the model equipped with the soft sparsified task vector, respectively, on the input batch Bk. H = I − 1 
+
+> B
+
+11 ⊤ is the centering matrix. For the LGS training process, we randomly select N = 100 
+
+examples per task as the example set. The batch size B is set to 32, and the optimization is performed for 500 steps. To ensure smooth convergence of the threshold parameters, we initialize the temperature parameter ρ = 1 .0 and apply an exponential decay of ρ ← 0.9 · ρ every 10 optimization steps. Upon com-pletion, the final hard-sparsified gating mask is computed as 
+
+(Mlk, hard )i,j = 1(( Mlk)i,j > 0.5) , which determines the final sparsified task vector ˆτk =
+
+n
+
+σSoft  κlk
+
+ · τ lk ⊙ Mlk, hard 
+
+oLl=1 
+
+. To 
+
+TABLE I HYPERPARAMETER CONFIGURATIONS OF λ FOR DIFFERENT PERFORMANCE PRESERVATION LOSSES .     
+
+> Performance Preservation Loss λSettings
+> KL {0.1, 0.3, 0.5, 0.7, 0.9 }
+> MSE {0.01, 0.05, 0.09, 0.13, 0.17 }
+> CKA {1.0, 3.0, 5.0, 7.0, 9.0 }
+
+validate the effectiveness of the proposed LGS in balancing sparsity and performance, we compare it with P-Spar in the 9
+
+verification experiments described in Sec. III-B1. We follow Tab. I to configure the hyperparameter for the performance preservation loss, selecting specific λ values for different types of loss functions to ensure that each approach achieves a comparable sparsity level. Meanwhile, the pruning rate α for P-Spar on each task is set according to the sparsity level achieved by LGS under different hyperparameter choices on the corresponding task. To account for the effect of the scaling weight κlk, we introduce a controlled variant where the L2 scaling applied in T-Switch is incorporated into the task vectors after P-Spar, restoring them to their original norm. Experiments of LGS are run three times independently to eliminate the impact of randomness. As shown in Fig. 6, LGS effectively preserves or even surpasses (on the Cars dataset) the performance of the fine-tuned model regardless of the performance preserving loss employed. Even at high sparsity levels approaching 98% , LGS maintains the model’s perfor-mance well. In contrast, P-Spar exhibits rapid performance degradation at sparsity levels above 90% . The performance drop remains significant even with L2 scaling applied to adjust the magnitude. Notably, at a sparsity level of 97% , P-Spar+L2-Scaling results in an accuracy drop of over 10 points on DTD. This comparison strongly demonstrates the effectiveness of LGS in balancing sparsity and model performance. 
+
+3) Bitwidth Allocation Guided by Task Utility: Building upon the sparse patterns learned by LGS, we introduce BAS to transition from fixed binarization to fine-grained adaptive bit-width allocation. The BAS mechanism selects quantization bit-widths from a broader set W = {1, 2, 4, 8}. To achieve this, it first assigns a set of learnable bit-width distribution parameters 
+
+wl ∈ R4 to the task vector τ lk of each module, and then constructs bit-width distribution probabilities to implement a differentiable bit-width mixing strategy: 
+
+QM
+
+ τ lk
+
+ =
+
+> |W|
+
+X
+
+> i=1
+
+exp  wli/ω P|W|  
+
+> j=1
+
+exp  wlj /ω  · Q  τ lk ; Wi
+
+ , (12) here, wli is the i-th component of wl, Wi is the i-th element of W, and ω is the temperature parameter controlling the smoothness of the bit-width distribution. As ω → 0, the dis-tribution converges to a one-hot form, effectively approaching a discrete, single bit-width selection. Q(τ lk; b) represents the asymmetric quantization operation with bit-width b:
+
+ Q  τ lk ; b  
+
+> j
+
+= −vl, − 
+
+> k, max
+
++  I  τ lk,j ; b + 0 .5 · δl, (13) where δl = vl, + 
+
+> k, max +vl, −
+> k, max
+> 2b
+
+is the quantization step size, and 
+
+I
+
+
+
+τ lk,j ; b
+
+
+
+= Clamp 
+
+ τ lk,j +vl, −
+
+> k, max
+> δl
+
+
+
+, 1, 2b
+
+
+
+−1 represents the quantization bin index for the element τ lk,j .Building upon the aforementioned bit-width mixing strat-egy, BAS incorporates a bit-width optimization regularization term into Eq. (8), thereby combining the optimization of quan-tization and sparsification strategies to construct the following joint optimization objective: 
+
+LJoint  
+
+> k
+
+(Bk) = 
+
+PLl=1 Mlk 1
+
+PLl=1 nl
+
++
+
+PLl=1 wl
+
+L max ( W) + λLPer  
+
+> k
+
+(Bk) ,
+
+(14) 0 1 2 3 4 5 6                        
+
+> Vector Length nl1e4
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> Storage Cost (Bits)
+> 1e5
+> (a) Cost vs. Length ( bl= 1, l= 0.6 )
+> Theory-Indep
+> Theory-SASS
+> Storage Cost Indep
+> Storage Cost SASS
+> 12345678
+> Bit-width bl
+> 10000
+> 15000
+> 20000
+> 25000
+> 30000
+> 35000
+> (b) Cost vs. Bit-width ( nl= 2 12 ,l= 0.6 )
+> Theory-Indep
+> Theory-SASS
+> Storage Cost Indep
+> Storage Cost SASS
+> 0.2 0.4 0.6 0.8 1.0
+> Sparsity l
+> 2000
+> 4000
+> 6000
+> 8000
+> 10000
+> 12000
+> (c) Cost vs. Sparsity ( nl= 2 12 ,bl= 1 )
+> Theory-Indep
+> Theory-SASS
+> Storage Cost Indep
+> Storage Cost SASS
+
+Fig. 7. Storage comparison between the SASS and Indep schemes under dif-ferent parameter configurations. The curves represent the theoretical number of storage bits, while the scattered points indicate the average actual storage bits over 10 independent trials, with error bars denoting the standard deviation. 
+
+where wl = P|W| 
+
+> i=1 exp
+
+(wli/ω ) 
+
+> P|W|
+> j=1 exp
+
+(wlj /ω ) · W i represents the mixed bit-width for the l-th module, and max ( W) denotes the maximum bit-width in W, which normalizes the regulariza-tion term to the [0 , 1] range, thereby aligning its scale with the sparsity objective. Note that the performance-preservation loss in this optimization process is computed using the task vector eτk =
+
+nfMlk ⊙ QM
+
+ τ lk
+
+oLl=1 
+
+, which accounts for the combined effect of soft sparsification and mixed bit-width quantization. Upon completion of the optimization, the final bit-width bl for the l-th module is selected as the one corre-sponding to the maximum bit-width distribution parameter: 
+
+bl = Wˆi, ˆi = arg max 
+
+> i∈{ 1,..., |W|}
+
+wli, (15) this yields the final sparsified and quantized task vector eτk =n
+
+σSoft  κlk
+
+ · Ml, hard  
+
+> k
+
+⊙ Q  τ lk ; bloLl=1 
+
+.
+
+4) Cost-Aware Storage Format Selection: For compressed task vectors, a straightforward storage scheme is to indepen-dently store the binary mask and the quantized values (referred to as Indep). This approach allocates a fixed bit budget (mask + quantization bits) to every element, treating zero and non-zero entries identically. Consequently, it fails to fully exploit the inherent sparsity of the task vectors. To unlock the potential of the high sparsity ratios achieved by LGS, we introduce SASS, which leverages a grouped COO storage format to adaptively select the optimal group count. Concretely, for a task vector of length nl, it is first evenly partitioned into nl 
+
+> cl
+
+groups of size cl (cl | nl). A bitmap is then constructed to indicate the positions of non-zero groups, where a group containing at least one non-zero element is marked as 1, and an all-zero group as 
+
+0, resulting in a storage overhead of nl/c l bits. Subsequently, for each non-zero group, we store the indices of non-zero elements (using log 2 cl bits each) alongside their quantized values. Assuming that the occurrences of non-zero elements are i.i.d. following a Bernoulli distribution with an expected sparsity ratio αl and a quantization bit-width bl, the expected storage overhead for this scheme is: Storage SASS = 35 + nl
+
+cl + nl(1 − αl)( log 2 cl + bl + 1) bits ,
+
+(16) where the constant 35 accounts for the storage of the group count and the group size. We consider a maximum group size of 256 , for which 8 bits are allocated. Since the maximum vector length nl under consideration is 227 , which covers the maximum weight vector dimensions of mainstream models with 7B parameters or fewer, 27 bits are reserved to store 10 0 5 10 15 20 25                                  
+
+> 74
+> 76
+> 78
+> 80
+> Accuracy (%)
+> SUN397
+> 510 15 20 25
+> 74
+> 76
+> 78
+> 80
+> Cars
+> 510 15 20 25
+> 90
+> 92
+> 94
+> 96
+> RESISC45
+> 510 15 20 25
+> 97
+> 98
+> 99
+> 100
+> EuroSAT
+> 510 15 20 25
+> Storage (MB)
+> 92
+> 94
+> 96
+> 98
+> Accuracy (%)
+> SVHN
+> 510 15 20 25
+> Storage (MB)
+> 92
+> 94
+> 96
+> 98
+> 100
+> GTSRB
+> 510 15 20 25
+> Storage (MB)
+> 99.0
+> 99.2
+> 99.4
+> 99.6
+> 99.8
+> 100.0
+> MNIST
+> 510 15 20 25
+> Storage (MB)
+> 70
+> 75
+> 80
+> DTD
+> T-Switch ( =0.5)
+> T-Switch ( =0.6)
+> T-Switch ( =0.7)
+> T-Switch ( =0.8)
+> T-Switch ( =0.9)
+> Flexswitch+CKA ( =1)
+> Flexswitch+CKA ( =3)
+> Flexswitch+CKA ( =5)
+> Flexswitch+CKA ( =7)
+> Flexswitch+CKA ( =9)
+> Flexswitch+KL ( =0.1)
+> Flexswitch+KL ( =0.3)
+> Flexswitch+KL ( =0.5)
+> Flexswitch+KL ( =0.7)
+> Flexswitch+KL ( =0.9)
+> Flexswitch+MSE ( =0.01)
+> Flexswitch+MSE ( =0.05)
+> Flexswitch+MSE ( =0.09)
+> Flexswitch+MSE ( =0.13)
+> Flexswitch+MSE ( =0.17)
+
+Fig. 8. Comparison of performance and storage overhead (MB) between FlexSwitch and T-Switch across different tasks, using SASS as the unified storage scheme. All results report the mean values from three independent runs. 
+
+the group count information. Within the parenthetical term 
+
+(⌈log 2 cl⌉+bl +1) , in addition to storing the intra-group index (⌈log 2 cl⌉ bits) and the quantized value ( bl bits) for each non-zero element, we introduce an extra 1-bit flag to signify the end of the current group, which ensures deterministic decoding of the stored data driven by the bitmap. Note that, when ignoring the ceiling function, the above expression possesses a unique minimum point at cl = ln 2 1−αl that depends solely on the sparsity ratio. Consequently, we adaptively select cl within the feasible domain C according to the following rule: 
+
+cl = arg min 
+
+> c∈C
+
+ln 2 (1 − αl) − c , C = c | c ∈ Z+, c | nl .
+
+(17) We further examine the theoretical storage overhead differ-ence Storage SASS − Storage Indep between SASS and the inde-pendent storage of mask vectors and quantized task vectors (Indep), where Storage Indep = (bl + 1) nl. Also under the condition that ignores the ceiling operations in Storage SASS ,when the optimal group size cl = ln 2 1−αl is substituted, this difference function decreases with respect to both bl and αl;furthermore, it also decreases with nl provided that α > 0.5.This implies that SASS yields a more pronounced storage advantage over the Indep scheme at higher sparsity levels and larger quantization bit-widths. Moreover, increased sparsity further amplifies SASS’s storage benefits as the parameter scale of the task vectors grows. To verify this theoretical expectation and verify the accuracy of the proposed theoretical storage occupancy formula, we compare the theoretical bit counts and actual storage bits of both schemes by varying 
+
+nl, b l, and αl, with the group size selected according to Eq. (17). For the actual storage tests, we generate sparse task vectors with sparsity rate α by constructing mask vectors according to a Bernoulli distribution with mean 1 − α. The parameter ranges were set to nl ∈ { 210 , 211 , . . . , 216 } and bl ∈{1, 2, . . . , 8}, while 10 observation points for αl were sampled uniformly within the range [0 .1, 0.98] . Each configuration was run 10 times to plot the mean values and standard deviations. Results shown in Fig. 7 indicate that SASS consistently maintains lower storage costs than the Indep scheme across all parameter configurations when α = 0 .6 (satisfying the 
+
+α > 0.5 theoretical condition). Meanwhile, the actual storage bits at the sampling points perfectly match the theoretical curves. As nl and bl increase, the storage advantage of SASS over Indep grows consistently. Notably, when α > 0.5, SASS begins to yield a positive storage gain that expands rapidly, thereby validating our theoretical expectations. It is worth mentioning that at an sparsity of αl = 0.98 , the storage overhead of SASS is less than 1/8 of that required by Indep, confirming the efficacy of SASS in leveraging the high sparsity of task vectors to optimize storage efficiency. 
+
+5) Auto-FlexSwitch: Based on the joint optimization of LGS and BAS, combined with the efficient storage strategy of SASS, we construct the complete FlexSwitch framework. As illustrated in Fig. 3, for each task vector τk to be sparsified, the framework first jointly optimizes its sparsification and quanti-zation strategies based on Eq. (14), synergistically improving compression efficiency while preserving task performance. Subsequently, SASS is employed to store the compressed task vector efficiently, directly translating the benefits of high sparsity rates and low bit-widths achieved by LGS and BAS into actual savings in disk space. To verify the efficiency advantage of FlexSwitch over T-Switch, we adopt SASS as the unified storage scheme and conduct a comparative evaluation of storage efficiency and performance between FlexSwitch with different performance retention losses and T-Switch with varying sparsity rates α ∈{0.5, 0.6, . . . , 0.9}. For FlexSwitch, the performance retention loss hyperparameter λ is aligned with Tab. I. The temperature parameters ρ and ω, which regulate sparse gating and bit-width distribution smoothness, are both initialized to 1.0 and decay exponentially by a factor of 0.9 every 10 optimization steps. The learning rates for LGS and BAS parameters are set to 0.05 and 0.1, respectively. Optimization is performed for 
+
+500 iterations using the Adam optimizer on an exemplar set consisting of N = 100 randomly selected samples per task. As shown in Fig. 8, regardless of the combined performance retention loss, FlexSwitch consistently exhibits a significant Pareto advantage. Specifically, it achieves performance com-parable to T-Switch while consuming considerably less storage than the latter’s substantially higher overhead. In contrast, 11 
+
+TABLE II HYPERPARAMETER SETTINGS FOR DIFFERENT METHODS ACROSS VARIOUS MODEL ARCHITECTURES . “–” INDICATES THAT THE CORRESPONDING PARAMETER IS NOT APPLICABLE .Methods ViT-B/32 ConvNeXt ViT-L/14 Sparsity Rate Sample Size Scaling Coef Sparsity Rate Sample Size Scaling Coef Sparsity Rate Sample Size Scaling Coef Task-Arithmetic – – 0.2 – – 0.2 – – 0.3 DARE 0.4 – 0.2 0.1 – 0.2 0.6 – 0.4 TIES-Merging 0.8 – 0.8 0.6 – 0.8 0.8 – 0.8 Fisher Merging – 8192 – – 8192 – – 8192 –DF-Merge – 14400 – – 14400 – – 14400 –RegMean – 12800 – – 12800 – – 12800 –AdaMerging – 64000 – – 64000 – – 64000 –AdaMerging++ 0.5 64000 – 0.7 64000 – 0.3 64000 –Twin-Merging – 8000 0.3 – 8000 0.3 – 8000 0.2 MoW-Merging – 6824 – – 6824 – – 6824 –Auto-Switch 0.7 800 – 0.5 800 – 0.6 800 –Auto-FlexSwitch – 800 – – 800 – – 800 –TABLE III PERFORMANCE COMPARISON ON VIT-B/32 ACROSS EIGHT VISUAL CLASSIFICATION TASKS . T HE BEST AND SECOND -BEST RESULTS AMONG ALL COMPARED MERGING METHODS ARE HIGHLIGHTED IN BOLD AND UNDERLINED , RESPECTIVELY .Type Method Storage (MB) Accuracy (%) SUN397 Cars RESISC45 EuroSAT SVHN GTSRB MNIST DTD AVG – Pre-trained – 62.31 59.64 60.22 45.81 31.61 32.56 48.25 44.41 48.10 Traditional MTL – 73.20 74.76 93.43 98.89 96.67 97.28 99.40 76.60 88.78 Individual – 79.23 77.66 96.11 99.78 97.46 98.73 99.69 79.41 91.01 Static Weight-Averaging [15] – 64.72 63.34 71.44 72.74 64.16 52.80 87.46 50.11 65.85 Task-Arithmetic [6] – 63.49 62.06 72.00 78.59 74.42 65.08 94.00 52.18 70.23 DARE [21] – 63.51 62.06 72.08 78.37 74.62 65.13 94.07 52.34 70.27 Ties-Merging [22] – 62.74 61.42 73.25 85.70 80.67 73.19 97.44 54.89 73.66 Fisher Merging [7] – 66.16 67.07 72.41 66.89 81.44 66.09 85.35 51.81 69.65 DF-Merge [16] – 61.75 64.53 74.02 61.22 95.37 77.71 90.34 62.93 73.48 RegMean [8] – 67.86 66.87 82.37 92.96 86.41 81.95 97.25 63.19 79.86 AdaMerging [18] – 64.17 68.85 78.86 93.19 85.90 91.34 97.36 60.00 79.96 AdaMerging++ [18] – 65.74 69.89 81.14 94.11 86.89 90.16 98.11 61.60 80.96 Dynamic  EMR-Merging [10] 540.19 75.20 72.75 93.49 99.52 96.86 98.12 99.58 74.36 88.74 Twin-Merging [9] 711.10 74.88 73.26 95.13 99.67 97.36 98.41 99.65 78.56 89.62 MoW-Merging [23] 2171.89 68.05 68.95 93.59 99.56 97.21 98.63 99.66 72.61 87.28 Auto-Switch 185.28 77.45 78.47 94.48 99.74 97.31 98.68 99.70 78.19 90.51 Auto-FlexSwitch+CKA ( λ = 3 ) 47.26 79.11 79.12 95.92 99.59 97.45 98.61 99.65 79.79 91.16                       
+
+> Auto-FlexSwitch+KL ( λ= 0 .3)41.51 79.41 78.40 95.71 99.67 97.11 98.70 99.67 79.36 91.00 Auto-FlexSwitch+MSE ( λ= 0 .05 )50.72 79.03 78.21 95.57 99.70 97.33 98.65 99.64 79.41 90.94
+
+when the sparsity rate α of T-Switch increases to 0.9, it no longer maintains task performance effectively, exhibiting clear accuracy degradation. Notably, FlexSwitch achieves perfor-mance on par with T-Switch (which requires ∼ 20 MB or more) using only about 5 MB of storage across all tasks. This strongly demonstrates that through the synergistic operation of LGS and BAS, FlexSwitch can more precisely eliminate redundancy in task vectors, enabling an efficient trade off between performance and storage efficiency. Furthermore, as the original feature space of pre-trained models is typically optimized for general representations, feature distributions across multiple tasks may overlap in scenarios with high semantic similarity. This overlap limits the retrieval accuracy of Auto-Switch, which relies on the Euclidean distance of raw features for KNN search. To en-hance the discriminability and efficiency of task queries, we introduce a KNN-based merging mechanism integrated with a learnable low-rank metric. Formally, given the constructed query sets {Q k}Kk=1 , we first perform K-Means clustering within each Qk to extract E representative centers, denoted as μki for 1 ≤ i ≤ E, to form a condensed reference set 
+
+Ak = {μki }Ei=1 . Subsequently, we learn a low-rank projection matrix L ∈ Rr×e, where e denotes the output dimension of the pre-trained backbone f ex (·; Θ) and r ≪ e is the projection rank. Consequently, the distance between the feature output of an input x and a reference center μ is measured by the following metric dL (·, ·) → R+:
+
+dL (f ex (x; Θ), f ex (x′; Θ)) = ∥Lf ex (x; Θ) − Lf ex (x′; Θ)∥2
+
+(18) to identify the neighborhood set Nx. We then optimize L by minimizing the following objective over query sets SKk=1 Ak:
+
+LL = − 1
+
+KN 
+
+KN X
+
+i=1 
+
+log 
+
+P
+
+z∈N xi ∩A ki
+
+(dL(f ex (xi; Θ), z)) −1
+
+P
+
+z∈N xi
+
+(dL(f ex (xi; Θ), z)) −1
+
+!
+
+.
+
+(19) where ki denotes the task identity of the input xi. Driven by this objective, the low-rank projection matrix L adap-tively reconfigures the original feature distribution. Once opti-mized, this metric is employed to perform the retrieval-based merging as defined in Eq. (5). By reinforcing task-relevant discriminative dimensions within a low-dimensional space, this mechanism further ensures accurate task vector retrieval with negligible storage overhead. Integrating this inference-time merging mechanism with the lightweight task vectors constructed by FlexSwitch yields Auto-FlexSwitch, the overall pipeline of which is illustrated in Fig. 3. IV. E XPERIMENTS 
+
+In this section, we evaluate the effectiveness of the proposed methods through extensive experiments, where we compare our approach with various baselines across different down-stream tasks and model architectures to demonstrate its su-perior performance and storage efficiency. Furthermore, we conduct systematic ablations on individual components of the proposed methods. Additionally, to explore the application boundaries and generalizability of our methods, we validate the potential of FlexSwitch itself as a lightweight storage scheme for fine-tuned LLM weights. All experiments are conducted on multiple NVIDIA H200 GPUs. 12 
+
+A. Merging Experiments on Diverse Downstream Scenarios 
+
+To verify the generalizability and effectiveness of the pro-posed methods across diverse tasks, we compare their per-formance and storage efficiency against multiple baselines in three different downstream scenarios, including image classifi-cation (Sec. IV-A1), object detection (Sec. IV-A2), and natural language understanding (Sec. IV-A3). 
+
+1) Merging on Image Classification Tasks: a) Experimental Settings: Following common practice in model merging [9], [10], [23], we evaluate our methods on eight visual classification datasets: SUN397 [35], Cars [36], RESISC45 [37], EuroSAT [38], SVHN [39], GTSRB [40], MNIST [41], and DTD [42]. To thoroughly verify the effectiveness of our methods, we select three back-bones with diverse architectural characteristics and parameter scales, including the Transformer-based CLIP visual encoders, ViT-B/32 [34] and the larger-scale ViT-L/14, alongside the convolutional-based ConvNeXt [51]. To quantify the perfor-mance and efficiency of different methods, we evaluate both task accuracy (%) and the additional parameter storage over-head (MB) introduced by each dynamic merging approach. For all methods involving randomness, we report the average results across three independent runs. 
+
+b) Baselines: We compare our methods with various classical and SOTA baselines for both static and dynamic model merging, including 1) Weight-Averaging [15], 2) Task-Arithmetic [6], 3) DARE [21], 4) TIES-Merging [22], 5) Fisher Merging [7], 6) DF-Merge [16], 7) RegMean [8], 8) AdaMerging [18], 9) AdaMerging++ [18], 10) EMR-Merging [10], 11) Twin-Merging [9], and 12) MoW-Merging [23]. For baselines involving exemplar samples, we strictly follow the sample sizes recommended in their original papers. For baselines that involve scaling coefficients or sparsity rates, we conduct an grid search on each method to determine their optimal parameter configurations. The resulting parameter settings are listed in Tab. II. For Auto-FlexSwitch, the learning rates for LGS and BAS are set to 5e-2 and 1e-1, respectively. Optimization is conducted using the Adam optimizer for 500 steps, with temperature parameters ρ and ω initialized at 1.0
+
+and exponentially decayed by a factor of 0.9 every 10 steps. The low-rank mapping matrix L is configured with a rank of 
+
+r = 32 and a learning rate of 0.5, optimized using Adam for 100 epochs on the constructed exemplar set. In addition, for reference, we also compare against the pretrained model (Pre-trained), a model jointly trained on all datasets (Traditional MTL), and models individually fine-tuned on each task (Individual). For Traditional MTL, each model is trained for 20000 steps with a batch size of 64, using the Adam optimizer with a learning rate of 1e-4 for ViT-B/32 and ViT-L/14, and the SGD optimizer with a learning rate of 3e-2 and momentum of 0.9 for ConvNeXt. For the Individual setting, the fine-tuned weights for ViT-B/32 and ViT-L/14 are consistent with those in [10], while the weights for ConvNeXt are optimized for 4,000 steps using SGD with a 3e-2 learning rate, a 64 batch size, and a momentum of 0.9. 
+
+c) Results: The experimental results on the three back-bones, ViT-B/32, ViT-L/14, and ConvNeXt, are presented in Tabs III, IV, and V, respectively. Experimental results indi-cate that Auto-Switch consistently outperforms existing base-lines in both performance and storage efficiency across ViT-B/32 and the larger-scale ViT-L/14. Auto-FlexSwitch further demonstrates superior overall competitiveness by achieving best average accuracy and even surpassing MTL and inde-pendent fine-tuning while significantly compressing additional storage. The storage advantage of Auto-FlexSwitch over Auto-Switch becomes even more pronounced on the larger ViT-L/14, yielding up to a 6.9 × reduction in storage space. Notably, when the backbone is switched to the convolutional-based ConvNeXt, Auto-Switch struggles to maintain per-task performance. In contrast, leveraging the adaptive sparsification and quantization capabilities enabled by LGS and BAS, Auto-FlexSwitch sustains high performance on ConvNeXt while maintaining an exceptionally low storage footprint of 8.25 MB. 
+
+2) Merging on Object Detection Tasks: To evaluate the effectiveness of our methods in complex perception tasks, we compare them with other baselines on various detection tasks. 
+
+a) Experimental Settings: The evaluation employs object detection tasks from seven domains of the Robo Flow 100 
+
+(RF100) dataset [52], including Aerial, Videogames, Micro-scopic, Underwater, Documents, Electromagnetic, and Real World, to validate the generalization capability of our methods on heterogeneous detection tasks. These datasets span diverse fields and exhibit high semantic diversity. We employ the pretrained end-to-end object detector DETR-ResNet50 [53] as the backbone model and adopt mAP@50 as the evaluation metric for the corresponding tasks, while also measuring the additional parameter storage overhead (MB) introduced by each dynamic merging method. For all baselines involving randomness as well as our methods, the results are reported as the mean of three independent experiments. 
+
+b) Baselines: We maintain the same baseline settings as described in Sec. IV-A1. Since detection tasks involve not only object classification but also bounding box regression, we exclude AdaMerging and AdaMerging++ [18] from this comparison, as they are specifically designed for classifi-cation models and rely on class probability distributions. Meanwhile, for Auto-FlexSwitch, we only consider MSE as the performance preserving loss to ensure alignment of both the classification and regression branches. Furthermore, for both Auto-Switch and Auto-FlexSwitch, since DETR returns multiple object queries per sample, we first aggregate the KNN prediction probabilities for each sample via majority voting before performing the merging. For the training of Traditional MTL and Individual DETR models, we follow the original settings [53], employing the AdamW optimizer with a batch size of 64 and learning rates of 1e-5 for the backbone and 1e-4 for the heads. Specifically, the Individual models are optimized for 15000 steps on each respective task, while the MTL model is trained for a total of 65000 steps to ensure convergence. Following the protocol in Sec. IV-A1, we conduct a grid search for each merging method to determine its optimal hyperparameters, which are detailed in Tab. VI. 
+
+c) Results: Tab. VII presents the comparative results of various model merging methods across seven cross-domain ob-ject detection tasks. First, static merging methods prove nearly 13 
+
+TABLE IV PERFORMANCE COMPARISON ON VIT-L/14 ACROSS EIGHT VISUAL CLASSIFICATION TASKS . T HE BEST AND SECOND -BEST RESULTS AMONG ALL COMPARED MERGING METHODS ARE HIGHLIGHTED IN BOLD AND UNDERLINED , RESPECTIVELY .Type Method Storage (MB) Accuracy (%) SUN397 Cars RESISC45 EuroSAT SVHN GTSRB MNIST DTD AVG - Pre-trained – 66.87 77.86 71.33 62.26 58.43 50.55 76.31 55.43 64.88 Traditional MTL – 78.37 92.84 97.30 99.00 97.79 97.23 99.45 79.10 92.64 Individual – 84.86 92.34 97.37 99.74 98.12 99.24 99.69 84.15 94.44 Static Weight-Averaging [15] – 71.08 81.54 82.67 90.63 78.23 70.63 97.01 62.77 79.32 Task-Arithmetic [6] – 73.90 82.14 86.67 92.74 87.91 86.78 98.93 65.64 84.34 DARE [21] – 72.96 79.41 84.49 89.59 89.19 86.34 99.10 64.57 83.21 Ties-Merging [22] – 73.55 83.09 87.37 95.48 86.53 88.80 99.02 66.65 85.06 Fisher Merging [7] – 70.16 81.57 82.43 90.11 83.36 89.30 96.02 62.39 81.92 DF-Merge [16] – 68.21 89.95 82.79 95.85 87.09 83.66 82.93 79.20 83.71 RegMean [8] – 73.74 87.17 90.29 97.93 92.60 91.26 99.21 71.76 88.00 AdaMerging [18] – 77.10 89.65 90.76 95.52 91.79 97.45 98.92 78.94 90.02 AdaMerging++ [18] – 77.48 90.48 90.71 96.59 92.76 97.36 99.23 78.98 90.45 Dynamic  EMR-Merging [10] 1633.46 83.17 90.71 96.76 99.70 97.94 99.11 99.69 82.71 93.72 Twin-Merging [9] 1780.62 80.22 90.16 96.37 99.63 98.06 98.95 99.70 82.29 93.17 MoW-Merging [23] 5159.51 80.99 91.32 96.25 99.59 98.06 99.20 99.74 78.78 92.99 Auto-Switch 556.88 83.17 92.61 96.81 99.74 98.12 99.21 99.73 83.51 94.11 Auto-FlexSwitch+CKA ( λ = 3 ) 89.76 84.55 92.35 97.35 99.74 97.84 99.23 99.74 84.26 94.38 Auto-FlexSwitch+KL ( λ = 0 .3) 80.69 84.86 92.58 97.19 99.70 98.02 99.32 99.70 84.47 94.48 
+
+Auto-FlexSwitch+MSE ( λ = 0 .05 ) 98.41 84.64 92.56 97.33 99.74 98.04 99.22 99.69 84.57 94.47 TABLE V PERFORMANCE COMPARISON ON CONV NEXT ACROSS EIGHT VISUAL CLASSIFICATION TASKS . T HE BEST AND SECOND -BEST RESULTS AMONG ALL COMPARED MERGING METHODS ARE HIGHLIGHTED IN BOLD AND UNDERLINED , RESPECTIVELY .Type Method Storage (MB) Accuracy (%) SUN397 Cars RESISC45 EuroSAT SVHN GTSRB MNIST DTD AVG - Pre-trained – 54.12 10.43 59.89 77.56 22.55 37.43 63.27 62.82 48.51 Traditional MTL – 63.34 82.80 92.32 97.93 95.30 96.07 99.03 71.86 87.33 Individual – 66.95 88.26 95.71 99.00 97.06 97.77 99.35 72.93 89.63 Static Weight-Averaging [15] – 49.31 13.62 74.62 89.96 61.76 65.27 82.52 60.16 62.15 Task-Arithmetic [6] – 42.75 13.31 71.41 90.63 73.16 72.78 92.84 53.40 63.79 DARE [21] – 41.93 13.12 70.98 91.15 72.94 73.16 92.23 53.19 63.59 Ties-Merging [22] – 43.99 13.00 73.86 92.26 70.74 77.38 94.48 55.85 65.20 Fisher Merging [7] – 51.84 26.78 74.68 82.81 71.39 74.70 96.44 62.13 67.60 DF-Merge [16] – 44.31 20.99 65.95 80.52 67.32 90.27 95.61 57.07 65.26 RegMean [8] – 51.10 26.68 78.81 90.52 76.14 78.67 94.05 61.76 69.72 AdaMerging [18] – 54.42 13.42 83.08 90.96 80.63 82.91 96.39 66.44 72.41 AdaMerging++ [18] – 57.51 20.07 84.29 89.07 81.00 83.59 96.26 67.45 71.03 Dynamic  EMR-Merging [10] 468.56 48.38 48.59 84.98 95.07 92.67 94.17 98.05 66.28 78.52 Twin-Merging [9] 548.38 64.70 86.81 90.95 97.56 96.78 97.28 99.26 72.38 88.22 MoW-Merging [23] 3014.75 65.58 87.07 94.11 87.11 96.25 97.64 99.30 72.29 87.42 Auto-Switch 167.76 53.93 70.55 85.38 73.37 92.44 93.48 98.89 63.67 78.96 Auto-FlexSwitch+CKA ( λ = 30 ) 9.41 65.49 86.56 94.43 98.85 96.97 97.41 99.19 72.50 88.82 Auto-FlexSwitch+KL ( λ = 3 ) 13.65 65.86 87.61 94.44 98.78 96.95 97.45 99.23 72.52 89.11 Auto-FlexSwitch+MSE ( λ = 0 .5) 8.25 65.68 87.36 94.79 98.82 96.83 97.52 99.22 72.82 89.13 
+
+TABLE VI HYPERPARAMETER SETTINGS FOR DIFFERENT METHODS ON THE DETR 
+
+BACKBONE . “–” INDICATES THAT THE CORRESPONDING PARAMETER IS NOT APPLICABLE .Methods DETR Sparsity Rate Sample Size Scaling Coefficient Task-Arithmetic – – 0.2 DARE 0.4 – 0.2 TIES-Merging 0.1 – 0.8 Fisher Merging – 7168 –DF-Merge – 12600 –RegMean – 11200 –Twin-Merging – 7000 0.2 MoW-Merging – 4568 –Auto-Switch 0.5 3500 –Auto-FlexSwitch – 3500 –
+
+ineffective in these scenarios, with the average mAP@50 failing to exceed 4%. This indicates that parameter conflicts become highly sensitive when facing object detection tasks with significant domain shifts. In contrast, dynamic merg-ing methods more effectively mitigate inter-task interference and preserve performance. Among them, Auto-FlexSwitch achieves the best average performance with the minimal additional storage overhead. Specifically, compared to the second-best method, Twin-Merging, Auto-FlexSwitch utilizes less than 15% of the additional storage footprint (46.97 MB vs. 313.98 MB) yet delivers a 4.35% higher average mAP (42.40% vs. 38.05%). Furthermore, it achieves top performance on the majority of tasks, strongly demonstrating the superiority of Auto-FlexSwitch in balancing detection accuracy and task vector compression efficiency. 
+
+3) Merging on Natural Language Understanding Tasks: To validate the applicability of our method in the field of natural language processing, we compare the performance of different methods on natural language understanding tasks. 
+
+a) Experimental Settings: The evaluation is conducted on seven classification tasks from the GLUE benchmark [54], including CoLA [55], SST-2 [56], MRPC [57], QQP 1, MNLI [58], QNLI [59], and RTE [60]. In terms of model archi-tectures, we employ RoBERTa-base [61] with a Transformer architecture and Mamba-130M [62] based on the deep state space model. For evaluation metrics, we use accuracy for all tasks except CoLA, which is evaluated using the Matthews 
+
+Correlation Coefficient (MCC). For all methods involving randomness, results are averaged over three independent runs. 
+
+b) Baselines: We adopt methods and settings largely consistent with those in Sec. IV-A1. Since MoW-Merging is specifically tailored for vision tasks, we exclude it from this comparison. For the Individual scheme, we directly inherit the publicly available RoBERTa fine-tuning weights from [10]. As for the Mamba model, we employ the AdamW optimizer to fine-tune for 4000 steps with a batch size of 256 and a learning rate of 5e − 5. In the MTL setup, RoBERTa and Mamba are trained for 10 epochs using AdamW, with learning rates of 
+
+2e − 5 and 5e − 5, respectively. Similar to Sec. IV-A1, we 
+
+> 1
+
+https://data.quora.com/First-Quora-Dataset-Release-Question-Pairs 14 
+
+TABLE VII PERFORMANCE COMPARISON ON DETR-R ES NET 50 ACROSS SEVEN OBJECT DETECTION TASKS . T HE BEST AND SECOND -BEST RESULTS AMONG ALL COMPARED MERGING METHODS ARE HIGHLIGHTED IN BOLD AND UNDERLINED , RESPECTIVELY .Type Method Storage (MB) mAP@50 (%) Aerial Videogames Microscopic Underwater Documents Electromagnetic Real World AVG - Pre-trained – 0.13 1.70 0.29 0.21 0.09 1.20 1.26 0.70 Traditional MTL – 51.00 61.66 48.23 35.02 43.67 51.47 36.04 46.73 Individual – 53.35 65.10 54.83 35.26 46.74 53.37 41.27 49.99 Static Weight-Averaging [15] – 2.23 1.32 3.65 3.41 1.47 5.01 4.64 3.10 Task-Arithmetic [6] – 3.86 1.04 3.18 3.77 1.81 4.74 4.16 3.22 DARE [21] – 4.61 1.02 3.26 3.75 1.81 4.71 4.33 3.36 Ties-Merging [22] – 4.44 1.29 3.78 3.97 1.77 4.87 4.23 3.29 Fisher Merging [7] – 3.72 1.13 4.28 4.17 2.15 4.82 5.71 3.71 DF-Merge [16] – 3.54 0.98 3.02 3.98 2.43 4.77 4.29 3.29 RegMean [8] – 2.47 1.17 3.91 3.49 1.54 5.47 6.27 3.47 Dynamic  EMR-Merging [10] 192.33 8.30 10.90 16.57 17.44 14.17 37.55 14.49 17.06 Twin-Merging [9] 313.98 46.91 47.33 41.51 26.20 36.19 41.99 26.24 38.05 MoW-Merging [23] 1256.57 2.94 5.45 22.59 8.66 14.34 20.06 31.85 15.13 Auto-Switch 65.48 42.96 53.57 42.17 23.94 38.77 43.63 19.74 37.83 Auto-FlexSwitch+MSE ( λ = 0 .5) 46.97 48.51 60.89 44.50 26.75 40.97 46.40 28.77 42.40 
+
+TABLE VIII HYPERPARAMETER SETTINGS FOR DIFFERENT METHODS ACROSS 
+
+ROBERT A AND MAMBA ARCHITECTURES . “–” INDICATES THAT THE CORRESPONDING PARAMETER IS NOT APPLICABLE .Methods RoBERTa Mamba                                                                        
+
+> αNScaling Coef αNScaling Coef Task-Arithmetic ––0.2 ––0.3 DARE 0.3 –0.2 0.2 –0.4 TIES-Merging 0.8 –0.8 0.8 –0.8 Fisher Merging –7168 ––7168 –DF-Merge –12600 ––12600 –RegMean –11200 ––11200 –AdaMerging –14336 ––14336 –AdaMerging++ 0.7 14336 –0.5 14336 –Twin-Merging –7000 0.2 –7000 0.2 Auto-Switch 0.5 2100 –0.5 2100 –Auto-FlexSwitch –2100 ––2100 –
+
+perform a grid search for each merging method to determine its optimal parameter configuration on each model, detailed settings are provided in Tab. VIII. 
+
+c) Results: The results on RoBERTa and Mamba are presented in Tab. IX and Tab. X, respectively. Auto-Switch and Auto-FlexSwitch consistently demonstrate competitive merging performance across both architectures. Notably, Auto-FlexSwitch achieves the best average performance with the minimal additional storage footprint on both models, even surpassing the performance of individually fine-tuned models on the CoLA task for RoBERTa and the MRPC task for Mamba. Benefiting from the adaptive task-vector compression enabled by the LGS and BAS mechanisms, Auto-FlexSwitch outperforms existing methods while requiring only 3%–17% of the additional storage compared to other dynamic merging approaches (including Auto-Switch). These results further con-firm the effectiveness and generalizability of Auto-FlexSwitch in balancing performance and storage efficiency. 
+
+B. Ablation Study and Analysis 
+
+In this section, we conduct ablation studies on the individual components, hyperparameters, and efficiency of the proposed method. Unless otherwise specified, all settings remain con-sistent with those in the main experiments (Sec. IV-A). All results are reported as the average of three independent runs. 
+
+a) Component Analysis of Auto-FlexSwitch: To inves-tigate the contribution of each component within Auto-FlexSwitch, we evaluate the average performance and storage overhead across ViT-B/32 and RoBERTa-base under different configurations, including: 1) the vanilla Auto-Switch with sparsity ratios α ∈ { 0.5, 0.7, 0.9}; 2) Auto-Switch integrated with the LGS sparsification scheme; 3) Auto-Switch using the BAS quantization scheme (also at α ∈ { 0.5, 0.7, 0.9}); 4) Auto-Switch combined with both LGS and BAS; and 5) the full Auto-FlexSwitch. We uniformly set the exemplar size to 300 samples per task and employ KL divergence as the per-formance preservation loss. The results summarized in Tab. XI indicate that the LGS mechanism significantly reduces storage overhead while maintaining performance levels comparable to the vanilla Auto-Switch at α = 0 .5. Secondly, the introduction of BAS consistently enhances the performance of Auto-Switch across all sparsity ratios. Notably, the storage footprint of Auto-Switch+LGS+BAS is even lower than that of LGS alone. This phenomenon stems from the synergy between BAS and LGS: BAS relaxes the upper bound of the LGS sparsity ratio, allowing the system to converge to a lower storage cost (e.g., from 92.96% to 94.95% on ViT, and from 88.69% to 91.73% on RoBERTa). Finally, the KNN merging mechanism with a learnable low-rank metric achieves more accurate task retrieval to further boost the performance of Auto-FlexSwitch. These results fully validate the effectiveness of each component. 
+
+b) Sensitivity Analysis on Sparsity Ratios and Regu-larization Strengths: We analyze the relationship of model performance with the sparsity ratio α in Auto-Switch and the performance preservation coefficient λ in Auto-FlexSwitch to explore their respective impacts. Specifically, we record the average performance of Auto-Switch with 
+
+α ∈ { 0.5, 0.6, 0.7, 0.8, 0.9} and Auto-FlexSwitch with λ ∈{0.1, 0.3, 0.5, 0.7, 0.9} on ViT-B/32 and RoBERTa-base using 300 exemplars per task. As illustrated in Fig. 9, Auto-Switch is relatively sensitive to α, and its performance exhibits a clear shrinking trend when α takes large values. Notably on RoBERTa-base, its performance drops sharply to 0.5919 when α = 0 .9. In contrast, Auto-FlexSwitch demonstrates superior robustness across various λ values. Since λ directly regulates the weight of the performance preservation loss, increasing its value effectively strengthens the anchoring of core knowledge. Consequently, the performance of Auto-FlexSwitch on RoBERTa-base improves steadily with larger 
+
+λ and reaches 0.8405 at λ = 0 .9, while the performance on ViT-B/32 remains stable at a high level of approximately 91%. In summary, Auto-FlexSwitch effectively suppresses performance degradation via the λ to significantly enhance performance controllability during task vector compression. 
+
+c) Effect of Exemplar Size and Number of Nearest Neigh-bors: To evaluate the impact of exemplar sample size and 15 
+
+TABLE IX PERFORMANCE COMPARISON ON ROBERT A-BASE ACROSS SEVEN TASKS FROM THE GLUE BENCHMARK . T HE BEST AND SECOND -BEST RESULTS AMONG ALL COMPARED MERGING METHODS ARE HIGHLIGHTED IN BOLD AND UNDERLINED , RESPECTIVELY .Type Method Storage (MB) MCC Accuracy CoLA SST-2 MRPC QQP MNLI QNLI RTE AVG - Pre-trained – 0.0000 0.4908 0.3162 0.3682 0.3182 0.5089 0.4729 0.3536 Traditional MTL – 0.5706 0.9404 0.8848 0.8819 0.8435 0.9136 0.7906 0.8322 Individual – 0.6018 0.9404 0.8922 0.9141 0.8717 0.9271 0.7906 0.8483 Static Weight-Averaging [15] – 0.1808 0.8188 0.7794 0.7960 0.4492 0.7106 0.6173 0.6217 Task-Arithmetic [6] – 0.2909 0.8463 0.7843 0.8261 0.5741 0.7584 0.6462 0.6752 DARE [21] – 0.2946 0.8498 0.7941 0.8254 0.5789 0.7569 0.6785 0.6826 Ties-Merging [22] – 0.3673 0.8727 0.7892 0.8296 0.6368 0.8069 0.7220 0.7178 Fisher Merging [7] – 0.1316 0.8383 0.7745 0.8026 0.4875 0.7366 0.6245 0.6279 DF-Merge [16] – 0.4323 0.5929 0.7647 0.8019 0.6615 0.6658 0.5704 0.6414 RegMean [8] – 0.3388 0.9071 0.7647 0.8381 0.7034 0.8239 0.5812 0.7082 AdaMerging [18] – 0.1711 0.8784 0.7917 0.8365 0.6928 0.7238 0.6318 0.6752 AdaMerging++ [18] – 0.2981 0.8933 0.7843 0.8246 0.6465 0.7966 0.7292 0.7104 Dynamic  EMR-merging [10] 576.75 0.3934 0.9358 0.8701 0.8987 0.8578 0.8953 0.7473 0.7998 Twin-merging [9] 670.08 0.5651 0.9392 0.8848 0.8820 0.8581 0.9240 0.7437 0.8281 Auto-Switch 209.08 0.5339 0.9426 0.8921 0.9129 0.8547 0.9249 0.7509 0.8303 Auto-FlexSwitch+CKA ( λ = 5 ) 70.93 0.6121 0.9278 0.8873 0.9100 0.8679 0.9215 0.7545 0.8402 
+
+Auto-FlexSwitch+KL ( λ = 0 .5) 51.60 0.5806 0.9380 0.8856 0.9105 0.8674 0.9185 0.7581 0.8370 Auto-FlexSwitch+MSE ( λ = 0 .09 ) 35.70 0.5830 0.9278 0.8824 0.9092 0.8644 0.9204 0.7445 0.8331 TABLE X PERFORMANCE COMPARISON ON MAMBA -130M ACROSS SEVEN TASKS FROM THE GLUE BENCHMARK . T HE BEST AND SECOND -BEST RESULTS AMONG ALL COMPARED MERGING METHODS ARE HIGHLIGHTED IN BOLD AND UNDERLINED , RESPECTIVELY .Type Method Storage (MB) MCC Accuracy CoLA SST-2 MRPC QQP MNLI QNLI RTE AVG - Pre-trained – -0.0454 0.4920 0.6250 0.6220 0.3211 0.4939 0.5451 0.4362 Traditional MTL – 0.5168 0.9106 0.7721 0.8699 0.7833 0.8627 0.6679 0.7690 Individual – 0.5203 0.9197 0.7770 0.8864 0.8210 0.8794 0.6751 0.7827 Static Weight-Averaging [15] – 0.0352 0.7351 0.6299 0.6523 0.4077 0.5713 0.5993 0.5187 Task-Arithmetic [6] – 0.1516 0.7477 0.6446 0.6165 0.5662 0.6661 0.6426 0.5765 DARE [21] – 0.1384 0.8177 0.6005 0.5375 0.6376 0.6438 0.6318 0.5725 Ties-Merging [22] – 0.2015 0.7489 0.6740 0.6175 0.5534 0.6674 0.6534 0.5880 Fisher Merging [7] – 0.0980 0.7695 0.6446 0.6787 0.4340 0.5843 0.6029 0.5446 DF-Merge [16] – 0.1423 0.8165 0.6936 0.4668 0.5954 0.5394 0.6137 0.5525 RegMean [8] – 0.1947 0.8876 0.6887 0.8066 0.5008 0.6877 0.6245 0.6272 AdaMerging [18] – 0.1566 0.6823 0.6446 0.5221 0.5983 0.6189 0.6170 0.5485 AdaMerging++ [18] – 0.2917 0.7546 0.6814 0.5426 0.5505 0.6442 0.6143 0.5828 Dynamic  EMR-merging [10] 600.37 0.4891 0.9117 0.7525 0.8383 0.8053 0.8495 0.6570 0.7576 Twin-merging [9] 795.29 0.5084 0.9174 0.7743 0.8759 0.7829 0.8706 0.6531 0.7689 Auto-Switch 216.46 0.4950 0.9186 0.7549 0.8786 0.7845 0.8424 0.6531 0.7610 Auto-FlexSwitch+CKA ( λ = 50 ) 61.60 0.5075 0.9163 0.7768 0.8848 0.8011 0.8742 0.6534 0.7734 
+
+Auto-FlexSwitch+KL ( λ = 5 ) 34.96 0.5068 0.9151 0.7892 0.8812 0.7900 0.8730 0.6498 0.7722 Auto-FlexSwitch+MSE ( λ = 0 .9) 23.90 0.5119 0.9128 0.7745 0.8783 0.7880 0.8699 0.6534 0.7698 TABLE XI COMPONENT ABLATION ANALYSIS OF AUTO -F LEX SWITCH . R ESULTS FORMATTED AS ’XX /XX /XX ’ CORRESPOND TO SPARSITY RATIOS 
+
+α ∈ { 0.5, 0.7, 0.9}.Method ViT-B/32 RoBERTa-base AVG Performance Storage AVG Performance Storage Auto-Switch 90.81/90.78/85.46 216.96/152.08/72.00 0.8303/0.7982/0.5919 209.08/146.88/70.24 Auto-Switch+LGS 90.8 44.04 0.8267 55.22 Auto-Switch+BAS 91.05/91.02/89.41 220.29/152.93/72.2 0.8319/0.8171/0.7525 210.64/146.88/70.42 Auto-Switch+LGS+BAS 90.95 40.25 0.8309 53.34 Auto-FlexSwitch 91.03 40.31 0.8370 51.60 85     
+
+> 90
+> 95
+> α= 0.5
+> α = 0.6
+> α = 0.7
+> α = 0.8
+> α = 0.9
+> Auto-Switch (ViT-B/32)
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> α= 0.5
+> α = 0.6
+> α = 0.7
+> α = 0.8
+> α = 0.9
+> Auto-Switch (RoBERTa-base)
+> 85
+> 90
+> 95
+> λ= 0.1
+> λ = 0.3
+> λ = 0.5
+> λ = 0.7
+> λ = 0.9
+> Auto-FlexSwitch+KL (ViT-B/32)
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> λ= 0.1
+> λ = 0.3
+> λ = 0.5
+> λ = 0.7
+> λ = 0.9
+> Auto-FlexSwitch+KL (RoBERTa-base)
+
+Fig. 9. Comparison of model performance under different settings of the sparsity ratio α in Auto-Switch and the coefficient λ in Auto-FlexSwitch. 
+
+the number of neighbors on the performance of Auto-Switch and Auto-FlexSwitch, we test the average performance of both methods on ViT-B/32 and RoBERTa-base using exemplar sizes of {100 , 300 , 500 } and neighbor counts of {5, 10 , 20 }. As il-lustrated in Fig. 10, Auto-FlexSwitch consistently outperforms Auto-Switch and demonstrates superior robustness across all parameter configurations. In terms of sample size, Auto-FlexSwitch shows low sensitivity to data scale; even under the constrained setting of only 100 samples, its performance on ViT-B/32 fluctuates minimally. Furthermore, both methods 5 10 20                               
+
+> Number of Nearest Neighbors
+> 100 300 500
+> Exemplar Size  90.70 90.51 89.95
+> 90.88 90.75 90.66
+> 90.96 90.88 90.77
+> Auto-Switch (ViT-B/32)
+> 510 20
+> Number of Nearest Neighbors
+> 100 300 500
+> 0.8162 0.8173 0.8016
+> 0.8286 0.8303 0.8287
+> 0.8301 0.8315 0.8294
+> Auto-Switch (RoBERTa)
+> 510 20
+> Number of Nearest Neighbors
+> 100 300 500
+> 90.97 91.00 90.98
+> 91.01 91.03 91.01
+> 91.02 91.05 91.04
+> Auto-FlexSwitch+KL (ViT-B/32)
+> 510 20
+> Number of Nearest Neighbors
+> 100 300 500
+> 0.8272 0.8312 0.8242
+> 0.8348 0.8370 0.8364
+> 0.8389 0.8431 0.8373
+> Auto-FlexSwitch+KL (RoBERTa)
+> 90.00
+> 90.25
+> 90.50
+> 90.75
+> 0.804
+> 0.810
+> 0.816
+> 0.822
+> 0.828
+> 90.98
+> 91.00
+> 91.02
+> 91.04
+> 0.828
+> 0.832
+> 0.836
+> 0.840
+
+Fig. 10. Performance of Auto-Switch and Auto-FlexSwitch under varying numbers of exemplars and neighbors. 90.90 90.95 91.00 91.05            
+
+> AVG Performance
+> 10
+> 20
+> 30
+> 40
+> 50
+> Center Number ( E)
+> 90.94
+> 91.00
+> 91.02
+> 91.03
+> 91.01
+> ViT-B/32
+> 0.834 0.836 0.838 0.840
+> AVG Performance
+> 10
+> 20
+> 30
+> 40
+> 50
+> Center Number ( E)
+> 0.8365
+> 0.8370
+> 0.8388
+> 0.8378
+> 0.8354
+> RoBERTa-base
+> 90.90 90.95 91.00 91.05 91.10
+> AVG Performance
+> 8
+> 16
+> 32
+> 64
+> 128
+> Rank ( r)
+> 90.95
+> 90.97
+> 91.00
+> 91.03
+> 91.05
+> ViT-B/32
+> 0.834 0.836 0.838 0.840 0.842
+> AVG Performance
+> 8
+> 16
+> 32
+> 64
+> 128
+> Rank ( r)
+> 0.8362
+> 0.8368
+> 0.8370
+> 0.8394
+> 0.8406
+> RoBERTa-base
+
+Fig. 11. Ablation analysis of center number E (left two panels) and low-rank dimension r (right two panels) on the performance of Auto-FlexSwitch across ViT-B/32 and RoBERTa-base. 
+
+achieve stable performance when the number of neighbors is set to 10. In summary, Auto-FlexSwitch achieves effective dynamic merging with low data dependency. 
+
+d) Analysis of Low-rank Dimension and Center Quantity in Auto-FlexSwitch: To investigate the impact of the rank r and the number of centroids E in the learnable low-rank metric, we evaluate the average performance of Auto-FlexSwitch+KL on ViT-B/32 and RoBERTa-base across r ∈ { 8, 16 , 32 , 64 , 128 }
+
+and E ∈ { 10 , 20 , 30 , 40 , 50 }. Specifically, we fix E = 20 
+
+when ablating r, and vice versa with r = 32 . As illustrated in Fig. 11, regarding the number of centroids, since insufficient centroids fail to cover full task characteristics while excessive 16 
+
+TABLE XII COMPARISON OF TRAINING TIME (SECONDS ) AND AVERAGE PERFORMANCE BETWEEN AUTO -F LEX SWITCH AND MTL. ’A/B’  
+
+> DENOTES DURATIONS FOR THE
+
+FLEX SWITCH STAGE AND LOW -RANK METRIC TRAINING , RESPECTIVELY .Method ViT-B/32 RoBERTa-base Time AVG Performance Time AVG Performance MTL 17599.27 88.78 23520.59 83.22 Auto-FlexSwitch+CKA 1357.79 / 50.31 91.16 1001.72 / 85.49 84.02 Auto-FlexSwitch+KL 1355.34 / 52.09 91.00 967.32 / 84.64 83.70 Auto-FlexSwitch+MSE 1360.09 / 51.58 90.94 1001.05 / 84.26 83.31 TABLE XIII INFERENCE TIME RATIOS OF AUTO -S WITCH AND AUTO -F LEX SWITCH RELATIVE TO A SINGLE END -TO -END INFERENCE , UNDER VARYING EXEMPLAR COUNTS AND NUMBERS OF CENTROIDS .Model Auto-Switch Auto-FlexSwitch                        
+
+> N= 100 N= 300 N= 500 E= 10 E= 30 E= 50
+> ViT-B/32 2.27 ×2.55 ×2.82 ×1.88 ×1.90 ×1.91 ×
+> RoBERTa-base 2.49 ×2.96 ×3.44 ×2.09 ×2.10 ×2.10 ×
+
+ones may introduce noise, a moderate number ( E = 20 –40 )thus helps achieve stable and superior performance. As for the rank parameter r, the performance improves steadily as it increases, and notably, competitive results are already achievable even at a small rank of r = 8 .0.2 0.4 0.6 0.8 1.0       
+
+> Sparsity Ratio ( )
+> 0
+> 10
+> 20
+> 30
+> Storage Cost (MB)  ViT-B/32
+> Storage Cost Indep
+> Theory Cost SASS
+> Storage Cost SASS
+> Original Storage: 432.77 MB
+> 0.2 0.4 0.6 0.8 1.0
+> Sparsity Ratio ( )
+> 0
+> 10
+> 20
+> 30
+> 40
+> RoBERTa-base
+> Storage Cost Indep
+> Theory Cost SASS
+> Storage Cost SASS
+> Original Storage: 473.23 MB
+
+Fig. 12. Storage overhead analysis of SASS under different sparsity ratios α,where dots denote measured values, solid lines represent theoretical values, and the horizontal dashed line indicates the overhead of the Indep scheme. 
+
+e) Detailed Storage Analysis for SASS across Different Sparsity Ratios: To quantitatively evaluate the efficiency of the SASS storage scheme, we leverage Auto-Switch to measure the actual storage overhead of individual task vectors for ViT-B/32 and RoBERTa-base across various sparsity ratios 
+
+α ∈ { 0.1, 0.2, . . . , 0.99 }. For comparison, we consider two baselines: full-precision storage (the original task vector) and the Indep storage scheme defined in Sec. III-C4, which in-dependently stores the binarized masks, the quantized task vectors, and the scaling coefficients. Furthermore, we calculate the theoretical SASS storage overhead based on Eq. (16) to verify our analytical accuracy. As illustrated in Fig. 12, the empirical storage overhead of SASS aligns closely with the theoretical values from Eq. (16), demonstrating strong alignment between theory and our physical implementation. When α > 0.5, SASS begins to outperform the Indep scheme, with the efficiency gains increasing steadily as the sparsity ratio rises. Compared to the original full-precision weights, SASS achieves a substantial compression ratio. Specifically, for α > 0.9, the compression ratio exceeds 40 ×, and in extreme cases (e.g., α = 0 .99 ), it reaches over 200 × (1.52MB on ViT and 1.59MB on RoBERTa), fully validating its storage efficiency for sparse and quantized task vectors. 
+
+f) Efficiency Analysis of Training and Inference: To analyze the training and inference overheads of our proposed methods, we evaluate the training time of the sparsification-quantization process and the low-rank metric learning across different performance-preserving losses. For comparison, we 
+
+TABLE XIV PERFORMANCE AND STORAGE COMPARISON OF FLEX SWITCH AS A COMPRESSION METHOD FOR FINE -TUNED LLM INCREMENTAL WEIGHTS .PERCENTAGES DENOTE THE RATIO OF COMPRESSED STORAGE TO THE ORIGINAL FINE -TUNED WEIGHT STORAGE .                                                   
+
+> Model Storage (MB) MATH GSM8K MBPP TheoremQA BBH AVG
+> LLama-3.2-3B-Instruct 12255.67 43.90 76.95 49.80 24.25 55.38 50.06 Bohdi-LLama-3.2-3B-Instruct ↓48.22 78.32 51.00 26.12 55.85 51.90 LLama-3.2-3B-Instruct + FlexSwitch 5.21 (0.04%) 47.80 79.91 51.40 26.38 55.73 52.24 gemma-2-9b-it 35254.31 47.00 82.41 60.00 12.50 71.55 54.69 Bohdi-gemma-2-9b-it ↓53.76 84.31 59.20 25.75 73.69 59.34 gemma-2-9b-it + FlexSwitch 731.57 (2.08%) 54.38 84.84 60.20 24.50 73.47 59.48
+
+also measure the training time and average performance of MTL. Furthermore, we record the average inference time on 1000 samples for Auto-Switch (with varying exemplar counts 
+
+N ) and Auto-FlexSwitch (with varying numbers of centroids 
+
+E) on ViT-B/32 and RoBERTa-base, reporting their ratios relative to a single end-to-end inference. As shown in Tab. XII, Auto-FlexSwitch incurs significantly lower training costs than MTL while achieving superior average performance; considering the massive reduction in storage overhead, its training efficiency is highly acceptable. Regarding inference efficiency, as shown in Tab. XIII, the average inference cost of Auto-Switch is 2× to 3× that of a single end-to-end inference and escalates notably as the exemplar count N increases. In contrast, benefiting from the enhanced retrieval efficiency of KNN in the learned low-rank space, Auto-FlexSwitch main-tains a remarkably stable and lower inference cost even as the number of centroids E grows. For instance, on RoBERTa-base, the inference time ratio of Auto-FlexSwitch remains steady at approximately 2.1 ×, clearly outperforming the 2.49 × of Auto-Switch at N = 100 . These results collectively demonstrate that Auto-FlexSwitch possesses favorable efficiency and scalability for both training and deployment. 
+
+C. FlexSwitch as a Compression Method for Fine-Tuned LLM Weights 
+
+Finally, we further explore the potential of FlexSwitch as a lightweight storage solution for fine-tuned incremental weights of LLMs. Specifically, we consider two LLMs with differ-ent scales and architectures, Llama-3.2-3B-Instruct [63] and gemma-2-9b-it [64], along with their multi-domain fine-tuned counterparts, Bohdi-Llama-3.2-3B-Instruct [65] and Bohdi-gemma-2-9b-it [65]. We perform the FlexSwitch+KL training process on the LIMA dataset [66], which contains 1030 samples, and evaluate the original model, the fine-tuned model, and the model loaded with FlexSwitch-compressed fine-tuned incremental weights on several representative reasoning and code generation benchmarks, including MATH [67], GSM8K [68], MBPP [69], TheoremQA [70], and BIG-Bench Hard (BBH) [71], all of which are disjoint from LIMA. For each configuration, we record the performance and the storage foot-print of the incremental weights before and after compression. As shown in Tab. XIV, FlexSwitch effectively preserves fine-tuned performance on both LLMs with extremely low stor-age overhead. On Llama3.2-3B-Instruct, FlexSwitch requires only 5.21 MB (0.04% of the original fine-tuned incremental weights) and achieves an average performance of 52.24%, even slightly surpassing the original fine-tuned model, with improvements on GSM8K, MBPP and TheoremQA. On the larger Gemma-2-9b-it, FlexSwitch attains an average perfor-17 
+
+mance of 59.48% with 731.57 MB of storage (merely 2.08% of the original), again surpassing the fine-tuned model with substantially lower storage cost. These results validate the effectiveness of FlexSwitch as a lightweight storage scheme for fine-tuned incremental weights of LLMs. Notably, the FlexSwitch training here does not use any exemplar data from the same data source as the test data, nor the training data of the fine-tuned models [65], indicating that its data dependency is not strictly confined to the same data source. V. C ONCLUSIONS AND FUTURE WORKS 
+
+Focusing on the storage efficiency bottlenecks in dynamic model merging, this work systematically explores efficient compression and adaptive composition mechanisms for task vectors. We first experimentally demonstrate that task vectors exhibit a notable impulse-like activation pattern and high ro-bustness to low-bit representations, providing critical insights for designing lightweight task vectors. Based on this obser-vation, we propose T-Switch, which achieves high-fidelity ap-proximation at a high compression ratio via three components: a sparse mask, a sign vector and a scaling factor, and combines it with the adaptive merging scheme Auto-Switch to enable flexible combination of task knowledge. To further transcend the limitations of fixed rules, we designed FlexSwitch, a learnable framework for constructing lightweight task vectors. It utilizes the proposed LGS and BAS to jointly optimize the sparse structure and quantization bit-width of task vectors, while incorporating the SASS mechanism to automatically select the optimal storage encoding structure. Building upon this, by integrating a KNN mechanism with a learnable low-rank metric for inference-time merging, we develop Auto-FlexSwitch and validate its performance and efficiency across diverse scenarios and model architectures. In future work, we will explore methods that directly encourage sparsity and quantizability during fine-tuning to further reduce training costs. We will also conduct a detailed investigation into the varying degrees of quantizability of task vectors corresponding to different components of main-stream model architectures, aiming to provide new insights for lightweight model knowledge storage. Additionally, we will investigate the feasibility of implementing online combinato-rial decision-making for task vectors aligned with capability dimensions in more practical dynamic scenarios such as em-bodied settings by leveraging similar methodologies. REFERENCES [1] T. Wolf, L. Debut, V. Sanh, J. Chaumond, C. Delangue, A. Moi, P. Cistac, T. Rault, R. Louf, M. Funtowicz, and J. Brew, “Huggingface’s transformers: State-of-the-art natural language processing,” CoRR , vol. abs/1910.03771, 2019. [2] K. Chen, J. Wang, J. Pang, Y. Cao, Y. Xiong, X. Li, S. Sun, W. Feng, Z. Liu, J. Xu, Z. Zhang, D. Cheng, C. Zhu, T. Cheng, Q. Zhao, B. Li, X. Lu, R. Zhu, Y. Wu, J. Dai, J. Wang, J. Shi, W. Ouyang, C. C. Loy, and D. Lin, “Mmdetection: Open mmlab detection toolbox and benchmark,” 
+
+CoRR , vol. abs/1906.07155, 2019. [3] A. Yang, A. Li, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Gao, C. Huang, C. Lv, C. Zheng, D. Liu, F. Zhou, F. Huang, F. Hu, H. Ge, H. Wei, H. Lin, J. Tang, J. Yang, J. Tu, J. Zhang, J. Yang, J. Yang, J. Zhou, J. Lin, K. Dang, K. Bao, K. Yang, L. Yu, L. Deng, M. Li, M. Xue, M. Li, P. Zhang, P. Wang, Q. Zhu, R. Men, R. Gao, S. Liu, S. Luo, T. Li, T. Tang, W. Yin, X. Ren, X. Wang, X. Zhang, X. Ren, Y. Fan, Y. Su, Y. Zhang, Y. Zhang, Y. Wan, Y. Liu, Z. Wang, Z. Cui, Z. Zhang, Z. Zhou, and Z. Qiu, “Qwen3 technical report,” CoRR , vol. abs/2505.09388, 2025. [4] G. Team, “Gemma 3 technical report,” CoRR , vol. abs/2503.19786, 2025. [5] M. I. Abdin, J. Aneja, H. S. Behl, S. Bubeck, R. Eldan, S. Gunasekar, M. Harrison, R. J. Hewett, M. Javaheripi, P. Kauffmann, J. R. Lee, Y. T. Lee, Y. Li, W. Liu, C. C. T. Mendes, A. Nguyen, E. Price, G. de Rosa, O. Saarikivi, A. Salim, S. Shah, X. Wang, R. Ward, Y. Wu, D. Yu, C. Zhang, and Y. Zhang, “Phi-4 technical report,” CoRR , vol. abs/2412.08905, 2024. [6] G. Ilharco, M. T. Ribeiro, M. Wortsman, L. Schmidt, H. Hajishirzi, and A. Farhadi, “Editing models with task arithmetic,” in International Conference on Learning Representations , 2023. [7] M. Matena and C. Raffel, “Merging models with fisher-weighted averag-ing,” in Annual Conference on Neural Information Processing Systems ,2022. [8] X. Jin, X. Ren, D. Preotiuc-Pietro, and P. Cheng, “Dataless knowledge fusion by merging weights of language models,” in International Con-ference on Learning Representations , 2023. [9] Z. Lu, C. Fan, W. Wei, X. Qu, D. Chen, and Y. Cheng, “Twin-merging: Dynamic integration of modular expertise in model merging,” Annual Conference on Neural Information Processing Systems , vol. 37, pp. 78 905–78 935, 2024. [10] C. Huang, P. Ye, T. Chen, T. He, X. Yue, and W. Ouyang, “Emr-merging: Tuning-free high-performance model merging,” Annual Conference on Neural Information Processing Systems , vol. 37, pp. 122 741–122 769, 2024. [11] B. Qi, F. Li, Z. Wang, J. Gao, D. Li, P. Ye, and B. Zhou, “Less is more: Efficient model merging with binary task switch,” in Conference on Computer Vision and Pattern Recognition , 2025, pp. 15 265–15 274. [12] F. Draxler, K. Veschgini, M. Salmhofer, and F. A. Hamprecht, “Essen-tially no barriers in neural network energy landscape,” in International Conference on Machine Learning , 2018, pp. 1308–1317. [13] T. Garipov, P. Izmailov, D. Podoprikhin, D. P. Vetrov, and A. G. Wilson, “Loss surfaces, mode connectivity, and fast ensembling of dnns,” in 
+
+Annual Conference on Neural Information Processing Systems , 2018, pp. 8803–8812. [14] J. Frankle, G. K. Dziugaite, D. M. Roy, and M. Carbin, “Linear mode connectivity and the lottery ticket hypothesis,” in International Conference on Machine Learning , 2020, pp. 3259–3269. [15] M. Wortsman, G. Ilharco, S. Y. Gadre, R. Roelofs, R. G. Lopes, A. S. Morcos, H. Namkoong, A. Farhadi, Y. Carmon, S. Kornblith, and L. Schmidt, “Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time,” in International Conference on Machine Learning , 2022, pp. 23 965– 23 998. [16] S. Lee, J. Liu, Q. Wang, J. Wang, X. Cai, and Y. Wu, “Dynamic fisher-weighted model merging via bayesian optimization,” in Conference of the Nations of the Americas Chapter of the Association for Computa-tional Linguistics , 2025, pp. 4923–4935. [17] S. K. Ainsworth, J. Hayase, and S. S. Srinivasa, “Git re-basin: Merging models modulo permutation symmetries,” in International Conference on Learning Representations , 2023. [18] E. Yang, Z. Wang, L. Shen, S. Liu, G. Guo, X. Wang, and D. Tao, “Adamerging: Adaptive model merging for multi-task learning,” in 
+
+International Conference on Learning Representations , 2024. [19] H. Wang, M. Yurochkin, Y. Sun, D. S. Papailiopoulos, and Y. Khazaeni, “Federated learning with matched averaging,” in International Confer-ence on Learning Representations , 2020. [20] G. Stoica, D. Bolya, J. Bjorner, P. Ramesh, T. Hearn, and J. Hoffman, “Zipit! merging models from different tasks without training,” in Inter-national Conference on Learning Representations , 2024. [21] L. Yu, B. Yu, H. Yu, F. Huang, and Y. Li, “Language models are super mario: Absorbing abilities from homologous models as a free lunch,” in 
+
+International Conference on Machine Learning , 2024. [22] P. Yadav, D. Tam, L. Choshen, C. A. Raffel, and M. Bansal, “Ties-merging: Resolving interference when merging models,” in Annual Conference on Neural Information Processing Systems , 2023. [23] P. Ye, C. Huang, M. Shen, T. Chen, Y. Huang, and W. Ouyang, “Dynamic model merging with mixture of weights,” IEEE Trans. Circuits Syst. Video Technol. , vol. 35, no. 8, pp. 7925–7939, 2025. [24] D. Guo, A. M. Rush, and Y. Kim, “Parameter-efficient transfer learning with diff pruning,” in Annual Meeting of the Association for Computa-tional Linguistics , 2021, pp. 4884–4896. 18 
+
+[25] A. Ansell, E. M. Ponti, A. Korhonen, and I. Vulic, “Composable sparse fine-tuning for cross-lingual transfer,” in Annual Meeting of the Association for Computational Linguistics , 2022, pp. 1778–1796. [26] S. Hu, Z. Zhang, N. Ding, Y. Wang, Y. Wang, Z. Liu, and M. Sun, “Sparse structure search for delta tuning,” in Annual Conference on Neural Information Processing Systems , 2022. [27] Y. Sung, V. Nair, and C. Raffel, “Training neural networks with fixed sparse masks,” in Annual Conference on Neural Information Processing Systems , 2021, pp. 24 193–24 205. [28] K. Bhardwaj, N. P. Pandey, S. Priyadarshi, V. Ganapathy, S. Kadambi, R. Esteves, S. Borse, P. N. Whatmough, R. Garrepalli, M. van Baalen, H. Teague, and M. Nagel, “Sparse high rank adapters,” in Annual Conference on Neural Information Processing Systems , 2024. [29] H. He, J. B. Li, X. Jiang, and H. Miller, “SMT: fine-tuning large language models with sparse matrices,” in International Conference on Learning Representations , 2025. [30] W. Ning, J. Wang, Q. Qi, M. Zhu, H. Sun, D. Cheng, J. Liao, and C. Zhang, “Fm-delta: Lossless compression for storing massive fine-tuned foundation models,” in Annual Conference on Neural Information Processing Systems , 2024. [31] J. Liu, G. Xiao, K. Li, J. D. Lee, S. Han, T. Dao, and T. Cai, “Bitdelta: Your fine-tune may only be worth one bit,” in Annual Conference on Neural Information Processing Systems , 2024. [32] M. Zhu and S. Gupta, “To prune, or not to prune: Exploring the efficacy of pruning for model compression,” in International Conference on Learning Representations , 2018. [33] M. Sun, Z. Liu, A. Bair, and J. Z. Kolter, “A simple and effective pruning approach for large language models,” in International Conference on Learning Representations , 2024. [34] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark, G. Krueger, and I. Sutskever, “Learning transferable visual models from natural language supervi-sion,” in International Conference on Machine Learning , vol. 139, 2021, pp. 8748–8763. [35] J. Xiao, J. Hays, K. A. Ehinger, A. Oliva, and A. Torralba, “SUN database: Large-scale scene recognition from abbey to zoo,” in Con-ference on Computer Vision and Pattern Recognition , 2010, pp. 3485– 3492. [36] J. Krause, M. Stark, J. Deng, and L. Fei-Fei, “3d object representations for fine-grained categorization,” in International Conference on Com-puter Vision Workshops , 2013, pp. 554–561. [37] G. Cheng, J. Han, and X. Lu, “Remote sensing image scene classifica-tion: Benchmark and state of the art,” Proc. IEEE , vol. 105, no. 10, pp. 1865–1883, 2017. [38] P. Helber, B. Bischke, A. Dengel, and D. Borth, “Eurosat: A novel dataset and deep learning benchmark for land use and land cover classification,” IEEE J. Sel. Top. Appl. Earth Obs. Remote. Sens. , vol. 12, no. 7, pp. 2217–2226, 2019. [39] Y. Netzer, T. Wang, A. Coates, A. Bissacco, B. Wu, A. Y. Ng et al. ,“Reading digits in natural images with unsupervised feature learning,” in Annual Conference on Neural Information Processing Systems Work-shop , vol. 2011, no. 5, 2011, p. 7. [40] J. Stallkamp, M. Schlipsing, J. Salmen, and C. Igel, “The german traffic sign recognition benchmark: A multi-class classification competition,” in International Joint Conference on Neural Networks , 2011, pp. 1453– 1460. [41] L. Deng, “The MNIST database of handwritten digit images for machine learning research [best of the web],” IEEE Signal Process. Mag. , vol. 29, no. 6, pp. 141–142, 2012. [42] M. Cimpoi, S. Maji, I. Kokkinos, S. Mohamed, and A. Vedaldi, “Describing textures in the wild,” in Conference on Computer Vision and Pattern Recognition , 2014, pp. 3606–3613. [43] C. Zhu, S. Han, H. Mao, and W. J. Dally, “Trained ternary quantization,” in International Conference on Learning Representations , 2017. [44] D. Dai, L. Dong, Y. Hao, Z. Sui, B. Chang, and F. Wei, “Knowledge neurons in pretrained transformers,” in Annual Meeting of the Associa-tion for Computational Linguistics , 2022, pp. 8493–8502. [45] G. Xu, Z. Liu, X. Li, and C. C. Loy, “Knowledge distillation meets self-supervision,” in European Conference on Computer Vision , 2020, pp. 588–604. [46] Q. Guo, X. Wang, Y. Wu, Z. Yu, D. Liang, X. Hu, and P. Luo, “Online knowledge distillation via collaborative learning,” in Conference on Computer Vision and Pattern Recognition , 2020, pp. 11 020–11 029. [47] C. Yang, Z. An, H. Zhou, F. Zhuang, Y. Xu, and Q. Zhang, “Online knowledge distillation via mutual contrastive learning for visual recogni-tion,” IEEE Transactions on Pattern Analysis and Machine Intelligence ,vol. 45, no. 8, pp. 10 212–10 227, 2023. [48] S. Kullback and R. A. Leibler, “On information and sufficiency,” The Annals of Mathematical Statistics , vol. 22, no. 1, pp. 79–86, 1951. [49] J. H. Cho and B. Hariharan, “On the efficacy of knowledge distillation,” in International Conference on Computer Vision , 2019, pp. 4794–4802. [50] B. Zhao, Q. Cui, R. Song, Y. Qiu, and J. Liang, “Decoupled knowledge distillation,” in Conference on Computer Vision and Pattern Recognition ,2022, pp. 11 953–11 962. [51] Z. Liu, H. Mao, C. Wu, C. Feichtenhofer, T. Darrell, and S. Xie, “A convnet for the 2020s,” in Conference on Computer Vision and Pattern Recognition , 2022, pp. 11 966–11 976. [52] F. Ciaglia, F. S. Zuppichini, P. Guerrie, M. McQuade, and J. Solawetz, “Roboflow 100: A rich, multi-domain object detection benchmark,” 
+
+CoRR , vol. abs/2211.13523, 2022. [53] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov, and S. Zagoruyko, “End-to-end object detection with transformers,” in 
+
+European Conference on Computer Vision , 2020, pp. 213–229. [54] A. Wang, A. Singh, J. Michael, F. Hill, O. Levy, and S. R. Bowman, “GLUE: A multi-task benchmark and analysis platform for natural language understanding,” in International Conference on Learning Rep-resentations , 2019. [55] A. Warstadt, A. Singh, and S. R. Bowman, “Neural network acceptability judgments,” Trans. Assoc. Comput. Linguistics , vol. 7, pp. 625–641, 2019. [56] R. Socher, A. Perelygin, J. Wu, J. Chuang, C. D. Manning, A. Y. Ng, and C. Potts, “Recursive deep models for semantic compositionality over a sentiment treebank,” in Conference on Empirical Methods in Natural Language Processing , 2013, pp. 1631–1642. [57] W. B. Dolan and C. Brockett, “Automatically constructing a corpus of sentential paraphrases,” in International Workshop on Paraphrasing .Asian Federation of Natural Language Processing, 2005. [58] A. Williams, N. Nangia, and S. R. Bowman, “A broad-coverage challenge corpus for sentence understanding through inference,” in 
+
+Conference of the North American Chapter of the Association for Computational Linguistics , 2018, pp. 1112–1122. [59] P. Rajpurkar, J. Zhang, K. Lopyrev, and P. Liang, “Squad: 100, 000+ questions for machine comprehension of text,” in Conference on Empir-ical Methods in Natural Language Processing , 2016, pp. 2383–2392. [60] D. Giampiccolo, B. Magnini, I. Dagan, and B. Dolan, “The third PASCAL recognizing textual entailment challenge,” in Proceedings of the ACL-PASCAL@ACL 2007 Workshop on Textual Entailment and Paraphrasing , 2007, pp. 1–9. [61] Y. Liu, M. Ott, N. Goyal, J. Du, M. Joshi, D. Chen, O. Levy, M. Lewis, L. Zettlemoyer, and V. Stoyanov, “Roberta: A robustly optimized BERT pretraining approach,” CoRR , vol. abs/1907.11692, 2019. [62] A. Gu and T. Dao, “Mamba: Linear-time sequence modeling with selective state spaces,” CoRR , vol. abs/2312.00752, 2023. [63] L. Team, “The llama 3 herd of models,” CoRR , vol. abs/2407.21783, 2024. [64] G. Team, “Gemma 2: Improving open language models at a practical size,” CoRR , vol. abs/2408.00118, 2024. [65] J. Gao, Z. Guo, D. Zhang, D. Li, R. Liu, P. Li, K. Tian, and B. Qi, “Bohdi: Heterogeneous llm fusion with automatic data exploration,” in 
+
+Annual Conference on Neural Information Processing Systems , 2025. [66] C. Zhou, P. Liu, P. Xu, S. Iyer, J. Sun, Y. Mao, X. Ma, A. Efrat, P. Yu, L. Yu, S. Zhang, G. Ghosh, M. Lewis, L. Zettlemoyer, and O. Levy, “LIMA: less is more for alignment,” in Annual Conference on Neural Information Processing Systems , 2023. [67] D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang, D. Song, and J. Steinhardt, “Measuring mathematical problem solving with the MATH dataset,” in Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks , 2021. [68] K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. Schul-man, “Training verifiers to solve math word problems,” CoRR , vol. abs/2110.14168, 2021. [69] J. Austin, A. Odena, M. I. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. J. Cai, M. Terry, Q. V. Le, and C. Sutton, “Program synthesis with large language models,” CoRR , vol. abs/2108.07732, 2021. [70] W. Chen, M. Yin, M. Ku, P. Lu, Y. Wan, X. Ma, J. Xu, X. Wang, and T. Xia, “Theoremqa: A theorem-driven question answering dataset,” in Conference on Empirical Methods in Natural Language Processing ,2023. [71] M. Suzgun, N. Scales, N. Sch¨ arli, S. Gehrmann, Y. Tay, H. W. Chung, A. Chowdhery, Q. V. Le, E. H. Chi, D. Zhou, and J. Wei, “Challenging big-bench tasks and whether chain-of-thought can solve them,” in 
+
+Findings of the Association for Computational Linguistics , 2023.
