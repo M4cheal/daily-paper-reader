@@ -6,64 +6,46 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-02
-- 运行时间：2026-05-02 20:25:39 UTC
+- 最新运行日期：2026-05-03
+- 运行时间：2026-05-03 20:04:07 UTC
 - 运行状态：成功
-- 本次总论文数：14
-- 精读区：3
-- 速读区：11
+- 本次总论文数：8
+- 精读区：1
+- 速读区：7
 
 ### 今日简报（AI）
-今日精选 14 篇前沿论文，深度聚焦罕见病诊断的动态学习与大模型推理的置信度校准。
-重点关注评分 9.5 的罕见病异常定位技术，以及通过过程监督让 LLM 推理更“清醒”的校准方案。
-建议优先研读测试时进化（Test-Time Evolution）在医疗领域的应用，并关注推理侧的轻量化与增强策略。
-- 详情：[/202605/02/README](/202605/02/README)
+今日深度复盘 8 篇多模态前沿进展，聚焦视觉大模型幻觉修复与具身智能的鲁棒性提升。
+核心结论指出自适应视觉定位能有效平衡全局与局部细节以抑制幻觉，而世界模型蒸馏则显著增强了 VLM 的动态空间推理。
+建议关注 AsyncShield 等即插即用适配器，了解如何解决云端机器人导航中的异步延迟与安全挑战。
+- 详情：[/202605/03/README](/202605/03/README)
 
 ### 精读区论文标签
-1. [Dynamic Decision Learning: Test-Time Evolution for Abnormality Grounding in Rare Diseases](/202605/02/2604.24972v1-dynamic-decision-learning-test-time-evolution-for-abnormality-grounding-in-rare-diseases)  
-   标签：评分：9.5/10、query:tta
-   evidence：冻结的大型视觉语言模型的测试时间演化
-2. [Process Supervision of Confidence Margin for Calibrated LLM Reasoning](/202605/02/2604.23333v1-process-supervision-of-confidence-margin-for-calibrated-llm-reasoning)  
+1. [Global Context or Local Detail? Adaptive Visual Grounding for Hallucination Mitigation](/202605/03/2604.24396v1-global-context-or-local-detail-adaptive-visual-grounding-for-hallucination-mitigation)  
    标签：评分：8.0/10、query:tta
-   evidence：扩展测试时间计算以实现校准的大模型推理
-3. [Reasoning over Object Descriptions Improves Coreference Resolution in Task-Based Dialogue Systems](/202605/02/2604.27850v1-reasoning-over-object-descriptions-improves-coreference-resolution-in-task-based-dialogue-systems)  
-   标签：评分：8.0/10、query:tta
-   evidence：用于泛化的单模态测试时间推理方法
+   evidence：用于缓解视觉语言模型幻觉的免训练推理框架
 
 ### 速读区论文标签
-1. [Doing More With Less: Revisiting the Effectiveness of LLM Pruning for Test-Time Scaling](/202605/02/2604.25098v1-doing-more-with-less-revisiting-the-effectiveness-of-llm-pruning-for-test-time-scaling)  
+1. [AsyncShield: A Plug-and-Play Edge Adapter for Asynchronous Cloud-based VLA Navigation](/202605/03/2604.24086v1-asyncshield-a-plug-and-play-edge-adapter-for-asynchronous-cloud-based-vla-navigation)  
+   标签：评分：7.5/10、query:tta
+   evidence：用于VLA导航的即插即用边缘适配器
+2. [A Pattern Language for Resilient Visual Agents](/202605/03/2604.28001v1-a-pattern-language-for-resilient-visual-agents)  
+   标签：评分：7.5/10、query:tta
+   evidence：VLA模型的自适应视觉锚定和架构模式
+3. [World2VLM: Distilling World Model Imagination into VLMs for Dynamic Spatial Reasoning](/202605/03/2604.26934v1-world2vlm-distilling-world-model-imagination-into-vlms-for-dynamic-spatial-reasoning)  
    标签：评分：7.0/10、query:tta
-   evidence：LLM剪枝对测试时间计算缩放的有效性
-2. [One Refiner to Unlock Them All: Inference-Time Reasoning Elicitation via Reinforcement Query Refinement](/202605/02/2604.25444v1-one-refiner-to-unlock-them-all-inference-time-reasoning-elicitation-via-reinforcement-query-refinement)  
+   evidence：将VLM与世界模型耦合以进行动态空间推理
+4. [Learning to Forget: Continual Learning with Adaptive Weight Decay](/202605/03/2604.27063v1-learning-to-forget-continual-learning-with-adaptive-weight-decay)  
    标签：评分：7.0/10、query:tta
-   evidence：推理诱导的推理阶段对齐任务
-3. [SEAL: Semantic-aware Single-image Sticker Personalization with a Large-scale Sticker-tag Dataset](/202605/02/2604.26883v1-seal-semantic-aware-single-image-sticker-personalization-with-a-large-scale-sticker-tag-dataset)  
-   标签：评分：7.0/10、query:tta
-   evidence：用于单图个性化的测试时间微调（TTF）方法
-4. [World2VLM: Distilling World Model Imagination into VLMs for Dynamic Spatial Reasoning](/202605/02/2604.26934v1-world2vlm-distilling-world-model-imagination-into-vlms-for-dynamic-spatial-reasoning)  
-   标签：评分：7.0/10、query:tta
-   evidence：将世界模型想象力蒸馏到视觉语言模型中
-5. [SpaAct: Spatially-Activated Transition Learning with Curriculum Adaptation for Vision-Language Navigation](/202605/02/2604.27620v1-spaact-spatially-activated-transition-learning-with-curriculum-adaptation-for-vision-language-navigation)  
-   标签：评分：7.0/10、query:tta
-   evidence：将视觉语言模型应用于视觉语言导航的自适应
-6. [Revisiting Greedy Decoding for Visual Question Answering: A Calibration Perspective](/202605/02/2604.23443v1-revisiting-greedy-decoding-for-visual-question-answering-a-calibration-perspective)  
-   标签：评分：6.5/10、query:tta
-   evidence：VQA解码最优性的理论形式化
-7. [Auto-FlexSwitch: Efficient Dynamic Model Merging via Learnable Task Vector Compression](/202605/02/2604.28109v1-auto-flexswitch-efficient-dynamic-model-merging-via-learnable-task-vector-compression)  
-   标签：评分：6.5/10、query:tta
-   evidence：在推理时灵活组合任务特定参数
-8. [A Parametric Memory Head for Continual Generative Retrieval](/202605/02/2604.23388v1-a-parametric-memory-head-for-continual-generative-retrieval)  
+   evidence：通过元梯度下降在线调整权重衰减率
+5. [UpstreamQA: A Modular Framework for Explicit Reasoning on Video Question Answering Tasks](/202605/03/2604.23145v1-upstreamqa-a-modular-framework-for-explicit-reasoning-on-video-question-answering-tasks)  
    标签：评分：6.0/10、query:tta
-   evidence：通过后自适应内存微调解决稳定性与塑性权衡
-9. [World-R1: Reinforcing 3D Constraints for Text-to-Video Generation](/202605/02/2604.24764v1-world-r1-reinforcing-3d-constraints-for-text-to-video-generation)  
+   evidence：视频问答中显式推理的模块化框架
+6. [Beyond Shortcuts: Mitigating Visual Illusions in Frozen VLMs via Qualitative Reasoning](/202605/03/2604.26250v1-beyond-shortcuts-mitigating-visual-illusions-in-frozen-vlms-via-qualitative-reasoning)  
    标签：评分：6.0/10、query:tta
-   evidence：将视频生成与3D约束对齐以进行世界模拟
-10. [Data-Driven Hamiltonian Reduction for Superconducting Qubits via Meta-Learning](/202605/02/2604.24912v1-data-driven-hamiltonian-reduction-for-superconducting-qubits-via-meta-learning)  
+   evidence：用于增强冻结VLM视觉定位的免训练框架
+7. [State Beyond Appearance: Diagnosing and Improving State Consistency in Dial-Based Measurement Reading](/202605/03/2604.26614v1-state-beyond-appearance-diagnosing-and-improving-state-consistency-in-dial-based-measurement-reading)  
    标签：评分：6.0/10、query:tta
-   evidence：有效哈密顿量模型的快速在线自适应
-11. [Refinement via Regeneration: Enlarging Modification Space Boosts Image Refinement in Unified Multimodal Models](/202605/02/2604.25636v1-refinement-via-regeneration-enlarging-modification-space-boosts-image-refinement-in-unified-multimodal-models)  
-   标签：评分：6.0/10、query:tta
-   evidence：在统一多模态模型初始生成后优化输出
+   evidence：诊断并改进多模态大模型在外观变化下的状态一致性
 
 
 <div class="dpr-home-promo-card">
