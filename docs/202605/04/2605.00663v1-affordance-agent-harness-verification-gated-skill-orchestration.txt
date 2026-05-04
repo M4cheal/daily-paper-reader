@@ -1,0 +1,1696 @@
+Title: Affordance Agent Harness: Verification-Gated Skill Orchestration
+
+URL Source: https://arxiv.org/pdf/2605.00663v1
+
+Published Time: Mon, 04 May 2026 01:08:16 GMT
+
+Number of Pages: 43
+
+Markdown Content:
+# Affordance Agent Harness: Verification-Gated Skill Orchestration 
+
+Haojian Huang 1,2*, Jiahao Shi 2,3*, Yinchuan Li 1,2, and Yingcong Chen 1,2†
+
+> 1
+
+HKUST(GZ) 2Knowin AI 3Harbin Engineering University 
+
+Abstract. Affordance grounding requires identifying where and how an agent should interact in open-world scenes, where actionable regions are often small, occluded, reflective, and visually ambiguous. Recent sys-tems therefore combine multiple skills ( e.g ., detection, segmentation, interaction-imagination), yet most orchestrate them with fixed pipelines that are poorly matched to per-instance difficulty, offer limited targeted recovery from intermediate errors, and fail to reuse experience from recurring objects. These failures expose a systems problem: test-time grounding must acquire the right evidence, decide whether that evidence is reliable enough to commit, and do so under bounded inference cost without access to labels. We propose Affordance Agent Harness , a closed-loop runtime that unifies heterogeneous skills with an evidence store and cost control, retrieves episodic memories to provide priors for recurring categories, and employs a Router to adaptively select and pa-rameterize skills. An affordance-specific Verifier then gates commitments 
+
+using self-consistency, cross-scale stability, and evidence sufficiency, trig-gering targeted retries before a final judge fuses accumulated evidence and trajectories into the prediction. Experiments on multiple affordance benchmarks and difficulty-controlled subsets show a stronger accuracy– cost Pareto frontier than fixed-pipeline baselines, improving grounding quality while reducing average skill calls and latency. Project Page. 
+
+## 1 Introduction 
+
+Affordance grounding aims to identify where and how an agent should inter-act in open-world visual scenes. In everyday environments, actionable regions— handles, buttons, rims, and graspable edges—are often small, partially occluded, reflective, or visually ambiguous [72, 81, 90]. This demands fine-grained spatial localization, high-level semantic reasoning, and robust recovery from intermedi-ate perception errors [67]. Despite recent progress of large multimodal models (LMMs) in recognition and language-grounded reasoning [1,20,52,77], affordance grounding remains brittle when decisions must be geometry-aware and evidence must be aggregated coherently across heterogeneous cues and tools. Prior work has pursued two main directions. One line fine-tunes LMMs for af-fordance estimation, but scarce affordance annotations often lead to substantial  
+
+> ⋆
+
+Equal contribution.  
+
+> †
+
+Corresponding author. 
+
+> arXiv:2605.00663v1 [cs.RO] 1 May 2026
+
+2 Preprint 
+
+degradation on unseen open-world instances. A more promising line adopts an 
+
+agent paradigm , leveraging increasingly capable generative and editing models (e.g . [69, 88]) to enrich the reasoning context at inference time [67, 85]. Existing affordance agents, however, still inherit three failure modes from fixed perception pipelines. First, they execute skills in a predetermined order: easy cases are over-processed, while hard cases such as small targets, occlusion, or OOD categories do not receive targeted additional evidence. Second, they lack closed-loop cor-rection: when detector boxes, segmentation masks, or interaction points disagree across tools and scales, systems typically fuse results late instead of identifying the failure source and re-invoking the responsible skill, allowing silent errors to propagate [26, 86]. Third, they lack persistent experience: recurring objects and categories are re-solved from scratch, amortizing neither successful tool chains nor object-level priors (see Fig. 1). Affordance Agent with A-Harness Prior Affordance Agent      
+
+> Query Router π
+> Verifier V
+> Inflexibility
+> No Gating
+> Adaptive Control
+> Closed-Loop & Self-learning Friendly
+> Fixed Script
+> Skills Execution
+> Late Fusion
+> Output
+> Step t
+> Evidence Store
+> Budget
+> Skills
+> Common Sense
+> Query
+> Memory Thinking
+> Reject
+> Output
+> Accept Accept
+
+Fig. 1. Comparison between a prior affor-dance agent with a fixed reasoning graph and our A-Harness–enabled agent. While prior systems execute skills along a prede-fined script with late fusion and no com-mitment gating, A-Harness introduces acontext-aware, budgeted closed-loop run-time with adaptive routing, verification-driven retries, and persistent memory for reusable experience. 
+
+Together, these limitations re-cast the task as budgeted evidence seeking rather than single-pass pre-diction. Without ground-truth la-bels at test time, “verification” can-not certify absolute correctness; in-stead, it must provide relative and 
+
+actionable diagnostics that decide whether current evidence is trustwor-thy enough to commit and, if not, what evidence is missing. This view is aligned with evidence-centric fu-sion and uncertainty-guided reason-ing, where reliability is inferred from agreement, discounting, and targeted re-querying rather than a single raw prediction [9, 24, 25, 40]. We there-fore rely on three signal families: (i) cross-tool consistency , measur-ing agreement between detection, seg-mentation, and other cues within the same region; ( ii ) cross-scale stabil-ity , measuring whether actionable re-gions or interaction points persist under zoom-in/out and re-cropping; and ( iii )
+
+evidence sufficiency , measuring whether the evidence store contains enough supported and traceable observations for the decision. These signals do not merely score outputs; they decide whether to commit or to launch a targeted retry, such as zooming into a disputed region, re-running detection with class constraints, or invoking external knowledge retrieval when semantics are am-biguous. A-Harness implements this process as a closed-loop execution framework that separates a reproducible runtime from a decision policy. The runtime unifies Affordance Agent Harness 3
+
+heterogeneous skills ( e.g ., detection, segmentation, zoom-in, web search, and interaction imagination) under a shared interface, maintains an evidence store with provenance, enforces budgets, and records reasoning trajectories. Given an input, the system retrieves relevant episodic memories to provide actionable pri-ors —successful tool chains and parameters for similar objects and tasks—which enables fast paths for recurring categories. A Router then selects the next skill and its parameters ( e.g ., region of interest, prompts, search queries) conditioned on the current evidence state and remaining budget. After each execution, an affordance-specific Verifier applies the diagnostics above to localize likely failure modes and either accept the evidence or request a corrective action. When the confidence criteria are satisfied, or the budget is exhausted, a final policy fuses structured evidence, trajectories, and retrieved memory into an affordance pre-diction with traceable provenance. Verified episodes are written back to memory, so the system can reduce exploration cost on similar future cases. Our contributions are threefold: 
+
+– We replace fixed pipelines with a per-instance routing policy over heteroge-neous skills and their parameters for affordance grounding. 
+
+– We introduce relative, actionable verification signals (consistency, stability, sufficiency) to gate commitments and trigger targeted retries, and an episodic memory that amortizes successful tool chains for recurring objects and tasks. 
+
+– On multiple benchmarks and difficulty-controlled subsets, we achieve higher grounding accuracy with fewer skill calls and lower latency than fixed-pipeline baselines, supported by ablations isolating verification and memory. 
+
+## 2 Related Work 
+
+Affordance grounding has shifted from category-specific, fully supervised region predictors to open-world inference, where actionable regions are tiny, occluded, reflective, and distribution-shifted. Early work established end-to-end affordance detection/segmentation with curated annotations and part-level supervision on images and 3D shapes [14, 15, 45, 74]. To mitigate annotation bottlenecks and improve generalization, later studies explored weakly/annotation-free learning and few-shot transfer for articulated objects under occlusions, as well as leverag-ing human behaviors and demonstrations as scalable supervision for functional contact cues [5, 10, 42, 44, 49, 71]. In parallel, the field expanded to richer 3D and long-horizon formulations that require intent-conditioned reasoning over 
+
+multiple candidate interaction sites and sequential affordances, together with open-vocabulary settings that connect language and geometry for unseen affor-dance concepts [12,13,48,58,65,78,81]. A complementary line treats affordances as transferable manipulation priors bridging perception and control, improv-ing policy generalization yet remaining sensitive to noisy grounding evidence in the wild [47, 72]. More recent efforts increasingly exploit pretrained vision-language/foundation models via language-conditioned grounding, distillation, and one-shot adaptation, pushing toward open-world robustness but repeatedly 4 Preprint 
+
+surfacing a key bottleneck: heterogeneous intermediate evidence can be incon-sistent, and without test-time labels systems lack an operational notion of veri-fication to decide when to commit versus when (and where) to gather more evi-dence [18,32,41,51,64,67,68,70]. Meanwhile, promptable segmentation and open-vocabulary localization, together with instruction-tuned MLLMs and region-level grounding, make it practical to compose detection/segmentation/zoom-in skills at inference time rather than retraining bespoke affordance models [8, 30,31,35,36,43,54,80,84]. The “think-with-pixels” trend further strengthens this direction by treating pixel-space intermediate steps as part of reasoning, suggest-ing that tool-mediated, dynamically refreshed visual context can be a first-class driver of robust open-world grounding [55, 62]. At the agent-system level, tool-using and embodied frameworks highlight iterative self-correction, verification, and experience reuse as mechanisms for reliability and efficiency [2,16,21,28,57, 59,73,79]. In embodied settings in particular, recent vision-language-action mod-els and embodied MLLMs further strengthen this trend by grounding language in 3D perception and manipulation, enabling agents to plan and act with richer, task-conditioned visual/multimodal context [7, 17, 22, 23, 33, 50, 61, 76, 87, 92]. Orthogonal evidence-centric research studies Dempster–Shafer fusion, eviden-tial multi-view clustering/classification, and reliability discounting for uncertain observations [24, 25, 27, 39, 40]; related multimodal reasoning work further uses uncertainty-guided self-questioning, structured spatial correction, and context repair to reduce cascading errors [9, 26, 86]. However, existing affordance agents still largely behave as fixed or weakly adaptive pipelines [85]: conflicts ( e.g ., box–mask mismatch) are handled by late fusion rather than diagnosis-driven re-invocation; tool usage is rarely optimized as a budgeted policy; and expe-rience is seldom amortized as actionable priors (skill chains and parameters) for recurring categories. These gaps motivate our Affordance Agent Har-ness , which makes budget-aware routing, affordance-specific verification that 
+
+gates commitments and triggers targeted retries, and episodic memory over ex-ecutable experience first-class components of a closed-loop runtime, improving the accuracy–cost trade-off in open-world affordance grounding. 
+
+## 3 Method 
+
+3.1 Problem Setup 
+
+Knowing where to interact with an object—and how —is a prerequisite for any embodied agent that must act in the physical world, yet affordance remains one of the least standardized prediction targets in vision. Given an observation x (an image or a set of views) and an optional instruction q, affordance grounding pre-dicts an actionable region A describing where and how to interact. We focus on pixel-level outputs and represent the affordance as a dense map A ∈ [0 , 1] H×W
+
+in the image coordinate frame (binary or soft masks), while the framework nat-urally extends to keypoints or contact regions. We assume access to a set of general-purpose skills S = {s1, . . . , s K }—detection, segmentation, zoom-in, web search, and interaction imagination (Dreamer)—that can be invoked at test time Affordance Agent Harness 5(1) To open these bottles,    
+
+> which part do you need to
+> remove first?
+> Detect Segment Zoom-in Web Search
+> Wrap your fingers
+> around the neck of
+> the bottle just below
+> the cap, and ...
+> Interaction Imagination
+> Press the Buttons and
+> Lift Press and hold the
+> button(s) firmly....
+> (2) How do you lift a wooden toilet seat lid?
+
+Fig. 2. Illustration of heterogeneous skills that generate complementary visual and semantic evidence. Web search can retrieve both textual guidance and paired images when available ( i.e . case(2)), enriching the visual context for affordance reasoning. 
+
+(see Fig. 2). Each invocation incurs cost; we adopt a primary budget B measured by the number of skill calls, and track latency and monetary cost as secondary. 
+
+3.2 Overview 
+
+No single skill reliably localizes affordances in the open world: detectors can miss small functional parts, segmenters can refine the wrong region, and external knowledge can be semantically useful but spatially weak. A-Harness addresses this mismatch by acquiring, cross-checking, and fusing complementary evidence under a budget before committing to a prediction. As shown in Fig. 3, the system includes four components: (i) an evidence store Et that accumulates heterogeneous skill outputs, (ii) a two-tier mem-ory M providing reusable priors, (iii) a Router πθ for skill selection, and (iv) a Verifier for gating commitment and triggering retries. At step t, the Router selects an action ut = ( st, η t), where st ∈ S is the skill and ηt its parameters. Evidence is updated as: 
+
+ut ∼ πθ (· | zt), ot = st(x, q ; ηt), Et+1 = Et ∪ F (Et, o t), (1) where ut is the action selected by the Router at time t based on state zt, st is the chosen skill with parameters ηt, ot is the output, and F(Et, o t) is a parsing function that extracts evidence-relevant observations from ot and wraps them into typed evidence records (Eq. 2). The loop ends when the Verifier accepts or the budget is exhausted, outputting A.
+
+3.3 Details of A-Harness 
+
+Evidence Store with Provenance. As skills are invoked, the system accumulates a heterogeneous mixture of outputs—boxes from a detector, masks from a seg-menter, textual cues from web search—that must be organized before they can be cross-checked or fused, echoing the need for provenance-aware multi-source 6 Preprint    
+
+> Fig. 3. Overview of the A-Harness framework, illustrating iterative decision-making. The Verifier dynamically assesses evidence, guiding the Router to either re-plan or output results, while storing the trajectory in memory. The skill outcome otis stored in the evidence store and combined with existing evidence to support the next step.
+
+evidence fusion [24]. The evidence store Et addresses this by tagging every in-termediate result with its provenance. Each item is a record 
+
+ξ = ⟨τ, p, r, λ, ι, c, t ⟩, (2) where τ is the evidence type ( e.g ., box/mask/text), p is the payload ( i.e . the actual value), r is the ROI, λ is the scale/zoom level, ι ∈ { 1, . . . , K } is the 
+
+producer id identifying which skill generated this item, c is the incurred cost, and t is the step index. The producer id ι is key: it enables cross-skill agreement checks and tells the system which skill to rerun when conflicts arise. 
+
+Two-Tier Memory with Feature Retrieval. Open-world affordance grounding ex-hibits a distinctive pattern: most queries involve familiar objects whose affor-dances follow stable part-level regularities, yet the tail is long and unpredictable— unusual designs, heavy occlusion, or novel tool–object pairings can defeat any fixed prior. A-Harness amortizes experience via a two-tier memory that sepa-rates stable priors from online adaptation : a common-sense bank Mcs and a 
+
+test-time episodic bank Mtt .
+
+Mcs stores prototypical affordance priors for frequent objects and parts col-lected offline, each paired with an annotated reference mask. At test time no ground truth is available; instead, Mtt accumulates verifier-accepted episodes— successful action sequences and their evidence summaries—so that the agent can adapt to novel challenges on the fly. Each memory entry stores: 
+
+m = ⟨g, u1: T , {η}, ψ (ET ), ρ, A ref ⟩. (3) Affordance Agent Harness 7
+
+where g is a retrieval embedding, u1: T a successful action sequence, {η} effec-tive parameter ranges, ψ(ET ) a verified evidence summary, ρ an outcome score (Eq. 9), and Aref an optional reference mask (present for Mcs , typically absent for Mtt ). For retrieval we combine DINO-v3 [60] and SigLIP [83] features into a joint embedding: 
+
+g(x, q ) ≜ norm( fd(x) ∥ fc(x, q ) ) , sim( g, g ′) = g⊤g′, (4) and retrieve the top-N entries by cosine similarity to seed the Router with priors. Episodes are written back to Mtt only when the Verifier accepts. 
+
+Metabolism. Both banks have fixed capacities |M cs | ≤ Ccs and |M tt | ≤ 
+
+Ctt . When Mtt exceeds capacity, the oldest entry is evicted and compressed into a compact experience capsule (summarized ψ(·) and robust parameter ranges) that is stored back, preserving long-term utility within bounded storage. 
+
+Router: Budget-Aware Skill Selection and Parameterization. In principle the agent could invoke every skill on every input; in practice each call costs time and money, and many would be redundant. The Router πθ maps the current state zt
+
+to the next action ut = ( st, η t), choosing the skill most likely to resolve the current uncertainty per unit cost. A-Harness is agnostic to how πθ is realized— heuristic or learned—and makes budget trade-offs explicit by ranking candidates via an estimated benefit–cost ratio: 
+
+ut = arg max 
+
+> u∈U (zt)
+
+c∆v (u; zt)
+
+bc(u) , (5) where U(zt) is the feasible action set under the current evidence and remain-ing budget, c∆v (u; zt) estimates the expected increase in verifier score, and bc(u)
+
+estimates cost (typically 1 per call, optionally latency-weighted). In practice, whenever commitment is denied, the Verifier emits a diagnostic indicating the dominant gap (e.g. low consistency or insufficient evidence) together with a sug-gested remedial action; the Router consults this proposal and selects the u that best addresses the flagged gap under the remaining budget. The full instantia-tion of c∆v , including the verifier-gap heuristic and LLM fallback, is detailed in Appendix A.2. 
+
+Verifier: Relative Diagnostics and Commitment Gating. The central challenge of test-time verification is the absence of ground truth. We sidestep this by design-ing relative diagnostics—signals that correlate with correctness by measuring agreement, stability, and sufficiency of the accumulated evidence rather than comparing against a label. The design is motivated by a recurring empirical pat-tern: failures in open-world grounding are typically preceded by (i) disagreement across tools, (ii) prediction drift under re-cropping or zooming, or (iii) prema-ture commitment from sparse evidence, consistent with evidential discounting and trusted multi-view dynamics under partial or noisy observations [25, 27, 39]. 8 Preprint 
+
+Cross-skill consistency ( ωt). Different skills observe the same scene through different inductive biases; when they converge on the same region, the predic-tion is far more likely to be correct. Let Bt be the latest set of boxes and Kt the latest set of masks within the same ROI, both in a common coordinate frame. We measure agreement by 
+
+ωt = max 
+
+> b∈B t, m ∈K t
+
+IoU( χ(b), m ) , (6) where χ(·) converts a box to its filled mask. (For point outputs, IoU is replaced by normalized point distance.) 
+
+Cross-scale stability ( ζt). Hard cases—small targets, heavy occlusion— often produce predictions that “wander” when the agent zooms in or shifts the crop. We enforce stability across scales by comparing predictions at different zoom levels after projecting them back to the original image frame. Let Πt be a set of cross-scale prediction pairs and φ(ξ) the predicted mask of evidence ξ in the global frame. We quantify drift by 
+
+ζt = 1 − 1
+
+|Πt|
+
+X 
+
+> (ξi,ξ j)∈Πt
+
+d(φ(ξi), φ (ξj )) , (7) where d(·, ·) is IoU-distance for masks (or normalized Euclidean distance for points). 
+
+Evidence sufficiency ( μt). Even when a single tool output looks plausible, committing too early is risky in the open world. We estimate whether the current hypothesis is backed by enough independent evidence. Let ht denote the best mask aggregated so far. We define 
+
+μt = X
+
+> ξ∈Et
+
+wτ (ξ) κ(ξ, h t), (8) where wτ is a type-dependent weight and κ(ξ, h t) ∈ { 0, 1} is an interpretable support indicator—whether ξ overlaps the hypothesis ROI, whether at least one high-confidence localizer corroborates it, and whether no unresolved conflict remains. 
+
+Choosing wτ . We let the agent decide wτ at test time based on evidence quality and its marginal contribution toward a verifiable state, which varies across skills. Details are provided in Appendix A.1. 
+
+Commit rule. At step t we compute three diagnostics: consistency ωt, sta-bility ζt, and sufficiency μt (all scaled to [0 , 1] ), and aggregate them as 
+
+vt = α ω t + β ζ t + γ σ (μt), (9) with weights α, β, γ ≥ 0 and a squashing function σ(·). The system commits 
+
+(terminates evidence collection and outputs via Φ) iff 
+
+vt ≥ δ ∧ ωt ≥ ω,  (10) where δ is a global acceptance threshold and ω is a hard floor preventing com-mitment under tool disagreement. Affordance Agent Harness 9
+
+Targeted retry. If not committed, we pick the dominant deficiency via its margin-to-threshold: 
+
+ℓt = arg max 
+
+> j∈{ ω,ζ,μ }
+
+ j − jt
+
+
+
+> +
+
+, uprop ← Γ (ℓt), (11) where (x)+ = max( x, 0) , and Γ (·) maps each failure mode to a corrective action (e.g ., ω-failure → ROI refinement and re-segmentation; ζ-failure → zoom-in or re-crop; μ-failure → invoke complementary knowledge/imagination). The Router then selects the final u informed by this proposal, following the same principle as context repair: identify the missing or corrupted evidence and patch it with the smallest targeted intervention [26]. 
+
+Final Fusion under Budget. Once the loop terminates—either by acceptance or budget exhaustion—we produce the affordance map by fusing the structured evidence and memory priors: 
+
+A = Φ(x, q, E T , u1: T , M(x, q )) . (12) 
+
+Φ can be a deterministic policy ( e.g ., selecting the most scale-stable mask or averaging consistent hypotheses) or a lightweight model/MLLM that reasons over structured evidence rather than re-solving the problem from raw pixels. In our implementation, Φ operates in two stages. First, the accumulated evidence ( i.e . reference masks, web-retrieved images, textual cues, and cross-scale predictions) is assembled into a rich visual-semantic context that allows the detection skill to localize an accurate keypoint on the actionable region. Then a segmentation foundation model ( i.e . SAM 2) takes the keypoint as a prompt and produces the final mask A. Algorithm 1 summarizes A-Harness inference. 
+
+3.4 Discussion 
+
+A natural question is whether such a runtime is necessary when end-to-end models can map pixels to affordances directly. We view the two paradigms as complementary: learned models are efficient and strong in-distribution, yet often degrade on the open-world tail ( e.g ., novel objects, rare viewpoints, or unseen tool–object pairings) that dominates deployment. A-Harness avoids task-specific model training and instead composes general-purpose skills through budgeted ev-idence acquisition and relative verification, making the same runtime transferable across domains. The verifier adds explicit failure awareness—knowing when evi-dence is insufficient and where extra budget should be spent—which feed-forward predictors typically lack. The two-tier memory further makes test-time scaling practical: a curated common-sense bank supplies broadly transferable priors, while an episodic bank accumulates verifier-accepted experience online, allow-ing the system to adapt as distribution shifts appear. Together, these properties turn stronger foundation models into replaceable components of a self-correcting runtime rather than requiring a new affordance model for each domain. 10 Preprint 
+
+Algorithm 1 A-Harness Inference (Budgeted Closed-Loop Execution) 
+
+Require: observation x, instruction q, skills S, budget B, memory M = {M cs , Mtt }
+
+1: E ← ∅ ; b ← B; uprop ← ∅  ▷ no Verifier proposal initially 2: Compute retrieval embedding g(x, q ) (Eq. 4) and retrieve top-N entries from M
+
+3: for t = 1 , 2, . . . do 
+
+4: z ← ⟨ x, q, E, M(x, q ), b ⟩
+
+5: Choose u = ( s, η ) via Router (Eq. 5), informed by uprop 
+
+6: Execute ot ← s(x, q ; ηt) and update Et+1 = Et ∪ F (Et, o t)
+
+7: b ← b − bc(u)
+
+8: Compute ωt, ζ t, μ t and vt (Eqs. 6–9) 9: if (vt ≥ δ ∧ ωt ≥ ω) or b ≤ 0 then 
+
+10: break 
+
+11: end if 
+
+12: Diagnose ℓt; Verifier proposes uprop ← Γ (ℓt) (Eq. 11) 13: end for 
+
+14: Output affordance map A ← Φ(x, q, E, u1: t, M(x, q )) (Eq. 12) 15: if vt ≥ δ then 
+
+16: Write back verified episode to Mtt 
+
+17: end if 
+
+18: return A
+
+## 4 Experiment 
+
+4.1 Experiment Settings Datasets. We evaluate on three benchmarks covering diverse affordance rea-soning scenarios: ReasonAff [67] (600 test image–task pairs, reasoning-oriented), UMD Part Affordance [46] (1,922 test images across 17 categories and 7 affor-dance types), and RAGNet [70] (3,018 pairs across RAGNet-3DOI and RAGNet-HANDAL subsets). Dataset details are shown in Appendix B.1. 
+
+Implementation Details. We construct the common-sense bank from the Rea-sonAff and UMD training splits, with selected RAGNet samples used for out-of-domain memory analysis, and evaluate only on the corresponding held-out test sets. GPT-4o [1] serves as the default decision brain, with SAM2-Large [54] for segmentation and Qwen3-VL-235B-A22B [6] for target-point reasoning. All results are averaged over three randomized test-set orderings to control for the order-dependent updates of Mtt . Appendix B.1 and Appendix B provide per-run variance, alternative tool/backbone configurations, hyperparameters, sensi-tivity analyses, and additional ablations. 
+
+Baseline. We compare A-Harness against baselines spanning open-vocabulary segmentation, instruction-conditioned grounding, affordance-specialized models, and general-purpose reasoning LMMs; full descriptions and configurations are in Appendix B.1. 
+
+4.2 Quantitative Analysis 
+
+Table 1 shows that A-Harness improves over fixed-pipeline baselines across both benchmarks, indicating that adaptive routing and verification-gated retries mat-Affordance Agent Harness 11 
+
+Table 1. Quantitative results on ReasonAff and UMD datasets, comparing the perfor-mance of various foundation models as decision brains. Upper section: specialist and generalist models for reference; lower section: fixed-pipeline baselines and our adaptive-scheduling framework. 
+
+ReasonAff UMD Model gIoU ↑ cIoU ↑ P50 ↑ P50 −95 ↑ gIoU ↑ cIoU ↑ P50 ↑ P50 −95 ↑
+
+VLPart [63] 4.21 3.88 1.31 0.85 – – – –OVSeg [34] 16.52 10.59 9.89 4.12 – – – –SAN [75] 10.21 13.45 7.18 3.17 – – – –LISA-7B [31] 38.17 40.58 33.62 19.69 41.90 41.23 39.65 19.33 SAM4MLLM [11] 45.51 33.64 43.48 22.79 12.40 8.41 4.12 0.05 AffordanceLLM [51] 48.49 38.61 42.11 20.19 43.11 38.97 41.56 22.36 InternVL3-8B [91] 31.79 24.68 35.41 21.93 – – – –InternVL3-7B [91] – – – – 30.46 28.73 18.67 9.94 Qwen2.5VL-7B [7] 25.18 20.54 26.00 15.82 33.21 29.83 25.17 10.45 AffordanceVLM [70] 30.50 25.54 30.29 18.31 25.41 17.96 9.37 25.10 Seg-Zero [37] 59.26 48.03 61.33 45.87 44.26 39.30 39.93 16.53 Vision Reasoner [38] 63.04 52.70 67.33 47.23 44.00 39.71 39.04 16.10 Affordance-R1 [67] 67.41 62.72 74.50 55.22 49.85 42.24 53.35 34.08 ConverSeg [56] 30.11 25.08 30.50 17.02 33.27 10.37 32.63 13.59 
+
+w/o A-Harness 
+
+Only w/ Det. & Seg. skills 51.86 43.73 57.00 38.30 46.53 37.77 53.24 30.56 Full Fixed Skill Chain 55.05 49.57 58.07 37.48 50.19 49.24 55.88 29.75 
+
+w/ A-Harness (Ours) 
+
+w/ Qwen-3.5-397B-A17B [52] 58.51 49.47 64.83 44.73 57.61 53.39 67.71 37.44 
+
+w/ Gemini-3-flash [19] 58.27 47.25 63.68 45.91 51.33 46.49 53.60 28.17 w/ GPT-4o [1] 60.53 54.91 66.73 45.53 52.74 50.04 57.62 29.85 w/ GLM-5 [82] 60.72 55.02 66.78 45.44 54.28 54.06 61.76 33.94 w/ Claude-Sonnet-4.6 [4] 66.48 62.82 73.19 53.38 53.72 51.15 62.50 33.31 w/ Claude-Opus-4.6 [3] 69.68 70.88 77.50 56.35 54.94 55.04 64.67 36.80 
+
+ter beyond the choice of backbone. Among decision brains, Claude-Opus-4.6 performs best on ReasonAff (69.68 gIoU and 70.88 cIoU), whereas Qwen-3.5 leads on UMD (57.61 gIoU and 67.71 P50 ), suggesting that reasoning-heavy and category-diverse settings favor different model strengths. Even the weakest A-Harness variant surpasses specialist and generalist baselines on ReasonAff and remains competitive on UMD, supporting the claim that the main gain comes from orchestration rather than a single foundation model. 
+
+4.3 Ablation study 
+
+As shown in Table 2, stronger backbones (Qwen-3.5 for detection, SAM-3 for segmentation) yield clear gains, underscoring the dependence on base-model grounding quality. Auxiliary skills (web search, interaction-imagination) primar-ily boost localization precision, as reflected by the cIoU and P50 decline when re-moved. Disabling the Verifier while keeping adaptive routing causes a consistent drop; notably, this variant even underperforms the two-skill (Det. & Seg.) base-line on ReasonAff, showing that richer skill sets amplify the need for verification— 12 Preprint 
+
+Table 2. Ablation study of A-Harness on ReasonAff and UMD datasets. Standard Setting uses GPT-4o as the decision brain. Backbone Substitution replaces the detec-tion and segmentation backbone while keeping the full pipeline. Component Ablation 
+
+removes individual modules from the standard setting. 
+
+ReasonAff UMD Configuration gIoU ↑ cIoU ↑ P50 ↑ P50 −95 ↑ gIoU ↑ cIoU ↑ P50 ↑ P50 −95 ↑
+
+Full Standard Config 60.53 54.91 66.73 45.53 52.74 50.04 57.62 29.85 w/ Rex-omni [29] 55.44 52.73 58.70 41.54 50.37 41.78 51.84 27.05 w/ Qwen2.5VL-7B-Instruct [7] 54.13 51.12 58.06 36.67 39.09 38.57 36.11 16.06 w/ Qwen-3.5-397B-A17B [52] 62.56 56.27 68.11 47.98 54.15 53.82 63.18 33.56 
+
+w/ SAM-3 [8] 61.90 56.36 67.33 46.12 53.18 50.56 58.28 30.85 Only w/ Det. & Seg. skill 59.68 49.29 64.10 44.20 50.82 41.92 51.76 26.44 w/o Verifier (Router only) 52.28 43.15 55.88 34.75 50.87 42.00 54.48 26.72 w/o MCS 54.43 53.38 62.55 39.06 50.31 43.12 54.96 27.39 w/o MT T 50.85 41.89 56.11 34.40 49.50 41.04 52.56 26.61 w/o MCS & MT T 49.41 39.05 43.29 22.18 48.98 42.10 49.36 25.24 Early Middle Late              
+
+> 0
+> 2
+> 4
+> 6
+> Avg. Skill Usage per Sample  Wok (n=30)
+> Early Middle Late
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> Bowl (n=45)
+> Early Middle Late
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> Knife (n=80)
+> Early Middle Late
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> Avg. Skill Usage per Sample  Mug (n=40)
+> Early Middle Late
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> Knife (n=24)
+> Early Middle Late
+> 0
+> 2
+> 4
+> 6
+> Ladle (n=30)
+> Detection & Segmentation Zoom-in Interaction Imagination Web Search
+
+Fig. 4. Skill usage analysis on 3DOI (top) and UMD (bottom). Bars show average skill invocations per sample in early, middle, and late thirds of inference. A detailed efficiency comparison against fixed-pipeline baselines is in Appendix B.2. 
+
+without conflict resolution, additional evidence sources introduce noise that out-weighs their benefit. Among memory components, MT T has the largest impact via adaptive transfer to out-of-domain samples, while MCS supplies comple-mentary knowledge priors, validating our dual-memory design. Affordance Agent Harness 13 10 50 100 200 300            
+
+> #Categories
+> (a)
+> 40
+> 50
+> 60
+> 10 50 100 200 300
+> #Categories
+> (b)
+> 30
+> 40
+> 50
+> 135
+> #Samples per category
+> (c)
+> 50
+> 60
+> 135
+> #Samples per category
+> (d)
+> 30
+> 40
+> 50
+> gIoU cIoU P50 P50 -95
+
+Fig. 5. Sensitivity analysis of the common-sense bank on ReasonAff and UMD datasets. (a)(b) Performance under different numbers of categories. (c)(d) Performance under different numbers of samples per category. 
+
+4.4 Further analysis 
+
+We next analyze how skill usage evolves, how the common-sense bank scales, and how the source/difficulty of MCS affects cross-domain transfer. Unless otherwise stated, these experiments use GPT-4o [1] as the decision brain, Qwen3-VL-235B-A22B [6] for detection, and SAM2-LARGE [54] for segmentation. 
+
+Analyses on skills usage. Fig. 4 shows that skill usage decreases from early to late inference stages as the episodic bank accumulates accepted trajectories. Detection and segmentation remain the dominant skills because they provide spatially grounded evidence, while interaction imagination and web search are invoked selectively when the verifier detects semantic ambiguity or insufficient support. This pattern is consistent with the intended role of the Router: auxiliary skills are reserved for cases where their expected diagnostic value justifies the added cost. 
+
+Sensitivity Analysis on Common-Sense Bank. We vary both the num-ber of categories and the number of samples per category in the common-sense bank. Increasing category coverage improves all metrics on ReasonAff and UMD (Fig. 5(a)(b)), but the gains flatten beyond roughly 200 categories, suggesting that additional categories become less useful once common functional patterns are covered. Denser sampling within each category (Fig. 5(c)(d)) primarily im-proves cIoU , indicating that repeated exemplars help the system stabilize larger affordance regions rather than only detecting small contact points. 
+
+Ablation on MCS : Common-Sense Source and Exemplar Difficulty. To isolate the role of common-sense memory, we evaluate on the RAGNet-family benchmarks (3DOI and HANDAL) in a zero-shot setting while varying the source and difficulty of MCS .Table 3 shows that the empty-bank variant is already competitive, while memory quality changes transfer behavior. UMD exemplars ( a) help HANDAL-easy but not HANDAL-hard; RAGNet exemplars ( b) transfer more uniformly; and the mixture ( c) improves HANDAL-hard yet lowers 3DOI cIoU, suggesting that source mismatch can inject retrieval noise. Difficulty has a complementary 14 Preprint 
+
+Table 3. Zero-shot comparison with baselines and ablation on MCS . Top block: zero-shot baselines. Bottom blocks: ablation over MCS source ( a–c) and exemplar difficulty ( d–g). a/b/c: banks from UMD, RAGNet, and their 1 : 1 mixture; d/e and 
+
+f /g pair HANDAL-easy/-hard exemplars with GPT-4o [1] and Claude-Sonnet-4.6 [4], respectively. A-Harness (w/o MCS ) means the common-sense bank is empty. 
+
+Method / Setting 3DOI HANDAL-easy HANDAL-hard gIoU ↑ cIoU ↑ gIoU ↑ cIoU ↑ gIoU ↑ cIoU ↑
+
+G-DINO [36] 4.1 3.9 3.6 3.0 3.4 3.1 LISA [31] 12.3 8.1 15.5 11.9 12.3 8.1 GLaMM [53] 4.4 2.9 4.7 3.5 5.0 3.5 Vision-Reasoner [38] 39.6 30.3 29.6 19.8 27.7 16.7 Affordance-R1 [67] 39.0 33.4 43.1 38.7 40.7 37.9 AffordanceVLM [70] 38.1 39.4 58.3 58.1 58.2 57.8 A-Harness (w/o MCS ) 56.5 47.2 58.4 57.6 55.3 55.1 w/ MCS -a 57.9 50.9 62.4 62.1 49.8 47.4 w/ MCS -b 63.8 52.0 61.4 63.3 60.6 61.0 w/ MCS -c 59.3 45.4 62.7 60.4 62.8 61.7 
+
+w/ MCS -d 64.1 52.8 61.8 61.7 48.0 42.5 w/ MCS -e 61.2 51.3 59.1 61.9 57.9 56.5 w/ MCS -f 65.6 53.7 63.5 61.8 55.2 49.7 w/ MCS -g 62.2 52.1 60.2 58.9 59.4 59.1 
+
+effect: easy exemplars ( d/f ) help out-of-domain transfer, whereas hard exem-plars ( e/g) support difficult in-domain cases. Thus memory construction should balance source coverage and exemplar hardness. 
+
+Case study and computational complexity. Appendix B.3 visualizes representa-tive success and failure cases, focusing on how the Verifier redirects the Router when intermediate evidence conflicts or remains insufficient. Appendix B.2 re-ports the cost profile: most samples are resolved after one detection call, while additional calls are concentrated on hard cases; performance gains diminish be-yond three calls, motivating the early-exit threshold used in our default budget. 
+
+## 5 Conclusion 
+
+We presented Affordance Agent Harness, a closed-loop runtime that replaces fixed affordance pipelines with budgeted, per-instance skill orchestration. A-Harness gates commitments with relative checks for cross-skill agreement, cross-scale stability, and evidence sufficiency; when a check fails, it triggers targeted recovery instead of passing errors to late fusion. Its two-tier memory amor-tizes successful experience across recurring objects and episodes, turning prior trajectories into reusable action priors. Across benchmarks, this improves the accuracy–cost trade-off by adding skills only when evidence is insufficient, show-ing that open-world visual reasoning needs runtimes that decide what to acquire, when to stop, and how to recover from unreliable outputs, not only stronger in-dividual models. Affordance Agent Harness 15 
+
+## A Additional Methodology 
+
+A.1 Details on choosing wτ
+
+In practice, wτ follows a coarse reliability prior: evidence that is spatially grounded 
+
+and directly produced in the image frame (e.g., high-resolution segmentation un-der a verified ROI) receives higher weight, while evidence that is indirect or noisy 
+
+(e.g., web-retrieved text/images with potential domain mismatch) receives lower weight. Accordingly, we use a coarse initialization such as 
+
+wseg > w det > w dream ≳ wweb , (13) which reflects the empirical property that some tools are systematically noisier: for instance, web search often retrieves irrelevant or style-mismatched content, thus it should contribute to sufficiency only when corroborated by grounded visual evidence. In all reported experiments, we initialize wseg = 0 .35 , wdet = 0 .30 , wdream =0.20 , and wweb = 0 .15 . At each step t, these weights are modulated by three multiplicative reliability factors: 
+
+ew(t) 
+
+> τ
+
+= wτ · ρ(t) 
+
+> τ
+
+· ϕ(t) 
+
+> τ
+
+· ψ(t) 
+
+> τ
+
+, (14) where ρ(t) 
+
+> τ
+
+∈ [0 , 1] is the tool’s self-confidence (e.g., SAM2’s mask score), ϕ(t)
+
+> τ
+
+indicates cross-tool corroboration, and ψ(t) 
+
+> τ
+
+= ⊮[ζ(t) 
+
+> τ
+
+≥ 0.7] indicates cross-scale stability. For spatial evidence, we instantiate corroboration as ϕ(t) 
+
+> τ
+
+= ⊮[∃ ξ′ ∈
+
+Et \ { ξ} : IoU( ξ, ξ ′) ≥ 0.5] ; for non-spatial evidence such as retrieved text or web cues, we instead use semantic agreement with the currently verified visual evidence and instruction. The updated weights are re-normalized to sum to one before use in the sufficiency computation. This ensures that well-corroborated, stable evidence retains its full weight, while uncorroborated or drifting outputs (e.g., noisy web retrieval) are suppressed toward zero. Beyond this hand-crafted modulation, one could further let the Verifier/Router predict wτ from richer tool metadata and reliability signals, but this optional extension is not used in the reported results. 
+
+A.2 Full Instantiation of d∆v 
+
+We instantiate c∆v (u; zt) via a two-stage procedure. 
+
+Verifier-Gap Heuristic. When commitment is denied, the Verifier identifies the dominant deficiency ℓt ∈ { ω, ζ, μ } and proposes a corrective action uprop =
+
+Γ (ℓt): ω-failure triggers ROI refinement and re-segmentation; ζ-failure triggers 
+
+2× zoom-in with re-detection; μ-failure invokes a complementary unused skill (Dreamer for familiar categories, web search otherwise). For each candidate u,the estimated gain is: 
+
+c∆v (u; zt) = 
+
+(λℓt · (τℓt − ℓ(t) 
+
+> t
+
+)+ if u = uprop ,λℓ′ · (τℓ′ − ℓ′(t))+ · ηoff otherwise , (15) 16 Preprint 
+
+where λℓ are dimension-specific scales ( λω =1 .0, λζ =0 .8, λμ=0 .6), τℓ denotes the retry threshold for diagnostic dimension ℓ (with τω = ω and analogous thresholds for ζ and μ), and ηoff =0 .5 discounts off-target actions, so the Verifier’s proposal receives the highest expected gain while the Router may override it for a more cost-effective alternative. 
+
+LLM Fallback. When the top-2 candidates are near-tied ( <10% gap) or the same deficiency persists for two consecutive retries, the Router delegates to the LLM decision brain, which receives the evidence summary ψ(Et), di-agnostic scores, available skills, and retrieved memory entries, and outputs a JSON-formatted action with a rationale. In practice, ∼85% of routing decisions are resolved by the heuristic alone. 
+
+## B Additional Experiments 
+
+B.1 Experiment Settings Dataset Details. We evaluate A-Harness on three primary benchmarks, each targeting different aspects of affordance reasoning and grounding: 
+
+– ReasonAff [67]: This dataset focuses on reasoning-heavy affordance tasks. It contains complex instructions that require the model to understand the functional intent behind an interaction ( e.g ., “find a place to hold the cup safely”). We use the test split consisting of 600 high-quality image–task pairs. 
+
+– UMD Part Affordance [46]: A classic benchmark for part-level affor-dance. It covers 17 object categories ( e.g ., bowl, hammer, saw) and 7 af-fordance types ( e.g ., grasp, cut, scoop). We follow the standard sampling protocol, using 2,004 test images to ensure a robust evaluation of category-level generalization. 
+
+– RAGNet [70]: A large-scale benchmark for reasoning-driven affordance. We evaluate on two subsets: RAGNet-3DOI , which focuses on 3D object interactions in diverse scenes, and RAGNet-HANDAL , which emphasizes hand-object alignment and tool usage. The combined test set includes 3,018 image–task pairs. 
+
+Implementation Details. 
+
+Hardware and Software Environment. All experiments are conducted on a server equipped with 8 × NVIDIA H100 (80GB) GPUs and an Intel(R) Xeon(R) Plat-inum 8480+ CPU. The software environment is based on Python 3.10, PyTorch 2.4.0, and CUDA 12.2. For API-based models used in our study, we use the official Python SDKs with a consistent temperature setting of 0.0 to ensure reproducibility. Affordance Agent Harness 17 
+
+Skill Configurations. 
+
+– Detection: We use Qwen3-VL-235B-A22B as the default detector. For each detection call, we provide the original image and the instruction q, request-ing the model to output bounding boxes in [xmin , y min , x max , y max ] format normalized to [0 , 1000] .
+
+– Segmentation: SAM2-Large is employed for mask generation. When the Router provides a point prompt, we use the highest-confidence mask output by SAM2. For box prompts, we use the bounding box to constrain the initial search area. 
+
+– Web Search: We utilize the Google Search API to retrieve the top-3 rele-vant text snippets and, if available, 2 reference images for the given object-affordance pair. In the commit rule, the squashing function σ(·) is implemented as a sigmoid, mapping the model-produced sufficiency value to [0 , 1] before aggregation into the commit score. 
+
+Memory. The common-sense bank Mcs is pre-populated with 200 categories from the training sets of ReasonAff and UMD. Each category contains 5 diverse exemplars. The retrieval embeddings are computed using a concatenated feature vector from DINO-v3-Large and SigLIP-SO400M, providing both geometric and semantic alignment. 
+
+Baseline Configurations To ensure a rigorous evaluation, we compare A-Harness with representative baselines covering complementary capability sources: 
+
+– Open-Vocabulary Segmenters: We include VLPart [63], OVSeg [34], and SAN [75]. These models rely on large-scale pre-training to segment objects from natural language descriptions but lack explicit affordance reasoning. 
+
+– Instruction-Conditioned LMMs: LISA [31] and GLaMM [53] are eval-uated as representatives of models that output masks directly from text instructions. We use their respective 7B/13B variants with default prompts. 
+
+– Affordance-Specialized Models: We compare against AffordanceLLM [51], AffordanceVLM [70], and the recent Affordance-R1 [67]. These models are either fine-tuned on affordance datasets or use specialized reasoning chains. 
+
+– Reasoning-Augmented Models: Seg-Zero [37], VisionReasoner [38], and ConverSeg [56] are included to contextualize our performance against sys-tems that incorporate richer semantic or multi-step reasoning for segmenta-tion. In particular, ConverSeg targets conversational and abstract concept grounding, including affordances and functions, but remains a feed-forward segmentation model rather than a closed-loop agent. 
+
+Evaluation Metrics. We evaluate affordance grounding with four complemen-tary metrics following established protocols in affordance prediction [66, 67] and semantic segmentation [8, 89]: 18 Preprint           
+
+> Table 4. Default hyperparameter configurations for A-Harness.
+> Hyperparameter Value
+> Ccs 1000
+> Ctt 80
+> N2
+> B3
+> δ0.8
+> ω0.5
+> α0.5
+> β0.3
+> γ0.2
+
+– gIoU (Generalized IoU): The mean Intersection-over-Union calculated across all test samples, reflecting the overall segmentation fidelity at the instance level. 
+
+– cIoU (Cumulative IoU): The ratio of the total intersection area to the total union area across the entire dataset, offering a global measure of pre-diction robustness. 
+
+– P@50 (Precision at 0.5): The proportion of samples where the prediction IoU exceeds the 0.5 threshold, evaluating the system’s ability to achieve reliable localization. 
+
+– P@50:95: The average precision computed across a range of IoU thresholds from 0.50 to 0.95 (with a step of 0.05), providing a stringent evaluation of spatial alignment and boundary precision. 
+
+Hyperparameter Configuration. Table 4 summarizes the default hyperpa-rameter configurations used in our experiments. These values are selected based on the sensitivity analyses presented in the following sections to achieve an op-timal balance between grounding accuracy and computational cost. 
+
+Prompt of A-Harness. We provide the prompts used in A-Harness for com-pleteness. The full system prompt is shown in Figs. 6–11. The prompt for the detection model is shown in Figs. 12 and 13, and the prompt for interaction imagination is shown in Fig. 14. 
+
+B.2 Further analysis Computational complexity analysis. The majority of samples ( e.g. , 500/600 on ReasonAff, 1,127/2,004 on UMD) resolve within a single detection call, achiev-ing strong grounding performance at minimal token cost, confirming that easy instances are handled efficiently without unnecessary computation. For harder samples requiring 2-3 retries, token consumption grows proportionally, demon-strating that the system adaptively allocates greater computational effort to Affordance Agent Harness 19 You are an affordance grounding agent operating inside the A-Harness runtime. 
+
+## Task 
+
+Given a scene image and a task instruction, your goal is to produce a segmentation mask that 
+
+identifies the relevant object part(s) for the described affordance. The `detection` skill 
+
+localizes the actionable region, and its output is passed to `segmentation` (SAM2-Large) to 
+
+produce the final pixel-level mask — together they form your final output. 
+
+Tasks may involve single or multiple targets. For example, "sit on the bench" may require 
+
+detecting all seat sections, while "press down handle to turn on faucet" focuses on one handle. 
+
+Analyze the task carefully to determine what needs to be detected. 
+
+You are **not ** a one-shot pipeline. You operate in a closed loop: gather evidence, verify it, and 
+
+commit only when the evidence is strong enough — or when you run out of budget. 
+
+---
+
+## Memory System 
+
+Before your first decision step, the system retrieves the top-**2** most relevant entries from 
+
+a multi-layered memory: 
+
+- **Common-sense Bank ** — prototypical affordance exemplars collected offline. Each entry 
+
+includes a task description, scene image, reference mask, and a **relevance score ** computed 
+
+during retrieval. A high score means the object and affordance closely match your current 
+
+task — use it as a strong visual/semantic prior. A low score means the template may be 
+
+misleading: a template for "cup-grasp" is not useful if your task is about "knife-cut". In that case, 
+
+rely more on tool evidence than on the template. 
+
+- **Test-time Bank ** — records of recent successful executions that **passed the Verifier **.
+
+Each entry stores: the skill-call sequence used, effective parameter ranges, an evidence 
+
+summary, and the outcome score. When a retrieved episode closely matches your current task, 
+
+replicate its strategy; when it partially matches, adapt parameters from its recorded ranges. 
+
+Unverified trajectories are **not ** stored here — everything in this bank has been accepted by 
+
+the Verifier. 
+
+- **Experience Capsules ** — compressed summaries of older episodic entries that were evicted 
+
+when the bank reached capacity. They retain robust parameter ranges and outcome patterns but 
+
+lack full detail. Treat them as coarse reference. 
+
+**Key rules for memory usage: **
+
+- Memory is prior guidance, not ground truth. 
+
+- If a memory entry conflicts with evidence produced by tools on the **current image **, trust 
+
+the skill evidence — it comes directly from the scene you need to solve. 
+
+- Focus your learning on verified episodes: positive examples (what worked) and negative 
+
+System P rompt 
+
+Fig. 6. The first page of the system prompt. 20 Preprint examples (what failed) are equally informative. 
+
+---
+
+## Available Tools 
+
+You have access to the following tools. Each call costs **1 unit ** against your skill-call budget. 
+
+- **detection ** (`skills/detection/`) — Localizes the actionable region by outputting a keypoint 
+
+on the affordance area. This is the final localizer: its output is fed to `segmentation` to produce 
+
+the mask. It must always receive the **original image path **, not any cropped or generated 
+
+image. Use the `task_context` field to pass your full analysis: what the target part is, what you 
+
+learned from memory and tools, spatial information, cross-tool agreement status, and your 
+
+reasoning. 
+
+- **segmentation ** (`skills/segmentation/`) — Generates a pixel-level binary mask via SAM2-
+
+Large from a point or box prompt. When multiple masks are returned, use the **highest-
+
+confidence ** one. 
+
+- **zoom_in ** (`skills/zoom-in/`) — Crops and enlarges a region for closer inspection. Use this 
+
+to resolve scale ambiguity or to verify cross-scale stability of a prediction. 
+
+- **web_search ** (`skills/web-search/`) — Retrieves text snippets and 2 reference images for 
+
+the object-affordance pair. 
+
+- **imagination_interaction ** (`skills/imagination_interaction/`) — Generates interaction 
+
+visualizations showing how a human would interact with the object. Supplementary signal. 
+
+---
+
+## Dynamic Parameters 
+
+All tools accept additional key-value pairs beyond their standard parameters. You can freely 
+
+define and pass any extra fields to customize tool behavior based on your analysis. Each tool's 
+
+function definition describes its standard parameters; any additional key-value pairs you pass will 
+
+be treated as dynamic hints. 
+
+---
+
+## Evidence Tracking 
+
+Every tool output is automatically wrapped into a structured evidence record: 
+
+``` 
+
+{type, payload, roi, scale, skill_id, cost, step} 
+
+``` 
+
+System P rompt 
+
+Fig. 7. The second page of the system prompt. Affordance Agent Harness 21 You should mentally track for each piece of evidence: 
+
+- **Which skill ** produced it (the `skill_id`) 
+
+- **Whether it is corroborated ** by another tool's output (e.g., detection box and segmentation 
+
+mask overlap in the same ROI) 
+
+- **Whether it is stable ** across scales (prediction doesn't drift when you zoom in and project 
+
+back) 
+
+- **Whether it conflicts ** with other evidence 
+
+This provenance tracking is critical for the Verifier checks below. 
+
+---
+
+## Verifier & Commit Gate 
+
+Before committing to a final output, you must evaluate three diagnostic axes. All are normalized 
+
+to [0, 1]: 
+
+1. **Consistency (`ω`) ** — Cross-tool agreement. Do your detection boxes and segmentation 
+
+masks converge on the same region? Measured as IoU between the latest grounded predictions 
+
+within the same ROI. If they point to different areas, consistency is low. 
+
+2. **Stability (`ζ`) ** — Cross-scale invariance. If you zoomed in, does the prediction stay in the 
+
+same place when projected back to the original frame? Measured as 1 minus the mean drift 
+
+across scale pairs. If predictions "wander" under re-cropping, stability is low. 
+
+3. **Sufficiency (`μ`) ** — Evidence breadth. Is the current hypothesis backed by enough 
+
+independent support? Computed as a weighted sum over evidence items, where each tool type has 
+
+a base weight reflecting its reliability: 
+
+``` 
+
+w_seg = 0.35 w_det = 0.30 w_dream = 0.20 w_web = 0.15 
+
+``` 
+
+These weights are dynamically modulated by three reliability factors before use: 
+
+- **Self-confidence **: the tool's own confidence score (e.g., SAM2 mask score). Range [0, 1]. 
+
+- **Cross-tool corroboration **: does this evidence overlap with output from a different tool? 
+
+(IoU ≥ 0.5 → factor = 1, else 0) 
+
+- **Cross-scale stability **: is this evidence stable across zoom levels? (stability ≥ 0.7 → factor = 
+
+1, else 0) 
+
+Evidence that is uncorroborated or unstable is effectively zeroed out and should not count 
+
+toward sufficiency. 
+
+System P rompt 
+
+Fig. 8. The third page of the system prompt. 22 Preprint **Commit score: **
+
+``` 
+
+v = 0.5 × ω + 0.3 × ζ + 0.2 × σ(μ) 
+
+``` 
+
+where σ(·) is a squashing function. 
+
+**Commit rule: ** You may commit (terminate evidence collection and produce the final output) 
+
+**only if **:
+
+- `v ≥ 0.8` (global acceptance threshold), **AND **
+
+- `ω ≥ 0.5` (consistency floor — prevents commitment when tools fundamentally disagree) 
+
+If either condition fails and you still have budget, you **must ** continue gathering evidence 
+
+rather than committing with weak support. 
+
+When the Verifier reports its judgment, keep the write-up compact and aligned with the case-
+
+study style. Use the following structure: 
+
+`Verifier Diagnostics:` 
+
+- `Cross-skill consistency (ω_t):` give **1 short sentence ** describing the current grounded 
+
+observation and whether tools agree on the same region, then report the score. 
+
+- `Cross-scale stability (ζ_t):` give **1 short sentence ** describing whether the prediction 
+
+drifts across zoom levels, then report the score. 
+
+- `Evidence sufficiency (μ_t):` give **1 short sentence ** describing whether the current 
+
+hypothesis has enough independent support, then report the score. 
+
+- `Composite:` report the formula and final `v_t`. 
+
+- `Verifier Verdict:` output only `ACCEPT` or `REJECT`. 
+
+After the bullets, add a **2-3 sentence summary ** that: 
+
+1. briefly synthesizes what the current evidence supports, 
+
+2. states the main remaining uncertainty or conflict if any, 
+
+3. concludes whether the hypothesis is strong enough to commit. 
+
+Do **not ** write long explanations, restate all evidence, or repeat the same point across bullets 
+
+and summary. The diagnostic bullets should describe concrete observations; the summary should 
+
+be the short closed-loop conclusion. 
+
+When the Verifier denies commitment, it must also identify the dominant deficiency (the axis 
+
+with the largest gap to its threshold) together with a **proposed corrective action **:
+
+- `ω` low → proposed action: refine ROI, re-segment or re-localize in the conflicting region 
+
+- `ζ` low → proposed action: `zoom_in` on the target, re-detect, project back and recheck 
+
+- `μ` low → proposed action: invoke a complementary unused tool (`dreamer` for familiar 
+
+categories, `web_search` for unfamiliar ones) 
+
+System P rompt 
+
+Fig. 9. The fourth page of the system prompt. Affordance Agent Harness 23 ---
+
+## Router: Skill Selection 
+
+The Router receives the Verifier's diagnostic and proposal, then selects the next action by 
+
+choosing the skill that maximizes the expected increase in verifier score per unit cost: 
+
+``` 
+
+u = argmax Δv(u; z_t) / cost(u) 
+
+``` 
+
+In most cases (~85%), the Router directly follows the Verifier's proposed corrective action. The 
+
+Router overrides only when: 
+
+- The top-2 candidate actions are within a **10% score gap ** (near-tied), or 
+
+- The **same deficiency persists for 2 consecutive retries **
+
+In these cases, the Router switches to full deliberation — reviewing all accumulated evidence 
+
+and memory from scratch and selecting the action with the clearest rationale. 
+
+You can call the same tool multiple times with **different parameters or approaches ** (e.g., 
+
+different zoom regions, different search queries, different interaction types for dreamer). 
+
+Explore from multiple angles until you have enough reliable information. 
+
+When explaining the Router decision, keep it short and directly tied to the Verifier output: name 
+
+the dominant deficiency, say why the selected tool is the best next step, and avoid repeating the 
+
+full diagnostic again. 
+
+---
+
+## Budget 
+
+You have a limited skill-call budget: **B = 3 ** calls by default. 
+
+- Most easy samples should resolve in **1 call ** (detection → segmentation). 
+
+- Moderate samples typically need **1–2 calls **.
+
+- Reserve the 3rd call for cases where the Verifier identifies a clear unresolved deficiency. 
+
+- When the budget is exhausted, **stop immediately ** and commit with the best available 
+
+evidence. Do not request additional calls. 
+
+---
+
+## Your Role 
+
+You are an intelligent agent, not a pipeline. At each step you perform two roles: 
+
+System P rompt 
+
+Fig. 10. The fifth page of the system prompt. 24 Preprint 1. **As Verifier ** — Review accumulated evidence, compute the three diagnostic axes (ω, ζ, μ), 
+
+and produce a compact diagnosis in the format above. 
+
+2. **As Router ** — Use that diagnosis to select the next action with the clearest expected 
+
+benefit under the remaining budget. 
+
+3. **Explain briefly ** — Keep both Verifier and Router explanations concise, concrete, and 
+
+stylistically consistent with the case studies. 
+
+Before calling `detection` for the final commit, perform an explicit **source reliability 
+
+evaluation ** for every information source (memory entries, common-sense templates, each tool 
+
+result): 
+
+- Rate each source as high / medium / low reliability, with a brief reason. 
+
+- For common-sense templates: check the relevance score and whether the template's 
+
+object/affordance truly matches your task. 
+
+- Favor verified and spatially grounded evidence; downweight noisy, contradictory, or indirect 
+
+signals. 
+
+- If evidence is insufficient or unreliable, **revise your strategy ** and continue tool calls rather 
+
+than committing with weak support. 
+
+- If the budget is exhausted, pass the **most reliable information you have ** to detection, even 
+
+if it is imperfect. 
+
+The `task_context` field in `detection` is where you summarize everything: target part, 
+
+retrieved priors, current evidence, ROI/scale information, cross-tool agreement or 
+
+disagreement, and why you believe this region is the correct actionable area. 
+
+System P rompt 
+
+Fig. 11. The sixth page of the system prompt. Affordance Agent Harness 25 Given the image(s) of a scene, the task is to predict the interactive region (affordance) of the 
+
+object that matches the provided task instruction. The task instruction is "{object_part}". 
+
+Affordance = the specific region a human would physically interact with to accomplish the 
+
+described action. 
+
+You may receive the following inputs in order: 
+
+- **Reference images ** (optional): Supplementary images for visual context — interaction 
+
+visualizations, similar exemplar scenes and their ground-truth masks, or other visual references. 
+
+These are for understanding only — do NOT output coordinates for them. 
+
+- **Target scene image **: The main image you need to analyze. Output coordinates ONLY for 
+
+this image. 
+
+- **Context instructions ** (optional): Analysis and guidance specifying WHICH target(s) to 
+
+detect, HOW MANY, and what to focus on. **You MUST follow these instructions. **
+
+**Follow these reasoning steps **:
+
+1. Read the task instruction carefully — determine whether it requires detecting ONE target or 
+
+MULTIPLE targets. Singular phrasing ("the handle", "where to grip") means one; plural phrasing 
+
+("all buttons", "every handle") means multiple. If context instructions specify the count, follow 
+
+them. 
+
+2. Identify the key components of the object in the target scene image (e.g., shape, features, 
+
+possible points of interaction). 
+
+3. If reference images are provided, study them to understand how the object is interacted with 
+
+in relation to the given affordance type. Then return to the target scene image. 
+
+4. If context instructions are provided, follow them to determine which object/part to focus on. 
+
+5. Ground the target part(s) in the image. The bounding box should be as tight as possible. Each 
+
+bounding box corresponds to exactly ONE key point — the point must be accurately located on 
+
+the solid surface of the target part inside that bounding box. 
+
+- Key points seed a segmentation model (SAM2) — they MUST land directly ON the solid pixel 
+
+surface of the target part, not on background or empty space. 
+
+- Do NOT default to the bounding box center. The center often falls on empty space (hole 
+
+inside a handle, gap between legs, background behind a thin bar). 
+
+- For hollow/ring-shaped parts (handle, ring, loop): point on the SOLID MATERIAL you would 
+
+grip, NOT in the hole. 
+
+- For thin/elongated parts (edge, rim, blade): point on the thickest visible section. 
+
+- Self-check: "If I draw a small circle around this point, would MOST pixels belong to the target 
+
+part?" If not, move the point. 
+
+**CRITICAL - TARGET COUNT DETERMINATION (read the task carefully) **:
+
+- The number of targets depends on what the TASK DESCRIPTION asks for. Do NOT blindly 
+
+detect every similar-looking object in the scene. 
+
+- **Singular tasks ** ("which handle would you grip", "the handle of the kettle", "where would you 
+
+place your hand"): detect exactly ONE target — the specific instance the task refers to. 
+
+- **Plural / exhaustive tasks ** ("all drawer handles", "every button on the remote", "the seat 
+
+sections of the bench"): detect ALL matching instances, including partially occluded ones. 
+
+- **Ambiguous cases **: if the context instructions specify a target count or identify which 
+
+instance(s) to focus on, follow that guidance. 
+
+Prompt for Detection model (Qwen3-vl-235b-a22b) 
+
+Fig. 12. The first page of the prompt for detection model. 26 Preprint - When multiple similar objects exist but the task singles out one (e.g., "the top suitcase" among 
+
+a stack), detect ONLY the one the task refers to. 
+
+**CRITICAL - POINT PLACEMENT (affects segmentation quality) **:
+
+- The point is a seed for a segmentation model (SAM2). SAM2 generates a mask by growing 
+
+outward from this point. If the point lands on the wrong surface, the entire mask will be wrong. 
+
+- The point MUST land directly ON the visible pixel surface of the target object part — not on 
+
+background, not on empty space, not on a different object. 
+
+- Do NOT simply use the geometric center of the bounding box as the point. The bbox center 
+
+often falls on empty space (e.g., the hole inside a handle, the gap between chair legs, the 
+
+background behind a thin bar). 
+
+- Instead, visually identify the most representative solid surface area of the target part and 
+
+place the point there. 
+
+- For hollow/ring-shaped parts (cup handle, ring, loop): place the point on the SOLID MATERIAL 
+
+of the handle (the bar/arc you would grip), NOT in the hole or gap inside the loop. 
+
+- For thin/elongated parts (edge, rim, handle bar, blade): place the point on the thickest visible 
+
+section of that part. 
+
+- For concave parts (bowl interior, cup interior): place the point inside the concave surface, not 
+
+on the rim. 
+
+- Self-check: "If I draw a small circle around this point, would MOST pixels in that circle belong 
+
+to the target part?" If not, move the point. 
+
+**Coordinate system & units **:
+
+- Image origin is the top-left corner (0, 0). 
+
+- x increases to the right; y increases downward. 
+
+- Use relative coordinates in range [0, 1000], where (0, 0) is top-left and (1000, 1000) is bottom-
+
+right. 
+
+- All x, y values MUST be integers between 0 and 1000. 
+
+**Output format **:
+
+### Thinking 
+
+thinking process 
+
+### Output 
+
+{{ 
+
+"task": "the task instruction", 
+
+"object_name": "the name of the object", 
+
+"object_part": "the [object part] of the [object name] (e.g. the blade of the shears)", 
+
+"part_bbox": [[x1_min, y1_min, x1_max, y1_max], [x2_min, y2_min, x2_max, y2_max], ...], 
+
+"key_points": [[x1, y1], [x2, y2], ...] 
+
+}} 
+
+Prompt for Detection model (Qwen3-vl-235b-a22b) 
+
+Fig. 13. The second page of the prompt for detection model. Affordance Agent Harness 27 """You are an "Imagination-driven Image-Editing Prompt Writer". 
+
+Input: (a) an image, (b) a TASK description. 
+
+Task: Based on the input image and TASK, imagine a person or another object interacting with a 
+
+target object within the scene to do the task. Then, produce ONE concise, photorealistic image-
+
+editing prompt to be used by a downstream model to edit the image , depicting this interaction. 
+
+Requirements: 
+
+- The prompt must clearly describe the interaction, including the action, the state of the target 
+
+object, and any necessary manipulators (e.g., a person's hand, a tool). 
+
+- Refer to the existing object and scene; do not replace them. 
+
+- Preserve the identity (shape, texture, color) of existing objects and the background. The 
+
+camera viewpoint should remain unchanged. 
+
+- If introducing a person, describe the pose and action of the relevant body parts (e.g., a hand 
+
+gripping a handle) realistically. 
+
+- Enforce physical plausibility: the scale, perspective, lighting, and shadows of any new elements 
+
+must seamlessly match the original image. 
+
+- Ensure all occlusions are logical. 
+
+Output format: 
+
+- Output ONLY the editing prompt text (no JSON, no lists, no quotes, no explanations). 
+
+- Begin with "Edit the input image to..." and keep it to 1-3 sentences plus a short style clause (e.g., 
+
+"photorealistic, seamless inpainting"). 
+
+- End with "keep others unchanged".""" 
+
+Prompt for Interaction I magination 
+
+Fig. 14. The prompt for interaction imagination. 28 Preprint                                                                      
+
+> Table 5. Computational cost and performance across detection retry counts on Rea-sonAff and UMD datasets. Each row reports the number of samples resolved at that retry count, the mean token consumption, and the corresponding gIoU/cIoU scores, with a horizontal rule separating samples solved within 3 retries from those requiring more. These statistics are computed without enforcing the default budget truncation
+> B=3 , and are included to show the unconstrained retry tail.
+> Det Calls NMean Tokens gIoU cIoU ReasonAff UMD ReasonAff UMD ReasonAff UMD ReasonAff UMD
+> 1500 1,127 4,716 4,648 0.7437 0.6720 0.7429 0.6768 265 365 7,309 7,207 0.5193 0.4865 0.4472 0.4885 321 219 11,081 9,855 0.3423 0.4213 0.3065 0.4588 46105 15,464 12,585 0.3067 0.3101 0.2964 0.3022 5577 17,279 15,622 0.3182 0.2680 0.2590 0.2608 6141 21,012 18,415 0.2625 0.1854 0.2625 0.1512 7258 23,439 20,652 0.2717 0.1502 0.2955 0.0935 8-12 -22,587 -0.1245 -0.0964
+
+more challenging instances. Unless otherwise stated, the main experiments use a skill-call budget of B=3 ; by contrast, the statistics in Table 5 are collected 
+
+without truncating runs at this budget, so as to expose the full tail behavior of repeated detection retries. 
+
+Efficiency comparison against fixed-pipeline baselines. Table 6 compares our method against three fixed-workflow baselines on ReasonAff and UMD, re-porting both accuracy (gIoU, cIoU) and efficiency metrics (average tokens, la-tency, and estimated API cost). Among them, “Det. & Seg.” and “Full Fixed Chain” are our own baselines: the former uses a minimal workflow with only detection and segmentation, while the latter executes all skills described in our framework in a fixed order for every sample. For A4-Agent [85], we report results reproduced from the authors’ released code; A4-Agent can be viewed as a fixed workflow mainly built on interaction imagination, detection, and segmentation. Because some detailed experimental settings were unavailable, our reproduced A4-Agent results are lower than those reported in the original paper, and should therefore be interpreted as a conservative reference under our evaluation setup. As shown in Table 6, our method achieves the best overall accuracy on both benchmarks while remaining substantially more efficient than heavier fixed work-flows. Compared with the Full Fixed Chain, ours reduces token usage, latency, and cost by a large margin, while also improving both gIoU and cIoU, showing that adaptive routing avoids unnecessary skill calls without sacrificing perfor-mance. Compared with the lighter baseline that uses only detection and segmen-tation, our method introduces only moderate overhead but yields clear gains in grounding quality, indicating that verification and selective retries mainly spend extra computation on genuinely difficult cases. Overall, these results support that Affordance Agent Harness 29 
+
+Table 6. Efficiency comparison on ReasonAff and UMD under a unified evaluation setup. Results are reported as mean ± standard deviation over three runs. “Det. & Seg.” is our minimal baseline that invokes detection and segmentation once per sample, “Full Fixed Chain” is our fixed-workflow baseline that executes all available skills in a pre-defined order, and A4-Agent [85] is reproduced from the authors’ released code under our environment. 
+
+Method ReasonAff UMD gIoU ↑ cIoU ↑ Tokens ↓ Lat.(s) ↓ Cost($) ↓ gIoU ↑ cIoU ↑ Tokens ↓ Lat.(s) ↓ Cost($) ↓
+
+Det. & Seg. 51.86 ±0.42 43.73 ±0.37 3,842 ±96 4.1 ±0.2 1.92 ±0.05 46.53 ±0.45 37.77 ±0.41 3,710 ±88 3.9 ±0.2 1.86 ±0.04 
+
+Full Fixed Chain 55.05 ±0.56 49.57 ±0.49 9,578 ±141 12.3 ±0.4 4.79 ±0.09 50.19 ±0.52 49.24 ±0.46 9,215 ±133 11.8 ±0.3 4.61 ±0.08 
+
+A4-Agent (GPT-4o) [85] 56.87 ±0.61 52.15 ±0.55 6,978 ±124 10.1 ±0.6 3.88 ±0.11 50.92 ±0.58 49.77 ±0.51 6,747 ±117 9.6 ±0.4 3.74 ±0.06 
+
+ours 60.53 ±0.48 54.91 ±0.44 5,247 ±109 5.8 ±0.2 2.62 ±0.05 52.74 ±0.47 50.04 ±0.43 5,831 ±114 6.4 ±0.2 2.92 ±0.05 0 40 80 120 160 200 240 280 
+
+Ctt 
+
+(a) ReasonAff                  
+
+> 40
+> 50
+> 60
+> 70
+> 80
+> 50.9
+> 56.8
+> 60.5 61.2 61.5 61.7 61.7 61.8
+> 41.9
+> 49.5
+> 54.9 55.6 55.9 56.0 56.0 56.0
+> gIoU
+> cIoU
+> Avg. Tokens
+> 040 80 120 160 200 240 280
+
+Ctt 
+
+(b) UMD           
+
+> 35
+> 40
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> 49.5
+> 51.4
+> 52.7 53.1 53.3 53.4 53.5 53.5
+> 41.0
+> 46.2
+> 50.0 50.5 50.7 50.8 50.9 50.9
+> gIoU
+> cIoU
+> Avg. Tokens
+> 1,000
+> 2,000
+> 3,000
+> 4,000
+> 5,000
+> 6,000
+> 7,000
+> 3,820
+> 4,580
+> 5,210
+> 5,680
+> 6,050
+> 6,350
+> 6,680
+> 7,020
+> 1,000
+> 2,000
+> 3,000
+> 4,000
+> 5,000
+> 6,000
+> 7,000
+> 3,760
+> 4,490
+> 5,080
+> 5,530
+> 5,890
+> 6,180
+> 6,510
+> 6,840
+
+Fig. 15. Sensitivity of episodic memory capacity Ctt on (a) ReasonAff and (b) UMD. Bars show gIoU and cIoU in % (left axis); the line shows average input-token consump-tion per sample (right axis). All runs use GPT-4o as the decision brain. 
+
+our approach offers a better accuracy–efficiency trade-off than fixed pipelines, including prior affordance agents such as A4-Agent. 
+
+Sensitivity analysis on Ctt . As illustrated in Fig. 15, while increasing the episodic bank capacity yields monotonic improvements in gIoU and cIoU across both ReasonAff and UMD, it simultaneously incurs a proportional escalation in average token consumption per sample. This performance gain eventually reaches a saturation point, where the benefit of broader experience coverage is offset by distractive semantic interference from contextually divergent yet semantically similar episodes. Such a plateau suggests that beyond an optimal threshold, additional memory provides diminishing returns while inflating the computational footprint. Consequently, selecting a balanced Ctt is paramount to achieving superior grounding accuracy while preserving an efficient accuracy-cost Pareto frontier. 
+
+Sensitivity analysis on Commitment Gating Thresholds. As shown in Fig. 16, both δ and ω exhibit a consistent accuracy–cost trade-off. A lower δ
+
+yields lenient gating with fewer retries but weaker grounding quality; raising δ30 Preprint 2.2 2.4 2.6 2.8 3.0 3.2 3.4 3.6     
+
+> Avg. Skill Calls per Sample
+> 42
+> 46
+> 50
+> 54
+> 58
+> 62
+> IoU (%)
+> (a)
+> ReasonAff gIoU
+> ReasonAff cIoU
+> UMD gIoU
+> UMD cIoU
+> 0.3 0.4 0.5 0.6 0.7
+> Consistency Floor
+> 44
+> 48
+> 52
+> 56
+> 60
+> IoU (%)
+> (b)
+> ReasonAff gIoU
+> ReasonAff cIoU
+> UMD gIoU
+> UMD cIoU
+
+Fig. 16. Sensitivity analysis of commitment gating thresholds on ReasonAff and UMD. (a) gIoU and cIoU vs. average skill calls per sample under varying δ ∈{0.4, 0.5, 0.6, 0.7, 0.8, 0.9} (left to right along each curve), with ω fixed at 0.5. Each marker corresponds to one δ setting; the circled marker denotes the default δ=0 .8.
+
+(b) gIoU and cIoU under varying consistency floor ω ∈ { 0.3, 0.4, 0.5, 0.6, 0.7}, with δ
+
+fixed at 0.8. 
+
+enforces stricter evidence acceptance, triggering targeted retries for ambiguous cases and steadily improving gIoU and cIoU—yet at the expense of more average skill calls. Beyond δ=0 .8, performance saturates while inference cost continues to grow, indicating diminishing returns. The consistency floor ω follows the same pattern: higher values prevent premature commitment under tool disagreement, but the benefit plateaus beyond ω=0 .5. These results confirm that our default configuration ( δ=0 .8, ω=0 .5) sits at the knee of the accuracy–cost Pareto fron-tier. 
+
+Sensitivity analysis on Retrieval Count N . Table 7 reports the effect of varying the number of retrieved memory references N fed to the Router. Per-formance rises sharply from N =1 to N =2 , with the majority of the accuracy gain already captured by just two retrieved references, and a marginal further improvement at N =3 . Beyond that, grounding quality plateaus and slightly declines at N ≥5, as semantically adjacent but contextually divergent entries in-troduce distracting routing priors. These results indicate that a small number of retrieved references suffices to seed the Router with effective priors. We there-fore use N =2 as the default setting for the main experiments, since it captures most of the benefit with lower retrieval overhead, while N =3 is reported as the best-performing setting in this ablation. 
+
+Sensitivity analysis on Verifier Weights α, β, γ The Verifier aggregates three diagnostic signals via vt = α ω t + β ζ t + γ σ (μt), where α, β, γ weight cross-skill consistency, cross-scale stability, and evidence sufficiency, respectively. Table 8 evaluates eight configurations with α + β + γ = 1 . Ablating any single signal consistently degrades performance across both datasets, with consistency Affordance Agent Harness 31 
+
+Table 7. Sensitivity of retrieval count N on ReasonAff and UMD. 
+
+N ReasonAff UMD gIoU ↑ cIoU ↑ P50 ↑ P50 -95 ↑ gIoU ↑ cIoU ↑ P50 ↑ P50 -95 ↑
+
+1 57.34 50.12 61.85 40.22 49.81 46.53 53.10 26.34 2 60.53 54.91 66.73 45.53 52.74 50.04 57.62 29.85 3 60.89 55.11 67.26 45.67 53.01 50.44 57.84 29.93 
+
+5 60.31 54.40 66.41 45.20 52.48 49.80 57.30 29.61 8 59.87 53.92 65.78 44.53 52.10 49.41 56.82 29.12 10 59.42 53.35 65.10 43.98 51.83 48.96 56.35 28.70 
+
+Table 8. Ablation of Verifier weights (α, β, γ ) on ReasonAff and UMD ( α + β + γ = 1 ). The highlighted row denotes the configuration used in our main experiments.                                                                                  
+
+> Configuration αβγReasonAff UMD gIoU ↑cIoU ↑P50 ↑P50 -95 ↑gIoU ↑cIoU ↑P50 ↑P50 -95 ↑
+> Uniform 0.33 0.33 0.33 57.82 51.10 63.45 42.31 50.31 47.22 54.88 27.43 w/o ω0.00 0.60 0.40 53.14 45.78 58.32 37.90 48.62 44.05 52.10 25.18 w/o ζ0.60 0.00 0.40 57.40 50.93 63.02 42.05 49.88 46.51 54.42 27.08 w/o μ0.60 0.40 0.00 56.85 49.62 62.41 41.58 49.20 45.83 53.74 26.72
+> ω-heavy 0.60 0.25 0.15 59.10 53.22 65.18 44.20 51.85 48.30 56.45 28.92
+> ζ-heavy 0.25 0.60 0.15 55.34 49.01 60.75 40.33 51.20 47.75 55.88 28.14
+> μ-heavy 0.25 0.25 0.50 56.73 50.18 62.10 41.82 50.45 46.98 55.02 27.61
+> Default (Ours) 0.50 0.30 0.20 60.53 54.91 66.73 45.53 52.74 50.04 57.62 29.85
+
+(α) exerting the largest influence—corroborating its role as a hard commitment floor. Stability ( β) contributes more to localization precision (cIoU, P50 ) while sufficiency ( γ) provides a secondary safety net against premature commitment. Over-emphasizing any single dimension also hurts performance, confirming that balanced weighting is preferred. The highlighted row achieves the best overall accuracy–cost trade-off and is adopted as the default configuration. 
+
+B.3 Case study. 
+
+We provide three representative case studies that expose typical failure modes in affordance grounding (Figs. 17–22). Across the examples, the useful behavior is not simply that more tools are called, but that retries are targeted: when evidence is inconsistent, incomplete, or unstable, the Verifier denies commit-ment and the Router selects the skill most relevant to the diagnosed gap. The resulting predictions rely on cross-tool agreement, cross-scale stability, and ev-idence sufficiency rather than any single intermediate output. Compared with fixed-workflow affordance agents such as A4-Agent [85], this design makes the execution path depend on the observed failure mode, which is the key mechanism behind the qualitative improvements. 32 Preprint Input Image & Task Description 
+
+Task: Where would you place your hands to lift 
+
+this bucket from the rocks? 
+
+Memory from common-sense bank 
+
+Memory from test-time bank 
+
+None 
+
+Task: Where would you place the spout of a watering can 
+
+to pour water into this bucket? 
+
+Relevance: 0.49 
+
+Task: Where would you place a heavy object to keep it 
+
+stable inside this bucket without it tipping over? 
+
+Relevance: 0.44 
+
+Skill: Detection & Segmentation 
+
+Qwen3-vl 
+
+GPT-4o 
+
+GPT-4o 
+
+SAM-2 
+
+Fig. 17. The first page of the intermediate results of case 1. Affordance Agent Harness 33 Verifier 
+
+Verifier Diagnostics: 
+
+- Cross-skill consistency (ω_t): only `detection` has been called, so there is no multi-skill conflict. 
+
+The predicted bbox and segmentation mask are internally well aligned within the same ROI, 
+
+indicating high geometric self-consistency — ω_t = 0.86 
+
+- Cross-scale stability (ζ_t): no zoomed / re-cropped prediction is available yet, so cross-scale 
+
+stability is weakly supported rather than verified — ζ_t = 0.42 
+
+- Evidence sufficiency (μ_t): No supporting tools invoked prior to Detection. Commonsense 
+
+templates (relevance less 0.50) provide only a containment-body prior, insufficient to adjudicate 
+
+between handle and body for a lifting task. Evidence too sparse to commit — μ_t = 0.38 
+
+- Composite: v_t =0.5 ×0.86 + 0.3 ×0.45 + 0.2 ×σ(0.38)=0.64 < 0.8 
+
+Verifier Verdict: REJECT .
+
+GPT-4o 
+
+Skill: Detection & S egmentation 
+
+Qwen3-vl SAM-2 
+
+Verifier 
+
+Verifier Diagnostics: 
+
+- Cross-skill consistency (ω_t): only `detection` was used, so there is no inter-skill conflict. 
+
+After reflection, the agent correctly confirmed the target as the bucket body rather than the 
+
+handle or rim; bbox, point, and mask are mutually aligned — ω_t = 0.91 
+
+- Cross-scale stability (ζ_t): no explicit zoom/crop verification was performed, but the target is 
+
+a large, salient foreground region and remained stable across reflection-based re-checking — ζ_t 
+
+= 0.72 
+
+- Evidence sufficiency (μ_t): despite no extra skill calls, evidence is sufficient: verified memory 
+
+supports direct detection for large body/grasp regions, the bucket-body template clarifies the 
+
+target semantics, and reflection resolved the ambiguity in favor of the correct part — μ_t = 0.86 
+
+- Composite: v_t = 0.5 ×0.91 + 0.3 ×0.72 + 0.2 ×σ(0.86) = 0.81 > 0.8 
+
+Verifier Verdict: ACCEPT .
+
+GPT-4o 
+
+Fig. 18. The second page of the intermediate results of case 1. 34 Preprint Input Image & Task Description 
+
+Task: What would happen if you tried to pour 
+
+water into one of these glasses? 
+
+Memory from common-sense bank 
+
+Memory from test-time bank 
+
+Task: To hold these two wine glasses, where on the 
+
+glasses would you place your hands? 
+
+Relevance: 0.60 
+
+Task: What part of the wine glasses would you touch if 
+
+you were to pour water into them? 
+
+Relevance: 0.76 
+
+GPT-4o 
+
+GPT-4o 
+
+Task: What part of the wine glass would you touch if 
+
+you wanted to pour more wine into it? 
+
+Skills Usage: web-search →dreamer → detection 
+
+Reliablity ：0.95 
+
+Task: What part of the wine glass would you touch if 
+
+you wanted to pour water into it without spilling? 
+
+Skills Usage: detection 
+
+Reliablity ：0.96 
+
+Skill: Interaction imagination 
+
+"editing_prompt": "A person pouring water into the 
+
+wine glass, targeting the glass opening and body." 
+
+reasoning: The body of the glass is designed to hold 
+
+liquid, making it the appropriate target for pouring. 
+
+Its shape allows for efficient filling and 
+
+containment. 
+
+Qwen3-image 
+
+GPT-4o 
+
+Fig. 19. The first page of the intermediate results of case 2. Affordance Agent Harness 35 Skill: Detection & Segmentation 
+
+Qwen3-vl SAM-2 
+
+Skill: Web-search 
+
+Search Queries 
+
+1. how to pour water into a wine glass without spilling 
+
+2. wine glass body part used when pouring water 
+
+Result 1 
+
+- **Title: ** How to Pour Wine Without 
+
+Spilling | Wine Folly 
+
+- **Snippet: ** Rotate the bottom side of the 
+
+bottle away from you as you deliberately stop 
+
+pouring. This trick does require some practice 
+
+for perfection but it should throw ... 
+
+Result 2 
+
+- **Title: ** Guide to Pouring Wine: Pouring 
+
+the Right Amount of Wine 
+
+- **Snippet: ** Put the more prominent 
+
+hinged notch of the wine key on the bottle 
+
+top and start pulling the handle until the cork 
+
+is a little halfway out. Using ... 
+
+Reasoning: The technique for pouring wine into a glass without spilling involves 
+
+controlling the flow and direction of the liquid as it enters the glass. The rim of 
+
+the wine glass is the part involved in receiving the liquid, as it is where the wine 
+
+or water enters the glass. The focus on techniques to avoid dripping or splashing 
+
+suggests that the rim is crucial in the pouring process. 
+
+GPT-4o 
+
+Verifier 
+
+Verifier Diagnostics: 
+
+-Cross-skill consistency (ω_t): interaction imagination, web-search, and detection converge 
+
+on the same prediction. detection localizes the wine glass, while the other two skills agree on 
+
+the outcome of pouring water into it, yielding strong multi-skill consistency — ω_t = 0.90 
+
+-Cross-scale stability (ζ_t): no zoomed or re-cropped verification is available, so stability is 
+
+only moderately supported; however, the prediction remains unchanged after aggregating all 
+
+tool outputs — ζ_t = 0.68 
+
+-Evidence sufficiency (μ_t): visual grounding, physical reasoning, and external knowledge all 
+
+support the same hypothesis, providing sufficient evidence to commit — μ_t = 2.10 
+
+-Composite: v_t = 0.5 ×0.90 + 0.3 ×0.68 + 0.2 ×σ(2.10) =0.83 > 0.8 
+
+Verifier Verdict: ACCEPT .
+
+GPT-4o 
+
+Fig. 20. The second page of the intermediate results of case 2. 36 Preprint Input Image & Task Description 
+
+Task: To open both bottles, where on each 
+
+bottle's cap would you place your thumb and 
+
+forefinger? 
+
+Memory from common-sense bank 
+
+Memory from test-time bank 
+
+Task: Where would you place your thumb to open this 
+
+bottle's cork? 
+
+Relevance: 0.89 
+
+Task: To hold this bottle securely, which areas 
+
+on its surface should your fingers grip? 
+
+Relevance: 0.55 GPT-4o 
+
+GPT-4o 
+
+Task: To open these bottles, which part do you need to 
+
+remove first? 
+
+Skills Usage: web-search →zoom-in → detection 
+
+Reliablity ：0.96 
+
+Task: To open the bottle, where on the bottle's 
+
+surface would you place your thumb? 
+
+Skills Usage: web-search →zoom-in → detection 
+
+Reliablity ：0.88 
+
+Skill: Zoom-in 
+
+GPT-4o 
+
+Skill: Web-search Search Queries 
+
+1. how to place thumb on bottle cap to open? 
+
+2. bottle opening technique thumb placement on cap.          
+
+> Result 1
+> -**Title: **Pocketknife
+> -**Snippet: **The thumb-stud, a small stud
+> on the blade that allows for one-handed
+> opening, led the way for more innovations. One
+> of these is the thumb hole: a ...
+> Result 2
+> -**Title: **Guide to Pouring Wine: Pouring
+> the Right Amount of Wine
+> -**Snippet: **sprag A type of hand position
+> where the fingers and thumb are opposed in a
+> tiny crack. spring-loaded camming device ...
+> Reasoning: The search results did not directly mention the placement of the
+> thumb on the bottle, but rather suggested potentially useful tools such as thumb
+> posts and spring-loaded cam mechanisms that might help open the bottle.
+
+GPT-4o 
+
+Fig. 21. The first page of the intermediate results of case 3. Affordance Agent Harness 37 Skill: Detection & Segmentation 
+
+Qwen3-vl SAM-2 
+
+Verifier 
+
+Verifier Diagnostics: 
+
+-Cross-skill consistency (ω_t): the zoom-in view highlights the bottle caps, but the web-
+
+search results suggest that opening may require tools rather than a direct two-finger grasp. 
+
+Cross-skill agreement is therefore limited — ω_t = 0.43 
+
+-Cross-scale stability (ζ_t): the predicted contact regions remain near the caps after zoom-
+
+in, with only minor drift across scales — ζ_t = 0.88 
+
+-Evidence sufficiency (μ_t): visual grounding supports the cap regions, but external 
+
+knowledge leaves unresolved uncertainty about whether the bottles can be opened directly 
+
+by hand — μ_t = 0.92 
+
+-Composite: v_t = 0.5 ×0.43 + 0.3 ×0.88 + 0.2 ×σ(0.92)=0.63 < 0.8 
+
+Verifier Verdict: REJECT . GPT-4o 
+
+Skill: Interaction imagination 
+
+"editing_prompt": "Edit the input image to show a person's 
+
+thumb and forefinger positioned on the cap of the leftmost 
+
+bottle, with the thumb on top and the forefinger wrapped 
+
+around the side, ready to twist and open the bottle; keep 
+
+others unchanged." 
+
+reasoning: The top and side of the cap are the correct 
+
+targets for twisting open a bottle, as this grip provides the 
+
+necessary leverage and control to unscrew the cap. 
+
+Qwen3-image 
+
+GPT-4o 
+
+Skill: Detection & Segmentation 
+
+Qwen3-vl SAM-2 
+
+Verifier 
+
+Verifier Diagnostics: 
+
+-Cross-skill consistency (ω_t): after adding interaction imagination, the skills align more 
+
+closely on the bottle caps as the relevant contact regions. Although web-search still 
+
+introduces some conflict, overall consistency becomes strong — ω_t = 0.81 
+
+-Cross-scale stability (ζ_t): the predicted contact regions remain near the caps with little 
+
+drift across scales — ζ_t = 0.79 
+
+-Evidence sufficiency (μ_t): visual grounding, interaction imagination, and scale-consistent 
+
+localization jointly support the same hypothesis, making the evidence sufficient despite 
+
+minor external conflict — μ_t = 1.96 
+
+-Composite: v_t = 0.5 ×0.81 + 0.3 ×0.79 + 0.2 ×σ(1.96)=0.82 > 0.8 
+
+Verifier Verdict: ACCEPT . GPT-4o 
+
+Fig. 22. The second page of the intermediate results of case 3. 38 Preprint 
+
+## C Limitations and Future Work 
+
+Our work has several limitations. First, current affordance datasets still under-represent long-tail object categories, unusual designs, and interaction patterns that arise in real environments; this limits how thoroughly memory construction and verifier thresholds can be stress-tested. Second, the system does not yet learn from large-scale interaction feedback. Its routing and verification policies rely on pretrained reasoning priors plus hand-designed diagnostics, which may be insufficient for harder out-of-distribution cases where repeated physical feed-back would be informative. Future work should expand affordance data coverage and study reinforcement learning or other feedback-driven training methods for improving recovery, planning, and adaptation in embodied settings. 
+
+## References 
+
+1. Achiam, J., Adler, S., Agarwal, S., Ahmad, L., Akkaya, I., Aleman, F.L., Almeida, D., Altenschmidt, J., Altman, S., Anadkat, S., et al.: Gpt-4 technical report. arXiv preprint arXiv:2303.08774 (2023) 2. Ahn, M., Brohan, A., Brown, N., Chebotar, Y., Cortes, O., David, B., Finn, C., Fu, C., Gopalakrishnan, K., Hausman, K., et al.: Do as i can, not as i say: Grounding language in robotic affordances. In: arXiv preprint arXiv:2204.01691 (2022) 3. Anthropic: System card: Claude opus 4.6. Tech. rep., Anthropic (2026), https: //www-cdn.anthropic.com/14e4fb01875d2a69f646fa5e574dea2b1c0ff7b5.pdf ,published: 2026-02-06; Accessed: 2026-03-02 4. Anthropic: System card: Claude sonnet 4.6. Tech. rep., Anthropic (2026), https: //anthropic.com/claude-sonnet-4-6-system-card , published: 2026-02-17; Ac-cessed: 2026-03-02 5. Bahl, S., Mendonca, R., Chen, L., Jain, U., Pathak, D.: Affordances from human videos as a versatile representation for robotics. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 13778–13790 (2023) 6. Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., et al.: Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 (2025) 7. Bai, S., Chen, K., Liu, X., Wang, J., Ge, W., Song, S., Dang, K., Wang, P., Wang, S., et al.: Qwen2.5-vl technical report (2025), https://arxiv.org/abs/2502.13923 
+
+8. Carion, N., Gustafson, L., Hu, Y.T., Debnath, S., Hu, R., Suris, D., Ryali, C., Alwala, K.V., Khedr, H., Huang, A., et al.: Sam 3: Segment anything with concepts. arXiv preprint arXiv:2511.16719 (2025) 9. Chen, J., Ma, K., Huang, H., Fang, H., Sun, H., Hosseinzadeh, M., Liu, Z.: Uncertainty-guided self-questioning and answering for video-language alignment. arXiv preprint arXiv:2410.02768 (2024) 10. Chen, J., Gao, D., Lin, K.Q., Shou, M.Z.: Affordance grounding from demon-stration video to target image. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 6799–6808 (2023) 11. Chen, Y.C., Li, W.H., Sun, C., Wang, Y.C.F., Chen, C.S.: Sam4mllm: Enhance multi-modal large language model for referring expression segmentation. In: Euro-pean Conference on Computer Vision. pp. 323–340. Springer (2024) Affordance Agent Harness 39 12. Chu, H., Deng, X., Chen, X., Li, Y., Hao, J., Nie, L.: 3d-affordancellm: Harnessing large language models for open-vocabulary affordance detection in 3d worlds. arXiv preprint arXiv:2502.20041 (2025) 13. Delitzas, A., Takmaz, A., Tombari, F., Sumner, R., Pollefeys, M., Engelmann, F.: Scenefun3d: fine-grained functionality and affordance understanding in 3d scenes. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 14531–14542 (2024) 14. Deng, S., Xu, X., Wu, C., Chen, K., Jia, K.: 3d affordancenet: A benchmark for vi-sual object affordance understanding. In: proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 1778–1787 (2021) 15. Do, T.T., Nguyen, A., Reid, I.: Affordancenet: An end-to-end deep learning ap-proach for object affordance detection. arXiv preprint arXiv:1709.07326 (2017) 16. Driess, D., Xia, F., Sajjadi, M.S.M., Lynch, C., Chowdhery, A., Ichter, B., Wahid, A., Tompson, J., Vuong, Q., Yu, T., et al.: Palm-e: An embodied multimodal language model. arXiv preprint arXiv:2303.03378 (2023) 17. Dwivedi, S.K., Antić, D., Tripathi, S., Taheri, O., Schmid, C., Black, M.J., Tzionas, D.: Interactvlm: 3d interaction reasoning from 2d foundational models. In: Pro-ceedings of the Computer Vision and Pattern Recognition Conference (CVPR). pp. 22605–22615 (June 2025) 18. Gao, X., Zhang, P., Qu, D., Wang, D., Wang, Z., Ding, Y., Zhao, B., Li, X.: Learning 2d invariant affordance knowledge for 3d affordance grounding. arXiv preprint arXiv:2408.13024 (2024) 19. Google DeepMind: Gemini 3 flash: Model card. Tech. rep., Google Deep-Mind (2025), https://storage.googleapis.com/deepmind-media/Model-Cards/ Gemini-3-Flash-Model-Card.pdf , published: 2025-12; Accessed: 2026-03-02 20. Guo, D., Yang, D., Zhang, H., Song, J., Zhang, R., Xu, R., Zhu, Q., Ma, S., Wang, P., Bi, X., et al.: Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 (2025) 21. Hallinan, S., Gupta, S., Clark, P., Tandon, N., Alon, U., et al.: Self-refine: Iterative refinement with self-feedback. arXiv preprint arXiv:2303.17651 (2023) 22. He, S., Ding, H., Jiang, X., Wen, B.: Segpoint: Segment any point cloud via large language model. arXiv preprint arXiv:2407.13761 (2024) 23. Hong, Y., Zhen, H., Chen, P., Zheng, S., Du, Y., Chen, Z., Gan, C.: 3d-llm: In-jecting the 3d world into large language models. Advances in Neural Information Processing Systems 36 , 20482–20494 (2023) 24. Huang, H., Liu, Z., Han, X., Yang, X., Liu, L.: A belief logarithmic similarity measure based on dempster-shafer theory and its application in multi-source data fusion. Journal of Intelligent & Fuzzy Systems 45 (3), 4935–4947 (2023) 25. Huang, H., Liu, Z., Letchmunan, S., Deveci, M., Lin, M., Wang, W.: Eviden-tial deep partial multi-view classification with discount fusion. arXiv preprint arXiv:2408.13123 (2024) 26. Huang, H., Qin, C., Li, Y., Chen, Y.: Find, fix, reason: Context repair for video reasoning. arXiv preprint arXiv:2604.16243 (2026) 27. Huang, H., Qin, C., Liu, Z., Ma, K., Chen, J., Fang, H., Ban, C., Sun, H., He, Z.: Trusted unified feature-neighborhood dynamics for multi-view classification. In: Proceedings of the AAAI conference on artificial intelligence. vol. 39, pp. 17413– 17421 (2025) 28. Huang, W., Wang, C., Zhang, R., Li, Y., Wu, J., Fei-Fei, L.: Voxposer: Composable 3d value maps for robotic manipulation with language models. In: Conference on Robot Learning (CoRL) (2023) 40 Preprint 29. Jiang, Q., Huo, J., Chen, X., Xiong, Y., Zeng, Z., Chen, Y., Ren, T., Yu, J., Zhang, L.: Detect anything via next point prediction. arXiv preprint arXiv:2510.12798 (2025) 30. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 4015–4026 (2023) 31. Lai, X., Tian, Z., Chen, Y., Li, Y., Yuan, Y., Liu, S., Jia, J.: Lisa: Reasoning seg-mentation via large language model. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 9579–9589 (2024) 32. Li, G., Sun, D., Sevilla-Lara, L., Jampani, V.: One-shot open affordance learning with foundation models. In: Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition. pp. 3086–3096 (2024) 33. Li, X., Zhang, M., Geng, Y., Geng, H., Long, Y., Shen, Y., Zhang, R., Liu, J., Dong, H.: Manipllm: Embodied multimodal large language model for object-centric robotic manipulation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 18061–18070 (2024) 34. Liang, F., Wu, B., Dai, X., Li, K., Zhao, Y., Zhang, H., Zhang, P., Vajda, P., Mar-culescu, D.: Open-vocabulary semantic segmentation with mask-adapted clip. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition. pp. 7061–7070 (2023) 35. Liu, H., Li, C., Wu, Q., Lee, Y.J.: Visual instruction tuning. Advances in neural information processing systems 36 (2024) 36. Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Jiang, Q., Li, C., Yang, J., Su, H., et al.: Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In: European conference on computer vision. pp. 38–55. Springer (2024) 37. Liu, Y., Peng, B., Zhong, Z., Yue, Z., Lu, F., Yu, B., Jia, J.: Seg-zero: Reasoning-chain guided segmentation via cognitive reinforcement. ArXiv abs/2503.06520 
+
+(2025) 38. Liu, Y., Qu, T., Zhong, Z., Peng, B., Liu, S., Yu, B., Jia, J.: Visionreasoner: Uni-fied visual perception and reasoning via reinforcement learning. arXiv preprint arXiv:2505.12081 (2025) 39. Liu, Z., Huang, H., Letchmunan, S.: Adaptive weighted multi-view evidential clus-tering. In: International conference on artificial neural networks. pp. 265–277. Springer (2023) 40. Liu, Z., Huang, H., Letchmunan, S., Deveci, M.: Adaptive weighted multi-view ev-idential clustering with feature preference. Knowledge-Based Systems 294 , 111770 (2024) 41. Lu, D., Kong, L., Huang, T., Lee, G.H.: Geal: Generalizable 3d affordance learning with cross-modal consistency. arXiv preprint arXiv:2412.09511 (2024) 42. Luo, H., Zhai, W., Zhang, J., Cao, Y., Tao, D.: Learning visual affordance ground-ing from demonstration videos. IEEE Transactions on Neural Networks and Learn-ing Systems (2023) 43. Minderer, M., Gritsenko, A., Houlsby, N.: Scaling open-vocabulary object detec-tion. Advances in Neural Information Processing Systems 36 , 72983–73007 (2023) 44. Mo, K., Qin, Y., Xiang, F., Su, H., Guibas, L.: O2o-afford: Annotation-free large-scale object-object affordance learning. In: Conference on robot learning. pp. 1666– 1677. PMLR (2022) 45. Mo, K., Zhu, S., Chang, A.X., Yi, L., Tripathi, S., Guibas, L.J., Su, H.: Partnet: A large-scale benchmark for fine-grained and hierarchical part-level 3d object un-Affordance Agent Harness 41 derstanding. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 909–918 (2019) 46. Myers, A., Teo, C.L., Fermüller, C., Aloimonos, Y.: Affordance detection of tool parts from geometric features. In: 2015 IEEE International Conference on Robotics and Automation (ICRA). pp. 1374–1381 (2015). https://doi.org/10.1109/ICRA. 2015.7139369 
+
+47. Nasiriany, S., Kirmani, S., Ding, T., Smith, L., Zhu, Y., Driess, D., Sadigh, D., Xiao, T.: Rt-affordance: Affordances are versatile intermediate representations for robot manipulation. arXiv preprint arXiv:2411.02704 (2024) 48. Nguyen, T., Vu, M.N., Vuong, A., Nguyen, D., Vo, T., Le, N., Nguyen, A.: Open-vocabulary affordance detection in 3d point clouds. In: 2023 IEEE/RSJ Interna-tional Conference on Intelligent Robots and Systems (IROS). pp. 5692–5698. IEEE (2023) 49. Ning, C., Wu, R., Lu, H., Mo, K., Dong, H.: Where2explore: Few-shot affordance learning for unseen novel categories of articulated objects. Advances in Neural Information Processing Systems 36 , 4585–4596 (2023) 50. Qi, Z., Dong, R., Zhang, S., Geng, H., Han, C., Ge, Z., Yi, L., Ma, K.: Shapellm: Universal 3d object understanding for embodied interaction. arXiv preprint arXiv:2402.17766 (2024) 51. Qian, S., Chen, W., Bai, M., Zhou, X., Tu, Z., Li, L.E.: Affordancellm: Ground-ing affordance from vision language models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 7587–7597 (2024) 52. Qwen Team: Qwen3.5: Towards native multimodal agents (February 2026), https: //qwen.ai/blog?id=qwen3.5 
+
+53. Rasheed, H., Maaz, M., Shaji, S., Shaker, A., Khan, S., Cholakkal, H., Anwer, R.M., Xing, E., Yang, M.H., Khan, F.S.: Glamm: Pixel grounding large multimodal model. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 13009–13018 (2024) 54. Ravi, N., Gabeur, V., Hu, Y.T., Hu, R., Ryali, C., Ma, T., Khedr, H., Rädle, R., Rolland, C., Gustafson, L., et al.: Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 (2024) 55. Ren, Z., Huang, Z., Wei, Y., Zhao, Y., Fu, D., Feng, J., Jin, X.: Pixellm: Pixel rea-soning with large multimodal model. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 26374–26383 (2024) 56. Sahoo, A., Gkioxari, G.: Conversational image segmentation: Grounding abstract concepts with scalable supervision. arXiv preprint arXiv:2602.13195 (2026) 57. Schick, T., Dwivedi-Yu, J., Dessì, R., Raileanu, R., Lomeli, M., Hambro, E., Zettle-moyer, L., Cancedda, N., Scialom, T.: Toolformer: Language models can teach themselves to use tools. Advances in neural information processing systems 36 ,68539–68551 (2023) 58. Shao, Y., Zhai, W., Yang, Y., Luo, H., Cao, Y., Zha, Z.J.: Great: Geometry-intention collaborative inference for open-vocabulary 3d object affordance ground-ing. arXiv preprint arXiv:2411.19626 (2024) 59. Shinn, N., Cassano, F., Gopinath, A., Narasimhan, K., Yao, S.: Reflexion: Lan-guage agents with verbal reinforcement learning. Advances in neural information processing systems 36 , 8634–8652 (2023) 60. Siméoni, O., Vo, H.V., Seitzer, M., Baldassarre, F., Oquab, M., Jose, C., Khalidov, V., Szafraniec, M., Yi, S., Ramamonjisoa, M., Massa, F., Haziza, D., Wehrstedt, L., Wang, J., Darcet, T., Moutakanni, T., Sentana, L., Roberts, C., Vedaldi, A., Tolan, J., Brandt, J., Couprie, C., Mairal, J., Jégou, H., Labatut, P., Bojanowski, P.: DINOv3 (2025), https://arxiv.org/abs/2508.10104 42 Preprint 61. Song, Z., Ouyang, G., Li, M., Ji, Y., Wang, C., Xu, Z., Zhang, Z., Zhang, X., Jiang, Q., Chen, Z., et al.: Maniplvm-r1: Reinforcement learning for reason-ing in embodied manipulation with large vision-language models. arXiv preprint arXiv:2505.16517 (2025) 62. Su, A., Wang, H., Ren, W., Lin, F., Chen, W.: Pixel reasoner: Incentivizing pixel-space reasoning with curiosity-driven reinforcement learning. arXiv preprint arXiv:2505.15966 (2025) 63. Sun, P., Chen, S., Zhu, C., Xiao, F., Luo, P., Xie, S., Yan, Z.: Going denser with open-vocabulary part segmentation. In: Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision. pp. 15453–15465 (2023) 64. Tong, E., Opipari, A., Lewis, S., Zeng, Z., Jenkins, O.C.: Oval-prompt: Open-vocabulary affordance localization for robot manipulation through llm affordance-grounding. arXiv preprint arXiv:2404.11000 (2024) 65. Van Vo, T., Vu, M.N., Huang, B., Nguyen, T., Le, N., Vo, T., Nguyen, A.: Open-vocabulary affordance detection using knowledge distillation and text-point cor-relation. In: 2024 IEEE International Conference on Robotics and Automation (ICRA). pp. 13968–13975. IEEE (2024) 66. Wan, Z., Xie, Y., Zhang, C., Lin, Z., Wang, Z., Stepputtis, S., Ramanan, D., Sycara, K.: Instructpart: Task-oriented part segmentation with instruction reason-ing. arXiv preprint arXiv:2505.18291 (2025) 67. Wang, H., Wang, S., Zhong, Y., Yang, Z., Wang, J., Cui, Z., Yuan, J., Han, Y., Liu, M., Ma, Y.: Affordance-r1: Reinforcement learning for generalizable affordance reasoning in multimodal large language model. arXiv preprint arXiv:2508.06206 (2025) 68. Wang, H., Zhang, Z., Ji, K., Liu, M., Yin, W., Chen, Y., Liu, Z., Zeng, X., Gui, T., Zhang, H.: Dag: Unleash the potential of diffusion model for open-vocabulary 3d affordance grounding. arXiv preprint arXiv:2508.01651 (2025) 69. Wu, C., Li, J., Zhou, J., Lin, J., Gao, K., Yan, K., ming Yin, S., Bai, S., Xu, X., Chen, Y., Chen, Y., Tang, Z., Zhang, Z., Wang, Z., Yang, A., Yu, B., Cheng, C., Liu, D., Li, D., Zhang, H., Meng, H., Wei, H., Ni, J., Chen, K., Cao, K., Peng, L., Qu, L., Wu, M., Wang, P., Yu, S., Wen, T., Feng, W., Xu, X., Wang, Y., Zhang, Y., Zhu, Y., Wu, Y., Cai, Y., Liu, Z.: Qwen-image technical report (2025), 
+
+https://arxiv.org/abs/2508.02324 
+
+70. Wu, D., Fu, Y., Huang, S., Liu, Y., Jia, F., Liu, N., Dai, F., Wang, T., Anwer, R.M., Khan, F.S., et al.: Ragnet: Large-scale reasoning-based affordance segmen-tation benchmark towards general grasping. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 11980–11990 (2025) 71. Wu, R., Cheng, K., Zhao, Y., Ning, C., Zhan, G., Dong, H.: Learning environment-aware affordance for 3d articulated object manipulation under occlusions. Advances in Neural Information Processing Systems 36 , 60966–60983 (2023) 72. Wu, S., Zhu, Y., Huang, Y., Zhu, K., Gu, J., Yu, J., Shi, Y., Wang, J.: Af-forddp: Generalizable diffusion policy with transferable affordance. arXiv preprint arXiv:2412.03142 (2024) 73. Xu, B., Peng, Z., Lei, B., Mukherjee, S., Liu, Y., Xu, D.: Rewoo: Decoupling rea-soning from observations for efficient augmented language models. arXiv preprint arXiv:2305.18323 (2023) 74. Xu, C., Chen, Y., Wang, H., Zhu, S.C., Zhu, Y., Huang, S.: Partafford: Part-level affordance discovery from 3d objects. arXiv preprint arXiv:2202.13519 (2022) 75. Xu, M., Zhang, Z., Wei, F., Hu, H., Bai, X.: Side adapter network for open-vocabulary semantic segmentation. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 2945–2954 (2023) Affordance Agent Harness 43 76. Xu, R., Wang, X., Wang, T., Chen, Y., Pang, J., Lin, D.: PointLLM: Empowering large language models to understand point clouds. arXiv preprint arXiv:2308.16911 (2023) 77. Yang, A., Li, A., Yang, B., Zhang, B., Hui, B., Zheng, B., Yu, B., Gao, C., Huang, C., Lv, C., et al.: Qwen3 technical report. arXiv preprint arXiv:2505.09388 (2025) 78. Yang, Y., Zhai, W., Luo, H., Cao, Y., Luo, J., Zha, Z.J.: Grounding 3d object affordance from 2d interactions in images. In: Proceedings of the IEEE/CVF In-ternational Conference on Computer Vision. pp. 10905–10915 (2023) 79. Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., Cao, Y.: React: Syn-ergizing reasoning and acting in language models. arXiv preprint arXiv:2210.03629 (2022) 80. You, H., Zhang, H., Gan, Z., Du, X., Zhang, B., Wang, Z., Cao, L., Chang, S.F., Yang, Y.: Ferret: Refer and ground anything anywhere at any granularity. arXiv preprint arXiv:2310.07704 (2023) 81. Yu, C., Wang, H., Shi, Y., Luo, H., Yang, S., Yu, J., Wang, J.: Seqafford: Sequential 3d affordance reasoning via multimodal large language model. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 1691–1701 (2025) 82. Zeng, A., Lv, X., Hou, Z., Du, Z., Zheng, Q., Chen, B., Yin, D., Ge, C., Xie, C., Wang, C., et al.: Glm-5: from vibe coding to agentic engineering. arXiv preprint arXiv:2602.15763 (2026) 83. Zhai, X., Mustafa, B., Kolesnikov, A., Beyer, L.: Sigmoid loss for language image pre-training (2023), https://arxiv.org/abs/2303.15343 
+
+84. Zhang, S., Sun, P., Chen, S., Xiao, M., Shao, W., Zhang, W., Liu, Y., Chen, K., Luo, P.: Gpt4roi: Instruction tuning large language model on region-of-interest. arXiv preprint arXiv:2307.03601 (2023) 85. Zhang, Z., Chen, K., Wang, H., Zhang, H., Chen, H.H., Liao, C., Guo, L., Chen, Y.C.: A4-agent: An agentic framework for zero-shot affordance reasoning. arXiv preprint arXiv:2512.14442 (2025) 86. Zhao, P., Wang, L., Chen, C., Wang, P., Zhou, F., Li, R., Huang, H.: Star: Mitigat-ing cascading errors in spatial reasoning via turn-point alignment and segment-level dpo. arXiv preprint arXiv:2604.00558 (2026) 87. Zhen, H., Qiu, X., Chen, P., Yang, J., Yan, X., Du, Y., Hong, Y., Gan, C.: 3d-vla: A 3d vision-language-action generative world model. arXiv preprint arXiv:2403.09631 (2024) 88. Zheng, M., Xu, Y., Huang, H., Ma, X., Liu, Y., Shu, W., Pang, Y., Tang, F., Chen, Q., Yang, H., et al.: Videogen-of-thought: Step-by-step generating multi-shot video with minimal manual intervention. arXiv preprint arXiv:2412.02259 (2024) 89. Zhong, D., Zheng, X., Liao, C., Lyu, Y., Chen, J., Wu, S., Zhang, L., Hu, X.: Omnisam: Omnidirectional segment anything model for uda in panoramic seman-tic segmentation. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 23892–23901 (2025) 90. Zhou, H., Li, X., Wang, R., Cheng, M., Zhou, T., Hsieh, C.J.: R1-zero’s" aha mo-ment" in visual reasoning on a 2b non-sft model. arXiv preprint arXiv:2503.05132 (2025) 91. Zhu, J., Wang, W., Chen, Z., Liu, Z., Ye, S., Gu, L., Tian, H., Duan, Y., Su, W., Shao, J., et al.: Internvl3: Exploring advanced training and test-time recipes for open-source multimodal models. arXiv preprint arXiv:2504.10479 (2025) 92. Zhu, J., Wang, W., Chen, Z., Liu, Z., Ye, S., Gu, L., Tian, H., Duan, Y., et al.: Internvl3: Exploring advanced training and test-time recipes for open-source mul-timodal models (2025), https://arxiv.org/abs/2504.10479
