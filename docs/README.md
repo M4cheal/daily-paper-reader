@@ -6,67 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-06
-- 运行时间：2026-05-06 20:55:28 UTC
+- 最新运行日期：2026-05-07
+- 运行时间：2026-05-07 21:02:00 UTC
 - 运行状态：成功
-- 本次总论文数：15
-- 精读区：4
+- 本次总论文数：17
+- 精读区：6
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 15 篇前沿论文，聚焦视觉语言模型与目标检测在推理阶段的“即时进化”技术。
-重点关注两篇满分成果：FACTOR 实现了无需训练的反事实自适应，而 GRPO-TTA 则通过强化学习驱动测试时微调。
-建议优先研读这两项满分论文，探索如何在不重新训练的情况下显著提升模型在复杂场景下的表现。
-- 详情：[/202605/06/README](/202605/06/README)
+今日深度解析 17 篇 AI 论文，聚焦测试时自适应（TTA）在目标检测与快速权重学习中的高分突破。
+重点推荐奖励引导的语义演化与 FAAST 关联学习，两者均以 9.5 高分刷新了模型动态进化的效率上限。
+建议优先研读 TTA 相关成果，掌握模型在部署阶段实时优化与抗干扰的核心前沿技术。
+- 详情：[/202605/07/README](/202605/07/README)
 
 ### 精读区论文标签
-1. [FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection](/202605/06/2605.03294v1-factor-counterfactual-training-free-test-time-adaptation-for-open-vocabulary-object-detection)  
-   标签：评分：10.0/10、query:tta
-   evidence：开放词汇目标检测的免训练测试时间自适应
-2. [GRPO-TTA: Test-Time Visual Tuning for Vision-Language Models via GRPO-Driven Reinforcement Learning](/202605/06/2605.03403v1-grpo-tta-test-time-visual-tuning-for-vision-language-models-via-grpo-driven-reinforcement-learning)  
-   标签：评分：10.0/10、query:tta
-   evidence：通过GRPO进行视觉语言模型的测试时自适应
-3. [Referring Multiple Regions with Large Multimodal Models via Contextual Latent Steering](/202605/06/2605.01827v1-referring-multiple-regions-with-large-multimodal-models-via-contextual-latent-steering)  
+1. [Reward-Guided Semantic Evolution for Test-time Adaptive Object Detection](/202605/07/2605.04531v1-reward-guided-semantic-evolution-for-test-time-adaptive-object-detection)  
+   标签：评分：9.5/10、query:tta
+   evidence：针对视觉语言模型测试时间自适应目标检测的免训练框架
+2. [FAAST: Forward-Only Associative Learning via Closed-Form Fast Weights for Test-Time Supervised Adaptation](/202605/07/2605.04651v1-faast-forward-only-associative-learning-via-closed-form-fast-weights-for-test-time-supervised-adaptation)  
+   标签：评分：9.5/10、query:tta
+   evidence：用于测试时间监督自适应的前向快速权重技术
+3. [Stream-T1: Test-Time Scaling for Streaming Video Generation](/202605/07/2605.04461v1-stream-t1-test-time-scaling-for-streaming-video-generation)  
+   标签：评分：9.0/10、query:tta
+   evidence：流式视频生成的测试时间缩放框架
+4. [Temporal Structure Matters for Efficient Test-Time Adaptation in Wearable Human Activity Recognition](/202605/07/2605.04617v1-temporal-structure-matters-for-efficient-test-time-adaptation-in-wearable-human-activity-recognition)  
+   标签：评分：9.0/10、query:tta
+   evidence：针对在线流数据的效率测试时间自适应
+5. [Mitigating Label Shift in Tabular In-Context Learning via Test-Time Posterior Adjustment](/202605/07/2605.04363v1-mitigating-label-shift-in-tabular-in-context-learning-via-test-time-posterior-adjustment)  
+   标签：评分：8.5/10、query:tta
+   evidence：针对表格基础模型的测试时间后验调整方法，用于缓解标签偏移
+6. [LaST-R1: Reinforcing Robotic Manipulation via Adaptive Physical Latent Reasoning](/202605/07/2604.28192v2-last-r1-reinforcing-robotic-manipulation-via-adaptive-physical-latent-reasoning)  
    标签：评分：8.0/10、query:tta
-   evidence：通过上下文潜空间引导多模态大模型的免训练方法
-4. [RoboAlign-R1: Distilled Multimodal Reward Alignment for Robot Video World Models](/202605/06/2605.03821v1-roboalign-r1-distilled-multimodal-reward-alignment-for-robot-video-world-models)  
-   标签：评分：8.0/10、query:tta
-   evidence：机器人视频世界模型的稳定长程推理
+   evidence：针对VLA模型中自适应物理潜空间推理的强化学习后训练框架
 
 ### 速读区论文标签
-1. [Flexi-LoRA with Input-Adaptive Ranks: Efficient Finetuning for Speech and Reasoning Tasks](/202605/06/2605.01959v1-flexi-lora-with-input-adaptive-ranks-efficient-finetuning-for-speech-and-reasoning-tasks)  
+1. [Beyond SFT-to-RL: Pre-alignment via Black-Box On-Policy Distillation for Multimodal RL](/202605/07/2604.28123v2-beyond-sft-to-rl-pre-alignment-via-black-box-on-policy-distillation-for-multimodal-rl)  
    标签：评分：7.0/10、query:tta
-   evidence：推理过程中高效自适应的输入自适应秩
-2. [Latent Bridge: Feature Delta Prediction for Efficient Dual-System Vision-Language-Action Model Inference](/202605/06/2605.02739v1-latent-bridge-feature-delta-prediction-for-efficient-dual-system-vision-language-action-model-inference)  
+   evidence：多模态强化学习与大语言模型的分布对齐
+2. [Adaptive Data Compression and Reconstruction for Memory-Bounded EEG Continual Learning](/202605/07/2605.03085v1-adaptive-data-compression-and-reconstruction-for-memory-bounded-eeg-continual-learning)  
    标签：评分：7.0/10、query:tta
-   evidence：机器人领域视觉-语言-动作（VLA）模型的高效推理
-3. [Multimodal Learning on Low-Quality Data with Conformal Predictive Self-Calibration](/202605/06/2605.03820v1-multimodal-learning-on-low-quality-data-with-conformal-predictive-self-calibration)  
+   evidence：在内存限制下对未标记受试者流进行在线自适应
+3. [CAST: Mitigating Object Hallucination in Large Vision-Language Models via Caption-Guided Visual Attention Steering](/202605/07/2605.04641v1-cast-mitigating-object-hallucination-in-large-vision-language-models-via-caption-guided-visual-attention-steering)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态学习中的在线自我引导校准
-4. [UnAC: Adaptive Visual Prompting with Abstraction and Stepwise Checking for Complex Multimodal Reasoning](/202605/06/2605.03950v1-unac-adaptive-visual-prompting-with-abstraction-and-stepwise-checking-for-complex-multimodal-reasoning)  
+   evidence：大视觉语言模型推理时的免训练幻觉缓解
+4. [VTAgent: Agentic Keyframe Anchoring for Evidence-Aware Video TextVQA](/202605/07/2605.04870v1-vtagent-agentic-keyframe-anchoring-for-evidence-aware-video-textvqa)  
    标签：评分：7.0/10、query:tta
-   evidence：用于复杂多模态推理的自适应视觉提示
-5. [VLMaxxing through FrameMogging Training-Free Anti-Recomputation for Video Vision-Language Models](/202605/06/2605.03351v1-vlmaxxing-through-framemogging-training-free-anti-recomputation-for-video-vision-language-models)  
+   evidence：视频文本问答的推理阶段关键帧锚定
+5. [ConsisVLA-4D: Advancing Spatiotemporal Consistency in Efficient 3D-Perception and 4D-Reasoning for Robotic Manipulation](/202605/07/2605.05126v1-consisvla-4d-advancing-spatiotemporal-consistency-in-efficient-3d-perception-and-4d-reasoning-for-robotic-manipulation)  
+   标签：评分：7.0/10、query:tta
+   evidence：具有时空感知和推理能力的机器人操作VLA框架
+6. [Chebyshev-Augmented One-Shot Transfer Learning for PINNs on Nonlinear Differential Equations](/202605/07/2605.01634v1-chebyshev-augmented-one-shot-transfer-learning-for-pinns-on-nonlinear-differential-equations)  
    标签：评分：6.5/10、query:tta
-   evidence：视频视觉语言模型的免训练抗重计算
-6. [Memory-Efficient Continual Learning with CLIP Models](/202605/06/2605.03866v1-memory-efficient-continual-learning-with-clip-models)  
+   evidence：无需完全重新训练的单样本迁移学习自适应
+7. [VL-SAM-v3: Memory-Guided Visual Priors for Open-World Object Detection](/202605/07/2605.03456v2-vl-sam-v3-memory-guided-visual-priors-for-open-world-object-detection)  
    标签：评分：6.5/10、query:tta
-   evidence：以极低内存占用使CLIP模型快速适应新数据
-7. [REALM: An RGB and Event Aligned Latent Manifold for Cross-Modal Perception](/202605/06/2605.00271v2-realm-an-rgb-and-event-aligned-latent-manifold-for-cross-modal-perception)  
+   evidence：推理时用于开放世界检测的检索增强外部视觉记忆
+8. [PRISM: Exposing and Resolving Spurious Isolation in Federated Multimodal Continual Learning](/202605/07/2605.01061v1-prism-exposing-and-resolving-spurious-isolation-in-federated-multimodal-continual-learning)  
    标签：评分：6.0/10、query:tta
-   evidence：使用LoRA进行RGB和事件流的跨模态自适应
-8. [Intelligent Elastic Feature Fading: Enabling Model Retrain-Free Feature Efficiency Rollouts at Scale](/202605/06/2605.00324v1-intelligent-elastic-feature-fading-enabling-model-retrain-free-feature-efficiency-rollouts-at-scale)  
+   evidence：联邦多模态持续学习与干扰感知子空间方法
+9. [The Perceptual Bandwidth Bottleneck in Vision-Language Models: Active Visual Reasoning via Sequential Experimental Design](/202605/07/2605.01345v2-the-perceptual-bandwidth-bottleneck-in-vision-language-models-active-visual-reasoning-via-sequential-experimental-design)  
    标签：评分：6.0/10、query:tta
-   evidence：在服务时实现免重训的特征效率部署
-9. [SCALE-LoRA: Auditing Post-Retrieval LoRA Composition with Residual Merging and View Reliability](/202605/06/2605.01429v1-scale-lora-auditing-post-retrieval-lora-composition-with-residual-merging-and-view-reliability)  
+   evidence：通过视觉语言模型的顺序实验设计进行主动视觉推理
+10. [MER-DG: Modality-Entropy Regularization for Multimodal Domain Generalization](/202605/07/2605.01967v1-mer-dg-modality-entropy-regularization-for-multimodal-domain-generalization)  
    标签：评分：6.0/10、query:tta
-   evidence：利用少量支持集将适配器重用于新任务
-10. [Enhancing Multimodal In-Context Learning via Inductive-Deductive Reasoning](/202605/06/2605.02378v1-enhancing-multimodal-in-context-learning-via-inductive-deductive-reasoning)  
+   evidence：针对新环境的多模态领域泛化
+11. [Kernel Affine Hull Machines for Compute-Efficient Query-Side Semantic Encoding](/202605/07/2605.02950v1-kernel-affine-hull-machines-for-compute-efficient-query-side-semantic-encoding)  
    标签：评分：6.0/10、query:tta
-   evidence：视觉语言模型通过上下文学习适应任务
-11. [cotomi Act: Learning to Automate Work by Watching You](/202605/06/2605.03231v1-cotomi-act-learning-to-automate-work-by-watching-you)  
-   标签：评分：6.0/10、query:tta
-   evidence：通过N选1动作选择实现浏览器智能体的测试时缩放
+   evidence：推理时的固定教师查询自适应问题
 
 
 <div class="dpr-home-promo-card">

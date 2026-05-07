@@ -1,0 +1,479 @@
+Title: Adaptive Data Compression and Reconstruction for Memory-Bounded EEG Continual Learning
+
+URL Source: https://arxiv.org/pdf/2605.03085v1
+
+Published Time: Wed, 06 May 2026 00:12:35 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+> ARXIV PREPRINT 1
+
+# Adaptive Data Compression and Reconstruction for Memory-Bounded EEG Continual Learning 
+
+Chengcheng Xie 
+
+Abstract —Electroencephalography (EEG) signals provide millisecond-level temporal resolution but their analysis is limited by remarkable noise and inter-subject variability, making robust personalization difficult under limited annotations. Unsupervised Individual Continual Learning (UICL) has been proposed to address this practical challenge, where a model pretrained on a labeled cohort must adapt online to unlabeled subject streams under strict memory constraints. However, existing UICL meth-ods typically store full past samples, which undermine the con-tinual learning goal of avoiding retraining. Observing that EEG signals exhibit well-structured morphologies to be exploited via morphology-aware selection, compression, and reconstruction, here we propose Adaptive Data Compression and Reconstruction (ADaCoRe) for UICL. This is a memory-efficient pipeline com-posed of saliency-driven keyframe protection, rational polyphase compression, adjoint reconstruction with verbatim overwrite on protected indices, and prototype-confidence selection for adaptive exemplar maintenance. Across three representative benchmarks, ADaCoRe consistently outperforms recent strong baselines under tight buffer regimes ( e.g. , the performance gains are at least +2.7 and +15.3 ACC on ISRUC and FACED datasets, respectively). Ablation studies quantify compression-fidelity trade-offs and highlight the contribution of each design, while visualizations confirm the preservation of key EEG morphology during com-pression and reconstruction. 
+
+Index Terms —EEG, continual learning, unsupervised adapta-tion, data compression, prototype selection, memory replay 
+
+I. I NTRODUCTION 
+
+# ELECTROENCEPHALOGRAPHY (EEG) is a noninva-sive, cost-effective, and high-temporal-resolution modal-ity widely used in real-world applications such as at-home monitoring [1], [2], brain-computer interfaces (BCIs) [3], and sleep staging [4]. These applications increasingly rely on subject-personalized models to handle substantial inter-individual variability. However, labeled EEG data are often scarce or delayed, especially in long-term or in-the-wild de-ployments. These considerations motivate the need for models that can adapt continually to new subjects and recording conditions without access to labels or unbounded storage. This problem, referred to as Unsupervised Individual Con-tinual Learning (UICL, Fig. 1), presents several unique chal-lenges: data arrive as subject-specific streams, supervision is unavailable, and memory is tightly constrained. Existing methods often rely on replay-based continual learning, storing previously seen examples in a memory buffer for future rehearsal [5], [6]. However, these methods typically assume generous or unbounded buffers and store full-resolution EEG segments indiscriminately. This incurs inefficient use of mem-ory, redundancy from storing non-informative signals, and po-      
+
+> Chengcheng Xie is with Beihang University (e-mail:
+> sonicrainboomxcc@buaa.edu.cn ).
+
+tential overfitting to noisy or low-saliency segments. Moreover, they seldom exploit domain-specific signal characteristics such as rhythmicity, spectral structure, or morphological saliency, despite their central role in EEG interpretation [7]. In contrast, our work builds on the insight that EEG signals exhibit well-defined morphological patterns ( e.g. , sleep spin-dles, K-complexes, and event-related potentials), which can be selectively preserved and reconstructed with high fidelity. We propose ADaCoRe , a signal-aware, memory-efficient pipeline for UICL in EEG applications. ADaCoRe comprises four coordinated components: (1) saliency-driven keyframe protec-tion to retain critical segments at full resolution; (2) rational polyphase compression with anti-aliasing for efficient down-sampling of non-keyframes; (3) adjoint reconstruction that overwrites protected indices verbatim during replay; and (4) 
+
+prototype-confidence selection that maintains a compact yet informative buffer using task-relevant confidence and diversity heuristics. Together, these modules enable adaptive compres-sion that respects EEG morphology, prevents aliasing, and prioritizes exemplars that are both representative and reliable. We evaluate ADaCoRe on three representative benchmarks under strict memory constraints and observe consistent im-provements over strong baselines, including the state-of-the-art method BrainUICL [8]. ADaCoRe yields significantly better plasticity and stability, maintaining high performance even with significantly reduced buffer sizes. For example, the performance gains are at least +2.7 and +15.3 ACC on ISRUC and FACED datasets, respectively. Detailed ablations examine the effects of compression ratio, saliency coverage, protection radius, and selection strategies. Visual analyses of reconstructed signals confirm that ADaCoRe successfully preserves essential EEG morphologies during replay. Our contributions are summarized as follows: (1) Amorphology-aware compression and reconstruction pipeline that preserves salient EEG features under strict memory con-straints. (2) A prototype-confidence selection strategy that maintains diverse and reliable exemplars for memory-efficient replay. (3) Significant performance gains over recent strong baselines for UICL in EEG applications. II. R ELATED WORK 
+
+Continual Learning (CL). CL aims to learn from nonsta-tionary data streams without full access to previous training samples. Representative methods include parameter regular-ization [9], [10], knowledge distillation [11], and memory replay [5], [6]. However, most CL research targets supervised vision with ample labels and large buffers, limiting appli-cability to label-scarce, memory-constrained EEG scenarios.          
+
+> arXiv:2605.03085v1 [cs.LG] 4 May 2026 ARXIV PREPRINT 2
+> Fig. 1. UICL. A source-pretrained model M0adapts to a sequence of unlabeled subject streams {U (t)}Tt=1 using a memory-bounded replay buffer, producing Mtafter subject t. Plasticity and stability are measured on the current and future subjects, respectively.
+
+UICL has been proposed specifically for EEG adaptation to unlabeled, subject-specific streams with bounded memory. BrainUICL [8] is a recent representative baseline that we compare against. 
+
+Continual Domain Adaptation (CDA) and Test-Time Adaptation (TTA). CDA focuses on adapting a source-pretrained model to a sequence of unlabeled target domains. Representative strategies include discrepancy alignment and adversarial domain adaptation [12], [13]. TTA methods adapt at inference time without source data, e.g. , CoTTA [14]. Most prior CDA and TTA work is image-centric and rarely enforces realistic memory budgets or EEG-specific constraints. Our design complements these by introducing signal-aware compression and exemplar selection that can be integrated into existing adaptation frameworks. 
+
+EEG Signal Analysis. EEG tasks such as sleep staging and BCI typically rely on static, fully labeled settings and AASM-compliant rules [7], [15]. Recent works explore self-supervised time-series representation, e.g. , TSTCC [16], but continual, memory-bounded adaptation for EEG remains under-explored. III. P RELIMINARIES 
+
+In this section, we introduce the problem formulation, state-of-the-art baseline, and signal processing procedures. 
+
+A. Problem Formulation of UICL 
+
+We study the setting of Unsupervised Individual Continual Learning (UICL) for EEG applications, where a model must adapt online to a sequence of previously unseen, unlabeled subjects under strict memory constraints. Concretely, the model is first pretrained on a labeled source cohort DS =
+
+{(xi, y i)}, where each EEG segment xi ∈ RC×L consists of C channels and L time points. At deployment, the model receives a stream of unlabeled subjects {U (t)}Tt=1 , with each 
+
+U(t) = {x(t) 
+
+> j
+
+} denoting the samples from subject t. No ground-truth labels are available during adaptation. Consistent with previous CL research, a key challenge lies in catastrophic forgetting [17], i.e. , a tendency to lose per-formance on earlier distributions when adapting to new ones. Specifically, UICL aims to balance plasticity (adaptability to the current subject) with stability (retention of knowledge useful for future subjects). Following BrainUICL [8], plasticity is evaluated on the incremental stream via Accuracy (ACC) and Macro-averaged F1 (MF1), while stability is evaluated on held-out subjects via Average Anytime Accuracy (AAA) and Average Anytime Macro-F1 (AAF1). Formal definitions of these metrics are provided in Appendix. Replay-based strategies [5], [6] help mitigate forgetting by maintaining a memory buffer B of past exemplars. Throughout this work we treat the buffer as a bounded store of compact representations rather than raw signals, and we measure mem-ory usage by the number of stored timepoints (times channel count) across all buffered segments. This memory-centric view makes it straightforward to compare methods that use different compression schemes but share the same storage budget. 
+
+B. State-of-the-art Baseline 
+
+Our method is instantiated within the UICL pipeline in-troduced by the state-of-the-art BrainUICL [8] method. In this paradigm, each subject is treated as a separate individual domain. The full set of subjects is partitioned into a labeled source set DS for pretraining, an unlabeled incremental stream 
+
+DT for continual adaptation, and a labeled generalization set 
+
+DG for stability evaluation. At test time, the model observes subjects from DT one by one, and after each adaptation step it is evaluated both on the current subject (plasticity) and on all subjects in DG (stability), as summarized in Fig. 1. BrainUICL follows a replay-based pipeline with three main stages. First, an incremental model M0 is pretrained on DS
+
+using standard cross-entropy loss. Second, for each new target subject i, a guiding model Mg is obtained by copying the latest incremental model Mi−1 and refined via self-supervised Contrastive Predictive Coding (CPC) [18] on that subject alone. The fine-tuned guiding model then produces subject-specific pseudo-labels, which are filtered by a confidence threshold to obtain a set of relatively reliable pseudo-labeled samples. Third, BrainUICL performs supervised fine-tuning of 
+
+Mi−1 using a mixed mini-batch composed of current-subject samples and replayed samples from a storage center, yielding an updated model Mi.The storage center in BrainUICL is implemented as a
+
+Dynamic Confident Buffer (DCB): a pool Strue containing a subset of labeled source-domain samples and a pool Spseudo 
+
+containing high-confidence pseudo-labeled samples from pre-viously seen incremental subjects. At each time step, the replay buffer XB is constructed by sampling from Strue and Spseudo 
+
+with a fixed ratio ( e.g. , 8:2) to encourage both reliable super-vision and diversity. After each subject-level adaptation, the updated model Mi re-predicts pseudo-labels for that subject, and samples whose prediction confidence exceeds a second threshold are added to Spseudo .To further stabilize learning, BrainUICL introduces a Cross-Epoch Alignment (CEA) module. Every few epochs, the ARXIV PREPRINT 3   
+
+> Fig. 2. Overview of ADaCoRe. Saliency detection (§IV-A) selects protected indices P. Non-protected regions are compressed via rational polyphase resampling (§IV-B). Replay uses adjoint reconstruction with verbatim overwrite of protected samples (§IV-C). Exemplar maintenance respects class prototypes and pseudo-label confidence (§IV-D).
+
+predictions of two temporal snapshots of the same incre-mental model ( e.g. , after e and e + 2 fine-tuning epochs) are aligned on replayed samples by minimizing a Kullback-Leibler divergence term between their output distributions. This consistency regularization constrains the trajectory of the model parameters, reducing overfitting to outlier individuals and improving stability on unseen subjects. While BrainUICL effectively balances plasticity and stabil-ity under generous storage, it requires all old EEG segments at their original sampling rate and full temporal resolution. As a result, the buffer scales linearly with both the number of subjects and the segment length, which is problematic for memory-bounded on-device scenarios. Moreover, its selection strategy operates at the sample level. Once a segment is admitted into the buffer, all its timepoints are kept. Even if only a subset carries discriminative morphology, and pseudo-label filtering alone cannot reliably remove noisy or low-saliency regions. These limitations motivate our design, which replaces raw-signal replay with morphology-aware compression, re-construction, and prototype-confidence selection .
+
+C. Signal Processing Procedures 
+
+EEG recordings are continuous-time voltages measured at the scalp and converted to discrete-time sequences by sampling at a rate Fs (e.g. , 100-250 Hz depending on the dataset). In practice, data are segmented into fixed-length epochs ( e.g. ,30 s sleep epochs or shorter BCI trials), and a typical tensor has shape [T, C, L ] for T epochs, C channels, and L samples per epoch. EEG preprocessing follows standard pipelines [19]: channel selection, bandpass filtering in task-specific frequency bands, notch filtering to suppress line noise when necessary, resampling to a common rate, and per-channel normalization. Specific configurations are summarized in Appendix. Our saliency and compression modules build on two fam-ilies of time-frequency features. First, we use band-limited envelopes: each channel is filtered into canonical EEG bands (delta, theta, alpha/ μ, beta, sigma, etc.), and a Hilbert-transform-based analytic signal is used to obtain smooth en-velopes and approximations to instantaneous band power [19]. Second, we use transient energy features: the Teager-Kaiser energy operator emphasizes rapid amplitude changes and sharp events such as K-complexes or phasic bursts [20], after which we apply short-window smoothing and cross-channel aggregation. These features are combined into a scalar saliency trace over time, which drives our keyframe selection. For memory-aware replay implementations, we perform rational resampling via polyphase filtering [19] to com-press non-protected regions and an adjoint operator to re-construct dense sequences. The corresponding discrete-time model, convolution operators, up/down sampling definitions, and polyphase realization are detailed in Appendix, with robust median/MAD-based thresholding for peak detection [21]. IV. M ETHOD 
+
+We present ADaCoRe , a signal-aware replay pipeline for memory-efficient unsupervised continual learning on EEG signals. The core challenge is to preserve salient EEG features while storing only a compact representation per subject. ADa-CoRe addresses this through four coordinated components: (1) saliency-driven protection of morphologically important timepoints; (2) anti-alias compression via rational polyphase resampling; (3) overwrite-augmented reconstruction during memory replay; and (4) exemplar maintenance via prototype-confidence selection. A contrastive predictive coding (CPC)-based teacher [18] provides pseudo-labels and confidence scores, and remains fixed during adaptation. The buffer stores compressed segments with lightweight metadata. 
+
+A. Saliency-Driven Protection 
+
+Let x ∈ RN ×C denote an EEG segment with N time-points and C channels. We first derive a scalar saliency trace S[n] designed to highlight timepoints containing strong rhythmic or transient information. This trace is computed using a lightweight unsupervised procedure that combines band-specific spectral envelopes and energy-based cues. Specifically, we define a set of canonical EEG frequency bands B (delta, theta, alpha/ μ, beta, optionally up to 45 Hz). For each band ARXIV PREPRINT 4
+
+b ∈ B , the instantaneous power Pow b[n] is obtained by zero-phase bandpass filtering followed by Hilbert magnitude, then averaged across channels. Band contributions are weighted by robust statistics wb (normalized trimmed means or medians) and combined as: 
+
+S[n] = X
+
+> b∈B
+
+wb Pow b[n] + γ Ψ( x[n]) , (1) where Ψ( ·) is the Teager-Kaiser operator described in Ap-pendix and γ is a small weighting constant [22], [23]. We detect salient peaks where S[n] exceeds the adaptive threshold τ = Med( S) + κ · 1.4826 MAD( S), with κ ∈ [2 , 3] 
+
+described in Appendix. Around each peak, a neighborhood of radius ρ is marked as protected. To control memory use, we cap the total protected coverage to ϕN samples ( ϕ ∈ (0 , 1) ) by greedily selecting the strongest peaks until the limit is reached. The resulting set of protected indices is P. The first and last samples are always kept for reconstruction stability. 
+
+B. Rational Polyphase Compression 
+
+Outside the protected region P, we perform rational re-sampling at rate u/d to obtain a uniform low-rate sequence. We apply a standard rational polyphase resampler fRP (see Appendix for its full definition): 
+
+y = fRP (x; u, d ) ∈ R ˜N ×C , ˜N ≈
+
+l
+
+N · ud
+
+m
+
+.
+
+We store (1) the compressed sequence y (single precision), (2) the protected verbatim samples on P, and (3) minimal meta-data (u, d, P). Endpoints are always included in P to avoid extrapolation at replay. Given a target keep ratio r ∈ (0 , 1] , we select (u, d ) via a continued-fraction rational approximation of 
+
+r with a bounded denominator d ≤ dmax (typically 64 or 128). Since protected coverage |P| slightly perturbs the realized ratio, we choose between the two closest Farey neighbors to minimize || y| + |P| − rN |.
+
+C. Overwrite-Augmented Reconstruction 
+
+For replay, we reconstruct a dense sequence by the adjoint 
+
+rate (d, u ) applied to the stored uniform sequence y:
+
+˜x = fRP (y; d, u ) ∈ RN ×C .
+
+To guarantee exact fidelity over salient regions, we then overwrite protected indices by their stored verbatim values: 
+
+˜x[t] ← x[t], ∀ t ∈ P .
+
+If metadata are missing or inconsistent with |y| and N , we fall back to per-channel linear interpolation from the joint index set {0, N − 1} ∪ P , which always includes the endpoints to avoid extrapolation. 
+
+D. Exemplar Maintenance via Prototype-Confidence Selection 
+
+To maintain a fixed memory budget, we manage the replay buffer using class- and confidence-aware selection strategies for true and pseudo-labeled samples. Let φ(x) denote the 
+
+frozen feature extractor to represent each stored EEG segment. For each class y, we compute its feature-space prototype: 
+
+μy = 1
+
+|S y |
+
+X
+
+> x∈S y
+
+φ(x),
+
+where Sy is the set of stored samples for class y. If the true-labeled partition exceeds its quota Mtrue , we rank samples by 
+
+∥φ(x) − μy ∥2 and retain those closest to μy .A pseudo-labeled sample is accepted into the buffer only if its maximum softmax confidence exceeds a threshold τ
+
+for at least Nmin time windows (default τ =0 .9, Nmin =15 ). Among the accepted items, the most confident are retained until the pseudo-labeled quota Mpseudo is satisfied. All budgets are measured as kept timepoints |y| + |P| (times channels), directly reflecting storage cost. Pseudo-labeled samples are stored in the same compressed form with metadata (u, d, P).The full ADaCoRe algorithm is provided in Appendix. V. E XPERIMENT 
+
+In this section, we first describe the experimental setups and then present the experimental results with an in-depth analysis. 
+
+A. Experimental Setups 
+
+Datasets. We evaluate ADaCoRe on three representa-tive EEG benchmarks with diverse temporal and cogni-tive characteristics: ISRUC [24] (overnight sleep staging), 
+
+FACED [25] (emotion decoding from naturalistic interac-tions), and PhysioNet-MI [15] (motor imagery trials with 
+
+μ/β ERD/ERS). Data preprocessing follows the protocol used in previous work [8], with dataset-specific filter bands and saliency presets detailed in Appendix. 
+
+Baselines. We benchmark against three groups of baselines: (1) CL/CDA methods including MMD [26], TSTCC [16], EWC [9], LwF [11], UCL-GV [27], ConDA [28], CoTTA [14], and ReSNT [29]; (2) Replay-based prior art , represented by BrainUICL [8]; and (3) Internal ablations and variants , in-cluding full signals without compression, polyphase only with-out saliency protection, and ADaCoRe with both polyphase and keyframe. We compare random selection versus prototype-confidence selection (PCS) under matched memory budgets measured in stored timepoints, and report a no-limit upper bound on FACED (135 full signals). 
+
+Implementation Details. All models are initialized from a common source-pretrained encoder and adapted incrementally in a subject-by-subject stream. Unless otherwise noted, we use a 1D-ResNet-18 encoder, followed by a 2-layer GRU and a linear classifier. The CPC teacher shares the same backbone and is trained with contrastive predictive coding on source subjects [18]. Saliency stride is s = 5 , the smoothing window is W = ⌊0.5 Fs⌋ in samples, and the Kaiser parameter is β =8.6 [30]. Protection windows span 0.5-1 s around salient peaks, with coverage cap ϕ = 0 .05 , and median/MAD threshold κ =2.5 [21]. Pseudo-labeled samples are accepted only if their confidence exceeds τ = 0 .9 for at least Nmin = 15 time windows. See Appendix for further details. 
+
+Evaluation Metrics. Following previous work [8], we report Accuracy (ACC) and Macro-averaged F1 (MF1) as ARXIV PREPRINT 5                                                                                                                                                                                       
+
+> TABLE I OVERALL PERFORMANCE . ACC AND MF1 MEASURE PLASTICITY ; AAA AND AAF1 MEASURE STABILITY . T HE LAST THREE COLUMNS REPORT BUFFER SIZE AS A PERCENTAGE OF THE BRAIN UICL BUFFER FOR EACH DATASET .Methods
+> ISRUC FACED PhysioNet-MI Buffer size (% of BrainUICL)
+> Plasticity Stability Plasticity Stability Plasticity Stability ISRUC FACED MI ACC MF1 AAA AAF1 ACC MF1 AAA AAF1 ACC MF1 AAA AAF1 MMD 68.6 62.2 68.1 65.5 34.5 29.7 30.8 27.1 44.5 43.7 45.0 44.4 –––TSTCC 68.9 63.8 61.3 55.5 37.8 33.7 33.5 30.7 44.9 43.3 45.4 44.1 –––EWC 70.2 65.2 68.4 66.1 37.5 33.3 33.4 30.5 46.9 45.9 46.3 45.4 –––LwF 71.7 67.0 65.1 59.9 38.3 34.8 34.7 32.3 47.0 45.9 45.8 44.2 –––UCL-GV 71.8 66.4 70.7 68.6 38.8 34.8 34.3 31.7 42.7 41.5 42.5 42.0 100 100 100 ConDA 71.6 66.4 70.6 68.5 38.1 34.3 33.9 31.1 45.5 44.4 44.9 43.6 100 100 100 CoTTA 72.2 67.6 69.2 64.7 39.3 35.5 34.7 32.1 47.4 46.3 46.1 44.6 –––ReSNT 70.7 66.2 71.3 69.4 37.2 33.3 33.8 31.1 45.5 44.5 45.5 44.7 100 100 100 BrainUICL 74.9 69.9 74.0 72.0 40.3 36.8 36.0 33.9 48.4 47.5 48.7 48.3 100 100 100 ADaCoRe 77.6 71.6 75.5 73.3 55.6 54.0 51.4 51.4 61.7 58.2 72.2 70.6 ∼15 ∼10 ∼5
+
+plasticity metrics, and Average Accuracy on future (not-yet-adapted) subjects (AAA) and Average Macro-F1 on future subjects (AAF1) as stability metrics. Formal definitions are provided in Appendix. 
+
+B. Experimental Results 
+
+Overall Performance. Table I reports UICL results on ISRUC, FACED, and PhysioNet–MI. ADaCoRe outperforms both generic CL/CDA baselines and the state-of-the-art BrainUICL [8] in all metrics, showing consistent gains in both plasticity and stability across all three datasets. On ISRUC, the improvements over BrainUICL reach +2 .7% ACC and 
+
++1 .3% AAF1. On FACED, which involves more variable affective contents, improvements reach +15 .3% ACC and 
+
++17 .5% AAF1, suggesting that our signal-aware compression, reconstruction, and maintenance strategy better captures mean-ingful variation under limited memory. On PhysioNet–MI, a motor-imagery decoding task with shorter trials, ADaCoRe still yields substantial gains (up to +13 .3% ACC and +22 .3%AAF1), indicating that the proposed framework generalizes beyond sleep staging and affective EEG to different paradigms while operating with only 5-15% of the BrainUICL buffer. 
+
+Ablation Study. To isolate the contribution of each compo-nent, we evaluate four compression variants and three buffer-selection strategies in Table II. For compression and recon-struction , we compare (1) full signal storage without com-pression; (2) linear-only compression without saliency-aware protection; (3) polyphase-only compression without saliency-aware protection; and (4) ADaCoRe with both polyphase com-pression and keyframe preservation. For buffer management 
+
+under a fixed memory budget (buffer size equivalent to 135 full samples), we further compare (5) an oracle-like “no buffer limit” baseline that stores all past data; (6) random selection; and (7) prototype-confidence selection (PCS). On FACED, a naive linear compression baseline severely degrades both plasticity and stability ( e.g. , ACC drops to 
+
+22 .6% and AAF1 to 14 .6%), indicating that simply downsam-pling in the time domain destroys task-relevant EEG structure. In contrast, the frequency-aware polyphase design maintains performance close to the full-storage setting (ACC 52 .9% vs. 
+
+54 .3%), underscoring the importance of spectrally structured    
+
+> Fig. 3. Effect of the keep ratio runder polyphase-only compression on
+> FACED .
+
+compression. Adding saliency-aware keyframe preservation on top of polyphase (ADaCoRe) further improves both plasticity and stability, achieving the best overall performance under the same number of stored points. Under a fixed buffer size, PCS dramatically outperforms random selection and even surpasses the no-buffer-limit baseline, highlighting that selecting sam-ples based on both prototype distance and confidence is crucial under tight memory constraints. 
+
+Visualization Analysis. Figure 3 plots the four evaluation metrics on FACED as a function of keep ratio r under polyphase-only compression. Performance is stable for r ≳
+
+0.15 , with a broad plateau where plasticity and stability are near-optimal; extremely aggressive compression ( r = 0.1)slightly harms performance, while moving towards r = 1 
+
+provides little benefit and can reduce stability, suggesting a regularizing effect of moderate compression. Figure 4 provides qualitative examples of reconstruction fidelity on all three datasets: reconstructed traces closely follow originals, and error panels mainly contain low-amplitude residuals, with high per-channel correlation, SNR, and spectral similarity. VI. C ONCLUSION 
+
+In this work, we present ADaCoRe , a signal-aware unsu-pervised continual learning approach for EEG that jointly inte-grates saliency-driven keyframe protection, rational polyphase ARXIV PREPRINT 6
+
+(a) ISRUC reconstruction grid. (b) FACED reconstruction grid. (c) PhysioNet–MI reconstruction grid. 
+
+Fig. 4. Qualitative reconstruction fidelity with ADaCoRe. For each dataset, we show a representative segment from the first few EEG channels (rows) and three traces per channel (columns): original waveform, waveform reconstructed from the compressed representation, and pointwise reconstruction error (Recovered 
+
+− Original). The title of each original panel reports three agreement measures between the original signal x and its reconstruction ˜x: r (Pearson correlation over time), SNR in dB (signal power vs. reconstruction error power), and PSDcos (cosine similarity between Welch power spectra). Higher r, SNR, and PSDcos indicate better preservation of waveform shape, amplitude, and frequency content. TABLE II ABLATION OF COMPRESSION , RECONSTRUCTION , AND PROTOTYPE -CONFIDENCE SELECTION (PCS) ON FACED . T HE BUFFER SIZE FOR PCS IS SET TO 135 FULL SAMPLES .Methods Plasticity Stability 
+
+ACC MF1 AAA AAF1 
+
+Compression and reconstruction 
+
+Without compression 54.3 52.9 50.2 50.3 Linear only (no keyframe) 22.6 16.1 20.4 14.6 Polyphase only (no keyframe) 52.9 51.3 49.7 49.9 ADaCoRe (polyphase + keyframe) 55.6 54.0 51.4 51.4 
+
+Prototype-confidence selection (PCS) 
+
+No buffer limit 40.3 36.8 36.0 33.9 Random selection 16.8 9.7 17.9 11.3 PCS (prototype + confidence) 54.5 53.1 50.3 50.4 
+
+compression, overwrite-based reconstruction, and prototype– confidence selection under strict memory constraints. Through principled design and analysis, ADaCoRe achieves strong plasticity–stability trade-offs while significantly reducing re-play storage. Experiments across sleep staging, motor imagery, and affective decoding demonstrate consistent advantages over recent strong baselines. Future directions include scaling to richer affective datasets, adaptive memory allocation under nonstationary shifts, and extending the framework to other biosignals and on-device applications. ARXIV PREPRINT 7
+
+REFERENCES [1] M. Milne-Ives, J. Duun-Henriksen, L. Blaabjerg, B. Mclean, R. Shankar, and E. Meinert, “At home eeg monitoring technologies for people with epilepsy and intellectual disabilities: A scoping review,” Seizure , vol. 110, pp. 11–20, 2023. [2] S. Weisdorf, J. Duun-Henriksen, M. J. Kjeldsen, F. R. Poulsen, S. W. Gangstad, and T. W. Kjær, “Ultra-long-term subcutaneous home mon-itoring of epilepsy—490 days of eeg from nine patients,” Epilepsia ,vol. 60, no. 11, pp. 2204–2214, 2019. [3] D. J. McFarland and J. R. Wolpaw, “Eeg-based brain–computer inter-faces,” Current Opinion in Biomedical Engineering , vol. 4, pp. 194–200, 2017. [4] M. Perslev, M. Jensen, S. Darkner, P. J. r. Jennum, and C. Igel, “U-time: A fully convolutional network for time series segmentation applied to sleep staging,” in NeurIPS , H. Wallach, H. Larochelle, A. Beygelzimer, F. d'Alch´ e-Buc, E. Fox, and R. Garnett, Eds., vol. 32. Curran Associates, Inc., 2019. [Online]. Available: https://proceedings.neurips.cc/paper files/paper/ 2019/file/57bafb2c2dfeefba931bb03a835b1fa9-Paper.pdf [5] S.-A. Rebuffi, A. Kolesnikov, G. Sperl, and C. H. Lampert, “icarl: Incremental classifier and representation learning,” in CVPR , 2017, pp. 2001–2010. [6] D. Lopez-Paz and M. Ranzato, “Gradient episodic memory for continual learning,” in NeurIPS , vol. 30, 2017. [7] American Academy of Sleep Medicine, The AASM Manual for the Scor-ing of Sleep and Associated Events: Rules, Terminology and Technical Specifications . AASM, 2007. [8] Y. Zhou, S. Zhao, J. Wang, H. Jiang, S. Li, T. Li, and G. Pan, “BrainUICL: An unsupervised individual continual learning framework for EEG applications,” in ICLR , 2025. [Online]. Available: https://openreview.net/forum?id=6jjAYmppGQ [9] J. Kirkpatrick, R. Pascanu, N. Rabinowitz, J. Veness, G. Desjardins, A. A. Rusu, K. Milan, J. Quan, T. Ramalho, A. Grabska-Barwinska, D. Hassabis, C. Clopath, D. Kumaran, and R. Hadsell, “Overcoming catastrophic forgetting in neural networks,” PNAS ,vol. 114, no. 13, pp. 3521–3526, 2017. [Online]. Available: https://www.pnas.org/doi/abs/10.1073/pnas.1611835114 [10] F. Zenke, B. Poole, and S. Ganguli, “Continual learning through synaptic intelligence,” in ICML , 2017, pp. 3987–3995. [11] Z. Li and D. Hoiem, “Learning without forgetting,” IEEE TPAMI ,vol. 40, no. 12, pp. 2935–2947, 2018. [12] E. Tzeng, J. Hoffman, N. Zhang, K. Saenko, and T. Darrell, “Deep domain confusion: Maximizing for domain invariance,” 2014, arXiv:1412.3474 [cs.CV]. [13] Y. Ganin and V. Lempitsky, “Unsupervised domain adaptation by backpropagation,” in ICML , vol. 37, 2015, pp. 1180–1189. [14] Q. Wang, O. Fink, L. Van Gool, and D. Dai, “Continual test-time domain adaptation,” in CVPR , 2022, pp. 7201–7211. [15] G. Schalk, D. J. McFarland, T. Hinterberger, N. Birbaumer, and J. R. Wolpaw, “Bci2000: A general-purpose brain-computer interface (bci) system,” IEEE TBE , vol. 51, no. 6, pp. 1034–1043, 2004. [16] E. Eldele, M. Ragab, Z. Chen, M. Wu, C. K. Kwoh, X. Li, and C. Guan, “Time-series representation learning via temporal and contextual con-trasting,” in IJCAI , 2021, pp. 2352–2359. [17] M. Mermillod, A. Bugaiska, and P. Bonin, “The stability-plasticity dilemma: Investigating the continuum from catastrophic forgetting to age-limited learning effects,” Frontiers in Psychology , vol. 4, p. 54654, 2013. [18] A. van den Oord, Y. Li, and O. Vinyals, “Representation learning with contrastive predictive coding,” 2018. [19] A. Oppenheim, R. Schafer, and J. Buck, Discrete-time Signal Processing , ser. Prentice Hall International Editions Series. Prentice Hall, 1999. [Online]. Available: https://books.google.co.jp/books?id= cR3CQgAACAAJ [20] A. Boudraa and F. Salzenstein, “Teager–kaiser energy methods for signal and image analysis: A review,” Digital Signal Processing , vol. 78, pp. 338–375, 2018. [21] P. J. Rousseeuw and C. Croux, “Alternatives to the median absolute deviation,” JASA , vol. 88, no. 424, pp. 1273–1283, 1993. [Online]. Available: http://www.jstor.org/stable/2291267 [22] P. Maragos, J. Kaiser, and T. Quatieri, “Energy separation in signal modulations with application to speech analysis,” IEEE TSP , vol. 41, no. 10, pp. 3024–3051, 1993. [23] ——, “On amplitude and frequency demodulation using energy opera-tors,” IEEE TSP , vol. 41, no. 4, pp. 1532–1550, 1993. [24] S. Khalighi, T. Sousa, J. M. Santos, and U. Nunes, “Isruc-sleep: A comprehensive public dataset for sleep researchers,” Computer Methods and Programs in Biomedicine , vol. 124, pp. 180–192, 2016. [Online]. Available: https://www.sciencedirect.com/science/article/pii/ S0169260715002734 [25] J. Chen, X. Wang, C. Huang, X. Hu, X. Shen, and D. Zhang, “A large finer-grained affective computing eeg dataset,” Scientific Data , vol. 10, no. 1, p. 740, 2023. [26] A. Gretton, K. Borgwardt, M. Rasch, B. Sch¨ olkopf, and A. Smola, “A kernel method for the two-sample-problem,” in NeurIPS ,B. Sch¨ olkopf, J. Platt, and T. Hoffman, Eds., vol. 19. MIT Press, 2006. [Online]. Available: https://proceedings.neurips.cc/paper files/paper/2006/file/e9fb2eda3d9c55a0d89c98d6c54b5b3e-Paper.pdf [27] A. M. N. Taufique, C. S. Jahan, and A. Savakis, “Unsupervised continual learning for gradually varying domains,” in CVPRW , 2022, pp. 3739– 3749. [28] ——, “Conda: Continual unsupervised domain adaptation,” arXiv preprint arXiv:2103.11056 , 2021. [29] T. Duan, Z. Wang, G. Doretto, F. Li, C. Tao, and D. Adjeroh, “Replay with stochastic neural transformation for online continual eeg classifi-cation,” in BIBM , 2023, pp. 1874–1879. [30] J. F. Kaiser, “Nonrecursive digital filter design using I0-sinh window function,” in Proc. IEEE Int. Symp. Circuits and Systems (ISCAS’74) ,1974, pp. 20–23. [31] R. Crochiere and L. Rabiner, Multirate Digital Signal Processing ,ser. Prentice-Hall Signal Processing Series: Advanced monographs. Prentice-Hall, 1983. [Online]. Available: https://books.google.co.jp/ books?id=X NSAAAAMAAJ ARXIV PREPRINT 8
+
+APPENDIX ASIGNAL PROCESSING DETAILS 
+
+This supplement details the discrete-time model and signal-processing operators that underlie our saliency, compression, and reconstruction modules. 
+
+A. Discrete-time model and notation 
+
+Let Fs denote the sampling rate in hertz. A continuous-time signal xa(t) is observed as a discrete-time sequence 
+
+x[n] = xa
+
+ nFs
+
+
+
+, n ∈ Z. (2) For C channels, we write x[n] ∈ RC . In typical implementa-tions, a tensor of shape [T, C, L ] corresponds to T epochs, C
+
+channels, and L samples per epoch. 
+
+B. Linear time-invariant filtering 
+
+A linear time-invariant (LTI) filter with impulse response 
+
+h[n] acts on a discrete-time signal x[n] via convolution: 
+
+y[n] = ( h ∗ x)[ n] = 
+
+> ∞
+
+X
+
+> k=−∞
+
+h[k] x[n − k]. (3) In our implementation we employ finite-impulse-response (FIR) and infinite-impulse-response (IIR) designs with pass-bands chosen according to the downstream task. Zero-phase responses are implemented by forward–backward filtering (filtfilt ), which applies h in both directions to cancel phase distortion [19]. 
+
+C. Sampling, resampling, and polyphase realization 
+
+If the underlying continuous-time signal xa is effectively band-limited to B Hz, sampling above 2B avoids aliasing. Any rate reduction by an integer factor M lowers the Nyquist to Fs/(2 M ); consequently, an anti-alias low-pass filter is required before decimation. We define the upsampler (↑ L) and decimator (↓ M ) acting on x[n] by 
+
+(↑ L x )[ n] = 
+
+(
+
+x[n/L ], n ≡ 0 (mod L),
+
+0, otherwise ,
+
+(↓ M x )[ n] = x[nM ].
+
+(4) Let hL,M [n] be a real, linear-phase, low-pass FIR kernel that serves simultaneously as an anti-imaging and anti-aliasing filter. The rational polyphase resampler is 
+
+fRP (x; L, M ) = ↓ M   hL,M ∗ (↑ L x ) . (5) Efficient polyphase and multirate implementations follow stan-dard references [19], [31]. 
+
+D. Bandpass filtering and analytic envelopes 
+
+Task-relevant EEG rhythms ( e.g. , delta, theta, alpha ( μ), beta, sigma) are isolated by zero-phase bandpass filters. For a band-limited signal x[n] in a given band, the analytic signal via the Hilbert transform H{·} is 
+
+z[n] = x[n] + j H{ x[n]}, (6) and the envelope e[n] = |z[n]| serves as a smooth esti-mate of instantaneous amplitude; e[n]2 approximates instan-taneous band power [19]. For multichannel data, envelopes are smoothed and averaged across channels before they are combined into the saliency trace. 
+
+E. Transient energy via the Teager–Kaiser operator 
+
+Transient events are emphasized by the Teager–Kaiser en-ergy operator 
+
+Ψ x[n] = x[n]2 − x[n − 1] x[n + 1] , (7) which is applied per channel, rectified, short-window smoothed, and aggregated across channels [22], [23]. The resulting transient energy sequence is combined with band-power envelopes to form the scalar saliency trace S[n] de-scribed in the main text. APPENDIX BMETRIC DEFINITIONS 
+
+Let the unlabeled subject stream be {U (t)}Tt=1 and Mt
+
+denote the model after adapting on subject t.
+
+A. Plasticity (current subject) 
+
+We quantify plasticity by averaging performance on the current subject at each adaptation step: ACC = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Acc  Mt, U(t), (8) MF1 = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+MacroF1  Mt, U(t). (9) 
+
+B. Stability and generalization (future subjects) 
+
+For stability/generalization, at each step t we evaluate Mt
+
+on subjects that have not yet been adapted, collected into Gt =
+
+{s | s > t }. We then average per-step performance over Gt
+
+and over t:AAA = 1
+
+T − 1 
+
+> T−1
+
+X
+
+> t=1
+
+1
+
+|Gt|
+
+X
+
+> s∈Gt
+
+Acc  Mt, U(s), (10) AAF1 = 1
+
+T − 1 
+
+> T−1
+
+X
+
+> t=1
+
+1
+
+|Gt|
+
+X
+
+> s∈Gt
+
+MacroF1  Mt, U(s). (11) When a dataset defines official evaluation folds, we follow that protocol and compute all metrics within each fold. ARXIV PREPRINT 9
+
+TABLE III DATASET -SPECIFIC DEFAULTS FOR SALIENCY , PROTECTION , AND PREPROCESSING .Dataset Fs Bands (examples) Top-K Robust stat. γ ϕ ρ (s) W (s) ISRUC 100 {[0 .5, 4] , [11 , 16] } 2 median 0.3 0.05 0.5–1.0 0.5 FACED 250 {[0 .5, 4] , [4 , 8] , [8 , 13] , [13 , 30] , [30 , 45] } 3 median 0.1 0.10 0.5–1.0 0.5 PhysioNet–MI 160 {[6 .0, 9.0] , [8 .0, 13 .0] , [13 .0, 30 .0] } 2 trimmed mean (0.1) 0.3 0.10 0.1–0.5 0.1 Peak detection uses κ=2 .5 unless stated; ISRUC: skip non-EEG channels ( e.g. , EOG= 2) when present. TABLE IV COMPUTE AND CPU LATENCY SUMMARY ON FACED FOR A 30 SSEGMENT WITH SHAPE 32 × 7500 AND B=1 .Item Value #Params (THOP) 11.506 M MACs / forward (THOP) 8.689 × 10 8     
+
+> Approx. GFLOPs / forward ( 2×MACs) 1.738 BrainUICL replay-time forward (raw, 1 thread / 24 threads) 17.554 ms / 7.903 ms ADaCoRe replay E2E (recover+forward, 1 thread / 24 threads) 20.480 ms / 10.277 ms Replay overhead (ADaCoRe −BrainUICL) 2.926 ms / 2.374 ms Compression insertion cost (one-time, per segment) ∼88–90 ms
+
+APPENDIX CDATASET -SPECIFIC DEFAULTS AND DIFFERENCES 
+
+APPENDIX DADDITIONAL EXPERIMENTAL ANALYSES 
+
+A. Compute and latency 
+
+Table IV reports the model compute and CPU-side replay latency on FACED for a 30 s segment with shape 32 ×7500 and batch size B=1 . The encoder contains 11.506M parameters and requires 8.689 × 10 8 MACs per forward pass, correspond-ing to approximately 1.738 GFLOPs if one MAC is counted as two floating-point operations. At replay time, ADaCoRe adds reconstruction before the standard forward pass. This increases the per-segment latency from 17.554 ms to 20.480 ms with one CPU thread, and from 7.903 ms to 10.277 ms with 24 CPU threads. The resulting additional replay-time overhead is 2.926/2.374 ms per 30 s segment, while the one-time compres-sion cost incurred when inserting a segment into the buffer is approximately 88–90 ms. 
+
+B. Sensitivity to keyframe hyperparameters 
+
+Figure 5 evaluates the sensitivity of the keyframe coverage cap ϕ and neighborhood radius ρ on FACED. When sweeping 
+
+ϕ ∈ [0 .07 , 0.15] with ρ=0 .5 s, ACC/MF1 varies within approx-imately one point and AAA/AAF1 within less than 0.4 points. When sweeping ρ ∈ [0 .25 , 1.25] s with ϕ=0 .1, ACC/MF1 varies by at most about 0.8 points and AAA/AAF1 by at most about 0.35 points. These results indicate a broad stable plateau around the default setting (ϕ=0 .1, ρ =0 .5 s) .
+
+C. Robustness to EMG-like artifacts 
+
+Table V evaluates whether Teager–Kaiser-based saliency is vulnerable to EMG-like high-frequency artifacts on FACED. We use bandpass_gaussian noise with seed 4321 under two modes. In compress_only , noise is injected only during buffer insertion, i.e. , during saliency estimation and 
+
+TABLE V NOISE ROBUSTNESS UNDER EMG-LIKE ARTIFACTS ON FACED USING 
+
+> B A N D P A S S
+
+_G A U S S I A N NOISE WITH SEED 4321. Noise compress_only all ∆ACC/MF1 ACC/MF1 AAA/AAF1 ACC/MF1 AAA/AAF1 Clean 55.6/54.0 51.4/51.4 55.6/54.0 51.4/51.4 0.0/0.0 +40 dB 55.0/53.4 51.4/51.3 55.2/53.7 51.4/51.4 −0.4/ − 0.3
+
++20 dB 54.9/53.3 51.3/51.3 55.6/54.1 51.4/51.4 +0 .0/ + 0 .1
+
++10 dB 55.0/53.4 51.4/51.3 55.3/53.7 51.0/51.0 −0.3/ − 0.3
+
++5 dB 55.4/54.0 51.1/51.1 53.9/52.3 50.2/50.1 −1.7/ − 1.7
+
+compression, isolating the robustness of keyframe selection. In all , noise is applied end-to-end to input, replay, train-ing, and evaluation, reflecting a stronger deployment-time corruption. Under compress_only , degradation remains negligible from 40 dB to 5 dB, with a maximum ACC/MF1 drop no larger than 0.7 and nearly unchanged AAA/AAF1. Under all , performance is stable at moderate noise levels from 40 dB to 10 dB, while the extreme 5 dB setting causes a limited drop of 1.7 points in ACC/MF1. This suggests that band-limited processing and morphology-aware keyframe protection prevent high-frequency artifacts from dominating replay selection, and the remaining degradation under severe noise mainly reflects general input corruption rather than a saliency-specific failure mode. APPENDIX EROBUST ADAPTIVE THRESHOLDING : WHY MED +
+
+k × 1.4826 MAD? We adopt a robust threshold τ = Med( S) + k ·
+
+1.4826 MAD( S) for peak detection in the saliency trace S[n],where 
+
+MAD( S) = median {| S[n] − Med( S)|} .
+
+This construction mirrors the familiar “ μ + kσ ” rule while replacing the mean and standard deviation with their robust counterparts (median and a robust scale estimator), yielding high resistance to outliers and heavy-tailed noise—common in EEG due to artifacts such as EMG bursts. 
+
+A. Origin of 1.4826 (normal-consistent scaling) 
+
+For a standard normal variable Z ∼ N (0 , 1) ,
+
+median( |Z|) = m such that Pr( |Z| ≤ m) = 0 .5.ARXIV PREPRINT 10 
+
+(a) Sweep of the coverage cap ϕ with ρ=0 .5 s. (b) Sweep of the keyframe radius ρ with ϕ=0 .1.              
+
+> Fig. 5. FACED sensitivity for keyframe hyperparameters. Left: ϕ∈[0 .07 ,0.15] with ρ=0 .5s. Right: ρ∈[0 .25 ,1.25] s with ϕ=0 .1.
+
+Algorithm 1 ADaCoRe (per-sequence processing and main-tenance) 
+
+Require: EEG segment x ∈ RN ×C , target keep ratio r,budgets Mtrue , M pseudo (kept points) 
+
+A. Saliency computation 
+
+Compute scalar saliency trace S[n] from band-limited en-velopes and Teager–Kaiser energy. Detect peaks above a median- and MAD-based threshold, expand each by radius ρ, and form protected set P (cap 
+
+|P| ≤ ϕN and include endpoints). 
+
+B. Compression 
+
+Choose rational pair (u, d ) with d ≤ dmax such that u/d ≃ r
+
+(optionally refined via nearby Farey neighbors). Compress x by rational polyphase resampling y =
+
+fRP (x; u, d ) and store (y, {x[t]}t∈P , u, d, P) in the replay buffer. 
+
+C. Reconstruction at replay time 
+
+Reconstruct dense sequence ˜x = fRP (y; d, u ) and overwrite 
+
+˜x[t] ← x[t] for all t ∈ P .
+
+D. Exemplar maintenance (PCS) if pseudo-labeled exemplar passes the confidence gate on 
+
+≥ Nmin time windows then 
+
+Insert its compressed tuple into the pseudo-labeled parti-tion of the buffer. 
+
+end if if true-labeled partition exceeds budget Mtrue then 
+
+Update per-class prototypes μy and retain exemplars closest to μy until the budget is met. 
+
+end if if pseudo-labeled partition exceeds budget Mpseudo then 
+
+Rank pseudo-labeled exemplars by mean confidence and keep the top ones under the timepoint budget. 
+
+end if 
+
+Hence 2Φ( m) − 1 = 0.5 ⇒ Φ( m) = 0.75 ⇒ m =Φ−1(0 .75) ≈ 0.67448975 , where Φ is the standard normal CDF. For X ∼ N (μ, σ 2),
+
+MAD( X) = median |X − Med( X)|
+
+= σ · median |Z|≈ 0.67448975 σ. 
+
+Therefore a normal-consistent estimator of σ is 
+
+bσMAD = 10.67448975 MAD ≈ 1.4826 MAD .
+
+Using bμ = Med and bσ = bσMAD makes 
+
+τ = bμ + k bσ
+
+a robust analogue of the kσ threshold (see also [21]). Typical choices k ∈ [2 , 3] correspond, under near-normal S, to single-sided exceedance probabilities on the order of ∼ 2.3% (k=2 )down to ∼ 0.13% (k=3 ), providing an interpretable knob for controlling false peaks while preserving robustness to outliers. 
+
+B. Why not mean and variance? 
+
+The mean and standard deviation have low breakdown points and are easily inflated by transient artifacts, which would raise the threshold and suppress true EEG events. The median and MAD have 50% breakdown points, keeping thresholds stable across subjects and sessions with heteroge-neous noise. APPENDIX FAD ACORE ALGORITHM 
+
+Algorithm 1 presents the complete ADaCoRe algorithm. APPENDIX GENGINEERING NOTES 
+
+Replay uses mini-batches drawn from the buffer. When both true- and pseudo-labeled items are available, we employ a fixed mixing ratio between the two sources for batching (kept constant across methods for fairness). The teacher is set to eval mode to freeze batch-normalization statistics and avoid drift during continual adaptation. Since labels are ARXIV PREPRINT 11 
+
+unavailable during individual adaptation, pseudo-labels and their confidence scores follow the standard BrainUICL-style UICL protocol. ADaCoRe further uses PCS to prioritize pseudo-labeled samples by prediction confidence, reducing error accumulation, and to retain prototype-consistent samples by within-class center distance, improving representativeness and diversity. Together with the explicit coverage cap ϕ, this design prevents the buffer from being dominated by a narrow set of high-confidence samples and mitigates confirmation-bias effects during extended adaptation. Implementation-level details such as batch sizes, optimizer choices, and learning-rate schedules follow standard practice for 1D convolutional EEG encoders and are held constant across all compared methods.

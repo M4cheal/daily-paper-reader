@@ -1,0 +1,814 @@
+Title: FAAST: Forward-Only Associative Learning via Closed-Form Fast Weights for Test-Time Supervised Adaptation
+
+URL Source: https://arxiv.org/pdf/2605.04651v1
+
+Published Time: Thu, 07 May 2026 00:41:29 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# FAAST: Forward-Only Associative Learning via Closed-Form Fast Weights for Test-Time Supervised Adaptation 
+
+Guangsheng Bao 1 2 Hongbo Zhang 1 2 Han Cui 1 2 Yanbin Zhao 3 Yue Zhang 2
+
+## Abstract 
+
+Adapting pretrained models typically involves a trade-off between the high training costs of backpropagation and the heavy inference over-head of memory-based or in-context learning. We propose FAAST, a forward-only associative adaptation method that analytically compiles la-beled examples into fast weights in a single pass. By eliminating memory or context de-pendence, FAAST achieves constant-time infer-ence and decouples task adaptation from pre-trained representation. Across image classifica-tion and language modeling benchmarks, FAAST matches or exceeds backprop-based adaptation while reducing adaptation time by over 90% and is competitive to memory/context-based adapta-tion while saving memory usage by up to 95%. These results demonstrate FAAST as a highly ef-ficient, scalable solution for supervised task adap-tation, particularly for resource-constrained mod-els. We release the code and models at https: //github.com/baoguangsheng/faast .
+
+## 1. Introduction 
+
+Backpropagation is the dominant learning paradigm for deep neural networks (Rumelhart et al., 1986) and underpins the success of modern models such as large language models (Brown et al., 2020; Chowdhery et al., 2023) and vision-language models (Radford et al., 2021; Alayrac et al., 2022). While highly effective, backpropagation-based adaptation remains expensive in regimes involving many downstream tasks, test-time adaptation, or online learning, where re-peated gradient computation, optimizer state maintenance, and iterative updates become a bottleneck (Benveniste et al., 2012; Finn et al., 2017). Even parameter-efficient methods such as LoRA (Hu et al., 2022) reduce but do not eliminate these costs, as they still rely on stochastic optimization and 
+
+> 1
+
+Zhejiang University 2Westlake University 3Shanghai Polytechnic University. Correspondence to: Yue Zhang 
+
+<zhangyue@westlake.edu.cn >.
+
+Preprint. May 7, 2026. 
+
+GPU-intensive training loops. These limitations motivate al-ternative adaptation mechanisms that are lightweight, stable, and amenable to rapid deployment. Recent work has explored memory- or context-based adap-tation, which enables models to adapt without parameter updates. In particular, memory-based methods store task examples or representations in an external memory and per-form explicit lookup at inference time (Khandelwal et al., 2019; Lewis et al., 2020; Izacard et al., 2023), while in-context learning (ICL) stores task examples in context and allow large language models to perform few-shot learning by conditioning on them (Brown et al., 2020). While effective, these approaches require either external memory or long contexts to hold many examples during inference, which scale at least linearly with the number of the examples (Dao et al., 2022; Press et al., 2021). Consequently, existing adap-tation strategies either rely on expensive gradient-based op-timization or shift the burden to memory/context-dependent inference, motivating mechanisms that are both gradient-free and inference-efficient. In this work, we introduce forward-only associative adap-tation via spectral transform (FAAST) , a third regime that avoids both backpropagation and context-length-dependent inference costs. The central observation is that downstream task adaptation often does not require modifying the rep-resentation of concepts or objects, but rather learning an 
+
+associative mapping between pretrained input and output embeddings (He et al., 2021; Wang et al., 2025; Bourigault & Bourigault, 2025). This motivates us to decompose learn-ing into two parts: (1) representation learning , handled by pretrained encoders and kept fixed during adaptation (Howard & Ruder, 2018; Devlin et al., 2019), and (2) asso-ciative learning , which maps input representations to output representations in a task-specific manner, reminiscent of classical associative memory and fast-weight models (Hebb, 1949; Hinton & Plaut, 1987; Ba et al., 2016). FAAST re-alizes forward-only associative learning by compiling as-sociative memory (paired inputs and outputs) in the form of key-value pairs into fast weights by solving a linear regression problem in closed form. Figure 1 compares the three adaptation paradigms discussed above. Figure (a) shows backpropagation-based adapta-
+
+1
+
+> arXiv:2605.04651v1 [cs.LG] 6 May 2026
+
+Forward-Only Associative Learning for Test-Time Adaptation Data Parameters      
+
+> Loss
+> Forward
+> Backpropagation
+> Fixed Parameters
+> Implicit
+> Memory
+> ℒ(y,&y)
+> ∇$ℒIterative
+> Updates
+> (
+> (a) Backprop -based Adaptation
+> (b) Memory/Context -based
+> Adaptation
+> Data
+> !!,#!
+
+## ···     
+
+> Explicit
+> Key -Value Cache
+> x"
+> !,#
+> !,#
+> !,#
+> Attention (In -context Learning)
+> Retrieval (Memory)
+
+## …
+
+## … !!       
+
+> Significant
+> retrieval overhead
+> Training Samples
+> Associative
+> Memory
+> !!,#!
+> Closed -form Solution
+> (c) Forward -Only Associate Adaptation (FAAST)
+> )⋆=+&,
+> Discarded KV -cache
+> Fast -weight )⋆
+> Inference Sample
+> Simple -Pass, Zero -Retrieval Inference with Fast Weights
+> Transformer
+> Layers
+
+## x L 
+
+> !!"# "$%"&
+> #∗
+
+Figure 1. Comparison of downstream task adaptation paradigms. 
+
+tion , where task-specific associations are encoded as learned weights via iterative gradient descent. Figure (b) illustrates 
+
+memory- or context-based adaptation , which injects task information through memory lookup or in-context atten-tion at inference time, incurring costs that scale with the number of examples. Figure (c) presents FAAST , which compiles labeled key-value pairs from frozen encoders into fast weights, enabling single-pass, gradient-free learning and constant-cost inference. FAAST is a non-parametric module, which can be embed-ded into existing neural networks that produce meaningful representations. Typically, in the context of large language models, we use successive hidden states of all tokens from middle layers as keys and values. New associations between context and desired outputs are appended into the mem-ory and compiled into a projection matrix. At inference time, the model conditions on both its original parametric knowledge and the learned fast weights. Unlike ICL, which requires retaining the full demonstration context in the at-tention cache, FAAST only preserves the computed fast weights, allowing the stored k–v pairs to be discarded after learning and resulting in substantially lower memory usage. We evaluate FAAST on typical supervised learning tasks including classification tasks and sequence modeling tasks. On image classification benchmarks, we show that FAAST achieves the same level of accuracy as backprop-based adaptation while saving 95% learning time. On lan-guage modeling tasks, FAAST enables small language models such as GPT-2 to have test-time adaptation abil-ity, while saving more than 93% training and inference cost than memory/context-based adaptation. On natural lan-guage downstream tasks, including sentiment classification tasks and sequence-to-sequence machine translation tasks, FAAST achieves consistently better full-set performance compared to LLM zero-shot or ICL few-shot baselines. In summary, we contribute: • We propose forward-only associative adaptation , for-malizing task adaptation as a forward-only associative learning process that avoids backpropagation, gradient descent, iterative updates, and prediction-error signals. • We introduce closed-form fast-weight construction ,compiling key-value pairs into task-specific fast weights in closed form, allowing the memory to be discarded at inference time. • We demonstrate that FAAST enables plug-and-play task adaptation for pretrained models , where the mod-ule can be embedded as a modular component in pre-trained networks, including large language models. 
+
+## 2. Related Work 
+
+As Table 1 summarizes, FAAST is related to a broad line of work on associative learning, fast weights, and alternatives to gradient-based adaptation. Prior studies have explored individual components such as associative memory, frozen representations, biologically inspired forward-only learn-ing rules, and pseudoinverse-based solutions. For exam-ple, linear probes and world models separate representa-tion learning from task-specific prediction (Alain & Bengio, 2016; Ha & Schmidhuber, 2018), while fast-weight and Hebbian-style models provide mechanisms for rapid asso-ciation (Hebb, 1949; Schmidhuber, 1992; Ba et al., 2016). 2Forward-Only Associative Learning for Test-Time Adaptation 
+
+Table 1. Comparison of FAAST with Representative Prior Approaches. Symbols: ✓= Yes, ✗= No, △ = Partial, ⋄ = Rare.                      
+
+> Property Prior Work Prior Representative Examples FAAST
+> Strict representation/association separation △Linear probes (Alain & Bengio, 2016); World models (Ha & Schmidhuber, 2018); Actor–critic RL (Sutton et al., 1998) — separation assumed but gradients or task losses often still influence representations
+> ✓
+> Forward-only associative learning ✓Perceptron / LMS (Rosenblatt, 1958; Widrow & Hoff, 1988); Hebbian learning (Hebb, 1949); TD learning with fixed features (Sutton, 1988)
+> ✓
+> Closed-form associative learning ⋄Linear regression heads (Kornblith et al., 2019); Extreme Learning Machines (Huang et al., 2006); Ridge regression probes (Alain & Bengio, 2016)
+> ✓
+> Non-parametric memory ✓kNN / episodic memory (Blundell et al., 2016); kNN-LM (Khandelwal et al., 2020); RAG (Lewis et al., 2020)
+> ✓
+> No prediction error signal ✗Supervised learning (Rumelhart et al., 1986); Hebbian rules (Hebb, 1949); Contrastive learning (Oord et al., 2018); RL / TD learning (Sutton, 1988) — error signals is generally required
+> ✓
+> No inference-time memory access ✗kNN (Cover & Hart, 1967); episodic control (Blundell et al., 2016); RAG (Lewis et al., 2020); Memory Networks (Weston et al., 2014) — memory queried at inference
+> ✓
+> Fast weights from memory △Fast weights (Ba et al., 2016); Hebbian fast weights (Miconi et al., 2018) — learned via online updates, not analytic derivation
+> ✓
+> Plug-in for pretrained models △Adapters (Houlsby et al., 2019); LoRA (Hu et al., 2022); Retrieval augmentation (Borgeaud et al., 2022)
+> ✓
+> LLM adapt w/o finetuning or retrieval ✗RAG (Lewis et al., 2020); kNN-LM (Khandelwal et al., 2020); Prompt tuning (Lester et al., 2021) — retrieval or finetuning required
+> ✓
+
+However, these approaches typically rely on iterative up-dates, learned plasticity rules, or continued gradient-based optimization. FAAST differs by enforcing a strict archi-tectural separation in which associative learning operates analytically on fixed pretrained representations, enabling single-pass, optimizer-free adaptation. FAAST is also closely related to work on forward-only and biologically motivated learning rules that seek to avoid back-propagation, including feedback alignment and forward-forward methods (Lillicrap et al., 2016; Hinton, 2022). While these methods demonstrate that learning without error backpropagation is possible, they are generally designed for training representations from scratch or require multiple for-ward passes and specialized objectives. In contrast, FAAST targets downstream task adaptation on pretrained models, computing task-specific fast weights in closed form with deterministic guarantees. Compared to recent forward-only or zeroth-order adaptation methods (Malladi et al., 2023), FAAST avoids stochastic search and instead leverages an-alytic associative memory to achieve efficient and stable adaptation. Finally, FAAST differs fundamentally from parameter-efficient fine-tuning and memory-based adaptation meth-ods. Techniques such as adapters, LoRA, and prefix tuning reduce training cost but still depend on gradient-based opti-mization (Houlsby et al., 2019; Hu et al., 2022; Li & Liang, 2021). In-context learning and memory-augmented mod-els adapt behavior at inference time by conditioning on or querying stored examples (Brown et al., 2020; Khandelwal et al., 2020; Lewis et al., 2020), incurring memory access and attention overhead during inference. FAAST instead compresses all task-specific associations into a single fast-weight matrix, eliminating inference-time memory access while retaining non-parametric storage and rapid adaptation. A detailed comparison with these lines of work is provided in Appendix A. 
+
+## 3. Preliminaries 
+
+3.1. Problem Setup and Notation 
+
+We consider supervised adaptation tasks defined by a dataset 
+
+D = ( xi, y i)Ni=1 , (1) where xi ∈ X denotes an input instance (e.g., image or text), and yi ∈ Y denotes a supervision signal (e.g., class label in classification or next token in sequence modeling). We assume access to pretrained and frozen encoders (Devlin et al., 2019; Radford et al., 2021) 
+
+ϕx : X → Rdx , ϕy : Y → Rdy , (2) which map inputs and outputs into fixed-dimensional em-bedding spaces. Thus, each labeled example induces a 
+
+key-value pair :
+
+ki = ϕx(xi), vi = ϕy (yi). (3) The task is to learn associations between the keys and values represented in embedding spaces. 
+
+3.2. Task Adaptation via Backpropagation 
+
+A simple downstream adaptation learns a linear projection 
+
+W that maps input embeddings ki to output embedding space (Alain & Bengio, 2016; Kornblith et al., 2019): 
+
+hi = k⊤ 
+
+> i
+
+W, W ∈ Rdx×dy (4) where we assume embeddings are normalized and therefore omit the bias term. 3Forward-Only Associative Learning for Test-Time Adaptation (a) Integration with Pretrained Classifiers                                   
+
+> 𝝓 𝒙 (𝒙 )𝝓 𝒚 (𝒚 )
+> (𝒙 𝟐 ,𝒚 𝟐 )(𝒙 𝟏 ,𝒚 𝟏 ),…Samples
+> 𝒌
+> 𝝓 𝒙 (𝒙 )
+> 𝒙
+> 𝒉
+> kvkvAssociative
+> Memory
+> Fast
+> Weights
+> FAAST Module
+> Transformer Layer 𝝓 𝒍 (𝒙 )
+> 𝒙 𝟎 𝒙 𝟏 𝒙 𝟐 …𝒙 𝒊𝟎 𝒙 𝒊 𝟏 𝒙 𝒊 𝟐 𝒙 𝒊 𝟑 …
+> ×𝑳
+> kvkvAssociative
+> Memory
+> Fast
+> Weights
+> FAAST Module
+> (b) Integration with Large Language Models
+> Readout
+> Samples
+> Transformer Layer 𝝓 𝒍 (𝒙 )
+> ···
+> Learning Process
+> Inference Process
+> 𝑊 𝑙 ⋆=𝒦 𝑙
+> †𝒱 𝑙
+> 𝑊 ⋆=𝒦 †𝒱
+> Next layer Predict class
+> Encoders :𝝓 𝒙 ,𝝓 𝒚 ,𝝓 𝒍
+> Classification inputs
+> and labels: (𝒙 𝒊 ,𝒚 𝒊 )
+> Sequence tokens:
+> [𝒙 𝒊𝟎 ,𝒙 𝒊𝟏 ,…]
+
+Figure 2. FAAST module and the integration with pretrained neural networks. 
+
+For classification problems, the y is a class label, which probability is computed via an attention head 
+
+p(y | xi) = exp( h⊤ 
+
+> i
+
+vy )
+
+PKc=1 exp( h⊤ 
+
+> i
+
+vc) . (5) The projection matrix W is learned by minimizing cross-entropy loss using gradient-based optimization. This linear projection functions as an implicit associative memory (Hopfield, 1982; Hinton & Plaut, 1987; Ba et al., 2016), encoding task-specific associations in its parameters. However, learning requires iterative backpropagation and must be repeated for each downstream task. For sequence modeling tasks such as language modeling (Bengio et al., 2003; Vaswani et al., 2017), the input xi
+
+corresponds to a contextual token sequence, and the super-vision yi is the next token to be predicted. The same linear projection and softmax formulation applies, with output embeddings representing the vocabulary tokens. 
+
+3.3. Task Adaptation via Memory or ICL 
+
+Task adaptation can also be achieved by storing and retriev-ing labeled examples . Each training instance is represented as a key-value pair in an explicit memory or input context, and predictions are produced by retrieving relevant values for a query input using similarity-based matching (Cover & Hart, 1967) in memory-based methods or implicitly re-trieved through self-attention (Brown et al., 2020) in ICL. Generally, given a query representation q, attention-based memory or context models retrieve an output via 
+
+h = a⊤V, a = Attn( q, K ), (6) where K and V are matrices of the keys and values. In this attention-based retrieval, larger attention weights corre-spond to memory items that are more relevant to the query. 
+
+## 4. Method 
+
+We propose a forward-only associative learning architec-ture that enforces a strict separation between representation learning and associative learning . Unlike prior fast-weight approaches (Ba et al., 2016; Hinton & Plaut, 1987), FAAST computes fast weights analytically in closed form, yielding a deterministic, single-pass solution. We illustrate the basic FAAST module in Section 4.1 and describe how it can be integrated into existing neural networks in Section 4.2. 
+
+4.1. FAAST Module 
+
+The core of many downstream tasks, including classification and sequence prediction, lies in an associative mapping from an input representation to a corresponding output representa-tion. The key insight is that, once representations are fixed, the optimal linear function representing the associative map-ping can be computed directly from the stored key-value pairs , instead of a numerical approximation discovered by stochastic gradient descent. Formally, given a dataset D = {(xi, y i)}Ni=1 , we collect the key-value pairs into matrices 
+
+K = [ k1, . . . , kN ]⊤ ∈ RN ×dx , (7) 
+
+V = [ v1, . . . , vN ]⊤ ∈ RN ×dy . (8) FAAST defines the task-specific associative mapping as a 
+
+fast-weight matrix computed by solving the linear regres-sion problem 
+
+min  
+
+> W
+
+∥KW − V ∥2 
+
+> F
+
+, (9) The optimal solution is given analytically by 
+
+W ⋆ = K†V ∈ Rdx×dy (10) where K† denotes the Moore-Penrose pseudoinverse (Pen-rose, 1955). The Moore-Penrose pseudoinverse can be solved by singular value decomposition (SVD), a spectral transform of matrix. Specifically, let the SVD of K be 
+
+K = U Σ R⊤, (11) 4Forward-Only Associative Learning for Test-Time Adaptation 
+
+where singular values Σ = diag( σ1, . . . , σ r ) with σ1 ≥· · · ≥ σr > 0, and singular vectors U and R have orthonor-mal columns. The pseudoinverse is then given by 
+
+K† = R Σ† U⊤, Σ† = diag( σ−11 , . . . , σ −1 
+
+> r
+
+), (12) and the fast weights can be written as 
+
+W ⋆ = R Σ† U⊤V. (13) The computation of W ⋆ involves only a single forward pass over the data and yields a deterministic solution with theoretical optimality (see Appendix B.1). 
+
+Incremental Update Rule. A key challenge in supervised adaptation is scale: while classification tasks may involve up to 10 6 input-output pairs, language models may involve the order of 10 10 tokens. Storing all key-value pairs explicitly is infeasible. To address it, we propose the incremental update rule of the fast-weight matrix:            
+
+> Wt+1 =Nt
+> Nt+1
+> Wt+NNt+1
+> W⋆,Nt+1 =Nt+N, (14)
+
+where W ⋆ is computed from a new batch of N key-value pairs and update the new weights Wt+1 . This update rule incrementally aggregates associative evidence without re-taining all past data, and its validity is theoretically justified in Appendix B.3. 
+
+Trade-off Between Underfitting and Overfitting. The generalization behavior of the fast-weight matrix W ⋆ is gov-erned by the spectral structure of the key matrix K. Each singular component of K contributes independently to the associative mapping. Large singular values capture domi-nant directions in the data and tend to encode task-relevant structure that generalizes across samples. In contrast, small singular values correspond to poorly supported directions; amplifying these directions via σ−1 
+
+> i
+
+can lead to memoriza-tion of noise or idiosyncratic examples. This observation motivates the use of spectral filtering, pro-viding explicit, interpretable trade-offs between underfit-ting and overfitting. By truncating singular values below a relative threshold ϵ, we suppress unstable components. Such filtering prevents overfitting in low-data regimes while retaining task-relevant directions in larger datasets, ensur-ing stable generalization. Unlike Ridge Regression (Hoerl & Kennard, 1970), which shrinks all directions uniformly, spectral filtering directly targets task-relevant components. Formally, we define a filtered pseudoinverse (Van Loan & Golub, 1996): 
+
+Σ† 
+
+> ϵ
+
+= diag  σ−1 
+
+> i
+
+I[σi ≥ σmax ϵ], (15) which is computed entirely from forward memory statistics. In practice, we set ϵ = 1 /N α, where N is the number of key-value pairs and α ∈ [0 , 1] reflects task complexity, with a default of 1. 
+
+Fast Weights as Pseudoinverse Attention. The closed-form fast-weight solution W ⋆ admits an interpretation as an attention-based retrieval mechanism that solves a least-squares matching problem between queries and stored keys. This pseudoinverse attention computes signed at-tention weights a⋆ = K†q, yielding the retrieved output 
+
+h = ( a⋆)⊤V , and thus enables both additive and subtrac-tive interactions beyond convex combinations. From this perspective, FAAST represents a fully compressed limit of attention-based memory with no inference-time memory access. We further show that softmax attention arises as an entropy-regularized relaxation of pseudoinverse attention; see Appendix B.2 for details. 
+
+4.2. FAAST Integration into Pretrained Networks 
+
+FAAST is designed as a plug-in associative learning module that can be integrated into existing neural networks to enable efficient downstream adaptation. Below, we illustrate this integration for two representative models: pretrained neural classifiers and language models. 
+
+Pretrained Neural Classifiers. Integrating FAAST into a pretrained classifier is straightforward. Consider a classifier with a frozen backbone that produces representations ϕx(x)
+
+and ϕy (y), and an original output layer parameterized by a projection matrix W0. Instead of replacing this pretrained projection, we linearly interpolate it with the FAAST projec-tion W ⋆, following Eq. 14. Here, N0 denotes the effective sample size associated with the pretrained projection, and 
+
+N is the number of key-value pairs used to construct W ⋆.As the memory size N increases, the resulting classifier smoothly transitions from prior-dominated predictions to task-specific adaptation. 
+
+Pretrained Language Models. The integration of FAAST into sequence models and large language models follows the same general principle, with additional considerations arising from scale and temporal structure. Formally, given an input sequence x = ( x1, . . . , x T ), we extract hidden representations from intermediate layers of a pretrained transformer (Vaswani et al., 2017): 
+
+kℓ,t = ϕℓ(x)t, vℓ,t = ϕℓ(x)t+1 ,
+
+which form key-value pairs associating past token repre-sentations with future ones. These pairs are aggregated across time steps forming Kl and Vl, and compressed into a fast-weight matrix W ⋆l per layer. To interface the memory output with pretrained Transformer layers, we employ a residual connection together with a lightweight linear readout projection Pℓ:
+
+hℓ,t = kℓ,t + k⊤
+
+> ℓ,t
+
+W ⋆l Pℓ, (16) 5Forward-Only Associative Learning for Test-Time Adaptation                                                                  
+
+> Table 2. Image classification results about 5-shot and full-data accuracy with 95% confidence interval for CIFAR10 and mini ImageNet. Inference FLOPs and memory usage only count projection layer, assuming dx=dy= 1024 and N= 10 ,000 .
+> Method Adaptation CIFAR10 (10-way) mini ImageNet (20-way) + Inference Cost Learn Cost
+> 5-shot Full 5-shot Full Compute Memory GPU Secs CLIP (lower bound) No adapt 70.3 ±0.9 86.7 ±0.9 O(dx)0 MB -Linear (upper bound) Backprop 71.9 ±0.4 88.3 ±0.3 84.5 ±0.3 93.2 ±0.2 O(d2
+> x)4 MB 780 s Full Finetuning Backprop 13.3 ±3.4 85.4 ±0.4 6.9 ±3.1 87.5 ±0.6 O(d2
+> x)4 MB 1,603 s k-NN Memory Memory 71.7 ±0.3 82.7 ±0.2 87.1 ±0.2 88.6 ±0.1 O(N d x)80 MB 41 s
+> Softmax Memory Memory 71.5 ±0.3 80.5 ±0.2 87.7 ±0.2 87.9 ±0.2 O(N d x)80 MB (-94.7%) FAAST (Ours) Fast weights 73.8 ±0.3 86.7 ±0.2 88.6 ±0.2 93.0 ±0.1 O(d2
+> x)4 MB
+
+where Pℓ is initialized with zero weights to avoid intrusion to existing fitting between layers and is trained on diverse texts. The readout projection Pℓ is task-independent, and the prod-uct W ⋆ℓ Pℓ can be folded into a single matrix at inference time. The readout is trained once to map memory-adapted representations back into the input space of the subsequent Transformer layer and is kept fixed during downstream adap-tation. All task-specific learning is thereafter captured solely by the fast weights W ⋆ℓ .Finally, since not all tokens contribute equally to future pre-diction, we incorporate a lightweight key–value importance scorer. The scorer is implemented as a linear classifier over the concatenation of k and v, followed by a sigmoid ac-tivation to produce weights in [0 , 1] . Trained jointly with the readout projection, these weights modulate the contri-bution of individual key-value pairs during fast-weight con-struction, enabling the memory to emphasize informative associations while suppressing noise. 
+
+## 5. Experiments on Supervised Classification Tasks 
+
+We test whether effective adaptation can be achieved by learning associative mappings over fixed representations. The supervised classification benchmarks enable a di-rect comparison between FAAST, gradient-based adapta-tion, and memory/context-based adaptation across multiple modalities. 
+
+5.1. Image Classification 
+
+Image classification provides a clean testbed for downstream adaptation, as high-quality representations can be obtained from pretrained encoders. 
+
+Settings. Our image classification experiments utilize a frozen CLIP ResNet-50 backbone (Radford et al., 2021), where fixed image and text embeddings serve as keys and values. We evaluate our approach against several base-lines, including CLIP zero-shot (Goh et al., 2021), linear                            
+
+> Table 3. Sentiment classification accuracy on SST-2 and IMDB datasets, with a 95% confidence interval.
+> SST2 →1-shot 5-shot full
+> GPT2-XL (zero-shot) --74.3 ±1.2 In-Context Learning 59.6 ±1.4 71.6 ±1.3 -
+> FAAST (Ours) 78.5 ±1.1 80.8 ±1.1 87.5 ±0.9 IMDB →1-shot 2-shot full
+> GPT2-XL (zero-shot) --85.7 ±1.0 In-Context Learning 70.1 ±1.3 56.0 ±1.4 -
+> FAAST (Ours) 86.7 ±0.9 87.4 ±0.9 90.4 ±0.8
+
+projection (Kolesnikov et al., 2019), full finetuning , k-NN memory (Wu et al., 2018), and softmax memory (Vaswani et al., 2017), all operating on identical features to isolate the effects of the memory mechanism. Testing is performed on CIFAR-10 (Krizhevsky et al., 2009) and mini-ImageNet 
+
+(Vinyals et al., 2016) datasets across both few-shot episodic and full-data regimes. All hyperparameters and backprop-agation training configurations are standardized to ensure a fair comparison. For a comprehensive breakdown of the baseline implementations and specific training hyperparam-eters, please refer to Appendix C.1. 
+
+Results. We compare FAAST with backprop-trained lin-ear projection, contrasting gradient-based optimization with closed-form fast weights. We report classification accuracy together with inference computation and memory usage, iso-lating the cost of associative learning by accounting only for the projection layer (Table 2). This setup evaluates whether competitive adaptation is possible without gradients, opti-mizer state, or multiple training epochs. FAAST consistently outperforms CLIP zero-shot baselines and improves smoothly from few-shot to full-data regimes. Compared with backprop-based adaptations, FAAST is more robust in low-data settings, where linear probing and full finetuning tend to overfit, while remaining competitive at scale. Moreover, FAAST generalizes beyond pretrained semantic priors, achieving high accuracy even under ar-bitrary label assignments (e.g., 86.8% on mini-ImageNet using WordNet IDs as labels), where zero-shot transfer fails. Additional results are reported in Appendix D.1.3. 6Forward-Only Associative Learning for Test-Time Adaptation 
+
+Table 4. Sequence modeling adaptation results on WikiText-103 using GPT2-XL (1.5B). Inference FLOPs and memory only count increased cost upon GPT2-XL base model, using hidden size dx = 1600 , number of layers L = 48 , and number of train set tokens 
+
+N = 1 .03 × 10 8. ♡A theoretical estimation given the base model does not support such long context. 
+
+Method Adaptation Test-time WikiText-103 + Inference Cost Learn Cost Learning PPL ↓ Compute Memory GPU hrs GPT2-XL (zero-shot, lower bound) No adapt ✗ 17.41 - - -Linear Projection (upper bound) Backprop ✗ 13.60 O(Ld 2
+
+> x
+
+) 112 MB 3 hrs LoRa w/ same number of params Backprop ✗ 13.57 - - 3 hrs In-Context Learning Context ✓ not applicable O(N Ld x)♡ 29 TB ♡ -
+
+kNN-LM Memory ✓ 12.70 O(N d x) 307 GB 16 hrs 
+
+FAAST (Ours) Fast weights ✓ 15.35 O(Ld 2
+
+> x
+
+) 112 MB 0.2 hrs FAAST w/ readout seen WikiText103 Fast weights ✓ 13.23 O(Ld 2
+
+> x
+
+) (-99.9%) (-93.3%) 
+
+Efficiency. FAAST substantially reduces learning cost compared to backpropagation, saving approximately 95% of GPU training time (see Appendix C.1). It also outperforms memory-based methods in both accuracy and efficiency. Un-like retrieval approaches, which must store and access all key-value pairs at inference, FAAST compresses associa-tive knowledge into a fixed-size fast weight matrix. As a result, both Linear Projection and FAAST incur O(dxdy )
+
+inference cost, whereas memory-based methods scale as 
+
+O(N d x + N d y ). FAAST achieves up to 90% reduction in inference FLOPs and up to 95% lower memory usage rela-tive to memory-based methods, while maintaining superior accuracy. 
+
+5.2. Text Classification 
+
+Text classification tasks provide a discrete, semantic domain where we examine whether FAAST can serve as an efficient alternative to prompt-based adaptation. 
+
+Settings. We evaluate FAAST on text classification (senti-ment analysis) to assess its supervised learning capability, using GPT2-XL (Radford et al., 2019) as the frozen back-bone and following the standard integration procedure. We compare FAAST against zero-shot inference and In-Context Learning (ICL) (Brown et al., 2020). Experiments are con-ducted on two benchmark datasets, SST-2 (Socher et al., 2013) and IMDB (Maas et al., 2011). SST-2 contains 67,349 training examples and 1,821 test examples, while IMDB contains 25,000 training and 25,000 test examples. For each dataset, we randomly sample 5,000 training instances as the full support set and 5,000 test instances as the query set, except for SST-2, where all test examples are used for evaluation. We consider three adaptation regimes: 1-shot, 5-shot, and full-data adaptation. 
+
+Results. Table 3 summarizes sentiment classification per-formance on SST-2 and IMDB. Across both datasets and all adaptation regimes, FAAST substantially outperforms zero-shot inference and In-Context Learning. In low-shot settings, FAAST exhibits especially strong gains: on SST-2, FAAST small medium large XL           
+
+> GPT2 Model
+> 0
+> 10
+> 20
+> 30
+> 40
+> Perplexity  -5.8%
+> -10.0%
+> -11.2% -11.8%
+> Model Size vs. Perplexity
+> No adapt
+> Linear (Backprop)
+> FAAST
+> 13715 23 47
+> Number of Mem Layers
+> 14
+> 15
+> 16
+> 17
+> 18
+> Perplexity
+> 16.14
+> 15.92 15.72 15.53 15.35 15.36
+> Mem Layers vs. Perplexity
+> FAAST (GPT2-XL)
+
+Figure 3. GPT2 model size and mem layers vs. perplexity on WikiText-103. 
+
+improves accuracy from 59.6% (ICL, 1-shot) to 78.5%, and further to 80.8% with 5-shot adaptation; similar trends are observed on IMDB, where FAAST achieves 86.7% accu-racy in the 1-shot setting, surpassing both zero-shot and ICL baselines by a large margin. Under full-data adaptation, FAAST consistently exceeds zero-shot GPT2-XL, reaching 87.5% on SST-2 and 90.4% on IMDB. These results demon-strate that FAAST enables effective supervised adaptation on top of frozen language models, achieving robust perfor-mance improvements. In this experiment, we confirm the basic capabilities on text, deferring more complex sequence modeling experiments and analyses to the next section. 
+
+## 6. Experiments on Sequence Modeling Tasks 
+
+We next evaluate FAAST on sequence modeling and condi-tional generation tasks, which impose stronger requirements on temporal credit assignment and long-range dependency handling. These experiments probe whether forward-only associative adaptation can operate at the sequence level, enabling test-time learning and cross-task generalization. 
+
+6.1. Sequence Modeling 
+
+We use language modeling to study how FAAST supports test-time adaptation in autoregressive models. 
+
+Settings. We evaluate FAAST across GPT-2 variants, ranging from small (117M) to XL (1.5B), following the standard integration procedure. Our method is compared 7Forward-Only Associative Learning for Test-Time Adaptation                                                               
+
+> Table 5. Machine translation on IWSLT2017, bold BLEU scores for statistical significance at p < 0.05 .
+> En-De De-En En-Fr Fr-En Method 1-shot full 1-shot full 1-shot full 1-shot full
+> Qwen2.5-3B-Instruct (zero shot) -23.22 -32.92 -30.56 -39.24 In-Context Learning 23.03 -32.33 -31.85 -38.51 -
+> FAAST (Ours) 23.35 25.22 33.23 36.40 31.12 35.09 39.46 42.47
+> Qwen2.5-7B-Instruct (zero shot) -25.53 -34.69 -34.82 -41.40 In-Context Learning 25.39 -35.70 -35.45 -40.86 -
+> FAAST (Ours) 26.77 27.75 35.34 37.10 35.67 37.08 42.08 43.93
+
+with four primary baselines: zero-shot without adaptation, 
+
+Linear Projection and LoRA (Hu et al., 2022) with gradient-based adaptation, In-Context Learning , and non-parametric 
+
+kNN-LM (Khandelwal et al., 2019). We evaluate language modeling performance on the WikiText-103 dataset (Mer-ity et al., 2016) following standard protocols. The entire training split is used for adaptation, while evaluation is per-formed on the held-out test split using perplexity (PPL) as the metric. In certain experiments, the readout projection is additionally trained on the WikiText-103 training split to provide a controlled upper bound, reflecting performance when the readout has already seen the target-domain distri-bution. 
+
+Results. Table 4 shows that FAAST improves over the zero-shot GPT2-XL baseline with modest inference over-head. It achieves competitive perplexity against memory baselines with far lower memory usage, and when the read-out projection is trained on in-domain data, perplexity drops to 13.23, matching or exceeding backprop-based adapta-tion. FAAST’s effectiveness grows with model size, giving up to 11.8% relative perplexity reduction as illustrated by Figure 3, and is influenced by number of layers. Ablations show that the memory scorer and readout design provide the most efficient trade-off compared to more complex encoders or attention readouts (see Appendix D.2 for details). 
+
+6.2. Conditional Sequence-to-Sequence 
+
+We use machine translation to evaluate whether FAAST generalizes to conditional sequence-to-sequence tasks, re-quiring structured input-output associations. 
+
+Settings. We evaluate FAAST on machine translation us-ing Qwen2.5-3B-Instruct and Qwen2.5-7B-Instruct (Team, 2024), following the standard integration procedure. Experi-ments are conducted on IWSLT2017 language pairs (En-De, De-En, En-Fr, Fr-En) (Cettolo et al., 2017) with 5,000 train-ing samples as the support set and 5,000 test samples as the query set. We report BLEU scores for both 1-shot and full-data adaptation scenarios. 
+
+Results. As shown in Table 5, FAAST consistently im-proves translation performance across all language pairs and adaptation settings. In particular, full-data adaptation with FAAST achieves substantial BLEU gains over zero-shot and In-Context Learning baselines. Specifically, it boosts De-En, En-Fr, and Fr-En translation with Qwen2.5-3B by more than 3 BLEU points and others by at least 2 BLEU points. These results demonstrate that forward-only adapta-tion extends effectively to structured text generation tasks, enabling efficient supervised adaptation. 
+
+## 7. Discussion and Limitations 
+
+FAAST demonstrates that many downstream adaptation problems can be efficiently addressed via associative map-pings on top of frozen representations, bypassing both gradient-based optimization and context-length-dependent inference. By compiling labeled examples into task-specific fast weights, FAAST achieves rapid, single-pass adaptation with constant inference cost, offering a practical alterna-tive to backpropagation and in-context learning. However, our approach relies on the quality of pretrained representa-tions: if the frozen encoders do not capture task-relevant fea-tures, associative adaptation may fail. Furthermore, while FAAST excels at tasks with well-defined input–output corre-spondences, it may be less effective for problems requiring compositional reasoning, hierarchical dependencies, or long-range planning, where iterative or gradient-based refinement remains advantageous. Finally, current evaluations focus on classification and sequence modeling; extending FAAST to more complex structured prediction or multimodal tasks warrants future investigation. 
+
+## 8. Conclusion 
+
+We introduced FAAST, a forward-only associative adap-tation paradigm that enables rapid task-specific learning without backpropagation or context-dependent inference. FAAST achieves efficient, single-pass adaptation with con-stant inference cost. Experiments across classification and sequence modeling tasks show that FAAST matches or ex-ceeds the performance of backprop-trained and in-context learning baselines while substantially reducing computation 8Forward-Only Associative Learning for Test-Time Adaptation 
+
+and memory usage. Our results suggest that associative, gradient-free adaptation is a viable and practical alternative for deploying pretrained models in multi-task, online, or test-time adaptation scenarios. Future work includes extending FAAST to structured prediction, compositional reasoning, and multimodal tasks. 
+
+## Impact Statement 
+
+FAAST introduces a new paradigm for task adaptation that is both computationally efficient and memory-light, address-ing practical bottlenecks in deploying large pretrained mod-els across many downstream tasks. By eliminating gradient-based optimization and context-length-dependent inference, FAAST can substantially reduce energy consumption and hardware requirements, making adaptation accessible to resource-constrained settings. This approach also broadens the applicability of pretrained models to online, continual, and real-time learning scenarios where traditional training is infeasible. Beyond efficiency, FAAST provides a framework for understanding how associative memory principles can complement modern neural architectures, potentially inspir-ing future research on modular, interpretable, and scalable adaptation mechanisms. 
+
+## References 
+
+Ahn, K., Cheng, X., Daneshmand, H., and Sra, S. Trans-formers learn to implement preconditioned gradient de-scent for in-context learning. Advances in Neural Infor-mation Processing Systems , 36:45614–45650, 2023. Alain, G. and Bengio, Y. Understanding intermediate layers using linear classifier probes. arXiv preprint arXiv:1610.01644 , 2016. Alayrac, J.-B., Donahue, J., Luc, P., Miech, A., Barr, I., Hasson, Y., Lenc, K., Mensch, A., Millican, K., Reynolds, M., et al. Flamingo: a visual language model for few-shot learning. Advances in neural information processing systems , 35:23716–23736, 2022. Ba, J., Hinton, G. E., Mnih, V., Leibo, J. Z., and Ionescu, C. Using fast weights to attend to the recent past. Advances in neural information processing systems , 29, 2016. Bengio, Y., Ducharme, R., Vincent, P., and Jauvin, C. A neural probabilistic language model. Journal of machine learning research , 3(Feb):1137–1155, 2003. Benveniste, A., M ´etivier, M., and Priouret, P. Adaptive algorithms and stochastic approximations , volume 22. Springer Science & Business Media, 2012. Blundell, C., Uria, B., Pritzel, A., Li, Y., Ruderman, A., Leibo, J. Z., Rae, J., Wierstra, D., and Hass-abis, D. Model-free episodic control. arXiv preprint arXiv:1606.04460 , 2016. Borgeaud, S., Mensch, A., Hoffmann, J., Cai, T., Rutherford, E., Millican, K., Van Den Driessche, G. B., Lespiau, J.-B., Damoc, B., Clark, A., et al. Improving language models by retrieving from trillions of tokens. In International conference on machine learning , pp. 2206–2240. PMLR, 2022. Bourigault, E. and Bourigault, P. Frevl: Leveraging frozen pretrained embeddings for efficient vision-language un-derstanding. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , pp. 2327–2336, 2025. Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., et al. Language models are few-shot learners. 
+
+Advances in neural information processing systems , 33: 1877–1901, 2020. Cettolo, M., Federico, M., Bentivogli, L., Niehues, J., St ¨uker, S., Sudoh, K., Yoshino, K., and Federmann, C. Overview of the iwslt 2017 evaluation campaign. In Pro-ceedings of the 14th International Conference on Spoken Language Translation , pp. 2–14, 2017. Chowdhery, A., Narang, S., Devlin, J., Bosma, M., Mishra, G., Roberts, A., Barham, P., Chung, H. W., Sutton, C., Gehrmann, S., et al. Palm: Scaling language modeling with pathways. Journal of Machine Learning Research ,24(240):1–113, 2023. Cover, T. and Hart, P. Nearest neighbor pattern classification. 
+
+IEEE transactions on information theory , 13(1):21–27, 1967. Dao, T., Fu, D., Ermon, S., Rudra, A., and R ´e, C. Flashat-tention: Fast and memory-efficient exact attention with io-awareness. Advances in neural information processing systems , 35:16344–16359, 2022. Devlin, J., Chang, M.-W., Lee, K., and Toutanova, K. Bert: Pre-training of deep bidirectional transformers for lan-guage understanding. In Proceedings of the 2019 confer-ence of the North American chapter of the association for computational linguistics: human language technologies, volume 1 (long and short papers) , pp. 4171–4186, 2019. Finn, C., Abbeel, P., and Levine, S. Model-agnostic meta-learning for fast adaptation of deep networks. In Interna-tional conference on machine learning , pp. 1126–1135. PMLR, 2017. Garg, S., Tsipras, D., Liang, P. S., and Valiant, G. What can transformers learn in-context? a case study of sim-ple function classes. Advances in neural information processing systems , 35:30583–30598, 2022. 9Forward-Only Associative Learning for Test-Time Adaptation 
+
+Goh, G., Cammarata, N., Voss, C., Carter, S., Petrov, M., Schubert, L., Radford, A., and Olah, C. Multimodal neurons in artificial neural networks. Distill , 6:e30, 2021. Graves, A., Wayne, G., and Danihelka, I. Neural turing machines. arXiv preprint arXiv:1410.5401 , 2014. Graves, A., Wayne, G., Reynolds, M., Harley, T., Dani-helka, I., Grabska-Barwi ´nska, A., Colmenarejo, S. G., Grefenstette, E., Ramalho, T., Agapiou, J., et al. Hybrid computing using a neural network with dynamic external memory. Nature , 538(7626):471–476, 2016. Ha, D. and Schmidhuber, J. World models. arXiv preprint arXiv:1803.10122 , 2(3), 2018. He, R., Liu, L., Ye, H., Tan, Q., Ding, B., Cheng, L., Low, J., Bing, L., and Si, L. On the effectiveness of adapter-based tuning for pretrained language model adaptation. In 
+
+Proceedings of the 59th annual meeting of the association for computational linguistics and the 11th international joint conference on natural language processing (volume 1: long papers) , pp. 2208–2222, 2021. Hebb, D. The organization of behavior. emphnew york, 1949. Hinton, G. The forward-forward algorithm: Some prelimi-nary investigations. arXiv preprint arXiv:2212.13345 , 2 (3):5, 2022. Hinton, G. E. and Plaut, D. C. Using fast weights to deblur old memories. In Proceedings of the ninth annual con-ference of the Cognitive Science Society , pp. 177–186, 1987. Hoerl, A. E. and Kennard, R. W. Ridge regression: Biased estimation for nonorthogonal problems. Technometrics ,12:55–67, 1970. Hopfield, J. J. Neural networks and physical systems with emergent collective computational abilities. Proceedings of the national academy of sciences , 79(8):2554–2558, 1982. Hopfield, J. J. Hopfield network. Scholarpedia , 2(5):1977, 2007. Houlsby, N., Giurgiu, A., Jastrzebski, S., Morrone, B., De Laroussilhe, Q., Gesmundo, A., Attariyan, M., and Gelly, S. Parameter-efficient transfer learning for nlp. In 
+
+International conference on machine learning , pp. 2790– 2799. PMLR, 2019. Howard, J. and Ruder, S. Universal language model fine-tuning for text classification. arXiv preprint arXiv:1801.06146 , 2018. Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W., et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. Huang, G.-B., Zhu, Q.-Y., and Siew, C.-K. Extreme learning machine: theory and applications. Neurocomputing , 70 (1-3):489–501, 2006. Izacard, G., Lewis, P., Lomeli, M., Hosseini, L., Petroni, F., Schick, T., Dwivedi-Yu, J., Joulin, A., Riedel, S., and Grave, E. Atlas: Few-shot learning with retrieval aug-mented language models. Journal of Machine Learning Research , 24(251):1–43, 2023. Kanter, I. and Sompolinsky, H. Associative recall of mem-ory without errors. Physical Review A , 35(1):380, 1987. Khandelwal, U., Levy, O., Jurafsky, D., Zettlemoyer, L., and Lewis, M. Generalization through memorization: Nearest neighbor language models. arXiv preprint arXiv:1911.00172 , 2019. Khandelwal, U., Levy, O., Jurafsky, D., Zettlemoyer, L., and Lewis, M. Generalization through memorization: Nearest neighbor language models. In International Conference on Learning Representations , 2020. Kolesnikov, A., Zhai, X., and Beyer, L. Revisiting self-supervised visual representation learning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 1920–1929, 2019. Kornblith, S., Shlens, J., and Le, Q. V. Do better imagenet models transfer better? In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 2661–2671, 2019. Krizhevsky, A., Hinton, G., et al. Learning multiple layers of features from tiny images. 2009. Lester, B., Al-Rfou, R., and Constant, N. The power of scale for parameter-efficient prompt tuning. arXiv preprint arXiv:2104.08691 , 2021. Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., K ¨uttler, H., Lewis, M., Yih, W.-t., Rockt ¨aschel, T., et al. Retrieval-augmented generation for knowledge-intensive nlp tasks. Advances in neural information pro-cessing systems , 33:9459–9474, 2020. Li, X. L. and Liang, P. Prefix-tuning: Optimizing continuous prompts for generation. arXiv preprint arXiv:2101.00190 ,2021. Lillicrap, T. P., Cownden, D., Tweed, D. B., and Akerman, C. J. Random synaptic feedback weights support error backpropagation for deep learning. Nature communica-tions , 7(1):13276, 2016. 10 Forward-Only Associative Learning for Test-Time Adaptation 
+
+Maas, A., Daly, R. E., Pham, P. T., Huang, D., Ng, A. Y., and Potts, C. Learning word vectors for sentiment analysis. In Proceedings of the 49th annual meeting of the asso-ciation for computational linguistics: Human language technologies , pp. 142–150, 2011. Malladi, S., Gao, T., Nichani, E., Damian, A., Lee, J. D., Chen, D., and Arora, S. Fine-tuning language models with just forward passes. Advances in Neural Information Processing Systems , 36:53038–53075, 2023. Merity, S., Xiong, C., Bradbury, J., and Socher, R. Pointer sentinel mixture models. arXiv preprint arXiv:1609.07843 , 2016. Miconi, T., Stanley, K., and Clune, J. Differentiable plastic-ity: training plastic neural networks with backpropaga-tion. In International Conference on Machine Learning ,pp. 3559–3568. PMLR, 2018. Oord, A. v. d., Li, Y., and Vinyals, O. Representation learn-ing with contrastive predictive coding. arXiv preprint arXiv:1807.03748 , 2018. Penrose, R. A generalized inverse for matrices. In Math-ematical proceedings of the Cambridge philosophical society , volume 51, pp. 406–413. Cambridge University Press, 1955. Personnaz, L., Guyon, I., and Dreyfus, G. Information storage and retrieval in spin-glass like neural networks. 
+
+Journal de Physique Lettres , 46(8):359–365, 1985. Pham, K., Le, H., Ngo, M., Tran, T., Ho, B., and Venkatesh, S. Generative pseudo-inverse memory. In International Conference on Learning Representations , 2022. Press, O., Smith, N. A., and Lewis, M. Train short, test long: Attention with linear biases enables input length extrapolation. arXiv preprint arXiv:2108.12409 , 2021. Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., Sutskever, I., et al. Language models are unsupervised multitask learners. OpenAI blog , 1:9, 2019. Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pp. 8748–8763. PmLR, 2021. Ramsauer, H., Sch ¨afl, B., Lehner, J., Seidl, P., Widrich, M., Gruber, L., Holzleitner, M., Adler, T., Kreil, D., Kopp, M. K., et al. Hopfield networks is all you need. In 
+
+International Conference on Learning Representations .Rosenblatt, F. The perceptron: a probabilistic model for information storage and organization in the brain. Psy-chological review , 65(6):386, 1958. Rumelhart, D. E., Hinton, G. E., and Williams, R. J. Learn-ing representations by back-propagating errors. nature ,323(6088):533–536, 1986. Schmidhuber, J. Learning to control fast-weight memories: An alternative to dynamic recurrent networks. Neural Computation , 4(1):131–139, 1992. Socher, R., Perelygin, A., Wu, J., Chuang, J., Manning, C. D., Ng, A. Y., and Potts, C. Recursive deep models for semantic compositionality over a sentiment treebank. In 
+
+Proceedings of the 2013 conference on empirical methods in natural language processing , pp. 1631–1642, 2013. Sutton, R. S. Learning to predict by the methods of temporal differences. Machine learning , 3(1):9–44, 1988. Sutton, R. S., Barto, A. G., et al. Reinforcement learning: An introduction , volume 1. MIT press Cambridge, 1998. Team, Q. Qwen2.5: A party of foundation models, Septem-ber 2024. URL https://qwenlm.github.io/ blog/qwen2.5/ .Van Loan, C. F. and Golub, G. Matrix computations (johns hopkins studies in mathematical sciences). Matrix Com-putations , 5:32, 1996. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., and Polosukhin, I. At-tention is all you need. Advances in neural information processing systems , 30, 2017. Vinyals, O., Blundell, C., Lillicrap, T., Wierstra, D., et al. Matching networks for one shot learning. Advances in neural information processing systems , 29, 2016. Wang, L., Chen, S., Jiang, L., Pan, S., Cai, R., Yang, S., and Yang, F. Parameter-efficient fine-tuning in large language models: a survey of methodologies. Artificial Intelligence Review , 58:227, 2025. Weston, J., Chopra, S., and Bordes, A. Memory networks. 
+
+arXiv preprint arXiv:1410.3916 , 2014. Widrow, B. and Hoff, M. E. Adaptive switching circuits. In 
+
+Neurocomputing: foundations of research , pp. 123–134. 1988. Wu, Z., Xiong, Y., Yu, S. X., and Lin, D. Unsupervised feature learning via non-parametric instance discrimina-tion. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 3733–3742, 2018. 11 Forward-Only Associative Learning for Test-Time Adaptation 
+
+## A. Related Work 
+
+While individual components of FAAST – associative memory, fast weights, frozen representations, and pseudoinverse solutions – have been studied in isolation, prior work does not simultaneously achieve forward-only learning, closed-form associative memory, non-parametric storage, and inference without memory access. FAAST occupies this previously unexplored combination, providing a new paradigm for modular and efficient downstream adaptation that is compatible with pretrained models, including large language models. 
+
+A.1. Task Adaptation Parameter-efficient adaptation of pretrained models. Adapters (Houlsby et al., 2019), LoRA (Hu et al., 2022), and prefix tuning (Li & Liang, 2021) reduce the cost of downstream adaptation by introducing small trainable parameter sets. However, these methods still require gradient-based optimization. FAAST computes task-specific mappings analytically via forward-only associative memory, eliminating the need for any parameter training for downstream adaptation. 
+
+In-Context Learning and Test-Time Adaptation. In-context learning (ICL) in large language models enables task adaptation through conditioning on demonstrations provided at inference time (Brown et al., 2020). Subsequent work has studied ICL as implicit Bayesian inference or as retrieval over internal representations (Garg et al., 2022; Ahn et al., 2023). Unlike ICL, which requires storing and attending over the demonstration context at inference time, FAAST absorbs task-specific information into fast weights that can be reused across queries, offering a more memory- and computation-efficient alternative for test-time adaptation. 
+
+A.2. Associative Learning Representation learning and associative learning. The separation between representation learning and task-specific association has appeared in multiple forms. Linear probes are often used to evaluate frozen representations (Alain & Bengio, 2016), and world models separate feature learning from downstream prediction or control (Ha & Schmidhuber, 2018). Actor–critic methods also decouple value estimation from policy learning (Sutton et al., 1998). However, in most cases, gradients or task losses still influence the learned representations, or associative components are optimized using error-driven learning. In contrast, FAAST enforces a strict architectural separation: associative learning operates solely on fixed representations, without gradient flow or prediction-error signals. 
+
+Forward-only and biologically inspired learning rules. Several approaches explore alternatives to backpropagation, including local learning rules, feedback alignment, and forward-forward algorithms (Lillicrap et al., 2016; Hinton, 2022). These methods often aim for biological plausibility or efficiency but usually require multiple passes or specialized training. FAAST is distinct: it targets downstream task adaptation on pretrained representations, achieving learning in a single forward pass with analytic guarantees. Related zeroth-order forward-only adaptation methods (Malladi et al., 2023) exist but rely on stochastic search rather than deterministic closed-form fast weights. 
+
+Fast weights and associative memories. Associative memory has a long history, from Hopfield networks (Hopfield, 1982; 2007) and Hebbian learning (Hebb, 1949; Kanter & Sompolinsky, 1987; Personnaz et al., 1985) to modern fast-weight models (Schmidhuber, 1992; Ba et al., 2016). Traditional approaches rely on iterative updates or learned plasticity rules. FAAST differs by computing task-specific fast weights analytically from stored key-value pairs in a single forward pass, yielding deterministic, optimizer-free adaptation. Pseudoinverse-based associative memories (Pham et al., 2022) support high-fidelity retrieval but have not been combined with pretrained representations or inference-time compression. 
+
+Non-parametric memory and retrieval-augmented models. Memory-augmented neural networks, such as Neural Turing Machines (Graves et al., 2014), Memory Networks (Weston et al., 2014), Differentiable Neural Computers (Graves et al., 2016), and modern Hopfield networks (Ramsauer et al.), enable rapid learning through attention-based reads and writes but require memory access during inference. Retrieval-based models, including kNN-LM (Khandelwal et al., 2020) and RAG (Lewis et al., 2020), also rely on querying stored key-value pairs at inference time. FAAST compresses all stored associations into a single fast-weight matrix, eliminating memory queries at inference while retaining the ability to adapt to new tasks. 12 Forward-Only Associative Learning for Test-Time Adaptation 
+
+## B. Theoretical Foundations 
+
+This section provides theoretical justification for the design choices underlying FAAST. We analyze fast weights as optimal solutions to linear regression, establish the necessity of negative attention weights via pseudoinverse attention, justify the incremental update rule for fast weights, and discuss alternative modular designs that preserve forward-only computation. 
+
+B.1. Fast Weights as Optimal Solutions to Regression 
+
+Let {(ki, vi)}Ni=1 denote a set of key–value pairs with ki ∈ Rdx and vi ∈ Rdy . Let K ∈ RN ×dx and V ∈ RN ×dy be the corresponding matrices. Consider the linear predictor W ∈ Rdx×dy defined by the least-squares objective 
+
+L(W ) = ∥KW − V ∥2 
+
+> F
+
+. (17) 
+
+Theorem B.1 (Optimality of Fast Weights) . The unique minimum-norm global minimizer of L(W ) is 
+
+W ⋆ = K†V, (18) 
+
+where K† denotes the Moore–Penrose pseudoinverse of K. Moreover, any gradient-based optimization method initialized at 
+
+W0 = 0 and using a sufficiently small step size converges to W ⋆.
+
+This result shows that the fast weights computed by FAAST coincide exactly with the solution obtained by gradient-based training of a linear predictor, but are obtained analytically without gradients, stochasticity, or iterative updates. FAAST therefore implements a fully compressed associative memory. 
+
+B.2. Fast Weights as Pseudoinverse Attention 
+
+The closed-form solution W ⋆ admits an interpretation as attention-based retrieval, analogous to Eq. 6 in Section 3. Fast weights can be viewed as a special form of attention (Vaswani et al., 2017) that retrieves key-value pairs through a least-squares criterion (see Appendix B.2). We term this mechanism pseudoinverse attention , which solves the exact retrieval problem 
+
+min  
+
+> a
+
+∥K⊤a − q∥22. (19) The solution is given by a⋆ = K†q, leading to the retrieved output 
+
+h = ( a⋆)⊤V = q⊤(K†V ) = q⊤W ⋆. (20) Unlike standard attention mechanisms, pseudoinverse attention permits attention weights a⋆ to take negative values, reflecting a fundamentally different retrieval behavior. 
+
+Relation to Classic Attention Mechanisms. FAAST represents the fully compressed limit of attention-based memory by collapsing retrieval into a single fast-weight matrix, achieving maximal compression without inference-time memory access. Unlike kNN or softmax attention, which are restricted to discrete retrieval or convex combinations, FAAST utilizes pseudoinverse-based signed attention weights. This design choice enables both additive and subtractive interactions, allowing the module to represent a broader class of linear mappings. We justify the advantages of signed attention weights empirically in Appendix D.1.2. 
+
+Softmax Attention as a Regularized Relaxation. The above formulation shows that pseudoinverse attention is the exact retrieval solution for the query q. Now we show that softmax attention can be interpreted as an entropy-regularized relaxation of this optimal retrieval. 
+
+Lemma B.2 (Softmax Attention as an Entropy-Regularized Least-Squares Relaxation) . Let q ∈ Rdx be a query and 
+
+K ∈ RN ×dx be keys. Softmax attention computes 
+
+aτ = softmax 
+
+ 1
+
+τ Kq
+
+
+
+, hτ = a⊤ 
+
+> τ
+
+V, 
+
+where τ > 0 is the temperature. Then aτ is the solution to the entropy-regularized least-squares problem 
+
+min  
+
+> a
+
+∥K⊤a − q∥22 − τ H (a),
+
+13 Forward-Only Associative Learning for Test-Time Adaptation 
+
+where 
+
+H(a) = − X
+
+> i
+
+ai log ai, a ∈ { a ∈ Rn | ai ≥ 0, X
+
+> i
+
+ai = 1 }.
+
+Moreover, as τ → 0 and provided K has full column rank, 
+
+aτ −→ K†q, hτ −→ (a⋆)⊤V. 
+
+B.3. Incremental Update Rule for Fast Weights 
+
+We analyze the incremental update of fast weights when new key–value pairs arrive in batches, and show that this formulation naturally subsumes linear interpolation of fast weights as a special case. 
+
+Batch-wise Formulation. Let an initial set of key–value pairs (K0, V 0) induce fast weights 
+
+W0 = K† 
+
+> 0
+
+V0. (21) Suppose a new batch of key–value pairs (Kb, V b) arrives. The combined dataset is 
+
+K =
+
+K0
+
+Kb
+
+
+
+, V =
+
+V0
+
+Vb
+
+
+
+. (22) The fast weights corresponding to the combined memory are given by the least-squares solution 
+
+W ⋆ = arg min  
+
+> W
+
+∥KW − V ∥2 
+
+> F
+
+= ( K⊤K)−1K⊤V, (23) assuming K⊤K is invertible. 
+
+Incremental Update via Sufficient Statistics. Define the sufficient statistics 
+
+S = K⊤K, T = K⊤V. (24) When a new batch (Kb, V b) is added, these statistics update additively: 
+
+S ← S + K⊤ 
+
+> b
+
+Kb, T ← T + K⊤ 
+
+> b
+
+Vb. (25) Using the Sherman–Morrison–Woodbury identity, the inverse S−1 can be updated efficiently without recomputing from scratch, yielding an exact update of 
+
+W ⋆ = S−1T. (26) This establishes FAAST as an exact, forward-only method for batch-wise online associative learning. 
+
+Linear Interpolation as an Approximation. Consider two disjoint batches (K1, V 1) and (K2, V 2) with corresponding sufficient statistics (S1, T 1) and (S2, T 2). Let 
+
+S = λS 1 + (1 − λ)S2, T = λT 1 + (1 − λ)T2, (27) for some λ ∈ [0 , 1] . Then the resulting fast weights satisfy 
+
+W = S−1T = λW 1 + (1 − λ)W2, (28) when S1 and S2 are mutually orthogonal or proportional to the identity. Here, Wi = S−1 
+
+> i
+
+Ti.Thus, when global attention weights or task contributions combine linearly across batches, the induced fast weights interpolate linearly as well. This property explains why FAAST supports smooth task interpolation and mixture-of-tasks behavior without catastrophic interference. 14 Forward-Only Associative Learning for Test-Time Adaptation 
+
+Discussion. The batch-wise incremental formulation unifies online updates and task interpolation within a single least-squares framework. FAAST therefore supports continual, multi-task, and test-time adaptation using a single deterministic update rule, without gradients or iterative optimization. 
+
+## C. Experimental Setup 
+
+All experiments are conducted on NVIDIA H100 GPUs with 80 GB memory. Image classification models are trained and evaluated on a single GPU, while LLMs are trained using 8 GPUs and evaluated on a single GPU. 
+
+C.1. Image Classification Settings Base Model. We choose pretrained CLIP ResNet-50 (Radford et al., 2021) as the backbone model, using frozen image and text encoders. Image embeddings serve as keys, and text embeddings of class prompts “ A photo of a {label }.” serve as values. All adaptation is performed on these fixed representations. 
+
+Baselines. All methods operate on identical frozen features to isolate the effect of associative memory. CLIP zero-Shot makes prediction using cosine similarity between image and text embeddings (Goh et al., 2021). Linear projection (backprop) trains a linear classifier (Kolesnikov et al., 2019) using stochastic gradient descent with momentum. Full finetuning (backprop) trains a linear classifier together with the image encoder. k-NN memory does nearest-neighbor retrieval (Wu et al., 2018) with k = min( n, 10) . Softmax memory does attention-based retrieval (Vaswani et al., 2017). For k-NN, softmax memory, and FAAST, predictions are linearly interpolated with CLIP zero-shot predictions using the same prior count N0. We set N0 to 40 times the number of classes, yielding N0 = 400 for CIFAR-10 and N0 = 800 for mini-ImageNet. All other hyperparameters are fixed across datasets, including α = 0 .8 for singular value filtering. 
+
+Datasets and Evaluation. We evaluate on CIFAR-10 (Krizhevsky et al., 2009) and mini-ImageNet (Vinyals et al., 2016) datasets. CIFAR-10 contains 10 classes with 50,000 training and 10,000 test images; we use the training split as support set and the test split as query set. mini-ImageNet contains 100 classes. We use the 20-class test split only, randomly dividing each class into equal size, obtaining 6,000 samples for support set and another 6,000 for query set. We evaluate the methods under few-shot and full-data settings. Few-shot evaluation follows a k-way n-shot episodic protocol (Vinyals et al., 2016). In each episode, n labeled samples per class are drawn from the support set to construct the classifier, and 20 query samples per class are used for evaluation. Results are averaged over 600 episodes with 95% confidence intervals. For full-data evaluation, all support samples are used for learning or memory construction, and all query samples are used for testing. 
+
+Backprop Model Training. Table 6 summarizes the training configurations used for backpropagation-based baselines in image classification. Both linear projection and full finetuning are built on a CLIP ResNet-50 backbone. Linear projection trains only a linear classifier on top of frozen image features, while full finetuning additionally updates the image encoder. We use SGD with momentum, a shared learning rate schedule, and identical batch size and regularization to ensure a controlled comparison across methods. 
+
+Table 6. Image Classification Training Settings.               
+
+> Argument Linear Projection Full Finetuning
+> num epochs 20 30 learning rate 1.0e-03 1.0e-05 base model CLIP resnet-50 dropout 0.3 optim SGD(momentum=0.9) lr scheduler type StepLR(step size=10, gamma=0.1) warmup steps 500 batch size 16 GPUs 1torch dtype float32
+
+Table 7. Large Language Model Training Settings.                   
+
+> Argument Linear LoRa Readout
+> base model GPT2, GPT2-Medium, GPT2-Large, GPT2-XL Qwen2.5-3B/7B-Instruct optim AdamW learning rate 2.0e-05 lr scheduler type cosine max length 1024 batch size 8GPUs 8gradient checkpointing true gradient accumulation steps 1num train epochs 1warmup steps 500 packing true packing strategy wrapped attn implementation flash attention 2 torch dtype bfloat16
+
+15 Forward-Only Associative Learning for Test-Time Adaptation 
+
+C.2. Language Modeling Settings Base Models. We evaluate FAAST on a range of pretrained language models, including GPT-2 variants from small (117M) to XL (1.5B) (Radford et al., 2019), and Qwen2.5 instruct models at 3B and 7B scales (Team, 2024). All pretrained parameters remain frozen throughout adaptation, which ensures that improvements can be attributed solely to FAAST’s forward-only adaptation mechanism. 
+
+Baselines. We compare FAAST to four categories of baselines. zero shot serves as a non-adaptive lower bound, establishing the baseline performance without any sequence-level adaptation. Linear projection and LoRa (Hu et al., 2022) trained via backpropagation on frozen base model using cross-entropy loss, represents standard gradient-based adaptation. In-Context Learning (ICL) (Brown et al., 2020) prepends demonstration examples to the input sequence at inference time, enabling forward-only adaptation without updating any model parameters. kNN-LM (Khandelwal et al., 2019) is a non-parametric memory baseline that stores all pairs of hidden states and output tokens from the training split, providing a direct comparison to FAAST’s memory-based mechanism. All methods use the same adaptation examples, and for ICL, the number of demonstrations is matched to the number of examples stored in FAAST’s memory. 
+
+Readout Pretraining. FAAST introduces two key components for sequence-level adaptation: a token scorer , which identifies informative tokens to store in memory, and a memory readout projection , which interprets the stored memory items during prediction. Unless specified otherwise, both components are pretrained jointly on 1% of OpenWebText2 1.During training, to avoid the dominance of historical fast weights computed using outdated readout and weighting, we apply a discount to incremental update Nt before each update, with an empirical value of 0.9. 
+
+Backprop Model Training. Table 7 summarizes the training configurations for backpropagation-based baselines in language modeling. Both linear projection and LoRA fine-tuning are applied on top of a frozen base model. Linear projection trains a residual-connected linear probe inserted between Transformer layers, while LoRA fine-tunes attention and FFN weights with a matched number of trainable parameters. All baselines are optimized using AdamW with a cosine learning-rate scheduler. For smaller models (GPT2, GPT2-Medium, and GPT2-Large), a projection is inserted after every layer; for larger models (GPT2-XL, Qwen2.5-3B-Instruct, and Qwen2.5-7B-Instruct), projections are inserted every two layers. At the same insertion locations, we add a residual-connected FAAST module for our method. 
+
+## D. Experiments 
+
+D.1. Image Classification Results and Analysis 
+
+D.1.1. T RAINING AND LEARNING COST COMPARISON          
+
+> Table 8. Image Classification Training/Learning Costs.
+> Method Train/Learn Cost ↓
+> On CIFAR10 with 50,000 training and 10,000 test samples:
+> Full finetuning (backprop) 1,512 GPU seconds Linear projection (backprop) 568 GPU seconds
+> FAAST (ours) 38 GPU seconds (-93.3%)
+> On mini-ImageNet with 6,000 training and 6,000 test samples:
+> Full finetuning (backprop) 212 GPU seconds Linear projection (backprop) 91 GPU seconds
+> FAAST (ours) 3 GPU seconds (-96.7%)
+
+Table 8 reports the corresponding training or learning cost measured in GPU seconds. Backpropagation-based methods incur substantial computational overhead due to iterative optimization over multiple epochs. In contrast, FAAST performs a single-pass, closed-form associative update without gradient computation, optimizer state, or repeated epochs. As a result, FAAST reduces learning time by over 93% on CIFAR-10 and over 96% on mini-ImageNet, while operating on the same frozen pretrained representations. 
+
+> 1https://huggingface.co/datasets/segyges/OpenWebText2
+
+16 Forward-Only Associative Learning for Test-Time Adaptation 
+
+D.1.2. N ECESSITY OF NEGATIVE ATTENTION WEIGHTS 
+
+We justify the use of negative attention weights as follows and support it by empirical experiments. 
+
+Linear Attention with Negative Attention Weights. Standard linear attention compute retrieval weights based on kernel similarity scores between the query q and keys ki. Without any adjustment, it often produce low-contrast attention, failing to sharply differentiate relevant from irrelevant memory items. In memory retrieval experiments, such as image classification, standard linear attention give poor performance. Linear attention allows partial precomputation of memory statistics. However, due to its linearity and non-negativity constraints on kernel function φ(·), linear attention has limited ability to suppress irrelevant keys. We improve it by centralizing the similarity scores computed with kernelized inner products: 
+
+ai = si − ¯s
+
+P 
+
+> j
+
+sj
+
+, si = φ(q)⊤φ(ki). (29) This centralization enhances the contrast of attention weights, allowing relevant keys to be emphasized more strongly relative to irrelevant ones. Empirically, this modification significantly improves memory retrieval performance. After centralization, linear attention weights in Eq. 29 can become negative for irrelevant keys. These negative weights effectively suppress irrelevant memory items, performing a type of null-space cancellation. In other words, negative attention weights allow linear attention to selectively retrieve relevant content, which is otherwise impossible with strictly non-negative weights. 
+
+Table 9. Necessity of Negative Attention Weights. 
+
+Method mini ImageNet (20-way with WordNet ID as Label) 
+
+1-shot 5-shot Full-Set Linear attention memory 5.0 ±0.0 5.0 ±0.0 5.0 ±0.0 Linear attention w/ negative weights 32.3 ±4.3 37.6 ±2.9 39.6 ±1.2 
+
+FAAST (Ours) 40.4 ±4.1 66.7 ±2.7 86.8 ±0.9 
+
+Empirical Results. Table 9 presents the impact of allowing negative attention weights in linear attention on mini ImageNet classification. Standard linear attention without negative weights fails to distinguish relevant memory items, resulting in near-random accuracy across all settings (1-shot, 5-shot, and full-set). Introducing negative weights via centralization substantially improves performance, confirming that suppressing irrelevant keys is crucial for effective memory retrieval. Our FAAST model further amplifies this effect, achieving the highest accuracy in all scenarios by combining negative-weighted linear attention with fast adaptation, demonstrating that selective retrieval of relevant memory items is essential for few-shot and full-set classification. D.1.3. A NALYSIS OF GENERALIZATION 1 4 16 64 256 full        
+
+> n-shot ( n× 10 samples)
+> 70
+> 80
+> 90
+> Accuracy (%)
+> CIFAR10
+> FAAST
+> (std)
+> Linear
+> (std)
+> 1416 64 256 full
+> n-shot ( n× 20 samples)
+> 80
+> 85
+> 90
+> 95
+> Accuracy (%)
+> mini-ImageNet
+
+Figure 4. FAAST vs. Linear (backprop). The std represents the variance of accuracy across episodes. 
+
+Generalization in Few-Shot Settings. FAAST demonstrates a clear advantage in few-shot scenarios, where backpropagation-based training often suffers from severe overfitting due to limited data. As illustrated in Figure 4, FAAST matches or outperforms linear projections trained with backpropagation under 256-shot settings, while exhibiting lower variance in accuracy across runs. This highlights FAAST’s robustness and its ability to generalize effectively from small numbers of examples. 17 Forward-Only Associative Learning for Test-Time Adaptation 1 4 16 64 256 full            
+
+> n-shot ( n× 10 samples)
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> CIFAR10
+> 1416 64 256 full
+> n-shot ( n× 20 samples)
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> mini-ImageNet
+> = 10 1
+> = 10 2
+> = 10 3
+> = 10 4
+> = 1/ N0.8
+
+Figure 5. Filter noisy components under a threshold ϵ. Experiments are conducted with N0 = 0 to avoid the influence of prior. 
+
+Generalization to Arbitrarily Defined Labels. CLIP relies on a pretrained semantic alignment between image and text embeddings. When this alignment is broken by assigning arbitrary class names, zero-shot performance degrades to near chance. On mini-ImageNet, using WordNet IDs (e.g., n02119789 ) as class names yields 6.4% accuracy on the full data, close to the 5% random baseline for 20-way classification. In contrast, FAAST does not rely on prior semantic alignment. Without prior ( N0 = 0 ), it achieves 85.1% accuracy in this setting, demonstrating strong generalization even when class labels are arbitrarily defined. 
+
+Overfitting-Underfitting Trade-off. FAAST computes fast weights via the pseudoinverse (Penrose, 1955), which relies on an SVD of the key matrix. Large singular values correspond to shared, generalizable components, whereas small singular values capture sample-specific variations. By filtering singular values using a relative tolerance threshold, we explicitly control the balance between memorization and generalization. As shown in Figure 5, accuracy exhibits a function of the threshold given a fixed number of samples: overly aggressive filtering leads to underfitting, while insufficient filtering leads to overfitting. In practice, a relative tolerance of ϵ = 1 /N 0.8 provides a robust balance and is used throughout the experiments. 
+
+D.2. Language Modeling Results and Analysis 
+
+D.2.1. T RAINING AND LEARNING COST COMPARISON 
+
+Table 10. Large Language Model Train and Learn Cost Comparison. 
+
+Method Adaptation Train/Learn Cost Inference Cost 
+
+Linear Projection (upper bound) Backprop 3 GPU hours 23 GPU seconds LoRa w/ same number of params Backprob 3 GPU hours 23 GPU seconds kNN-LM Memory 16 GPU hours 660 GPU seconds 
+
+FAAST (ours) Fast weights 0.2 GPU hrs (-93.3% vs Backprop) 23 GPU secs (-96.5% vs Memory) 
+
+Table 10 compares computational costs across adaptation methods. Backpropagation-based methods (e.g., LoRA) require moderate training ( ≈3 GPU hours) and fast inference (23 GPU seconds), while memory-based approaches like kNN-LM are significantly more expensive in both phases. In contrast, FAAST reduces training to 0.2 GPU hours, saving 93.3% over backpropagation, while matching the fastest inference speed. This represents a 96.5% reduction in inference latency compared to memory-based models, making FAAST ideal for resource-constrained or latency-sensitive applications. D.2.2. A NALYSIS OF INFLUENCING FACTORS 
+
+Impact of Model Size and Number of Layers. We also examine the effect of model size and the number of memory layers. As Figure 3 shows, FAAST consistently improves the base models across all GPT-2 sizes, with relative perplexity reductions increasing from 5.8% to 11.8% as model size grows. Increasing the number of memory layers generally reduces perplexity, although gains plateau beyond a moderate depth, indicating diminishing returns. Accordingly, for smaller language models such as GPT2, GPT2-Medium, and GPT2-Large, we set the number of memory layers equal to the total number of Transformer layers. For larger models, we set the number of memory layers to half of the total Transformer layers. 
+
+Impact of Hyperparameters. As Figure 6 illustrates, the maximum memory size (ranging from 32K to 128K tokens) governs both memory consumption and the frequency of fast weight updates. Fast weights are updated – and the oldest 18 Forward-Only Associative Learning for Test-Time Adaptation 2K 3K 4K 5K 6K         
+
+> Training Step
+> 15.25
+> 15.50
+> 15.75
+> 16.00
+> Perplexity
+> Memory Size (MS)
+> MS=128K MS=64K MS=32K
+> 1K 2K 3K 4K 5K
+> Training Step
+> 15.25
+> 15.50
+> 15.75
+> 16.00
+> Perplexity
+> Update Discount (UD)
+> UD=0.1 UD=0.5 UD=0.9
+
+Figure 6. Training dynamics for different memory size and update discount settings 
+
+batch of memory items removed – only when the memory reaches its maximum capacity. The update discount plays a crucial role in preventing older fast weights from dominating the model. During training, as memory grows, the relative contribution of newly added batches diminishes. To mitigate the influence of outdated fast weights computed with stale readout projections and token scorers, it is necessary to progressively decay the effect of historical fast weights. Empirically, we use a maximum memory size of 64K and a update discount of 0.9 in the main experiments. D.2.3. A RCHITECTURAL VARIANTS AND EXTENSIONS 
+
+We further consider alternative module designs for target encoder and readout projection as follows. 
+
+Right-to-Left Encoder. Let xi denote the left context and yi the right context. We introduce a Transformer layer with a right-to-left causal attention mask, stacked on top of the middle layers of the base model, to encode yi. This layer is trained jointly with the readout projection and injects future context into the associative memory. Empirically, this design yields small but consistent improvements, reducing GPT2-XL’s perplexity on WikiText-103 from 15.35 to 15.15. Due to the additional parameter overhead, we do not employ this in our main experiments. 
+
+Attention-Based Readout. Instead of a linear readout that accesses only the current memory output, we use an attention-based readout layer that attends to all previous memory outputs. This enables aggregation of longer-range memory signals before prediction and is trained jointly with other components. This approach provides modest improvements, lowering perplexity by roughly 0.08, suggesting that local memory interpretation is often sufficient. Combining it with a right-to-left Transformer encoder for future-context encoding further reduces perplexity by about 0.20, but the parameter overhead prevents its use in the main experiments. 19

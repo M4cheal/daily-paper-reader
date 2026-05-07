@@ -1,0 +1,2491 @@
+Title: Kernel Affine Hull Machines for Compute-Efficient Query-Side Semantic Encoding
+
+URL Source: https://arxiv.org/pdf/2605.02950v1
+
+Published Time: Wed, 06 May 2026 00:02:18 GMT
+
+Number of Pages: 38
+
+Markdown Content:
+# KERNEL AFFINE HULL MACHINES FOR COMPUTE -E FFICIENT 
+
+# QUERY -S IDE SEMANTIC ENCODING 
+
+Mohit Kumar 
+
+University of Rostock, Germany Software Competence Center Hagenberg GmbH, Austria Hagenberg, Austria 
+
+mohit.kumar@uni-rostock.de 
+
+Somayeh Kargaran, Bernhard A. Moser, Manuela Geiß 
+
+Software Competence Center Hagenberg GmbH Hagenberg, Austria 
+
+{somayeh.kargaran,bernhard.moser,manuela.geiss}@scch.at 
+
+# ABSTRACT 
+
+Background: Transformer-based semantic encoders are highly effective for retrieval, but in many deployments the recurring bottleneck is online query encoding rather than offline corpus indexing. Existing efficient retrieval methods improve this trade-off in different ways, yet they typically retain online neural inference. This leaves open a narrower deployment question that is important both prac-tically and methodologically: when a strong semantic teacher space is already fixed, can repeated on-line neural query encoding be replaced by a substantially lighter estimator whose ingredients and ap-proximation behavior remain analytically explicit? Objectives: This paper studies that fixed-teacher query-adaptation problem. We study whether Kernel Affine Hull Machines (KAHMs) can serve as mathematically explicit and compute-efficient query-side adapters from inexpensive lexical features into a frozen semantic embedding space while preserving decision-relevant retrieval quality. Meth-ods: We formulate deployment-time semantic encoding as a conditional-mean estimation problem. The target semantic representation admits a noisy prototype-mixture form in which semantic pro-totypes are weighted by posterior cluster probabilities. We use KAHM geometry to estimate these posterior weights from lexical features in an explicitly identified RKHS hypothesis space, which yields non-asymptotic control of the posterior-approximation step. Holding this weighting mecha-nism fixed, we then refine the semantic prototypes by a normalized least-mean-squares (NLMS) up-date on noisy teacher embeddings, obtaining an explicit end-to-end encoding-error decomposition into posterior-approximation, finite-sample/generalization, and teacher-noise terms. Empirically, we instantiate the method on a controlled Austrian-law retrieval benchmark in which lexical IDF-SVD query features are mapped by law-specific encoders into a fixed semantic corpus space induced by a frozen Mixedbread embedding model. Results: On a benchmark comprising 5,000 test queries, 84 candidate laws, and 10,762 aligned retrieval units, we compare the proposed encoder not only with lexical and direct-transformer references, but also with five evaluation-matched learned adapters trained under the same law-wise split and deployment contract. Among the learned adapters, KAHM achieves the strongest teacher-space reconstruction overall, with MSE = 0 .000091 , R2 = 0 .9071 ,and mean cosine similarity 0.9536 . It also remains strongest on the principal rank-sensitive law-retrieval measures at every evaluated cutoff. At k = 20 , KAHM achieves MRR@20 = 0 .504 (mean reciprocal rank of the first relevant law within the top 20), Hit@20 = 0 .694 (fraction of queries with a relevant law in the top 20), and Top-1 Accuracy = 0 .411 (fraction of queries whose correct law is ranked first), compared with MRR@20 = 0 .456 , Hit@20 = 0 .575 , and Top-1 Accuracy = 0 .385 
+
+for the strongest learned comparator on these measures, the law-wise MLP regressor. Relative to direct transformer query encoding on the same frozen corpus index, the KAHM encoder reduces online per-query time from 800 .663 ms to 93 .834 ms, corresponding to an 8.53 × speedup in the 
+
+> arXiv:2605.02950v1 [cs.LG] 1 May 2026
+
+reported CPU setting. Conclusions: The contribution is methodological but addresses a broader AI systems question. The paper provides an analytically explicit estimator for fixed-teacher lexical-to-semantic query adaptation together with an interpretable error decomposition, and shows that repeated online neural query encoding can, in a controlled deployment regime, be replaced by a sub-stantially lighter adapter without sacrificing the principal decision-relevant retrieval behavior within the matched comparison class. At the design level, the result suggests that fixed neural represen-tation spaces can be served not only by smaller neural students, but also by lightweight geometric estimators whose runtime path and approximation behavior remain explicit. 
+
+# 1 Introduction 
+
+Transformer-based retrieval has reshaped semantic search by enabling documents and queries to be mapped into shared vector spaces in which relevance can be approximated by vector similarity. Representative developments include general-purpose sentence encoders such as Sentence-BERT [34], dual-encoder dense retrieval systems such as DPR [21], and more expressive late-interaction or learned sparse retrieval models such as ColBERT [22] and SPLADE [9]. These developments build on the transformer architecture [46] and the bidirectional pretraining paradigm introduced by BERT [6]. At the same time, the current text-embedding landscape has become broader and stronger: modern embedding families such as E5 [47], INSTRUCTOR [43], and M3-Embedding [3] demonstrate that a single-vector representation can often transfer well across retrieval, clustering, and related tasks, while benchmarks such as BEIR [45] and MTEB [32] have made it possible to compare such models across heterogeneous domains and task types. A consistent lesson from this literature is that there is no universally dominant retrieval architecture: stronger semantic models often improve relevance, but the gains come with nontrivial trade-offs in latency, compute, memory, and deployment complexity [45, 32]. Recent efficient retrieval systems broaden that retrieval landscape further. Strong compact or generalizable dual en-coders [19, 33], efficient late-interaction systems [40], and newer general-purpose embedding models [27] provide important points of reference for deployment-oriented retrieval. The present paper addresses a different but broadly relevant systems question: when a strong representation space has already been fixed by a teacher model, can re-peated online neural query encoding be replaced by a substantially lighter adapter whose ingredients, approximation behavior, and error terms remain analytically explicit? That question matters beyond the particular legal benchmark studied here. In modern AI systems, strong neural representations are often computed offline and then reused under deployment constraints in which test-time latency, energy, memory footprint, hardware simplicity, auditability, or im-plementation stability become first-order considerations. This pattern appears not only in retrieval, but more generally whenever a frozen representation space is treated as infrastructure and the remaining problem is to map inexpensive runtime features into that space. From that perspective, the paper is about a modular AI design problem: how to preserve the decision-relevant benefits of a strong neural teacher while replacing repeated online inference by a lighter estimator whose behavior is mathematically inspectable. A central systems issue in semantic retrieval is the asymmetry between offline corpus processing and online query processing. In many practical deployments, corpus representations can be precomputed and indexed offline, whereas every incoming query must still be encoded at serving time. This makes query-side encoding the latency-critical part of the pipeline. Existing efficiency-oriented alternatives improve this trade-off but generally do not eliminate online neural inference: late-interaction models still require transformer-based query encoding [22, 40], learned sparse retrievers still construct query representations through a neural encoder [9], and distillation or compression methods replace a large teacher by a smaller student that must nevertheless be executed online [14, 39, 20]. The question studied here is whether repeated online neural query encoding can be replaced by a lightweight lexical-to-semantic adapter under a fixed teacher space and serving contract. This paper studies precisely that problem. We assume that a strong teacher encoder has already produced a frozen semantic embedding space and that the corpus has already been indexed in that space. At deployment time, rather than rerunning the teacher for every query, we ask whether the query embedding can be estimated directly from inexpensive lexical features. The goal is therefore different from standard student-network compression: we seek a deployment-time encoder whose runtime path is lightweight, whose mathematical structure is explicit, and whose approximation behavior can be analyzed directly in terms of estimator design and error decomposition. Our starting point is the theory of kernel methods in reproducing kernel Hilbert spaces (RKHS), which provides a mathematically explicit framework for representation, regularization, and approximation [1, 16, 42]. Within this framework, Kernel Affine Hull Machines (KAHMs) were introduced as geometrically inspired kernel machines that learn bounded structures in affine hulls via RKHS constructions [24]. Subsequent work showed that KAHM-based models admit gradient-free posterior-estimation procedures together with explicit guarantees in collaborative and fed-2erated settings [25, 23]. In the present paper, those earlier results matter primarily as motivation for model selection: they make KAHMs plausible candidates for a deployment-time encoder whose posterior-weight estimation is gradient-free, whose overall training pipeline is backpropagation-free, and whose inference path is lightweight and analytically tractable. Here we test whether the same geometric machinery can serve as an effective query-side adapter into a frozen semantic space. The scientific perspective of the paper is methodological. We formulate deployment-time semantic encoding from lexical query features into a fixed teacher space as a conditional-mean estimation problem. The target semantic vector admits a noisy prototype-mixture representation in which semantic cluster prototypes are weighted by posterior cluster probabilities [2]. KAHM geometry is used to estimate these posterior weights from lexical features in an explicitly identified RKHS hypothesis space without backpropagation through a parameterised neural network, while the seman-tic prototypes themselves are refined from noisy teacher embeddings by an explicit normalized least-mean-squares update. This yields an analytically explicit encoder together with an end-to-end encoding-error decomposition into posterior-approximation, finite-sample/generalization, and teacher-noise terms. The resulting online path is therefore reduced to inexpensive lexical feature extraction, evaluation of a small number of geometric quantities, formation of a weighted prototype mixture, and retrieval in the frozen dense index, with no transformer forward pass and no learned neural gating network at serving time. 
+
+Remark 1 (Target Deployment Regime) . The paper targets a deployment regime that is narrower than the full retrieval landscape but broad enough to be methodologically important: a strong semantic teacher space is already fixed, corpus representations can be computed offline, query-time latency is the principal serving bottleneck, and sufficient in-domain supervision is available to learn a lightweight query-side adapter. Under this regime, the scientific question is whether repeated online neural query encoding can be replaced by an analytically explicit lexical-to-semantic adapter while keeping the teacher space, the corpus index, and the serving contract fixed. This restriction is deliberate rather than incidental. It isolates the query-adaptation problem from confounding changes in teacher model quality, corpus representation, interaction mechanism, or index structure. As a result, performance differences within the evaluation-matched comparison class can be interpreted primarily as evidence about the quality of the query-side adapter itself. 
+
+The contributions of the paper are fourfold: 1. We formulate deployment-time lexical-to-semantic encoding into a fixed teacher space as a conditional-mean estimation problem. This recasts a practical serving bottleneck in semantic retrieval as a precise estimation problem and makes explicit the broader AI setting in which a frozen neural representation space is reused under runtime constraints. 2. We derive a KAHM-based estimator for semantic-cluster posterior weights from lexical features. This turns query adaptation into a mathematically analyzable posterior-estimation problem in an explicitly identified RKHS hypothesis space and yields non-asymptotic control of the posterior-approximation step. 3. We combine this posterior estimator with an NLMS-based refinement of semantic prototypes learned from noisy teacher embeddings and obtain an explicit end-to-end decomposition of the total encoding error into posterior-approximation, finite-sample/generalization, and teacher-noise terms. The resulting method is there-fore not only deployment-oriented but also analytically interpretable. 4. We validate the resulting encoder on a controlled Austrian-law retrieval benchmark under a deliberately matched deployment contract. Within a comparison class that holds fixed the lexical front end, the teacher space, the frozen corpus index, the supervision granularity, and the serving rule, the proposed KAHM encoder achieves the strongest teacher-space reconstruction and the strongest principal rank-sensitive retrieval perfor-mance among the learned adapters considered here while substantially reducing online query time relative to direct transformer query encoding. This positioning also clarifies how the paper differs from the broader efficient-retrieval literature, including benchmark-oriented retrieval comparisons [45, 32], recent legal retrieval work [8, 5, 10], and recent reasoning-oriented retrieval formulations [51]: whether repeated online neural query encoding can be replaced, under a fixed teacher space and serving contract, by an analytically explicit lexical-to-semantic adapter. The remainder of the paper is organized as follows. Section 2 introduces the notation, problem formulation, and the KAHM definitions required in the sequel. Section 3 develops the encoding solution, including the hypothesis-space construction, the KAHM-based posterior estimator, the adaptive prototype estimation procedure, and the theoretical analysis. Section 4 describes the experimental setup and reports the retrieval and runtime results. Section 5 concludes with the scope of the empirical claim and directions for broader evaluation. 32 Mathematical Formulations 
+
+This section fixes the notation needed for the theoretical analysis. Readers primarily interested in the retrieval ap-plication may read x as the inexpensive lexical query representation, z as the frozen teacher embedding, y as the semantic-cluster indicator, and q as the law/domain index. The measurable-space formulation is included only to state the later approximation and generalization results precisely. 
+
+2.1 Notations 
+
+We use boldface font to denote the matrices. The following notations are introduced: • Let p, n, N, c, C, q, Q, k, K ∈ Z+ be the positive integers. • For a scalar a ∈ R, |a| denotes its absolute value. For a set A, |A| denotes its cardinality. For a real matrix 
+
+X, XT is the transpose of X.• For a vector y ∈ RC , ‖y‖ denotes the Euclidean norm and yj (and also (y)j ) denotes the jth element. For a matrix X ∈ RN ×n, ‖X‖2 denotes the spectral norm, ‖X‖F denotes the Frobenius norm, (X)i, : denotes the 
+
+ith row, (X):,j denotes the jth column, and (X)i,j denotes the (i, j )th element. • The square brackets are used to represent the construction of a matrix from columns e.g. [ x1 · · · xN ] is a matrix with vectors x1, · · · , x N as the columns. • For a set {x1, · · · , x N } ⊂ Rn, its affine hull is denoted as aff ({x1, · · · , x N }).• Let e1, · · · , eC ∈ { 0, 1}C be the canonical basis vectors, where 
+
+(e c)i =
+
+{1 if i = c, 
+
+0 if i 6 = c. , ∀i ∈ { 1, · · · , C }. (1) • Let ⊗ denote the product σ−algebra. • The abbreviation a.s. stands for almost surely , i.e., a property is said to hold a.s. if it holds with probability one. 
+
+2.2 Definitions Definition 1 (Document Space and Domain) . Let (Ω , F, μ ) be a probability space, let (D, G) be a measurable space, and let 
+
+D : (Ω , F) → (D, G)
+
+be a measurable random document. Let PD : G → [0 , 1] be the distribution of D defined by 
+
+PD := μ ◦ D−1.
+
+Let 
+
+fD7 →q : ( D, G) → ({1, · · · , Q }, 2{1,··· ,Q }) (2) be a measurable domain assignment map. For each q ∈ { 1, . . . , Q }, the q-th domain is defined by 
+
+Dq := f −1  
+
+> D7→q
+
+({q}) ∈ G . (3) 
+
+Definition 2 (Semantic Space and Clusters) . We represent documents by a measurable semantic feature map 
+
+fD7 →z : ( D, G) → (Rp, B(Rp)) . (4) where p is the dimension of the semantic feature vector and B(Rp) denotes the Borel σ-algebra on Rp. The associated feature vector 
+
+z := fD7 →z ◦ D
+
+is therefore an Rp-valued random vector with distribution 
+
+Pz := μ ◦ z−1,
+
+where Pz : B(Rp) → [0 , 1] . Let 
+
+fz7 →c : ( Rp, B(Rp)) → ({1, · · · , C }, 2{1,··· ,C }) (5) 
+
+4be a measurable semantic clustering map. Two documents d1, d 2 ∈ D are said to belong to the same semantic cluster if and only if 
+
+(fz7 →c ◦ fD7 →z )( d1) = ( fz7 →c ◦ fD7 →z )( d2). (6) Let fc7 →y : {1, · · · , C } → { e1, · · · , eC } be the one-hot map: 
+
+fc7 →y(c) := e c. (7) 
+
+Definition 3 (Lexical Feature Space) . Let 
+
+fD7 →x : ( D, G) → (Rn, B(Rn)) (8) be a measurable lexical feature map. Define random variables 
+
+x := fD7 →x ◦ D, (9) 
+
+y := fc7 →y ◦ fz7 →c ◦ fD7 →z ◦ D, (10) 
+
+q := fD7 →q ◦ D. (11) Then (x, y, q ) is a random vector taking values in Rn × { e1, · · · , eC } × { 1, · · · , Q } with a distribution, Px,y,q :
+
+B(Rn) ⊗ 2{e1,··· ,eC } ⊗ 2{1,··· ,Q } → [0 , 1] , given as 
+
+Px,y,q := μ ◦ (x, y, q )−1.
+
+In our experiments, this abstraction is instantiated in a concrete way. The semantic variable z will be a frozen teacher embedding of a legal retrieval unit, the lexical variable x will be a cheap query-side representation derived from IDF–SVD features, and the domain variable q will index the law-wise local encoder to which the sample belongs. This interpretation is not needed for the mathematical validity of the definitions, but it helps connect the formal setup directly to the retrieval problem studied later in the paper. 
+
+2.3 Data Samples 
+
+Let S be a set consisting of N number of samples drawn i.i.d. according to the distribution Px,y,q :
+
+S := {(xi, y i, q i) ∈ Rn × { e1, · · · , eC } × { 1, · · · , Q } | i ∈ { 1, 2, · · · , N }} ∼ (Px,y,q )N . (12) Let Ic be the set of indices of those samples in the sequence (( xi, y i, q i) ∈ S )Ni=1 which are cth semantic-cluster labelled, i.e., 
+
+Ic := {i ∈ { 1, 2, · · · , N } | yi = e c} . (13) Let Nc be the number of cth semantic-cluster labelled samples, i.e., 
+
+Nc = |I c|. (14) Let Ic = (I c
+
+> 1
+
+, · · · , IcNc ) be the sequence of elements of Ic in ascending order, i.e., 
+
+Ic 
+
+> 1
+
+= min( Ic) (15) 
+
+Ici = min( Ic \ { Ic
+
+> 1
+
+, · · · , Ici−1}), ∀i ∈ { 2, · · · , N c}. (16) Let Xc ∈ RNc×n be the matrix storing cth semantic-cluster labelled samples as its rows, i.e., 
+
+Xc =
+
+[
+
+xIc 
+
+> 1
+
+· · · xIcNc 
+
+]T
+
+. (17) We consider the multi-domain setting where total data samples are distributed among Q different domains. Let Qq be the set of semantic-cluster labels covered by qth domain, i.e., 
+
+Qq := {c ∈ { 1, 2, · · · , C } | (yi)c = 1 , q i = q, i ∈ { 1, 2, · · · , N }} . (18) Let J q be the set of sample indices covered by qth domain, i.e., 
+
+J q := {i ∈ { 1, 2, · · · , N } | qi = q} . (19) Finally, let J q,c (with c ∈ Q q) be the set of cth semantic-cluster labelled sample indices covered by qth domain, i.e., 
+
+J q,c := {i ∈ { 1, 2, · · · , N } | qi = q, (yi)c = 1 , c ∈ Q q } . (20) 
+
+Remark 2 (Data Heterogeneity across Domains) . We assume that data are statistically heterogeneous across domains, i.e., for arbitrary domains qi and qj with i 6 = j,
+
+Px,y |q(·, ·| q = qi) 6 = Px,y |q(·, ·| q = qj ), (21) 
+
+Py|x,q (·| x, q = qi) 6 = Py|x,q (·| x, q = qj ). (22) 
+
+52.4 Kernel Affine Hull Machine (KAHM) 
+
+The KAHMs, originally defined in [24], have been considered for automated machine learning in [25] and for gradient-free federated learning in [23]. Given a finite number of samples: X = [ x1 · · · xN ]T with x1, · · · , x N ∈ Rn, a KAHM AX : Rn → aff( {x1, · · · , x N }) is defined as 
+
+AX(x) := h1
+
+> X
+
+(PXx)
+
+∑Ni=1 hi
+
+> X
+
+(PXx) x1 + · · · + hN 
+
+> X
+
+(PXx)
+
+∑Ni=1 hi
+
+> X
+
+(PXx) xN . (23) A comprehensive description of the variables and functions associated with KAHM expression (23) has been provided in Appendix A. 
+
+2.5 The Semantic Feature Vector Estimation Problem 
+
+We consider the problem of estimating the semantic feature vector of a document from its lexical feature vector. For this, the solution space is defined as 
+
+Fx7 →z := 
+
+{
+
+f : Rn → Rp | f is B(Rn) − B (Rp) − measurable and E
+
+> x∼Px
+
+[‖f (x)‖2] < ∞
+
+}
+
+. (24) Let fx7 →z : Rn → Rp be a Borel measurable function satisfying 
+
+fx7 →z(x) = E
+
+> z∼Pz|x
+
+[z | x] a.s. (25) Under the assumption 
+
+E
+
+> z∼Pz
+
+[‖z‖2] < ∞, (26) it is well known and also shown in Appendix B for the sake of completeness that fx7 →z solves the least-squares estimation problem, i.e., 
+
+fx7 →z ∈ argmin   
+
+> f∈Fx7→z
+
+E
+
+> (x,z )∼Px,z
+
+[‖z − f (x)‖2]. (27) Since y is a discrete random vector taking values in {e1, . . . , eC }, the law of total expectation yields 
+
+fx7 →z (x) = E
+
+> z∼Pz|x
+
+[z | x] = 
+
+> C
+
+∑
+
+> c=1
+
+Py|x(yc = 1 | x) E
+
+> z∼Pz|x,y
+
+[z | x, y c = 1] a.s. (28) 
+
+Definition 4 (Semantic Cluster Prototypes and Within-Cluster Residuals) . For each semantic cluster c ∈ { 1, . . . , C },define the cluster prototype as the cluster mean, 
+
+wc := E
+
+> z∼Pz|y
+
+[z | yc = 1] ∈ Rp, (29) the within-cluster residual as the deviation from the prototype, 
+
+∆wc(x) := E
+
+> z∼Pz|x,y
+
+[z | x, y c = 1] − wc, (30) and the aggregate within-cluster residual ,
+
+ξres (x) := 
+
+> C
+
+∑
+
+> c=1
+
+Py|x(yc = 1 | x) ∆ wc (x) ∈ Rp. (31) 
+
+Remark 3 (Structural properties of the residual) . By definition of wc,
+
+E
+
+> x∼Px
+
+[∆ wc(x)] = 0, (32) where 0 is the zero-vector of suitable dimension. 
+
+Remark 4 (Exact decomposition of the conditional mean) . Using Definition 4 and the law of total expectation (28), the conditional mean of z given x decomposes exactly as 
+
+fx7 →z (x) = 
+
+> C
+
+∑
+
+> c=1
+
+Py|x(yc = 1 | x) wc
+
+︸ ︷︷ ︸
+
+> prototype-mixture term
+
++ ξres (x) a.s. , (33) where the quantity Ex∼Px
+
+[
+
+‖ξres (x)‖2]
+
+measures the within-cluster variance that the prototype-mixture representation leaves unexplained. 
+
+6We are now in a position to state the central problem of this study: 
+
+Problem 1 (The Encoding Problem) . Let {(xi, y i)}Ni=1 be the observed samples. Using the decomposition (33) in Remark 4, the goal is to construct an estimator ̂ fx7 →z : Rn → Rp of the form ̂
+
+fx7 →z(x) := 
+
+> C
+
+∑
+
+> c=1
+
+Φc(x)̂wc, (34) where ̂ wc ∈ Rp and 
+
+Φc(x) ∈ [0 , 1] ,
+
+> C
+
+∑
+
+> c=1
+
+Φc(x) = 1 . (35) Considering ̂ fx7 →z as an approximation of fx7 →z(x) = Ez∼Pz|x [z | x], specifically, 1. derive an estimator Φc of posterior probability Py|x(( y)c = 1 | x) for each c ∈ { 1, · · · , C }, and establish non-asymptotic bounds on its estimation error: Ex∼Px
+
+[∣∣Φc(x) − Py|x(yc = 1 |x)∣∣2]
+
+;2. derive an estimator ̂ wc of prototype wc for each c ∈ { 1, · · · , C } from the samples {(Φ c(xi), v i)}Ni=1 gener-ated by a “noisy teacher” such that 
+
+vi =
+
+> C
+
+∑
+
+> c=1
+
+Py|x(yc = 1 | xi) wc + ξ(xi), i ∈ { 1, · · · , N }, (36) where the noise function ξ : Rn → Rp is defined as 
+
+ξ(x) := ξres (x) + ξobs (x), (37) with ξres (x) the aggregate within-cluster residual from Definition 4 and ξobs (x) the residual perturbation in the observed teacher embedding relative to fx7 →z(x).Here, ξ(xi) subsumes two sources of noise. The term ξres (xi) is the systematic within-cluster variation: the part of the conditional mean fx7 →z(xi) that the prototype-mixture representation cannot recover. The term ξobs (xi) captures perturbations in the observed teacher embedding around the true conditional mean. 
+
+# 3 The Encoding Solution 
+
+This section develops the proposed encoder in four steps. First, we formulate deployment-time semantic encoding as the problem of predicting a frozen teacher embedding from inexpensive lexical query features. Second, we represent that target embedding as a noisy prototype mixture weighted by semantic-cluster posterior probabilities. Third, we construct a KAHM-based estimator for these posterior probabilities whose weighting step is gradient-free in the sense that it requires no backpropagation through a parameterised neural network and no iterative gradient computation over a composite neural objective: the KAHM geometry supplies cluster-wise space-folding scores, these scores are normal-ized into posterior-like coefficients, and the resulting coefficients are then used as the mixture weights. Fourth, once these posterior-like coefficients have been obtained, we estimate the semantic prototypes by explicit NLMS updates learned from noisy teacher embeddings and derive an end-to-end error decomposition into posterior-approximation, finite-sample/generalization, and teacher-noise terms. Operationally, this means that the online path contains no trans-former forward pass and no learned neural gating network: it consists only of lexical feature extraction, evaluation of the KAHM-induced posterior scores, formation of the weighted prototype mixture, and retrieval in the frozen dense index. 
+
+3.1 Analytically Identified Hypothesis Space for Learning Semantic-Cluster Posterior Probability 
+
+The next step uses a hypothesis-space identification result from [23] only as a technical device for the present analysis. We use the identified data-dependent function class to make the posterior-surrogate estimation problem analytically explicit in the fixed-teacher setting studied in this paper. Following that result of [23], we work with the hypothesis space 
+
+Mc := 
+
+{
+
+hx7 →yc = Φc(·)
+
+NcNc∑
+
+> i=1
+
+Φc(xIci ) | Φc : Rn → [0 , 1] , ‖Φc‖2  
+
+> L2(Rn,Px)
+
+= Nc
+
+N
+
+}
+
+, (38) 7where Φc is referred to as feature-map and L2(Rn, Px) is the space of all complex-valued measurable functions on Rn
+
+such that for a f ∈ L2(Rn, Px),
+
+‖f ‖2  
+
+> L2(Rn,Px)
+
+:= 
+
+∫
+
+> Rn
+
+|f (x)|2 dPx(x) < ∞. (39) The factor Nc/ ∑Nc 
+
+> i=1
+
+Φc(xIci ) rescales the geometric score function Φc into a hypothesis that is comparable to a posterior-probability surrogate on the c-labelled region. Intuitively, Φc first measures how strongly the KAHM ge-ometry associates a query with semantic cluster c, and the normalization then calibrates that score by the empirical mass that Φc assigns to the observed c-labelled samples. This data-dependent rescaling is important because it con-verts a cluster-specific geometric compatibility score into a function with the correct problem-dependent scale for the posterior-estimation space Mc, rather than treating Φc as an arbitrary uncalibrated score. 
+
+Theorem 1 (Approximation Error Bound for Hypothesis Space [23]) . Given a data set {(xi, y i) | i ∈{1, 2, · · · , N }} ∼ (Px,y )N , for any hx7 →yc ∈ M c, we have with probability at least 1 − δ for any δ ∈ (0 , 1) ,
+
+E
+
+> x∼Px
+
+[∣∣hx7 →yc (x) − Py|x(yc = 1 |x)∣∣2]
+
+≤ min 
+
+(
+
+1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+|yic − hx7 →yc (xi)|2 + 4
+
+√N +
+
+√ log(1 /δ )
+
+2N ,
+
+1
+
+(Nc/N )2
+
+(
+
+3
+
+√N +
+
+√ 8 log(1 /δ )
+
+N
+
+)) 
+
+. (40) 
+
+3.2 KAHM-Based Learning Solution 
+
+Our approach is to choose from the space Mc a suitable hypothesis that can be implemented efficiently. The previous study [23] has exploited the so-called “ space folding ” property of the KAHMs to implement a solution, however, under certain assumptions. Based on the observation that a KAHM (associated to a given set of data samples) folds any arbitrary point in the data space around the data samples, the study in [23] has introduced a “ space folding measure ”: 
+
+Definition 5 (Space Folding Measure [23]) . To evaluate the amount of folding required for an arbitrary point x to map it (by the KAHM AX) to a point closer to data samples represented by a matrix X, the space folding measure, 
+
+TX : Rn → [0 , 1] , associated to data samples X, is defined as 
+
+TX(x) := 
+
+√ 1
+
+2
+
+(
+
+|T Euc  
+
+> X
+
+(x)|2 + ∣∣T Cos  
+
+> X
+
+(x)∣∣2)
+
+, where (41) 
+
+T Euc  
+
+> X
+
+(x) := 1 − exp ( −‖ x − A X(x)‖) (42) 
+
+T Cos  
+
+> X
+
+(x) := 1
+
+π arccos 
+
+(
+
+(AX(x)) T x
+
+‖A X(x)‖‖ x‖
+
+)
+
+. (43) The two components in (42)–(43) capture complementary aspects of geometric mismatch. The Euclidean term T Euc  
+
+> X
+
+(x)
+
+measures how far the point must be moved in magnitude to reach its KAHM reconstruction, whereas the cosine term 
+
+T Cos  
+
+> X
+
+(x) measures how strongly the direction of that reconstruction differs from the direction of the original point. Thus, the combined score does not depend only on distance, as in a purely Euclidean nearest-neighbor view, but also on orientation relative to the affine structure induced by the KAHM model. 
+
+The quantity TX(x) measures how much geometric correction the KAHM reconstruction must apply in order to fold 
+
+x toward the reference set X. If this value is small, then x already lies in a region that is geometrically compatible with the cluster represented by X, so only a small correction is needed; if it is large, then the point is poorly aligned with that cluster and requires a stronger fold. In the later law-wise serving rule, this is precisely why smaller folding scores are treated as stronger evidence for the corresponding local model. Our intent is to utilise the space-folding property of KAHMs to define a hypothesis, possibly within Mc, so that Theorem 1 can be directly applied to provide theoretical guarantees on the performance. However, unlike [23], the present construction is not restricted to binary outputs (i.e. {0, 1}). The broader semantic-encoding setting therefore requires an explicit structural assumption on the concentration of the induced feature map, which we state next and later interpret operationally through empirical diagnostics. 
+
+Definition 6 (Ordered K-Minimum Semantic Cluster Sequence) . Let {T Xc : Rn → [0 , 1] }Cc=1 be a family of functions, where TXc is the space folding measure associated to cth semantic cluster. For a given x, let πx denote the permutation of {1, . . . , C } such that 
+
+TXπx (1) (x) ≤ · · · ≤ T Xπx (C) (x).
+
+8Then, for K ∈ { 1, . . . , C }, the ordered K-minimum semantic cluster sequence at x is defined by 
+
+JK (x) := (πx(1) , . . . , π x(K)).
+
+The entries of JK (x) are precisely the indices of the K smallest values among TX1 (x), · · · , TXC (x) listed in non-decreasing order. 
+
+Definition 7 (KAHM-Induced Feature-Map) . The KAHM-induced feature-map function, Φc : Rn → [0 , 1] , for a given ω > 1 and K ∈ { 1, . . . , C }, is defined as 
+
+Φc(x) := 
+
+
+
+(1 − T Xc (x)) ω
+
+∑  
+
+> k∈JK(x)
+
+(1 − T Xk (x)) ω c ∈ JK (x),
+
+0 c / ∈ JK (x)
+
+, c ∈ { 1, · · · , C }. (44) 
+
+Here, ω > 1 is a temperature-like hyperparameter that controls the sharpness of the cluster assignment induced by the KAHM folding scores. Larger values of ω concentrate more mass on the clusters with the smallest folding scores, whereas smaller admissible values produce softer assignments across competing clusters. In the limiting regime ω → ∞ , the feature map approaches the hard-assignment rule used in [23]. 
+
+Assumption 1 (Cluster-Wise L2-Mass Condition for the Feature-Map) . For each semantic cluster c ∈ { 1, · · · , C },the KAHM-induced feature-map Φc satisfies 
+
+‖Φc‖2 
+
+> L2(Rn,Px)
+
+≥ Nc
+
+N . (45) 
+
+Remark 5 (Geometric Motivation for Assumption 1) . Assumption 1 is motivated by the geometric interpretation of the space folding measure. For a training sample xIci labelled by semantic cluster c, one expects the space folding measure induced by Xc to be relatively small compared with the corresponding folding measures induced by competing semantic clusters. Consequently, the feature-map weight assigned to cluster c is expected to be large on c-labelled samples and, under sufficiently pronounced separation of the competing folding scores, can become close to 1 for sufficiently large ω. Hence, for c-labelled training samples, one expects 
+
+Φc(xIci ) ≈ 1, i = 1 , . . . , N c.
+
+If, in addition, the sample size N is sufficiently large, then the empirical average approximates the population L2-norm, so that 
+
+‖Φc‖2  
+
+> L2(Rn,Px)
+
+≈ 1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+|Φc(xi)|2 ≥ 1
+
+N
+
+> Nc
+
+∑
+
+> i=1
+
+|Φc(xIci )|2 ≈ Nc
+
+N .
+
+This provides the intuition behind Assumption 1, namely that the KAHM-induced feature map Φc carries sufficient 
+
+L2-mass on the c-labelled region. 
+
+An empirical study will be performed to evaluate a sample analogue of Assumption 1 on the realized law-wise KAHM-induced feature-maps in order to check whether the required cluster-wise L2-mass condition is approximately satisfied in the trained deployment regime. 
+
+Theorem 2 (Approximation Error Bound for KAHM-Induced Feature-Map) . Given a data set {(xi, y i) | i ∈{1, 2, · · · , N }} ∼ (Px,y )N , under the assumption of inequality (45), we have with probability at least 1 − δ for any 
+
+δ ∈ (0 , 1) and η > 0,
+
+E
+
+> x∼Px
+
+[∣∣Φc(x) − Py|x(yc = 1 |x)∣∣2]
+
+≤ (1 + η)
+
+∣∣∣∣∣1 −
+
+∑Nc 
+
+> i=1
+
+Φc(xIci )
+
+N ‖Φc‖2 
+
+> L2(Rn,Px)
+
+∣∣∣∣∣
+
+> 2
+
+‖Φc‖2
+
+> L2(Rn,Px)
+
++ (1 + η−1) min 
+
+(
+
+1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+|yic − ˜hx7 →yc (xi)|2 + 4
+
+√N +
+
+√ log(1 /δ )
+
+2N , 1
+
+(Nc/N )2
+
+(
+
+3
+
+√N +
+
+√ 8 log(1 /δ )
+
+N
+
+)) 
+
+,(46) where 
+
+˜hx7 →yc := ˜Φc(·)
+
+NcNc∑
+
+> i=1
+
+˜Φc(xIci ), (47) 
+
+˜Φc := 
+
+√Nc
+
+√N‖Φc‖L2(Rn ,Px)
+
+Φc. (48) 
+
+9Proof. Consider 
+
+‖Φc − ˜hx7 →yc ‖L2(Rn ,Px) =
+
+∣∣∣∣∣1 −
+
+∑Nc 
+
+> i=1
+
+Φc(xIci )
+
+N ‖Φc‖2 
+
+> L2(Rn,Px)
+
+∣∣∣∣∣ ‖Φc‖L2(Rn ,Px). (49) Due to the inequality (45) and Φc(x) ∈ [0 , 1] , we have ˜Φc(x) ∈ [0 , 1] , and further 
+
+‖˜Φc‖2 
+
+> L2(Rn,Px)
+
+= Nc
+
+N . (50) Therefore, ˜hx7 →yc ∈ M c, and Theorem 1 yields, with probability at least 1 − δ,
+
+E
+
+> x∼Px
+
+[∣∣∣˜hx7 →yc (x) − Py|x(yc = 1 |x)
+
+∣∣∣2]
+
+≤ min 
+
+(
+
+1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+|yic − ˜hx7 →yc (xi)|2 + 4
+
+√N +
+
+√ log(1 /δ )
+
+2N , 1
+
+(Nc/N )2
+
+(
+
+3
+
+√N +
+
+√ 8 log(1 /δ )
+
+N
+
+)) 
+
+. (51) By the triangular inequality in L2(Rn, Px), we have 
+
+‖Φc − Py|x(yc = 1 |· )‖L2(Rn ,Px) ≤ ‖ Φc − ˜hx7 →yc ‖L2(Rn,Px) + ‖˜hx7 →yc − Py|x(yc = 1 |· )‖L2(Rn,Px). (52) Therefore, using (a + b)2 ≤ (1 + η)a2 + (1 + η−1)b2, it follows that 
+
+‖Φc − Py|x(yc = 1 |· )‖2 
+
+> L2(Rn,Px)
+
+≤ (1 + η)‖Φc − ˜hx7 →yc ‖2 
+
+> L2(Rn,Px)
+
++ (1 + η−1)‖˜hx7 →yc − Py|x(yc = 1 |· )‖2
+
+> L2(Rn,Px)
+
+. (53) Using (49) and (51) in (53), the result is obtained. 
+
+Crucially, Theorem 2 shows that the finite-sample contribution to the approximation error of the KAHM-induced feature map decays at the standard O(N −1/2) rate, up to either the empirical approximation term or the class-balance-controlled alternative term of the bound, depending on which term in the minimum is smaller. Thus, provided that the relevant branch remains controlled, the lightweight KAHM-based posterior estimator becomes increasingly accurate as the number of document samples grows. Here, η > 0 is an auxiliary constant that serves as a free balancing parameter, in particular, it may be chosen to optimize the trade-off between the two terms in the bound and thus to minimize the resulting upper estimate. 
+
+3.3 Adaptive Estimation of Semantic-Cluster Prototypes 
+
+The semantic-cluster prototypes must be estimated from the available data samples {(Φ c(xi), v i)}Ni=1 while address-ing the challenge that semantic feature vectors, that have been generated using a noisy teacher model, are uncertain. Specifically, the noise ξ(xi) in (36) depends on the lexical features xi, so noise samples are not independent of the regressor Φc(xi). Therefore, a standard mathematical analysis cannot be performed assuming that noise samples are independent from regressor vector Φc(xi). Since no prior knowledge about noise statistics is available, our approach is to employ an adaptive filtering algorithm for estimating semantic-cluster prototypes that provides robustness against the noise. In this study, we estimate the cluster prototypes using the Normalized Least-Mean Squares (NLMS) algo-rithm which is known to be H∞ optimal [12] and thus is robust in the sense that it minimizes the maximum possible value of the gain in energy from the noise to the filtering error. Beyond robustness, this choice is also computation-ally attractive: the NLMS refinement updates the prototype coefficients recursively with cost linear in the number of semantic clusters C for each output coordinate, rather than requiring the repeated solution of a global least-squares problem over all prototypes. This makes the prototype-refinement step consistent with the overall compute-efficient design of the encoder. It follows from (36) that for every j ∈ { 1, · · · , p },
+
+(vi)j =
+
+> C
+
+∑
+
+> c=1
+
+Py|x(yc = 1 | x)( wc )j + ( ξ(xi)) j . (54) Define αj ∈ RC ,̂ αj ∈ RC , G : Rn → [0 , 1] C , and ∆ : Rn → [−1, 1] C as 
+
+αj = [ (w1 )j · · · (wC )j
+
+]T (55) ̂
+
+αj = [ (̂w1 )j · · · (̂wC )j
+
+]T (56) 
+
+G(x) = [ Φ 1(x) · · · ΦC (x) ] (57) 
+
+∆( x) = [ Py|x(y1 = 1 | x) − Φ1(x) · · · Py|x(yC = 1 | x) − ΦC (x) ] , (58) 10 to express 
+
+(vi)j = G(xi)αj + ∆( xi)αj + ( ξ(xi)) j . (59) Here, ∆( x) represents the posterior-estimation error introduced by the KAHM step: it measures, component-wise, the discrepancy between the true semantic-cluster posterior probabilities Py|x(yc = 1 | x) and their KAHM-induced approximations Φc(x). By contrast, ξ(x) is the teacher-noise term, i.e. the residual part of the semantic target that is not explained by the cluster-prototype representation, including perturbations in the observed teacher embedding and residual within-cluster variation. This distinction makes the subsequent error decomposition explicit: ∆( x) captures posterior mismatch, whereas ξ(x) captures noise inherited from the teacher signal. The vector αj is estimated recursively from data samples {(G(xi), (vi)j )}Ni=1 using the NLMS algorithm. The ith 
+
+recursion of the NLMS algorithm [12] is given as ̂
+
+αj ∣∣i =̂ αj ∣∣i−1 + β (vi)j − G(xi)̂ αj ∣∣i−1
+
+1 + β‖G(xi)‖2 (G(xi)) T , i ∈ { 1, · · · , N }, (60) where ̂ αj ∣∣0 is an initial guess, 0 < β < 1 is the step-size, and the estimated parameters are given as ̂
+
+αj := ̂ αj ∣∣N . (61) In adaptive-filter terms, the step-size parameter β acts as a regularization parameter that balances adaptation speed against sensitivity to teacher noise: larger values permit more aggressive prototype updates, whereas smaller admis-sible values yield more conservative and noise-robust adaptation. In the present setting, this normalization is also especially stable because G(x) is a posterior-like probability vector, so all of its entries lie in [0 , 1] and sum to unity, which implies ‖G(xi)‖22 ≤ 1. Consequently, the NLMS denominator remains uniformly well controlled, and the practical role of β is primarily to tune the adaptation–noise trade-off rather than to compensate for large fluctuations in the regressor norm. 
+
+Remark 6 (Sense in Which the Encoder Is Gradient-Free) . Throughout this paper, the term gradient-free refers specif-ically to the KAHM-based posterior-weight estimation step, which requires no backpropagation through a parame-terised neural network and no iterative gradient computation over a composite neural loss. The NLMS prototype-refinement step in (60) is, mathematically, a normalised stochastic-gradient update on an instantaneous squared-error objective. Accordingly, the full pipeline is not gradient-free in the strongest optimisation-theoretic sense. Its practical distinction is instead that it is neural-network-free and backpropagation-free : posterior weights are obtained by ex-plicit KAHM geometry, prototype refinement is performed by an explicit adaptive update, and deployment requires no transformer forward pass and no learned neural gating network. 
+
+3.4 Performance Analysis Assumption 2 (Steady-State of the Estimation Algorithm Recursions) . The number of samples N is sufficiently large and the step size β is sufficiently small so that for each j ∈ { 1, · · · , p }, the recursion in (60) after N updates has reached a steady-state regime. Hence, for an additional (N + 1) th hypothetical update driven by an arbitrary sample 
+
+(G(x), v ), the change in the estimation error norm is negligible, i.e. 
+
+∥∥∥αj −̂ αj ∣∣N +1 
+
+∥∥∥2
+
+≈ ∥∥αj −̂ αj ∣∣N
+
+∥∥2 . (62) 
+
+Proposition 1 (Prediction Error) . For an arbitrary input x, the prediction error by the estimated parameters (61), under Assumption 2, admits the following steady-state approximation: 
+
+G(x)αj − G(x)̂αj ≈ β‖G(x)‖2
+
+2 + β‖G(x)‖2
+
+(∆( x)αj + ( ξ(x)) j
+
+) . (63) Proof. For an analysis of the estimation algorithm, define the following error: 
+
+˜αj ∣∣i := αj −̂ αj ∣∣i . (64) Using (60), 
+
+˜αj ∣∣i = ˜αj ∣∣i−1 − β (vi)j − G(xi)̂ αj ∣∣i−1
+
+1 + β‖G(xi)‖2 (G(xi)) T i.e. (65) 
+
+G(xi) ˜αj ∣∣i = G(xi) ˜αj ∣∣i−1 − β (vi)j − G(xi)̂ αj ∣∣i−1
+
+1 + β‖G(xi)‖2 ‖G(xi)‖2. (66) 11 Combining (65) and (66), we have 
+
+˜αj ∣∣i = ˜αj ∣∣i−1 − G(xi) ˜αj ∣∣i−1 − G(xi) ˜αj ∣∣i
+
+‖G(xi)‖2 (G(xi)) T . (67) By evaluating the squared norm, we obtain the following. 
+
+∥∥ ˜αj ∣∣i
+
+∥∥2 =
+
+∥∥∥ ˜ αj ∣∣i−1
+
+∥∥∥2
+
+−
+
+(
+
+G(xi) ˜αj ∣∣i−1
+
+)2
+
+‖G(xi)‖2 +
+
+(G(xi) ˜αj ∣∣i
+
+)2
+
+‖G(xi)‖2 . (68) Using (59) in (66), 
+
+G(xi) ˜αj ∣∣i = G(xi) ˜αj ∣∣i−1 − β G(xi) ˜αj ∣∣i−1 + ∆( xi)αj + ( ξ(xi)) j
+
+1 + β‖G(xi)‖2 ‖G(xi)‖2. (69) Substituting the value of G(xi) ˜αj ∣∣i from (69) in (68), we get 
+
+∥∥ ˜αj ∣∣i
+
+∥∥2 =
+
+∥∥∥ ˜ αj ∣∣i−1
+
+∥∥∥2
+
++ β2
+
+(
+
+G(xi) ˜αj ∣∣i−1 + ∆( xi)αj + ( ξ(xi)) j
+
+)2
+
+(1 + β‖G(xi)‖2)2 ‖G(xi)‖2
+
+− 2β G(xi) ˜αj ∣∣i−1 + ∆( xi)αj + ( ξ(xi)) j
+
+1 + β‖G(xi)‖2 G(xi) ˜αj ∣∣i−1 . (70) The algorithm (60) uses all of N available samples to run from i = 1 to i = N . Our goal is to evaluate the prediction error by the estimated parameters, i.e., we seek to evaluate G(x) ˜αj ∣∣N for an arbitrary x, where ˜αj ∣∣N is obviously the error in estimated parameters. For this, consider (N + 1) th sample to be an arbitrary data pair (G(x), v ), on which the prediction error is governed by (70) for i = N + 1 :
+
+∥∥∥ ˜ αj ∣∣N +1 
+
+∥∥∥2
+
+= ∥∥ ˜αj ∣∣N
+
+∥∥2 + β2
+
+(G(x) ˜αj ∣∣N + ∆( x)αj + ( ξ(x)) j
+
+)2
+
+(1 + β‖G(x)‖2)2 ‖G(x)‖2
+
+− 2β G(x) ˜αj ∣∣N + ∆( x)αj + ( ξ(x)) j
+
+1 + β‖G(x)‖2 G(x) ˜αj ∣∣N . (71) Under Assumption 2, (71) becomes 
+
+2G(x) ˜αj ∣∣N = β G(x) ˜αj ∣∣N + ∆( x)αj + ( ξ(x)) j
+
+1 + β‖G(x)‖2 ‖G(x)‖2, i.e. (72) 
+
+G(x) ˜αj ∣∣N = β‖G(x)‖2
+
+2 + β‖G(x)‖2
+
+(∆( x)αj + ( ξ(x)) j
+
+) . (73) Thus, (63) follows. 
+
+Remark 7 (Uncertainty-Aware Error Weighting) . A noteworthy feature in (63) is of the factor 
+
+β‖G(x)‖22
+
+2 + β‖G(x)‖22
+
+,
+
+that may also be interpreted as an uncertainty-aware error weighting: when the KAHM posterior G(x) is diffuse, 
+
+‖G(x)‖22 is smaller and the corresponding noise-sensitive contribution is suppressed, whereas sharper assignments yield larger weights. Because G(x) is a probability vector, ‖G(x)‖22 ≤ 1, so this modulation remains uniformly stable. 
+
+Proposition 2 (Encoding Error) . The encoding error associated to the estimated parameters (61), under Assumption 2, for any ρ > 0, is upper bounded as 
+
+E
+
+> x∼Px
+
+[∥∥∥fx7 →z(x) −̂ fx7 →z (x)
+
+∥∥∥2]
+
+≤ (1 + ρ)
+
+(
+
+1 + β
+
+2 + β
+
+)2 ( C∑
+
+> c=1
+
+‖wc‖2
+
+) C∑
+
+> c=1
+
+E
+
+> x∼Px
+
+[∣∣Φc(x) − Py|x(yc = 1 | x)∣∣2]
+
++ (1 + ρ−1)
+
+( β
+
+2 + β
+
+)2
+
+E
+
+> x∼Px
+
+[‖ξ(x)‖2] . (74) 
+
+12 Proof. Consider (
+
+fx7 →z (x) −̂ fx7 →z (x)
+
+) 
+
+> j
+
+= G(x)αj − G(x)̂αj + ∆( x)αj . (75) Using (63), we have 
+
+(
+
+fx7 →z (x) −̂ fx7 →z(x)
+
+) 
+
+> j
+
+=
+
+(
+
+1 + β‖G(x)‖2
+
+2 + β‖G(x)‖2
+
+)
+
+∆( x)αj + β‖G(x)‖2
+
+2 + β‖G(x)‖2 (ξ(x)) j . (76) Using (a + b)2 ≤ (1 + ρ)a2 + (1 + ρ−1)b2, it follows that 
+
+∣∣∣∣(
+
+fx7 →z(x) −̂ fx7 →z (x)
+
+)
+
+> j
+
+∣∣∣∣
+
+> 2
+
+≤ (1 + ρ)
+
+(
+
+1 + β‖G(x)‖2
+
+2 + β‖G(x)‖2
+
+)2
+
+|∆( x)αj |2 + (1 + ρ−1)
+
+( β‖G(x)‖2
+
+2 + β‖G(x)‖2
+
+)2
+
+|(ξ(x)) j |2 (77) As all elements of vector G(x) lie in [0 , 1] and their sum equals unity, ‖G(x)‖2 ≤ 1, and thus 
+
+β‖G(x)‖2
+
+2 + β‖G(x)‖2 ≤ β
+
+2 + β . (78) Also, 
+
+|∆G(x)αj |2 ≤ ∥∥αj ∥∥2 ‖∆( x)‖2 = ∥∥αj ∥∥2 C∑
+
+> c=1
+
+∣∣Py|x(yc = 1 | x) − Φc(x)∣∣2 . (79) Therefore, 
+
+∣∣∣∣(
+
+fx7 →z(x) −̂ fx7 →z(x)
+
+)
+
+> j
+
+∣∣∣∣
+
+> 2
+
+≤ (1 + ρ)
+
+(
+
+1 + β
+
+2 + β
+
+)2 ∥∥αj ∥∥2 C∑
+
+> c=1
+
+∣∣Φc(x) − Py|x(yc = 1 | x)∣∣2 + (1 + ρ−1)
+
+( β
+
+2 + β
+
+)2
+
+|(ξ(x)) j |2. (80) That is, 
+
+∥∥∥fx7 →z (x) −̂ fx7 →z (x)
+
+∥∥∥2
+
+≤ (1 + ρ)
+
+(
+
+1 + β
+
+2 + β
+
+)2 p∑
+
+> j=1
+
+∥∥αj ∥∥2 C∑
+
+> c=1
+
+∣∣Φc(x) − Py|x(yc = 1 | x)∣∣2 + (1 + ρ−1)
+
+( β
+
+2 + β
+
+)2
+
+‖ξ(x)‖2 (81) 
+
+= (1 + ρ)
+
+(
+
+1 + β
+
+2 + β
+
+)2 ( C∑
+
+> c=1
+
+‖wc‖2
+
+) C∑
+
+> c=1
+
+∣∣Φc(x) − Py|x(yc = 1 | x)∣∣2 + (1 + ρ−1)
+
+( β
+
+2 + β
+
+)2
+
+‖ξ(x)‖2.(82) Thus, (74) follows. 
+
+Theorem 3 (Encoding Error Bound) . Given a data set {(xi, y i) | i ∈ { 1, 2, · · · , N }} ∼ (Px,y )N ; under Assump-tion 2, and assuming that (45) holds for each c ∈ { 1, · · · , C }; we have with probability at least 1−δ for any δ ∈ (0 , 1) ,
+
+η > 0, and ρ > 0;
+
+E
+
+> x∼Px
+
+[∥∥∥fx7 →z (x) −̂ fx7 →z(x)
+
+∥∥∥2]
+
+≤ (1 + ρ)(1 + η)
+
+(
+
+1 + β
+
+2 + β
+
+)2 ( C∑
+
+> c=1
+
+‖wc‖2
+
+) 
+
+> C
+
+∑
+
+> c=1
+
+∣∣∣∣∣1 −
+
+∑Nc 
+
+> i=1
+
+Φc(xIci )
+
+N ‖Φc‖2 
+
+> L2(Rn,Px)
+
+∣∣∣∣∣
+
+> 2
+
+‖Φc‖2
+
+> L2(Rn,Px)
+
+
+
++ (1 + ρ)(1 + η−1)
+
+(
+
+1 + β
+
+2 + β
+
+)2 ( C∑
+
+> c=1
+
+‖wc‖2
+
+) C∑
+
+> c=1
+
+min 
+
+(
+
+1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+|yic − ˜hx7 →yc (xi)|2 + 4
+
+√N +
+
+√ log( C/δ )
+
+2N ,
+
+1
+
+(Nc/N )2
+
+(
+
+3
+
+√N +
+
+√ 8 log( C/δ )
+
+N
+
+)) 
+
++ (1 + ρ−1)
+
+( β
+
+2 + β
+
+)2
+
+E
+
+> x∼Px
+
+[‖ξ(x)‖2] . (83) 
+
+13 Proof. For each c ∈ { 1, · · · , C }, Theorem 2 is applied with confidence level δ/C . So, we have with probability at least 1 − δ/C ,
+
+E
+
+> x∼Px
+
+[∣∣Φc(x) − Py|x(yc = 1 |x)∣∣2]
+
+≤ (1 + η)
+
+∣∣∣∣∣1 −
+
+∑Nc 
+
+> i=1
+
+Φc(xIci )
+
+N ‖Φc‖2 
+
+> L2(Rn,Px)
+
+∣∣∣∣∣
+
+> 2
+
+‖Φc‖2 
+
+> L2(Rn,Px)
+
++ (1 + η−1) min 
+
+(
+
+1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+|yic − ˜hx7 →yc (xi)|2 + 4
+
+√N +
+
+√ log( C/δ )
+
+2N , 1
+
+(Nc/N )2
+
+(
+
+3
+
+√N +
+
+√ 8 log( C/δ )
+
+N
+
+)) 
+
+.(84) Define Ac := {(84) holds } and Bc := {(84) does not hold }, and apply a union bound over c:probability of C
+
+∩ 
+
+> c=1
+
+Ac = 1 − probability of C
+
+∪ 
+
+> c=1
+
+Bc ≥ 1 −
+
+> C
+
+∑
+
+> c=1
+
+probability of Bc ≥ 1 −
+
+> C
+
+∑
+
+> c=1
+
+δ
+
+C = 1 − δ. (85) Hence, with probability at least 1 − δ, (84) holds simultaneously for all c ∈ { 1, · · · , C }. Substituting the simultaneous cluster-wise bounds (84) into (74) leads to the result. 
+
+Remark 8 (Interpretation of Theorem 3) . The upper bound in Theorem 3 provides an explicit decomposition of the encoding error into three components: a term associated with the approximation of the posterior probabilities, a finite-sample/generalization term inherited from the cluster-wise learning problem, and a term reflecting the influence of the teacher noise. In this decomposition, the step-size parameter β appears through the factors 
+
+(
+
+1 + β
+
+> 2+ β
+
+)2
+
+and 
+
+( β
+
+> 2+ β
+
+)2
+
+. Since both quantities are increasing functions of β for β > 0, smaller admissible values of step-size β
+
+lead to a tighter upper bound. In particular, the final term in (83) makes explicit the noise-filtering property of the proposed KAHM–NLMS pipeline: the teacher-noise contribution enters the encoding bound only through the damping factor 
+
+( β
+
+> 2+ β
+
+)2
+
+< 1. Hence, for every admissible β > 0, the effect of teacher noise is attenuated in the final estimate rather than propagated without control. The parameters η > 0 and ρ > 0 act as free balancing parameters within the estimate. In particular, η controls the trade-off between the posterior-approximation term and the finite-sample/generalization contribution, whereas ρ balances these terms against the contribution of the teacher noise. Consequently, η and ρ may be selected so as to minimize the right-hand side of the bound (83). 
+
+Remark 9 (Practical Significance of Theorem 3 for Austrian-Law Benchmark) . In the simulated distributed-law set-ting studied later, Theorem 3 has a direct operational reading. Each law-specific encoder is trained only on its own local supervision, so the quality of the final multi-law system depends on whether the correct semantic clusters remain geometrically identifiable from lexical features within each local model and whether the corresponding teacher embed-dings admit stable prototype representatives. The theorem shows that, under these conditions, the final encoding error is controlled by three transparent factors only: posterior mismatch in the KAHM stage, finite-sample approximation in the local learning problem, and noise inherited from the teacher embeddings. This is precisely the form of guarantee that is relevant for the benchmark in Section 4, because it explains why a family of separate law-local encoders can be combined later by lightweight gating without requiring a centralized neural query encoder at deployment time. 
+
+Remark 10 (Scope of the Theoretical Guarantee) . Theorem 3 provides a conditional error decomposition for the pro-posed estimator rather than a fully assumptions-free finite-iteration guarantee. The posterior-estimation component is controlled through the RKHS approximation step, whereas the prototype-refinement component is analyzed under the steady-state approximation adopted for the NLMS recursion. Accordingly, the theorem identifies the terms that govern the final encoding error (posterior mismatch, finite-sample approximation, and teacher-noise effects) under the mod-eling and steady-state assumptions used in this paper. This interpretation is consistent with standard adaptive-filter analyses, where sufficiently small step sizes and sufficiently long runs are used to characterize steady-state behavior rather than exact transient identities [41, 13]. 
+
+# 4 Experiments 
+
+This section evaluates the proposed encoding method on an Austrian-law retrieval benchmark. The central empirical question is whether the proposed KAHM-based encoder can serve, in this domain, as a compute-efficient substitute for online transformer query encoding by mapping inexpensive lexical query features into a high-quality semantic embedding space. To investigate this, we instantiate the semantic targets in Problem 1 by teacher embeddings and 14 train the proposed encoder to predict them from lexical features. The downstream task is law retrieval: given a natural-language query, the system retrieves legal passages and routes the query to the correct Austrian law. The experimental comparison is intentionally evaluation-matched. All learned adapters considered in this section operate under the same lexical front end, the same fixed semantic teacher space, the same law-wise split, the same distance-gated serving contract, and the same frozen corpus index. The experiments isolate the contribution of KAHM geometry within a controlled query-adaptation regime. Section 4.1 describes the construction of the corpus and query benchmark, Section 4.2 introduces the semantic and lexical representations, Section 4.3 describes the training of the KAHM-based encoding models, Section 4.4 defines the retrieval evaluation protocol and performance measures, Sec-tion 4.5 reports the experimental results, Section 4.6 documents reproducibility and artifact availability, and Section 4.7 discusses the scope of the current study. 
+
+4.1 Data Construction 
+
+The law/domain universe contains 84 Austrian statutes. Table 11 in Appendix C lists the abbreviations and English glosses used as benchmark labels. The retrieval corpus is constructed from consolidated German legal texts down-loaded from the Austrian RIS portal [35], with one PDF per statute. The PDFs are converted into retrieval units by a layout-aware extraction pipeline that reconstructs reading order from PDF layout, removes recurring headers and foot-ers, segments text into paragraphs using legal section markers, indentation cues, and large vertical gaps, and merges paragraphs that continue across page breaks. The extractor also performs dehyphenation across line breaks while pre-serving genuine compound hyphens. In the reported configuration, extraction is performed in passage mode, which chunks the cleaned paragraph stream into overlapping passages with a target length of 260 tokens, an overlap of 60 tokens, a minimum retained length of 40 tokens, and a hard maximum of 420 tokens. The resulting aligned evaluation corpus contains 10,762 retrieval units. We treat each law as a separate domain not only because it is the prediction target, but also because this organization matches the supervision structure studied in the paper. The training data are constructed law-wise, the serving contract is law-wise, and the later encoder family is trained law-wise as well. The benchmark does not execute a live federated protocol, but the law-wise organization is consistent with deployment settings in which supervision remains attached to specific legal areas or organizational units rather than being pooled into one undifferentiated cross-law training repository. Queries are generated synthetically by first defining law-specific issue inventories, then expanding them with common legal facets such as prerequisites, deadlines, competence, application form, evidence, costs, remedies, service, limita-tion, enforcement, liability, exceptions, and sanctions. Here, a topic is not merely a law label. Rather, for each law, the generator constructs law-internal issue specifications from a law-specific issue inventory and its facet expansion, and assigns a unique topic identifier to each such issue. For each topic, the generator samples a law-conditioned context including actor, counterparty, city, time expression, amount, communication channel, evidence type, and authority, and renders the topic into several surface forms. To cover several practically relevant surface forms of legal-information needs, each underlying topic is rendered in seven surface forms: authority queries ask which institution is compe-tent or whether a matter belongs before an authority or a court; keyword queries consist mainly of short content words or search-style phrases; nl_long queries are longer natural-language questions built from fuller case descriptions; 
+
+nl_short queries are short natural-language questions; procedural queries focus on steps of the procedure, such as deadlines, applications, evidence, costs, remedies, or jurisdiction; scenario queries are phrased as short fact patterns followed by an explicit question; and fragment queries are deliberately incomplete or elliptical formulations intended to mimic terse user input. For each topic, the generator samples three different realizations of each style, so that one topic yields 7 × 3 = 21 distinct queries. In the reported experiment, the query generator produces 40,000 training queries and 5,000 test queries. Both sets are stratified, and in the default split the test set is constructed only from law-specific topics already represented in training for the same law, although exact query texts do not overlap across the two splits. This synthetic construction is broader than a narrow template benchmark, because the generator varies issue inven-tories, legal facets, sampled contexts, and user-facing formulations rather than instantiating one fixed query pattern. We therefore use it as a controlled benchmark for relative method comparison and for robustness to heterogeneous in-domain query formulations within Austrian-law retrieval. At the same time, the present topic-overlapping protocol is designed to test robustness to formulation rather than unseen-concept discovery: the evaluation asks whether the encoder can map diverse paraphrases, fact-pattern descriptions, procedural framings, and elliptical user formulations to law-internal issues that are already represented in the training distribution. The benchmark therefore measures generalization across paraphrases and sampled contextual realizations of represented law-internal issues. 15 4.2 Semantic and Lexical Representations 
+
+We instantiate the semantic target space with dense embeddings produced by the SentenceTransformer model 
+
+mixedbread-ai/deepset-mxbai-embed-de-large-v1 [31, 34]. This model is an open-source German/English retrieval encoder developed jointly by Mixedbread and deepset, built on top of intfloat/multilingual-e5-large .The official model card lists it as a model of approximately 0.5B parameters, while the underlying multilingual-E5-large architecture has 24 transformer layers and 1024-dimensional embeddings [31, 18, 48]. According to the offi-cial vendor documentation, the model was initialized from multilingual-e5-large , fine-tuned on more than 30 million high-quality German training pairs, trained with the AnglE loss, and optimized for compression using a mix-ture of full fine-tuning and LoRA, while also supporting binary quantization and Matryoshka representation learning [28, 31, 29, 26]. We use this same encoder both to embed the law-passage corpus and to precompute the semantic target vectors for the training and test queries, storing the query targets in separate NPZ files so that the subsequent KAHM-based encoder learning requires no further online transformer inference. In our implementation, the Sentence-Transformers interface is instantiated with truncate_dim=1024 , thereby fixing the output dimensionality for both passage and query embeddings. Query embeddings are L2-normalized and in the final retrieval evaluation all query and corpus vectors are L2-normalized again and indexed with FAISS [7] IndexFlatIP , so that inner-product ranking is equivalent to cosine-similarity retrieval on normalized vectors. The lexical baseline index is constructed with a fixed IDF–SVD pipeline. Concretely, each retrieval unit is first preprocessed by normalizing case, canonicalizing legal section markers, and handling standalone numbers with a configurable replacement scheme. The resulting text is then mapped to a sparse TF–IDF representation [38], where the word-level feature space is not induced from the corpus alone but fixed to the full tokenizer vocabulary of the semantic teacher model mixedbread-ai/deepset-mxbai-embed-de-large-v1 . The tokenization is performed through the Hugging Face transformers interface so that the lexical features remain compatible with the teacher model’s subword inventory [49]. The sparse TF–IDF matrix is subsequently compressed with truncated singular value decomposition, i.e. latent semantic analysis (LSA) [4], using the randomized low-rank approximation strategy implemented in modern SVD solvers [11]. In our setup, this yields a 512-dimensional dense lexical vector for each retrieval unit. The fitted extraction pipeline is serialized and then applied to the complete set of retrieval units, whose identifiers and dense lexical vectors are stored in a NPZ file for subsequent retrieval and adapter-training experiments. 
+
+4.3 Development of the Law-Specific Encoding Models 
+
+To instantiate Problem 1 in the Austrian-law retrieval benchmark, we constructed paired lexical-semantic training data from the synthetic query collection. Each query is associated with a query text, a query identifier, and a consensus law. Let q ∈ { 1, · · · , Q } denote the law/domain index. For each query text, the lexical representation was obtained by the fixed IDF–SVD model, whereas the semantic representation was given by the corresponding Mixedbread query embedding. Both the IDF–SVD query vectors and the Mixedbread target embeddings are L2−normalized in the training pipeline. Hence, for each law domain q, the available data form a law-specific sample set {(xi, v i) | qi =
+
+q, i ∈ { 1, · · · , N }} , where xi plays the role of the lexical feature vector and vi is the semantic vector generated by the noisy teacher. This law-wise decomposition is deliberate. It matches the distributed-law scenario motivating the paper: if training supervision remains attached to individual laws, then each law can contribute a local encoder without requiring that all query data be merged into a single cross-law training repository. The decomposition is also aligned with prior KAHM-based collaborative and federated constructions, where prediction can be assembled from local geometric models via distance-type summaries rather than repeated exchange of gradient updates [24, 25, 23]. For each law-specific data set, we first applied a random holdout split into a core training part and a validation part. The validation size was chosen as nearly 5% of the total samples. The KAHM-based feature-map and cluster prototypes were learned exclusively from the core training subset. The semantic clusters are not manually annotated. Instead, they are obtained directly from the noisy-teacher training samples by K−means clustering, i.e., the set {vi | qi = q, i ∈ { 1, · · · , N }} is partitioned into C different clusters. In the main experiments we use C = 300 semantic clusters per law. This value is adopted as a practical operating point that balances teacher-space reconstruction quality against training cost. To document the sensitivity of the method to this design choice, Table 1 reports an ablation over C ∈ { 100 , 200 , 300 , 400 } under the same law-wise training pipeline and evaluated query benchmark. 
+
+Remark 11 (Sensitivity to the Number of Semantic Clusters) . Table 1 shows that increasing the number of semantic clusters yields a monotone improvement in teacher-space reconstruction, which is consistent with the view that a finer partition of the teacher space supports a more accurate prototype-mixture approximation. At the same time, the marginal gains decay rapidly: the increase in combined cosine mean drops from 0.010992 when moving from 
+
+C = 100 to C = 200 , to 0.003905 from C = 200 to C = 300 , and to only 0.001173 from C = 300 to C = 400 ; the 
+
+16 Table 1: Sensitivity of the law-specific KAHM encoders to the number of semantic clusters C. Reported values sum-marize teacher-space reconstruction and total training time on the evaluated query benchmark. The table documents the practical operating range of C and the diminishing returns beyond C = 300 .
+
+C Cosine mean MSE Overall R2 Total train time (s) 
+
+100 0.938682 0.000117 0.879808 436.81 200 0.949674 0.000096 0.902101 856.31 300 0.953579 0.000088 0.909525 1343.09 400 0.954752 0.000086 0.911746 1687.04 
+
+corresponding gains in overall R2 are 0.022293 , 0.007424 , and 0.002221 . Since the improvement beyond C = 300 is small relative to the added computational cost, C = 300 is a reasonable operating point for the main experiments. 
+
+Since the downstream cluster-specific KAHM-based modeling of lexical features requires at least two samples per cluster, singleton clusters are handled explicitly by adding one auxiliary training point to each singleton cluster. Con-cretely, for each singleton cluster with unique sample (xs, v s), the algorithm first computes nearest neighbors in the lexical input space by Euclidean distance. Let xn denote the nearest non-self neighbor of xs in the training set. The auxiliary lexical point is then constructed as xaux = 0 .9xs + 0 .1xn. After interpolation, xaux is rescaled to have the same Euclidean norm as xs. On the semantic side, the target is copied exactly, i.e. vaux = vs. Hence, each singleton cluster is converted into the two-point set {(xs, v s), (xaux , v aux )}, preserving the number of semantic clusters while satisfying the minimum-sample requirement of the KAHM-based modeling of a cluster. The KAHM-based modeling of a cluster is required to evaluate the space folding measure (Definition 5) and thus the feature-map (Definition 7). The semantic prototypes are initialized as empirical centroids of the output-space clusters of the noisy-teacher em-beddings. These cluster centroids serve as the starting point of the prototype vectors. The validation subset was then used to select the soft assignment hyperparameters (ω, K ) by minimizing validation mean squared error in predicting Mixedbread embeddings over a grid of sharpening parameters ω and truncation levels K, namely 
+
+ω ∈ { 5, 8, 10 , 11 , 12 , 13 , 14 , 15 , 16 , 17 , 18 , 19 , 20 }, (86) 
+
+K ∈ { 2, 5, 8, 10 , 11 , 12 , 13 , 14 , 15 , 16 , 17 , 18 , 19 , 20 , 25 , 50 , 75 , 100 , 125 , 150 , 175 , 200 }. (87) After model selection, the semantic prototypes are refined with the NLMS update in (60) for 20 epochs with step size 
+
+β = 0 .1, using the union of the core-training and validation samples. A separate serialized encoder is then stored for each law. In the final multi-law setting, these law-specific encoders are not merged into a single cross-law model; instead, prediction is performed by distance-gated model selection. More precisely, for a query represented by lexical feature vector x, we compute for each law-specific encoder the minimum clusterwise space-folding score min c TXc (x)
+
+and select the prediction produced by the encoder attaining the smallest such score. Conceptually, this selection rule is the semantic-encoding analogue of the minimum-distance aggregation used in prior KAHM federated classifiers: the local law-wise models remain separate, while the final decision is assembled from lightweight geometric scores rather than from a jointly optimized cross-law parameter vector [24, 25, 23]. 
+
+Remark 12 (Relation to the i.i.d. sampling assumption) . The i.i.d. assumption in Section 2.3 concerns the generation of the finite training samples S used in the approximation and generalization analysis. After the relevant samples have been drawn, the NLMS recursion in (60) is run for multiple passes over that fixed empirical sample in order to approximate the steady-state regime invoked in Proposition 1 through Assumption 2. Accordingly, the reported 20 
+
+epochs should be interpreted as an implementation choice for stabilizing the prototype refinement on the observed sample towards steady-state regime. 
+
+Remark 13 (Empirical Diagnostic for Assumption 1) . Because the theoretical analysis in Section 3 relies on Assump-tion 1, we additionally evaluated a sample analogue of the cluster-wise L2-mass condition in (45) on the realized law-wise KAHM-induced feature-maps. Concretely, for each law q and semantic cluster c ∈ Q q (covered by law q), we computed ̂
+
+‖Φc‖2 
+
+> L2
+
+= 1
+
+|J q |  
+
+> |J q|
+
+∑ 
+
+> i∈J q
+
+Φc(xi)2, c ∈ Q q,
+
+and compared it with |J q,c |/|J q |. Across the 84 laws and 25 ,200 evaluated clusters (i.e. Q = 84 and C = 25200 ), the worst-case margin ̂ ‖Φc‖2 
+
+> L2
+
+−|J q,c |/|J q | was −2.898 ×10 −3, while the median and mean margins were −3.16 ×10 −5
+
+and −7.19 ×10 −5, respectively. Thus, although the exact finite-sample evaluation is slightly negative for most clusters, the deviations are uniformly very small in absolute value, in particular, the sample analogue of (45) is satisfied for all evaluated clusters up to an absolute tolerance of 3 × 10 −3. We therefore interpret Assumption 1 as empirically well supported, up to a very small approximation error, in the law-wise deployment regime studied here. 
+
+17 4.4 Retrieval Evaluation Protocol and Performance Measures 
+
+We evaluated the proposed encoder in the downstream Austrian-law retrieval task using a three-system primary com-parison together with a broader extension to additional evaluation-matched learned adapters under the same serving contract. This evaluation design is intentionally matched to isolate the query-adaptation problem under a fixed serving contract. The three primary retrieval pipelines are: 1. IDF–SVD, which embeds both queries and corpus passages in the lexical IDF–SVD space; 2. Mixedbread, which uses the transformer teacher for both query and corpus embeddings; and 3. KAHM (query →MB corpus), in which the query is first embedded in the lexical IDF–SVD space and then mapped by the proposed KAHM-based adapter into the Mixedbread embedding space, while the corpus index remains fixed in that semantic space. The evaluation was carried out on the synthetic test set described in Section 4.1. In the reported run, the corpus consisted of 10,762 aligned retrieval units from 84 laws, and the evaluated test set contained 5,000 queries. The query generator produced 40,000 training queries and 5,000 test queries, sampled seven query styles, and ensured that no exact query text appears in both splits; in the default split, test queries are drawn only from law-specific topics already represented in training for the same law. Although the benchmark is domain-specific, it is informative for a broader reason: it instantiates the deployment pattern studied here, namely a fixed semantic teacher space, a latency-sensitive query path, heterogeneous query formulations, and enough supervision to train lightweight local adapters. The legal domain therefore functions as a controlled stress test of fixed-space query adaptation rather than as the paper’s only intended source of relevance. For evaluation, the corpus parquet file and the embedding bundles were first aligned by the common set of 
+
+sentence_id values so that every retrieved index could be mapped back to a unique law label. All query and corpus embeddings were then L2-normalized and retrieval was performed with FAISS [7] IndexFlatIP . For each query, the system returned the top-k ranked retrieval units for k ∈ { 3, 5, 10 , 15 , 20 }. Let gi denote the consensus law of query i,and let 
+
+L(k) 
+
+> i
+
+= ( ℓi, 1, . . . , ℓ i,k )
+
+be the sequence of law labels attached to the top-k retrieved passages for that query. All performance measures were first computed separately for each query and only then averaged. The first metric was Hit@ k, defined by 
+
+Hit@ k(i) = 1[∃ j ∈ { 1, . . . , k } : ℓi,j = gi] ,
+
+where 1[·] denotes the indicator function, which equals 1 when the condition in brackets is true and 0 otherwise. This metric checks whether the correct law appears at least once among the top-k retrieved passages, irrespective of its exact rank. The second metric was Top-1 Accuracy , defined by 
+
+Top1( i) = 1[ℓi, 1 = gi] ,
+
+which measures whether the very first retrieved passage belongs to the correct law. Since this quantity depends only on rank 1, it is invariant with respect to the chosen cutoff k.The third metric was mean reciprocal rank at cutoff k (MRR@ k) over unique laws. Because a single law can contribute many passages to the corpus, the ranked passage list L(k) 
+
+> i
+
+was first collapsed to an order-preserving list of distinct laws, 
+
+˜L(k) 
+
+> i
+
+= ( ˜ℓi, 1, ˜ℓi, 2, . . . ),
+
+obtained by scanning L(k) 
+
+> i
+
+from top to bottom and keeping only the first occurrence of each law. Let 
+
+r(k) 
+
+> i
+
+= min {r ≥ 1 | ˜ℓi,r = gi},
+
+with r(k) 
+
+> i
+
+= ∞ if the consensus law does not occur in ˜L(k) 
+
+> i
+
+. The per-query reciprocal-rank score was then defined as 
+
+MRR@ k(i) = 
+
+{1/r (k) 
+
+> i
+
+, r(k) 
+
+> i
+
+< ∞,
+
+0, r(k) 
+
+> i
+
+= ∞.
+
+This metric evaluates the rank of the correct law rather than the rank of an arbitrary individual passage and is therefore robust against repeated passages from the same statute in the top-k list. The reported dataset-level MRR@ k is the average of MRR@ k(i) over all queries. 18 In addition to these ranking-oriented measures, we reported three consensus-oriented diagnostics derived from the label composition of the top-k neighborhood. Let 
+
+n(k) 
+
+> i
+
+(a) = 
+
+> k
+
+∑
+
+> j=1
+
+1[ℓi,j = a]
+
+be the number of retrieved passages belonging to law a, and let 
+
+m(k) 
+
+> i
+
+= 1
+
+k max  
+
+> a
+
+n(k) 
+
+> i
+
+(a)
+
+be the plurality fraction in the top-k set. With the predominance threshold fixed to τ = 0 .10 , the majority-accuracy 
+
+metric was defined as 
+
+MajAcc τ (i) = 1
+
+[̂ 
+
+g(k) 
+
+> i
+
+= gi
+
+]
+
+1
+
+[
+
+m(k) 
+
+> i
+
+≥ τ
+
+]
+
+,
+
+where ̂ g(k) 
+
+> i
+
+denotes the plurality law in the top-k list. Hence, a query contributes 1 only if the top-k neighborhood yields a sufficiently predominant vote and that vote is correct; abstentions, i.e. cases with m(k) 
+
+> i
+
+< τ , contribute 0. The mean consensus fraction was defined as 
+
+ConsFrac (k) 
+
+> i
+
+= 1
+
+k
+
+> k
+
+∑
+
+> j=1
+
+1[ℓi,j = gi] ,
+
+that is, the fraction of the top-k retrieved passages that belong to the consensus law. Finally, the mean lift (prior) 
+
+normalized this consensus fraction by the corpus prior of the gold law, 
+
+Lift (k) 
+
+> i
+
+= ConsFrac (k)
+
+> i
+
+P0(gi) , P0(q) = Ncorpus ,q 
+
+Ncorpus 
+
+,
+
+where Ncorpus ,q is the number of aligned corpus passages labeled with law q. This normalization discounts the trivial advantage of frequent laws and measures enrichment relative to chance under the empirical corpus distribution. The primary reported aggregates are micro-averages over queries. For a generic per-query score s(k) 
+
+> i
+
+, the micro-average is 
+
+s(k) = 1
+
+Ntest 
+
+> Ntest
+
+∑
+
+> i=1
+
+s(k) 
+
+> i
+
+.
+
+As a robustness check against label-frequency skew, we also computed macro-averages over laws: for each law q, the metric was first averaged over all test queries with gi = q, and these law-wise means were then averaged uniformly over the 84 laws. Thus, macro-averaging gives every law equal weight, irrespective of how many test queries it contributes. Uncertainty was quantified by a paired nonparametric bootstrap with 5,000 resamples and random seed 0. For a given metric, each bootstrap replicate resampled queries with replacement and recomputed the same micro-averaged score; the 2.5% and 97 .5% empirical percentiles of the resulting bootstrap distribution formed the reported 95% confidence interval. Pairwise method comparisons, such as ∆(KAHM − IDF –SVD) , were computed from per-query paired differences and bootstrapped in the same paired manner so that the covariance induced by evaluating all methods on the same query set was preserved. For macro-level robustness analyses, the resampling unit was the law rather than the query. In addition to the main retrieval metrics above, the report also includes an auxiliary coverage–precision sweep for majority-vote routing thresholds τ ′. Any threshold selected from that sweep is used only as a descriptive post-hoc routing diagnostic for the evaluated run, whereas the six measures defined above are the principal criteria used for the experimental comparison in this paper. 
+
+Remark 14 (Statistical Interpretation) . We use paired nonparametric bootstrap intervals because all retrieval systems are evaluated on the same query set and the resulting per-query effectiveness values are neither independent across systems nor naturally justified by Gaussian assumptions. In information-retrieval evaluation, paired bootstrap proce-dures are a standard way to quantify uncertainty and compare systems while preserving the dependence induced by shared test queries [37]. 
+
+Among the reported measures, the rank-sensitive retrieval criteria are the primary basis for the paper’s architectural claim. This is because the deployment objective studied here is not merely approximate teacher-space reconstruction, but accurate law identification near the top of the ranking under a lightweight serving-time path. The consensus-oriented diagnostics remain useful supplementary evidence, especially for understanding neighborhood purity and abstention-aware routing behavior, but they are secondary to the top-of-ranking retrieval measures when interpreting the main empirical result. 19 Table 2: Micro-averaged ranking metrics (mean with paired-bootstrap 95% confidence intervals). Best values in each row are highlighted in bold. 
+
+Panel A: MRR@ k (unique laws) 
+
+k IDF–SVD KAHM Mixedbread 
+
+3 0.334 [0 .322 , 0.347] 0.466 [0 .453 , 0.479] 0.436 [0 .423 , 0.449] 
+
+5 0.349 [0 .337 , 0.361] 0.481 [0 .469 , 0.494] 0.454 [0 .441 , 0.466] 
+
+10 0.364 [0 .351 , 0.376] 0.496 [0 .484 , 0.508] 0.468 [0 .456 , 0.480] 
+
+15 0.371 [0 .359 , 0.383] 0.501 [0 .489 , 0.513] 0.474 [0 .462 , 0.486] 
+
+20 0.376 [0 .364 , 0.387] 0.504 [0 .492 , 0.516] 0.478 [0 .466 , 0.489] 
+
+Panel B: Hit@ k
+
+k IDF–SVD KAHM Mixedbread 
+
+3 0.389 [0 .375 , 0.402] 0.529 [0 .516 , 0.543] 0.503 [0 .488 , 0.516] 
+
+5 0.433 [0 .420 , 0.447] 0.579 [0 .566 , 0.593] 0.560 [0 .546 , 0.573] 
+
+10 0.497 [0 .483 , 0.511] 0.643 [0 .629 , 0.656] 0.625 [0 .612 , 0.639] 
+
+15 0.539 [0 .525 , 0.553] 0.673 [0 .659 , 0.685] 0.662 [0 .649 , 0.676] 
+
+20 0.572 [0 .558 , 0.586] 0.694 [0 .681 , 0.707] 0.688 [0 .675 , 0.701] 
+
+Panel C: Top-1 accuracy 
+
+k IDF–SVD KAHM Mixedbread 
+
+3 0.287 [0 .274 , 0.299] 0.411 [0 .397 , 0.424] 0.378 [0 .365 , 0.392] 
+
+5 0.287 [0 .274 , 0.299] 0.411 [0 .397 , 0.424] 0.378 [0 .365 , 0.392] 
+
+10 0.287 [0 .275 , 0.299] 0.411 [0 .397 , 0.424] 0.378 [0 .364 , 0.392] 
+
+15 0.287 [0 .274 , 0.299] 0.411 [0 .398 , 0.424] 0.378 [0 .365 , 0.392] 
+
+20 0.287 [0 .274 , 0.299] 0.411 [0 .397 , 0.424] 0.378 [0 .364 , 0.392] 
+
+4.5 Experimental Results 
+
+The central empirical question of this study is whether the proposed KAHM-based query encoder can replace online transformer query inference with a substantially lighter deployment-time procedure while retaining strong downstream retrieval behavior in the controlled Austrian-law benchmark studied here. The empirical results are organized around three claims. First, if the proposed geometry is effective as a lexical-to-semantic adapter, then it should achieve strong reconstruction of the fixed teacher space from inexpensive lexical query features. Second, if that reconstruction is decision-relevant, then it should translate into strong rank-sensitive law retrieval under the shared serving contract. Third, if the method is practically attractive as a deployment-time substitute, then those quality results should be accompanied by a materially lighter online query path than direct transformer query encoding. Tables 2 and 3 report the primary micro-averaged three-system comparison on the 5,000-query Austrian-law test benchmark with 84 candidate laws and 10,762 aligned retrieval units. The three primary systems are: (i) IDF–SVD ,a purely lexical baseline in which both queries and corpus passages are represented directly in the lexical IDF–SVD space; (ii) Mixedbread , the direct transformer baseline in which both queries and corpus passages are embedded by the frozen teacher model; and (iii) KAHM (query →MB corpus) , the proposed adapter in which a query is first represented by lexical IDF–SVD features and then mapped into the frozen Mixedbread embedding space, while the corpus index remains fixed in that same semantic space. Thus, in the table labels, “query →MB” always means that the query is predicted in the Mixedbread teacher space and searched against the fixed Mixedbread corpus index. Table 4 then broadens this comparison within the same deployment contract. To make the table labels explicit, “law-wise” means that one separate local model is trained per law. The row Ridge (law-wise, query →MB) is the lin-ear direct lexical-to-semantic regressor, MLP-regressor (law-wise, query →MB) is its compact nonlinear counterpart, and Retrieval-distilled student (law-wise, query →MB) is a compact student model trained by a retrieval-distillation objective but still operating under the same lexical-input-to-Mixedbread-output contract. The remaining two rows are prototype-mixture controls built on the same teacher-space decomposition as the proposed method: Logistic-
+
+20 Table 3: Micro-averaged consensus-oriented metrics (mean with paired-bootstrap 95% confidence intervals). Best values in each row are highlighted in bold. 
+
+Panel A: Majority-accuracy ( τ = 0 .10 )
+
+k IDF–SVD KAHM Mixedbread 
+
+3 0.298 [0 .286 , 0.311] 0.422 [0 .408 , 0.435] 0.379 [0 .366 , 0.393] 
+
+5 0.302 [0 .289 , 0.315] 0.430 [0 .417 , 0.444] 0.392 [0 .378 , 0.405] 
+
+10 0.305 [0 .292 , 0.318] 0.436 [0 .422 , 0.450] 0.402 [0 .388 , 0.416] 
+
+15 0.311 [0 .298 , 0.324] 0.427 [0 .414 , 0.440] 0.400 [0 .387 , 0.414] 
+
+20 0.305 [0 .292 , 0.318] 0.424 [0 .411 , 0.438] 0.397 [0 .384 , 0.411] 
+
+Panel B: Mean consensus fraction 
+
+k IDF–SVD KAHM Mixedbread 
+
+3 0.279 [0 .268 , 0.290] 0.378 [0 .367 , 0.390] 0.345 [0 .334 , 0.356] 
+
+5 0.271 [0 .261 , 0.282] 0.362 [0 .352 , 0.373] 0.330 [0 .320 , 0.340] 
+
+10 0.256 [0 .246 , 0.266] 0.338 [0 .328 , 0.348] 0.303 [0 .293 , 0.312] 
+
+15 0.247 [0 .238 , 0.256] 0.319 [0 .310 , 0.328] 0.285 [0 .277 , 0.294] 
+
+20 0.238 [0 .230 , 0.248] 0.305 [0 .296 , 0.314] 0.270 [0 .262 , 0.279] 
+
+Panel C: Mean lift (prior) 
+
+k IDF–SVD KAHM Mixedbread 
+
+3 42 .062 [39 .219 , 45 .081] 67 .163 [63 .525 , 70 .954] 60 .549 [56 .883 , 64 .307] 
+
+5 38 .900 [36 .585 , 41 .255] 62 .404 [59 .138 , 65 .685] 57 .062 [53 .795 , 60 .438] 
+
+10 35 .715 [33 .796 , 37 .715] 55 .824 [53 .157 , 58 .595] 49 .011 [46 .555 , 51 .580] 
+
+15 33 .889 [32 .142 , 35 .688] 50 .812 [48 .591 , 53 .038] 44 .308 [42 .225 , 46 .400] 
+
+20 32 .062 [30 .501 , 33 .693] 47 .025 [45 .047 , 49 .044] 40 .339 [38 .558 , 42 .143] 
+
+proto (law-wise, query →MB) uses k-means prototypes together with multinomial logistic weighting over prototypes, whereas MLP-proto (law-wise, query →MB) replaces that logistic weighting by a compact law-wise MLP classifier. Finally, KAHM (query →MB corpus) is the proposed prototype-mixture adapter in which the posterior weights are esti-mated by KAHM geometry rather than by logistic or neural classification. All five added baselines therefore preserve the same overall serving architecture as the proposed method—cheap lexical query features in, predicted query em-bedding in the Mixedbread space out, law-wise distance gating at serving time, and retrieval against the same frozen Mixedbread corpus index. This makes the comparison in Table 4 a comparison of query-side adapters under a fixed teacher space and fixed serving contract , rather than a comparison of unrelated retrieval architectures. 
+
+Remark 15 (On the Baselines) . The baseline set is chosen to test a more specific question than broad architecture rank-ing. The lexical IDF–SVD system provides a non-neural low-complexity reference; direct Mixedbread query encoding provides the frozen teacher-space reference; ridge and the compact MLP regressor provide direct lexical →semantic mapping baselines, one linear and one nonlinear [15, 36]; the retrieval-distilled student provides a compact neural baseline trained to mimic teacher-side retrieval behavior over the frozen law-local corpus rather than only point-wise teacher embeddings [17, 50, 44]; and the logistic-prototype and MLP-prototype systems provide two structure-matched prototype-mixture controls built on the same k-means teacher-space decomposition, differing only in whether the prototype posterior weights are estimated by multinomial logistic regression or by a compact MLP classifier [2, 30, 36]. Accordingly, the central empirical question is whether, once a frozen semantic corpus space and fixed supervision budget have been specified, KAHM geometry adds value beyond simpler evaluation-matched adapters under the same serving contract. The results indicate that it does, but in a more nuanced sense. Among the learned adapters considered here, KAHM yields the best teacher-space reconstruction and the strongest rank-sensitive law-level retrieval, whereas the compact MLP regressor is strongest on some neighborhood-consensus diagnostics and the retrieval-distilled student remains clearly weaker under the same law-wise serving contract. 
+
+Confidence intervals are paired nonparametric bootstrap 95% intervals with 5,000 resamples and seed 0. The majority-accuracy metric uses the predominance threshold τ = 0 .10 . In the reported run, the exact-text overlap between train 21 Table 4: Additional evaluation-matched baselines under the same law-wise split and deployment contract, now includ-ing a compact retrieval-distilled neural student trained on law-local teacher-side retrieval behavior. Panel A reports teacher-space query-embedding reconstruction on the 5,000 test queries for the learned adapters; the direct Mixedbread query representation is omitted there because it is the teacher target itself. Panels B1 and B2 report micro-averaged retrieval at k = 20 (mean with paired-bootstrap 95% confidence intervals). In the method labels, “law-wise” denotes one local model per law, and “query →MB” denotes adapters that predict a query embedding in the frozen Mixedbread space while keeping the corpus index fixed in that same space.                                                                                                                                             
+
+> Panel A: Query-embedding reconstruction against Mixedbread teacher queries
+> Method MSE R2Cos mean Cos p50
+> Ridge (law-wise, query →MB) 0.000104 0.8932 0.9466 0.9616
+> Retrieval-distilled student (law-wise, query →MB) 0.000169 0.8272 0.9137 0.9010
+> MLP-regressor (law-wise, query →MB) 0.000237 0.7573 0.8788 0.8845
+> Logistic-proto (law-wise, query →MB) 0.000240 0.7543 0.8772 0.8708
+> MLP-proto (law-wise, query →MB) 0.000215 0.7799 0.8900 0.8883
+> KAHM (query →MB corpus) 0.000091 0.9071 0.9536 0.9606
+> Panel B1: Ranking metrics at k= 20
+> Method MRR@20 Hit@20 Top-1
+> IDF–SVD 0.376 [0 .364 ,0.388] 0.572 [0 .558 ,0.586] 0.287 [0 .274 ,0.299]
+> Mixedbread 0.478 [0 .465 ,0.489] 0.688 [0 .675 ,0.701] 0.378 [0 .365 ,0.391]
+> Ridge (law-wise, query →MB) 0.404 [0 .392 ,0.416] 0.566 [0 .553 ,0.580] 0.328 [0 .315 ,0.341]
+> Retrieval-distilled student (law-wise, query →MB) 0.225 [0 .214 ,0.235] 0.361 [0 .348 ,0.375] 0.168 [0 .158 ,0.179]
+> MLP-regressor (law-wise, query →MB) 0.456 [0 .444 ,0.469] 0.575 [0 .562 ,0.589] 0.385 [0 .372 ,0.398]
+> Logistic-proto (law-wise, query →MB) 0.222 [0 .211 ,0.232] 0.306 [0 .293 ,0.318] 0.180 [0 .170 ,0.191]
+> MLP-proto (law-wise, query →MB) 0.246 [0 .235 ,0.257] 0.365 [0 .352 ,0.379] 0.193 [0 .182 ,0.204]
+> KAHM (query →MB corpus) 0.504 [0.492 ,0.516 ]0.694 [0.681 ,0.707 ]0.411 [0.397 ,0.424 ]
+> Panel B2: Consensus-oriented metrics at k= 20
+> Method MajAcc ConsFrac Lift
+> IDF–SVD 0.305 [0 .292 ,0.318] 0.238 [0 .229 ,0.248] 32 .062 [30 .484 ,33 .665]
+> Mixedbread 0.397 [0 .383 ,0.411] 0.270 [0 .262 ,0.279] 40 .339 [38 .552 ,42 .073]
+> Ridge (law-wise, query →MB) 0.338 [0 .325 ,0.351] 0.242 [0 .233 ,0.250] 37 .938 [36 .140 ,39 .846]
+> Retrieval-distilled student (law-wise, query →MB) 0.174 [0 .163 ,0.184] 0.124 [0 .117 ,0.130] 22 .408 [20 .845 ,24 .007]
+> MLP-regressor (law-wise, query →MB) 0.436 [0.422 ,0.450 ]0.315 [0.306 ,0.325 ]51 .117 [49 .048 ,53 .252 ]
+> Logistic-proto (law-wise, query →MB) 0.194 [0 .183 ,0.205] 0.143 [0 .136 ,0.151] 23 .272 [21 .671 ,24 .906]
+> MLP-proto (law-wise, query →MB) 0.204 [0 .193 ,0.215] 0.147 [0 .139 ,0.154] 22 .260 [20 .791 ,23 .807]
+> KAHM (query →MB corpus) 0.424 [0 .410 ,0.438] 0.305 [0 .296 ,0.315] 47 .025 [45 .073 ,49 .023]
+
+and test is zero, all test topics are drawn from the topic pool already present in training, and 15 .6% of test queries mention the gold law label verbatim. These details are relevant when interpreting the absolute values of all methods. Accordingly, the primary effectiveness question in this study is the relative delta between direct transformer query encoding and the proposed KAHM adapter under the same frozen corpus space and serving contract, rather than the absolute value of any single Hit@ k score taken in isolation. Taken together, the main empirical pattern is not merely that the proposed encoder reduces deployment-time query cost relative to direct transformer inference, but that it does so while remaining the strongest evaluation-matched adapter on the principal rank-sensitive retrieval measures. Additional diagnostics in Remark 17 and Table 10 show that this relative advantage is not plausibly driven by explicit law-label cues and remains robust across six of the seven evaluated query styles. For the use case studied here, those measures are the most decision-relevant because they capture whether the correct law remains near the top of the ranking under the fixed serving contract. The stronger teacher-space reconstruction is consistent with the view that KAHM preserves more of the teacher-induced retrieval geometry in the frozen corpus space. At the same time, the broadened baseline comparison shows that the advantage is not uniform across all diagnostics: the compact law-wise MLP regressor attains slightly stronger neighborhood-consensus values on some measures. We therefore interpret the main result as stronger rank-sensitive lexical-to-semantic adaptation under the fixed-teacher and fixed-serving-contract 22 10 0 10 1 10 2 10 3
+
+> Online per-query time (ms, log scale)
+> 0.36 0.38 0.4 0.42 0.44 0.46 0.48 0.5 0.52 MRR@20 (unique laws)
+> Compute-quality trade-off
+> IDF--SVD
+> KAHM
+> Mixedbread
+
+Figure 1: Compute-quality trade-off based on online per-query time and MRR@20. The proposed KAHM-based en-coder occupies the middle ground between the very fast lexical baseline and the expensive online transformer baseline, while attaining the strongest retrieval quality among the three methods in this run. Error bars show paired-bootstrap 95% confidence intervals for MRR@20. regime studied here. In the reported CPU setting, the KAHM adapter reduces online per-query time from 800.663 ms for direct Mixedbread query encoding to 93.834 ms, corresponding to an 8.53 × speedup, while still outperforming the compact learned adapter baselines on the main rank-sensitive law-retrieval metrics under the same fixed-teacher and fixed-serving-contract regime. The resulting compute–quality positioning is summarized in Fig. 1. Across all cutoffs, the proposed KAHM-based encoder substantially outperforms the lexical IDF–SVD baseline on every reported metric. At k = 20 , the proposed method reaches MRR@20 = 0 .504 , Hit@20 = 0 .694 , Top -1 = 0 .411 ,majority-accuracy = 0 .424 , mean consensus fraction = 0 .305 , and mean lift = 47 .025 , compared with 0.376 , 0.572 ,
+
+0.287 , 0.305 , 0.238 , and 32 .062 , respectively, for IDF–SVD. The corresponding paired deltas (KAHM minus IDF– SVD) at k = 20 are 
+
+∆Hit@20 = +0 .122 [0 .109 , 0.136] , ∆MRR@20 = +0 .128 [0 .117 , 0.139] ,
+
+∆Top -1 = +0 .124 [0 .110 , 0.137] , ∆MajAcc = +0 .119 [0 .106 , 0.132] ,
+
+∆ConsFrac = +0 .067 [0 .060 , 0.074] , ∆Lift = +14 .963 [13 .196 , 16 .715] .
+
+All confidence intervals exclude zero, which indicates a stable advantage of the proposed encoder over the lexical baseline on this benchmark. The learned-baseline comparison yields a more differentiated and informative picture than the earlier two-baseline control alone. Among the evaluation-matched adapters, KAHM gives the strongest teacher-space reconstruction overall, with MSE = 0 .000091 and R2 = 0 .9071 , compared with 0.000104 /0.8932 
+
+for ridge, 0.000169 /0.8272 for the retrieval-distilled student, 0.000240 /0.7543 for logistic-proto, 0.000237 /0.7573 
+
+for the MLP regressor, and 0.000215 /0.7799 for the MLP prototype adapter. Further, the law-wise retrieval-distilled student remains well below KAHM on every reported measure and at every evaluated cutoff. At k = 20 , it attains 
+
+MRR@20 = 0 .225 , Hit@20 = 0 .361 , Top -1 = 0 .168 , majority-accuracy = 0 .174 , mean consensus fraction = 0 .124 ,and mean lift = 22 .408 , all substantially below the corresponding KAHM values. Under the same law-wise split, frozen Mixedbread corpus space, and distance-gated serving contract, replacing pointwise embedding regression by a retrieval-distillation objective alone is therefore not sufficient to recover the rank-sensitive advantages of the proposed KAHM geometry. Table 4 further shows that KAHM remains the strongest learned adapter on the three rank-sensitive law-retrieval measures across all evaluated cutoffs. At k = 20 , it reaches MRR@20 = 0 .504 , Hit@20 = 0 .694 , and Top -1 = 0 .411 ,exceeding not only ridge, the retrieval-distilled student, and the two prototype-mixture controls, but also the strongest learned comparator on these metrics, the compact law-wise MLP regressor, which attains 0.456 , 0.575 , and 0.385 ,respectively. This is the most important empirical point for the present paper, because these are the metrics most directly tied to correct law identification near the top of the ranking. At the same time, the broadened neural comparison shows that the advantage of KAHM is not uniform across all diagnostics. The compact law-wise MLP regressor is stronger on the consensus-oriented metrics at k = 20 , reaching 23 5 10 15 20 Retrieval cutoff k         
+
+> 0.3 0.35 0.4 0.45 0.5 0.55 MRR@k (unique laws)
+> Law-level ranking quality
+> 510 15 20 Retrieval cutoff k
+> 0.3 0.4 0.5 0.6 0.7 Hit@k
+> Recall within top-k
+> 510 15 20 Retrieval cutoff k
+> 0.25 0.3 0.35 0.4 0.45 Top-1 accuracy
+> Strict rank-1 accuracy
+> IDF--SVD KAHM Mixedbread
+
+Figure 2: Main retrieval-quality metrics across cutoffs. The proposed KAHM (query →MB corpus) encoder con-sistently dominates the lexical IDF–SVD baseline and remains above the direct transformer-query baseline on the principal rank-sensitive measures. Shaded regions indicate paired-bootstrap 95% confidence intervals. majority-accuracy 0.436 , mean consensus fraction 0.315 , and mean lift 51 .117 , whereas KAHM attains 0.424 , 0.305 ,and 47 .025 . A natural interpretation is that the compact neural direct adapter can produce slightly purer local top-k
+
+neighborhoods, while KAHM remains superior at reconstructing the teacher space and converting that reconstruction into stronger law-level ranking performance. By contrast, the retrieval-distilled student and both prototype-mixture controls remain clearly weaker than KAHM. This matters because it shows that neither the prototype-mixture form by itself nor a more retrieval-aware compact neural student under the same serving contract is sufficient to recover the KAHM result. The evidence is therefore most consistent with a more specific claim: under the fixed deployment con-tract studied here, KAHM geometry yields the best overall rank-sensitive lexical →semantic adaptation, even though a compact MLP regressor can be preferable on some consensus-style diagnostics. A second notable empirical finding is that the KAHM adapter also surpasses the direct transformer-query baseline on most quality measures. At k = 20 , the paired deltas (KAHM minus Mixedbread) are 
+
+∆MRR@20 = +0 .026 [0 .018 , 0.035] , ∆Top -1 = +0 .033 [0 .022 , 0.043] ,
+
+∆MajAcc = +0 .027 [0 .018 , 0.037] , ∆ConsFrac = +0 .035 [0 .031 , 0.039] ,
+
+∆Lift = +6 .687 [5 .625 , 7.776] .
+
+For Hit@20 , the corresponding delta is +0 .006 [ −0.003 , 0.016] , so the difference at that cutoff is statistically in-conclusive under the paired bootstrap criterion. Thus, the proposed encoder is not merely a cheap approximation of the transformer query encoder in this setting; it yields systematically better rank-sensitive and neighborhood-purity measures while keeping the strong semantic corpus index fixed. 
+
+Remark 16 (KAHM Encoder Can Outperform the Teacher Query Encoder) . The comparison against the direct Mixed-bread query baseline is best viewed as an in-domain query-adaptation result within the teacher’s frozen semantic space. Both methods operate in the same frozen corpus space, but the proposed encoder is trained specifically on the Austrian-law query distribution considered here. It can therefore act as a task-specific query-side adapter that re-expresses lexical evidence in a form better aligned with the downstream law-retrieval objective and with the fixed corpus index. Under this reading, the observed gain is most naturally interpreted as in-domain calibration of query representations within a fixed teacher space, not as a general claim that the analytical encoder dominates the under-lying transformer. 
+
+Several qualitative trends are visible across the cutoffs; see Fig. 2 for the rank-sensitive retrieval measures and Fig. 3 for the consensus- and routing-oriented diagnostics. First, Hit@ k and MRR@ k increase with k for all systems, as ex-pected. Second, the mean consensus fraction and mean lift decrease as k grows, reflecting the fact that a larger retrieval neighborhood dilutes the local purity around the correct law. Third, majority-accuracy peaks at an intermediate cutoff and then slightly decreases: for the proposed method it rises from 0.422 at k = 3 to 0.436 at k = 10 , then decreases to 0.424 at k = 20 . This pattern suggests that the correct law is concentrated early in the ranked list, whereas larger neighborhoods admit increasing contamination from semantically adjacent statutes. Finally, Top -1 is constant across all values of k, which is consistent with its definition as a rank-1 measure. The report also includes a macro-averaged robustness analysis in which each law receives equal weight irrespective of query frequency. The macro-level point estimates reproduce the same ordering as the micro-level results, while 24 5 10 15 20 Retrieval cutoff k         
+
+> 0.25 0.3 0.35 0.4 0.45 Majority-accuracy
+> Vote-based correctness
+> 510 15 20 Retrieval cutoff k
+> 0.2 0.25 0.3 0.35 0.4 Mean consensus fraction
+> Neighborhood purity
+> 510 15 20 Retrieval cutoff k
+> 30 40 50 60 70 80 Mean lift (prior)
+> Enrichment over corpus prior
+> IDF--SVD KAHM Mixedbread
+
+Figure 3: Consensus- and routing-sensitive metrics across cutoffs for the three systems shown (IDF–SVD, Mixed-bread, and KAHM). Within this three-way comparison, the KAHM-based encoder yields purer retrieval neighbor-hoods around the gold law, as reflected in majority-accuracy, mean consensus fraction, and mean lift. Shaded regions indicate paired-bootstrap 95% confidence intervals. the confidence intervals are wider because resampling occurs at the law level. At k = 20 , the macro scores of the proposed system are MRR = 0 .504 [0 .446 , 0.562] , Hit = 0 .694 [0 .625 , 0.756] , Top -1 = 0 .411 [0 .354 , 0.468] ,and majority-accuracy = 0 .424 [0 .361 , 0.491] . The corresponding macro deltas against IDF–SVD remain strictly positive, for example ∆MRR = +0 .128 [0 .100 , 0.157] and ∆Hit = +0 .122 [0 .086 , 0.159] , indicating that the gains of the proposed method are not an artifact of a few high-frequency laws. For completeness, Tables 5 and 6 report the paired delta results across all evaluated cutoffs, both for the primary micro-averaged analysis and for the macro-averaged robustness analysis in which each law receives equal weight. These tables make explicit that, relative to the lexical IDF–SVD baseline, the proposed method yields strictly positive paired deltas on all six reported measures for every evaluated cutoff. Relative to the direct transformer-query baseline, the proposed method retains positive paired deltas for MRR, Top-1 accuracy, majority-accuracy, mean consensus fraction, and mean lift at every evaluated cutoff, whereas Hit@ k becomes statistically inconclusive only at k = 20 . Table 7 further reports the component-level wall-clock timings and memory footprints underlying the compact online profile in Table 8, confirming that in the semantic retrieval paths the dominant online cost lies in query embedding rather than in FAISS search. From an operational perspective, the majority-vote routing sweep in Table 8 shows that the KAHM-based system also provides the strongest confident-decision profile. For the auxiliary abstention-aware routing analysis, we report the operating point τ ′ = 0 .41 , obtained by an exhaustive sweep over τ ′ ∈ { 0.00 , 0.01 , . . . , 1.00 }. The threshold 
+
+τ ′ was selected to maximize conditional majority precision subject to a minimum coverage constraint of 0.50 on the evaluated query set. At this operating point, the proposed method achieves coverage 0.562 , majority-accuracy 0.346 ,and conditional precision 0.615 . This exceeds both the lexical baseline (0 .538 /0.251 /0.468) and the transformer-query baseline (0 .525 /0.308 /0.587) , suggesting that the top-ranked local neighborhoods produced by the KAHM adapter are not only more accurate but also more reliable under this abstention-aware routing analysis. Because τ ′ was selected on the evaluated query set itself, this result should be read as a descriptive post-hoc routing diagnostic rather than as an independently validated deployment threshold. Table 8 further reports the measured query-time computational profile. The main quantity of interest is the online per-query time, defined as query embedding plus FAISS retrieval. IDF–SVD requires 1.149 ms per query, the KAHM adapter requires 93 .834 ms, and online Mixedbread inference requires 800 .663 ms. Hence, the proposed adapter is slower than the lightweight lexical baseline but still 8.53 × faster than online transformer query encoding in this run. The dominant cost of both semantic methods lies in query embedding rather than search: FAISS search itself contributes only 0.584 ms per query on the KAHM →MB path and 0.580 ms on the direct Mixedbread path. The aligned corpus matrices occupy 22 ,040 ,576 bytes in the IDF–SVD space and 44 ,081 ,152 bytes in the Mixedbread space. Thus, the proposed method substantially reduces online semantic-query cost relative to transformer inference, while remaining slower than the purely lexical baseline. The experiments were executed on an x86_64 Apple desktop running macOS 26 .3.1, with 8 logical CPU cores and 8.00 GiB RAM. The software stack consisted of Python 3.11 .14 , PyTorch 2.2.2, faiss-cpu 1.13 .2,
+
+sentence-transformers 5.2.0, scikit-learn 1.8.0, NumPy 1.26 .4, pandas 2.3.3, and joblib 1.5.3. Although Ap-ple Metal (MPS) support was available in the runtime, the evaluation reported here was explicitly executed on the CPU with thread cap 1. Table 9 summarizes the hardware and runtime configuration. 25 Table 5: Full micro-averaged paired deltas across all evaluated cutoffs. Positive values favor KAHM. Confidence intervals are paired-bootstrap 95% intervals. 
+
+Panel A: KAHM minus IDF–SVD (ranking metrics) 
+
+k ∆Hit@ k ∆MRR@ k ∆Top-1 
+
+3 +0 .141 [0 .127 , 0.155] +0 .132 [0 .119 , 0.144] +0 .124 [0 .110 , 0.137] 
+
+5 +0 .146 [0 .132 , 0.159] +0 .133 [0 .121 , 0.144] +0 .124 [0 .110 , 0.138] 
+
+10 +0 .145 [0 .132 , 0.159] +0 .132 [0 .121 , 0.143] +0 .124 [0 .110 , 0.137] 
+
+15 +0 .134 [0 .120 , 0.148] +0 .130 [0 .119 , 0.141] +0 .124 [0 .110 , 0.137] 
+
+20 +0 .122 [0 .109 , 0.136] +0 .128 [0 .117 , 0.139] +0 .124 [0 .110 , 0.137] 
+
+Panel B: KAHM minus IDF–SVD (consensus- and routing-sensitive metrics) 
+
+k ∆MajAcc ∆ConsFrac ∆Lift 
+
+3 +0 .123 [0 .110 , 0.137] +0 .100 [0 .090 , 0.110] +25 .101 [21 .323 , 28 .982] 
+
+5 +0 .128 [0 .115 , 0.141] +0 .091 [0 .082 , 0.100] +23 .504 [20 .436 , 26 .677] 
+
+10 +0 .131 [0 .117 , 0.144] +0 .081 [0 .073 , 0.089] +20 .109 [17 .773 , 22 .528] 
+
+15 +0 .116 [0 .103 , 0.129] +0 .072 [0 .065 , 0.079] +16 .922 [14 .899 , 18 .916] 
+
+20 +0 .119 [0 .106 , 0.132] +0 .067 [0 .060 , 0.074] +14 .963 [13 .196 , 16 .715] 
+
+Panel C: KAHM minus Mixedbread (ranking metrics) 
+
+k ∆Hit@ k ∆MRR@ k ∆Top-1 
+
+3 +0 .027 [0 .016 , 0.037] +0 .030 [0 .021 , 0.040] +0 .033 [0 .021 , 0.044] 
+
+5 +0 .019 [0 .009 , 0.030] +0 .028 [0 .019 , 0.037] +0 .033 [0 .022 , 0.043] 
+
+10 +0 .017 [0 .007 , 0.028] +0 .028 [0 .019 , 0.036] +0 .033 [0 .022 , 0.044] 
+
+15 +0 .010 [0 .001 , 0.020] +0 .027 [0 .019 , 0.035] +0 .033 [0 .021 , 0.043] 
+
+20 +0 .006 [ −0.003 , 0.016] +0 .026 [0 .018 , 0.035] +0 .033 [0 .022 , 0.043] 
+
+Panel D: KAHM minus Mixedbread (consensus- and routing-sensitive metrics) 
+
+k ∆MajAcc ∆ConsFrac ∆Lift 
+
+3 +0 .042 [0 .031 , 0.053] +0 .033 [0 .026 , 0.041] +6 .614 [3 .911 , 9.331] 
+
+5 +0 .038 [0 .028 , 0.049] +0 .032 [0 .026 , 0.039] +5 .341 [3 .146 , 7.481] 
+
+10 +0 .034 [0 .023 , 0.044] +0 .035 [0 .029 , 0.040] +6 .813 [5 .177 , 8.336] 
+
+15 +0 .028 [0 .018 , 0.038] +0 .034 [0 .029 , 0.039] +6 .503 [5 .246 , 7.718] 
+
+20 +0 .027 [0 .018 , 0.037] +0 .035 [0 .031 , 0.039] +6 .687 [5 .625 , 7.776] 
+
+26 Table 6: Full macro-averaged paired deltas across all evaluated cutoffs. Macro-averaging first averages within each law and then averages uniformly across laws. Positive values favor KAHM. Confidence intervals are law-bootstrap 
+
+95% intervals. 
+
+Panel A: KAHM minus IDF–SVD (ranking metrics) 
+
+k ∆Hit@ k ∆MRR@ k ∆Top-1 
+
+3 +0 .141 [0 .109 , 0.172] +0 .132 [0 .103 , 0.162] +0 .124 [0 .093 , 0.156] 
+
+5 +0 .146 [0 .114 , 0.178] +0 .133 [0 .104 , 0.162] +0 .124 [0 .092 , 0.155] 
+
+10 +0 .145 [0 .110 , 0.182] +0 .132 [0 .104 , 0.162] +0 .124 [0 .092 , 0.156] 
+
+15 +0 .134 [0 .098 , 0.171] +0 .130 [0 .103 , 0.160] +0 .124 [0 .093 , 0.155] 
+
+20 +0 .122 [0 .086 , 0.159] +0 .128 [0 .100 , 0.157] +0 .124 [0 .093 , 0.156] 
+
+Panel B: KAHM minus IDF–SVD (consensus- and routing-sensitive metrics) 
+
+k ∆MajAcc ∆ConsFrac ∆Lift 
+
+3 +0 .123 [0 .091 , 0.156] +0 .100 [0 .073 , 0.129] +25 .136 [12 .537 , 38 .554] 
+
+5 +0 .128 [0 .096 , 0.160] +0 .091 [0 .065 , 0.118] +23 .541 [12 .724 , 35 .273] 
+
+10 +0 .131 [0 .099 , 0.165] +0 .081 [0 .057 , 0.106] +20 .141 [11 .253 , 29 .602] 
+
+15 +0 .117 [0 .086 , 0.148] +0 .072 [0 .048 , 0.096] +16 .945 [9 .248 , 25 .482] 
+
+20 +0 .119 [0 .089 , 0.152] +0 .067 [0 .045 , 0.090] +14 .980 [7 .698 , 22 .644] 
+
+Panel C: KAHM minus Mixedbread (ranking metrics) 
+
+k ∆Hit@ k ∆MRR@ k ∆Top-1 
+
+3 +0 .027 [0 .013 , 0.041] +0 .030 [0 .019 , 0.042] +0 .033 [0 .020 , 0.046] 
+
+5 +0 .019 [0 .008 , 0.031] +0 .028 [0 .017 , 0.039] +0 .033 [0 .020 , 0.046] 
+
+10 +0 .017 [0 .006 , 0.028] +0 .028 [0 .017 , 0.038] +0 .033 [0 .019 , 0.046] 
+
+15 +0 .010 [ −0.002 , 0.023] +0 .027 [0 .017 , 0.037] +0 .033 [0 .020 , 0.046] 
+
+20 +0 .006 [ −0.006 , 0.019] +0 .026 [0 .016 , 0.036] +0 .033 [0 .020 , 0.046] 
+
+Panel D: KAHM minus Mixedbread (consensus- and routing-sensitive metrics) 
+
+k ∆MajAcc ∆ConsFrac ∆Lift 
+
+3 +0 .042 [0 .028 , 0.059] +0 .033 [0 .023 , 0.044] +6 .625 [3 .169 , 10 .335] 
+
+5 +0 .038 [0 .025 , 0.052] +0 .032 [0 .023 , 0.041] +5 .346 [2 .044 , 8.660] 
+
+10 +0 .034 [0 .020 , 0.047] +0 .035 [0 .027 , 0.042] +6 .821 [4 .254 , 9.603] 
+
+15 +0 .028 [0 .016 , 0.040] +0 .034 [0 .027 , 0.041] +6 .509 [4 .378 , 8.704] 
+
+20 +0 .027 [0 .014 , 0.042] +0 .035 [0 .028 , 0.042] +6 .692 [4 .704 , 8.841] 
+
+27 Table 7: Component-level wall-clock timings and memory footprints for the reported run. Warm-up times are excluded from the online per-query totals in Table 8. 
+
+Component Wall time Per-query equivalent 
+
+IDF–SVD query pipeline init (cold-start) 2.634 s 0.527 ms IDF–SVD query embedding (batch) 4.220 s 0.844 ms KAHM query model init (cold-start) 5.126 s 1.025 ms KAHM query warm-up (excluded from online total) 5.665 s n/a KAHM query embedding (batch) 466.249 s 93.250 ms Mixedbread model init (cold-start) 7.606 s 1.521 ms Mixedbread query warm-up (excluded from online total) 1.721 s n/a Mixedbread query embedding (batch) 4000.415 s 800.083 ms FAISS build (IDF corpus index) 0.316 s n/a FAISS search (IDF path) 1.526 s 0.305 ms FAISS build (MB corpus index) 0.127 s n/a FAISS search (Mixedbread path) 2.898 s 0.580 ms FAISS search (KAHM →MB path) 2.919 s 0.584 ms Corpus embedding memory (IDF matrix) 22,040,576 bytes n/a Corpus embedding memory (MB matrix) 44,081,152 bytes n/a 
+
+Table 8: Routing-oriented diagnostics and online computational profile. 
+
+Method / Path Coverage Majority-acc Precision 
+
+IDF–SVD 0.538 0.251 0.468 Mixedbread 0.525 0.308 0.587 KAHM (query →MB corpus) 0.562 0.346 0.615 
+
+Per-query online profile 
+
+Path Embed / q Search / q Total / q 
+
+IDF–SVD 0.844 ms 0.305 ms 1.149 ms KAHM (query →MB corpus) 93.250 ms 0.584 ms 93.834 ms Mixedbread 800.083 ms 0.580 ms 800.663 ms 
+
+Table 9: Hardware and runtime configuration used for the reported experiment. 
+
+Field Value 
+
+Operating system macOS 26.3.1 Architecture x86_64 Logical CPU cores 8RAM 8.00 GiB Python 3.11.14 PyTorch runtime 2.2.2 FAISS faiss-cpu 1.13.2 SentenceTransformers 5.2.0 scikit-learn 1.8.0 NumPy / pandas 1.26.4 / 2.3.3 joblib 1.5.3 Requested device CPU Thread cap 1
+
+28 Table 10: Additional diagnostic evaluation on label-free subsets and query-style strata. The table reports MRR@20 
+
+and Top-1 Accuracy for the lexical baseline, the direct Mixedbread query encoder, and the proposed KAHM encoder. The label-free rows show that the principal KAHM result is essentially unchanged when explicit statute-name mentions are removed, while the style rows show that KAHM is strongest on six of the seven query styles considered here by 
+
+MRR@20 .                                                                                   
+
+> MRR@20 Top-1 Accuracy
+> Group IDF–SVD Mixedbread KAHM IDF–SVD Mixedbread KAHM
+> Full test set 0.376 0.478 0.504 0.287 0.378 0.411
+> Gold-label-free ( n= 4222 )0.371 0.479 0.504 0.285 0.383 0.411
+> Any-law-free ( n= 4201 )0.372 0.479 0.503 0.286 0.383 0.411
+> nl_long (n= 717 )0.305 0.413 0.424 0.215 0.308 0.340
+> nl_short (n= 717 )0.420 0.565 0.576 0.332 0.470 0.478
+> procedural (n= 717 )0.366 0.508 0.470 0.273 0.407 0.377
+> scenario (n= 706 )0.302 0.416 0.442 0.225 0.319 0.358
+> keyword (n= 719 )0.370 0.379 0.472 0.274 0.274 0.370
+> authority (n= 723 )0.416 0.503 0.549 0.332 0.401 0.451
+> fragment (n= 701 )0.451 0.560 0.594 0.357 0.468 0.501
+
+Remark 17 (Diagnostic Robustness to Law-Label Cues and Query Style) . A natural concern for a synthetic law-retrieval benchmark is that performance might be inflated by explicit statute-name mentions or by concentration on only a narrow query surface form. We therefore performed two additional diagnostics on the same retrieval outputs: a label-cue analysis and a style-stratified analysis. The first result is reassuring. Of the 5,000 test queries, only 778 
+
+(15 .6% ) mention the gold law abbreviation and only 799 (16 .0% ) mention any law abbreviation. More importantly, the principal KAHM result remains essentially unchanged when those explicit label cues are removed. On the full test set, KAHM attains MRR@20 = 0 .504 , Hit@20 = 0 .694 , and Top-1 Accuracy = 0 .411 . On the gold-label-free subset (n = 4222 ), the corresponding values remain MRR@20 = 0 .504 , Hit@20 = 0 .694 , and Top-1 Accuracy = 0 .411 ,and on the stricter any-law-free subset ( n = 4201 ) they remain MRR@20 = 0 .503 , Hit@20 = 0 .694 , and Top-1 Accuracy = 0 .411 . These diagnostics indicate that the observed retrieval gains are not primarily driven by explicit statute-name cues. The style-stratified analysis likewise supports the intended interpretation of the benchmark as a test of robustness to heterogeneous in-domain formulations. At MRR@20 , KAHM is strongest on six of the seven query styles considered here: nl_long (0.424 ), nl_short (0.576 ), fragment (0.594 ), scenario (0.442 ), keyword (0.472 ), and authority (0.549 ). The direct Mixedbread query encoder remains strongest on the procedural style ( 0.508 
+
+versus 0.470 for KAHM). The largest KAHM advantages appear on the more compressed lexical styles, especially 
+
+keyword and fragment , whereas the teacher retains an advantage on the more procedure-focused style. We therefore interpret the method as robust across a broad range of query formulations, but not uniformly dominant over the teacher oracle for every style. Table 10 summarizes these additional diagnostics. 
+
+Remark 18 (Interpretation of the Experimental Findings) . Taken together, the reported experiments support four main inferences. 1. The proposed KAHM-based encoder is not merely competitive with a lexical retrieval baseline, but consis-tently and substantially superior to it across all evaluated cutoffs and across all reported measures considered here, including both rank-sensitive and consensus-oriented criteria. 2. Relative to direct transformer query encoding in the same frozen Mixedbread corpus space, KAHM remains favorable on the main rank-sensitive law-retrieval measures while being substantially faster at query time. 3. The learned-baseline comparison sharpens the architectural interpretation of the result. Among the evaluation-matched adapters considered here, KAHM yields the strongest teacher-space reconstruction and the strongest rank-sensitive law-level retrieval, including MRR, Hit, and Top-1 accuracy across all evaluated cutoffs. Even against the compact law-wise retrieval-distilled student, KAHM retains a clear advantage. At the same time, the strongest non-KAHM comparator on the consensus-oriented diagnostics at k = 20 remains the compact law-wise MLP regressor, not the retrieval-distilled student. The evidence therefore supports a more specific conclusion than uniform dominance: under the fixed lexical →semantic deployment contract studied here, KAHM is especially effective when the objective is accurate law identification near the top of the ranking, whereas a compact neural direct adapter can produce slightly purer local top-k neighborhoods on some consensus-style diagnostics. 
+
+29 4. The retrieval-distilled student and the prototype-mixture controls all remain clearly weaker than KAHM. This matters because it suggests that neither the prototype-mixture form by itself nor a more retrieval-aware com-pact neural student under the same serving contract is sufficient to recover the observed result. Rather, the evidence is more consistent with the view that the KAHM-specific geometric posterior estimator con-tributes materially to the quality of the lexical →semantic adaptation under the deployment regime studied here. This comparison is important for the interpretation of the method. Because the logistic-prototype and MLP-prototype controls share the same prototype-mixture output form but replace the KAHM posterior es-timator by standard discriminative classifiers, their weaker performance indicates that the gain cannot be attributed to the prototype-mixture architecture alone. Rather, the evidence points to the KAHM geometry itself as the main source of improvement, in particular to the space-folding-based estimation of posterior weights. In that sense, the experiments support the theoretical emphasis placed earlier on the KAHM space-folding measure as a more effective mechanism for posterior estimation in this lexical-to-semantic adaptation setting than a standard neural or logistic classifier operating on the same prototype decomposition. Overall, these findings support the claim that the proposed method provides a practically relevant backpropagation-free and neural-network-free alternative to repeated online transformer query encoding for law-routing retrieval. More precisely, the comparison indicates that KAHM is strongest on teacher-space reconstruction and on the rank-sensitive law-level retrieval measures. 
+
+4.6 Reproducibility and Artifact Availability 
+
+To support reproducibility, the code and principal experimental artifacts used in this study are publicly available at https://github.com/MohitKumarRostock/Austrian_law_assistant . The public repository contains the scripts for corpus construction, query-set generation, lexical and semantic embedding-index construction, training of the law-specific KAHM encoders, retrieval evaluation, and figure generation. In particular, it includes the end-to-end evaluation script evaluate_three_embeddings_storylines.py , the baseline comparison scripts, the KAHM training scripts, the lexical-index construction script, and the figure-generation script used to derive the graphical summaries of the reported results. The repository also provides the principal stored artifacts required for rerunning the reported experiments, including the aligned corpus file, the train/test query files, the precomputed embedding bundles, the trained KAHM encoders, and the generated evaluation reports for baseline comparison. The main numerical results reported in Sections 4.5 can be reproduced directly from the included artifacts by rerunning the evaluation pipeline on the public repository. The repository additionally provides installation instructions and environment specifications through a root README.md , a requirements.txt file, and a Conda environment.yml 
+
+file. To facilitate stable paper-linked reruns, the artifact package is versioned through the tagged snapshot v1.0.0 ,which can be cited as the fixed public code state corresponding to the experiments reported in this paper. Unless otherwise noted, the source code in the repository is distributed under the Apache License 2.0. In addition to the public artifact package, the present paper reports the random seeds, hyperparameter grids, bootstrap protocol, hardware profile, thread settings, and software environment used in the experiments. Together, these mate-rials provide a complete basis for reproducing the reported retrieval tables and figures, as well as for rerunning the training and evaluation pipeline under the same experimental protocol. 
+
+4.7 Threats to Validity, Scope, and Interpretation 
+
+The empirical results should be interpreted as evidence on a controlled benchmark rather than on fully naturalistic legal search traffic. The test queries are synthetically generated from law-specific issue inventories, so the present evaluation supports conclusions about retrieval behavior under a structured in-domain benchmark, not directly about performance on organically occurring user queries. In addition, although the train and test queries are text-disjoint, the default split is topic-overlapping within each law. The reported results therefore measure robustness across paraphrases, query styles, and sampled contextual realizations of law-internal issues that are already represented in training more directly than extrapolation to genuinely unseen issues within a law or transfer across laws. A minority of test queries mention the gold law label explicitly. This can inflate absolute retrieval scores, especially for lexical front ends, and the absolute values of all methods should therefore be read in light of the benchmark construction. At the same time, the additional label-free diagnostics indicate that the main relative-comparison result is not plausibly explained by explicit law-label cues alone. The architectural claim is also deliberately narrow. The comparison is evaluation-matched rather than architecture-exhaustive: it holds fixed the lexical front end, semantic teacher space, frozen corpus index, and serving contract 30 in order to isolate the query-adaptation problem. Accordingly, the validated claim is not that the proposed method dominates the broader space of efficient retrieval systems, but that within this fixed-space deployment regime it pro-vides the strongest retrieval behavior among the learned adapters considered here while substantially reducing online query-time cost. A final statistical caveat is that multiple test queries may instantiate alternative surface realizations of the same underly-ing law-topic specification. Query-level bootstrap resampling may therefore understate uncertainty relative to grouped resampling at the topic level. Future work should extend the present evaluation with topic-disjoint splits, naturally occurring legal queries, grouped topic-level resampling, alternative teacher encoders, and broader families of compact baselines. 
+
+# 5 Concluding Remarks 
+
+This paper studied deployment-time semantic encoding as the problem of estimating a query’s semantic teacher repre-sentation from inexpensive lexical features when the teacher space is already fixed, with the aim of avoiding repeated online neural query encoding under a fixed serving contract. We cast this problem as conditional-mean estimation, derive a KAHM-based posterior estimator in an explicit RKHS hypothesis space, combine it with an explicit NLMS refinement of semantic prototypes learned from noisy teacher embeddings, and obtain an end-to-end error decompo-sition into posterior-approximation, finite-sample/generalization, and teacher-noise terms. The proposed encoder is backpropagation-free and neural-network-free in both its posterior-estimation mechanism and its deployment path. Empirically, the Austrian-law benchmark serves as a controlled test of that fixed-space query-adaptation problem. Under a comparison protocol that keeps the lexical front end, semantic target space, frozen corpus index, supervision granularity, and serving rule fixed, KAHM achieves the strongest teacher-space reconstruction and the strongest princi-pal rank-sensitive retrieval among the learned adapters considered here while substantially reducing online query time relative to direct transformer query encoding. The evidence remains benchmark-specific, but it supports a broader methodological point: frozen neural representation spaces can in some regimes be served not only by smaller neural students, but also by lightweight geometric estimators whose runtime path and approximation behavior remain explicit. Broader validation in the future should test the same principle under topic-disjoint splits, naturally occurring queries, alternative teacher encoders, and additional compact adapter families. 
+
+# Acknowledgments 
+
+The research reported in this paper has been supported by the Austrian Ministry for Transport, Innovation and Tech-nology, the Federal Ministry for Digital and Economic Affairs, and the State of Upper Austria in the frame of the SCCH competence center INTEGRATE [(FFG grant no. 892418)] part of the FFG COMET Competence Centers for Excellent Technologies Programme. 
+
+# Appendix A. Description of KAHMs from Previous Study [23] 
+
+With reference to the KAHM expression (23), the following definitions are provided: • PX ∈ Rn×n (n ∈ { 1, 2, · · · , n }) is an encoding matrix such that product PXx is a lower-dimensional (i.e. 
+
+n−dimensional) encoding for x. The encoding matrix is computed from the data samples X using Algo-rithm 1. The lower-range cutoff 10 −3 in Algorithm 1 is used as a numerical safeguard: projected coordinates whose empirical spread is nearly collapsed are removed. This prevents near-degenerate directions from dom-inating the covariance-based scaling in the Gaussian kernel of (89) and ensures that the retained encoding dimensions preserve a minimal amount of geometric variation. • We have 
+
+X := {PXx | x ∈ Rn}, (88) and a positive-definite real-valued kernel, kX : X × X → R on X with a corresponding reproducing kernel Hilbert space HkX (X ), as 
+
+kX(xi, x j ) := exp 
+
+(
+
+− 1
+
+2n (xi − xj )T θ−1 
+
+> X
+
+(xi − xj )
+
+)
+
+, (89) where xi, x j ∈ X and θX ≻ 0 is sample covariance matrix of dataset {PXx1, · · · , PXxN }.31 Algorithm 1 Determination of Encoding Matrix PX
+
+Require: Matrix X ∈ RN ×n, equivalently represented as dataset {xi ∈ Rn}Ni=1 .
+
+1: n ← min(20 , n, N − 1) .
+
+2: Define PX ∈ Rn×n such that the ith row of PX is equal to transpose of eigenvector corresponding to i−th largest eigenvalue of sample covariance matrix of samples {x1, · · · , x N }.
+
+3: while min 1≤j≤n
+
+(max 1≤i≤N (PXxi)j − min 1≤i≤N (PXxi)j
+
+) < 1e −3 do 
+
+4: n ← n − 1.
+
+5: Define PX ∈ Rn×n such that the ith row of PX is equal to transpose of eigenvector corresponding to ith 
+
+largest eigenvalue of sample covariance matrix of dataset {x1, · · · , x N }.
+
+6: end while 
+
+7: return PX.
+
+• The function hi 
+
+> X
+
+: X → R, such that hi 
+
+> X
+
+∈ H kX (X ), approximates the indicator function 1{PXxi} : X →{0, 1} as the solution of following kernel regularized least squares problem: 
+
+hi 
+
+> X
+
+= arg min    
+
+> f∈H kX(X)
+
+
+
+> N
+
+∑
+
+> j=1
+
+∣∣1{PXxi}(PXxj ) − f (PXxj )∣∣2 + λ∗ 
+
+> X
+
+‖f ‖2  
+
+> HkX(X)
+
+ , (90) where the regularization parameter λ∗ 
+
+> X
+
+∈ R+ is given as 
+
+λ∗ 
+
+> X
+
+= ˆ e + 2
+
+nN ‖X‖2 
+
+> F
+
+, (91) where ˆe is the unique fixed point of the function r such that 
+
+ˆe = r(ˆ e, 2
+
+nN ‖X‖2 
+
+> F
+
+), (92) with r : R+ × R+ → R+ defined as 
+
+r(e, τ ) := 1
+
+nN 
+
+> n
+
+∑
+
+> j=1
+
+‖(X):,j − KX (KX + ( e + τ )IN )−1 (X):,j ‖2, (93) where (IN )i, : denotes the i−th row of identity matrix of size N and KX is N × N kernel matrix with its 
+
+(i, j )−th element defined as 
+
+(KX)ij := kX(PXxi, PXxj ). (94) The following iterations 
+
+e|it +1 = r(e|it , 2
+
+nN ‖X‖2 
+
+> F
+
+), it ∈ { 0, 1, · · · } (95) 
+
+e|0 ∈ (0 , 1
+
+nN ‖X‖2 
+
+> F
+
+) (96) converge to ˆe. By Theorem 1 in [24], the map r(·, 2 
+
+> nN
+
+‖X‖2 
+
+> F
+
+) is a contraction, so (95)–(96) are the associated fixed-point iterations converging to the unique solution ˆe. The solution of the kernel regularized least squares problem follows as 
+
+hi
+
+> X
+
+(·) = ( IN )i, : (KX + λ∗
+
+> X
+
+IN )−1 [ kX(·, PXx1) · · · kX(·, PXxN ) ]T . (97) The value hi
+
+> X
+
+(PXx) represents the kernel-smoothed membership of point PXx to the set {PXxi}. Equa-tion (97) is also the point at which the compute-efficient serving path becomes explicit. Once the quantities that depend on the reference set X, including the linear-algebra terms associated with KX, have been pre-computed offline, evaluating hi
+
+> X
+
+(PXx) for a new query requires only the projection PXx, the corresponding kernel evaluations, and the combination with those precomputed coefficients. Thus, the expensive matrix solve/factorization tied to KX is incurred once during model construction rather than at deployment time, which is consistent with the paper’s objective of replacing repeated online neural query encoding by a lighter analytical estimator. • The image of AX defines a region in the affine hull of {x1, · · · , x N }. That is, 
+
+AX[Rn] := {A X(x) | x ∈ Rn} ⊂ aff( {x1, · · · , x N }). (98) 32 Appendix B. Proof of Conditional Expectation as the Solution of Least-Squares Estimation Problem 
+
+Applying Jensen’s inequality for conditional expectation in (25) gives 
+
+‖fx7 →z(x)‖2 = ‖ E
+
+> z∼Pz|x
+
+[z | x]‖2 ≤ E
+
+> z∼Pz|x
+
+[‖z‖2 | x] a.s. (99) Taking expectations yields 
+
+E
+
+> x∼Px
+
+[‖fx7 →z(x)‖2] ≤ E
+
+> z∼Pz
+
+[‖z‖2] < ∞, (100) so indeed fx7 →z ∈ Fx7 →z . Let f ∈ Fx7 →z be arbitrary and its risk is given as 
+
+z − f (x) = ( z − fx7 →z (x)) + ( fx7 →z (x) − f (x)) . (101) Expanding the squared norm, we obtain 
+
+E
+
+> (x,z )∼Px,z
+
+[‖z − f (x)‖2] = E
+
+> (x,z )∼Px,z
+
+[‖z − fx7 →z (x)‖2] + E
+
+> x∼Px
+
+[‖fx7 →z (x) − f (x)‖2] (102) 
+
++ 2 E
+
+> (x,z )∼Px,z
+
+[( fx7 →z (x) − f (x)) T (z − fx7 →z (x))] . (103) Indeed, fx7 →z (x) − f (x) is σ(x)-measurable, and therefore 
+
+E
+
+> (x,z )∼Px,z
+
+[( fx7 →z (x) − f (x)) T (z − fx7 →z (x))] = E
+
+> x∼Px
+
+[
+
+(fx7 →z (x) − f (x)) T E
+
+> z∼Pz|x
+
+[( z − fx7 →z (x)) | x]
+
+]
+
+.(104) Since fx7 →z (x) = Ez∼Pz|x [z | x] almost surely and fx7 →z (x) is σ(x)-measurable, 
+
+E
+
+> z∼Pz|x
+
+[( z − fx7 →z (x)) | x] = E
+
+> z∼Pz|x
+
+[z | x] − fx7 →z (x) = 0 a.s. (105) Hence E(x,z )∼Px,z [( z − fx7 →z (x)) T (fx7 →z (x) − f (x))] = 0 , and thus 
+
+E
+
+> (x,z )∼Px,z
+
+[‖z − f (x)‖2] = E
+
+> (x,z )∼Px,z
+
+[‖z − fx7 →z(x)‖2] + E
+
+> x∼Px
+
+[‖fx7 →z(x) − f (x)‖2]. (106) It follows that 
+
+E
+
+> (x,z )∼Px,z
+
+[‖z − f (x)‖2] ≥ E
+
+> (x,z )∼Px,z
+
+[‖z − fx7 →z (x)‖2] for all f ∈ Fx7 →z . (107) Therefore, (27) follows. 
+
+# Appendix C. List of Austrian Statute Abbreviations and English Glosses 
+
+Table 11: Austrian law abbreviations used in the retrieval benchmark. The English titles are descriptive glosses rather than official translations. 
+
+Abbrev. German short title English gloss 
+
+ABGB Allgemeines bürgerliches Gesetzbuch General Civil Code APG Allgemeines Pensionsgesetz General Pensions Act ASVG Allgemeines Sozialversicherungsgesetz General Social Insurance Act AVG Allgemeines Verwaltungsverfahrensgesetz General Administrative Procedure Act AVRAG Arbeitsvertragsrechts-Anpassungsgesetz Employment Contract Law Adaptation Act AWG Abfallwirtschaftsgesetz Waste Management Act AZG Arbeitszeitgesetz Working Hours Act AktG Aktiengesetz Stock Corporation Act AlVG Arbeitslosenversicherungsgesetz Unemployment Insurance Act AngG Angestelltengesetz Salaried Employees Act ArbVG Arbeitsverfassungsgesetz Labour Constitution Act 
+
+33 Abbrev. German short title English gloss 
+
+AsylG Asylgesetz Asylum Act AußStrG Außerstreitgesetz Non-Contentious Proceedings Act AÜG Arbeitskräfteüberlassungsgesetz Temporary Agency Work Act B-VG Bundes-Verfassungsgesetz Federal Constitutional Law BAO Bundesabgabenordnung Federal Fiscal Code BEinstG Behinderteneinstellungsgesetz Disabled Persons Employment Act BWG Bankwesengesetz Banking Act DSG Datenschutzgesetz Data Protection Act DSGVO Datenschutz-Grundverordnung General Data Protection Regulation (GDPR) ECG E-Commerce-Gesetz E-Commerce Act EKHG Eisenbahn- und Kraftfahrzeughaftpflichtgesetz Railway and Motor Vehicle Liability Act EO Exekutionsordnung Enforcement Code EStG Einkommensteuergesetz Income Tax Act EheG Ehegesetz Marriage Act ElWOG Elektrizitätswirtschafts- und -organisationsgesetz Electricity Industry and Organisation Act FAGG Fern- und Auswärtsgeschäfte-Gesetz Distance and Off-Premises Contracts Act FPG Fremdenpolizeigesetz Aliens Police Act FSG Führerscheingesetz Driving Licence Act FinStrG Finanzstrafgesetz Fiscal Penal Act GSVG Gewerbliches Sozialversicherungsgesetz Social Insurance Act for the Self-Employed GewO Gewerbeordnung Trade Regulation Act GlBG Gleichbehandlungsgesetz Equal Treatment Act GmbHG GmbH-Gesetz Limited Liability Companies Act GrEStG Grunderwerbsteuergesetz Real Estate Transfer Tax Act IG-L Immissionsschutzgesetz-Luft Air Pollution Control Act IO Insolvenzordnung Insolvency Code KAKuG Krankenanstalten- und Kuranstaltengesetz Hospitals and Health Resorts Act KBGG Kinderbetreuungsgeldgesetz Childcare Allowance Act KFG Kraftfahrgesetz Motor Vehicles Act KJBG Kinder- und Jugendlichen-Beschäftigungsgesetz Children and Young Persons Employ-ment Act KSchG Konsumentenschutzgesetz Consumer Protection Act KStG Körperschaftsteuergesetz Corporate Income Tax Act KartG Kartellgesetz Cartel Act KommStG Kommunalsteuergesetz Municipal Tax Act MRG Mietrechtsgesetz Tenancy Act MSchG Markenschutzgesetz Trademark Act MeldeG Meldegesetz Residence Registration Act NAG Niederlassungs- und Aufenthaltsgesetz Settlement and Residence Act NoVAG Normverbrauchsabgabegesetz Standard Consumption Tax Act PSG Privatstiftungsgesetz Private Foundations Act PatG Patentgesetz Patent Act SH-GG Sozialhilfe-Grundsatzgesetz Social Assistance Basic Principles Act SMG Suchtmittelgesetz Narcotic Drugs Act SPG Sicherheitspolizeigesetz Security Police Act SchUG Schulunterrichtsgesetz School Education Act StGB Strafgesetzbuch Criminal Code StPO Strafprozessordnung Code of Criminal Procedure StVO Straßenverkehrsordnung Road Traffic Code StbG Staatsbürgerschaftsgesetz Citizenship Act TKG Telekommunikationsgesetz Telecommunications Act TSchG Tierschutzgesetz Animal Protection Act UG Universitätsgesetz Universities Act UGB Unternehmensgesetzbuch Enterprise Code UStG Umsatzsteuergesetz Value Added Tax Act UVP-G Umweltverträglichkeitsprüfungsgesetz Environmental Impact Assessment Act 
+
+34 Abbrev. German short title English gloss 
+
+UWG Gesetz gegen den unlauteren Wettbewerb Unfair Competition Act UrhG Urheberrechtsgesetz Copyright Act UrlG Urlaubsgesetz Annual Leave Act VKG Väter-Karenzgesetz Fathers’ Leave Act VStG Verwaltungsstrafgesetz Administrative Penal Act VbVG Verbandsverantwortlichkeitsgesetz Corporate Criminal Liability Act VerG Vereinsgesetz Associations Act VersG Versammlungsgesetz Assembly Act VersVG Versicherungsvertragsgesetz Insurance Contract Act VfGG Verfassungsgerichtshofgesetz Constitutional Court Act VwGG Verwaltungsgerichtshofgesetz Administrative Court Act VwGVG Verwaltungsgerichtsverfahrensgesetz Administrative Courts Procedure Act WEG Wohnungseigentumsgesetz Condominium Act WGG Wohnungsgemeinnützigkeitsgesetz Limited-Profit Housing Act WRG Wasserrechtsgesetz Water Rights Act WaffG Waffengesetz Weapons Act ZPO Zivilprozessordnung Code of Civil Procedure ZustG Zustellgesetz Service of Documents Act 
+
+# References 
+
+[1] Nachman Aronszajn. 1950. Theory of Reproducing Kernels. Trans. Amer. Math. Soc. 68, 3 (1950), 337–404. 
+
+https://doi.org/10.1090/S0002-9947-1950-0051437-7 
+
+[2] Christopher M. Bishop. 2006. Pattern Recognition and Machine Learning . Springer, New York. [3] Jianlyu Chen, Shitao Xiao, Peitian Zhang, Kun Luo, Defu Lian, and Zheng Liu. 2024. M3-Embedding: Multi-Linguality, Multi-Functionality, Multi-Granularity Text Embeddings Through Self-Knowledge Distillation. In 
+
+Findings of the Association for Computational Linguistics: ACL 2024 . Association for Computational Linguis-tics, Bangkok, Thailand, 2318–2335. https://doi.org/10.18653/v1/2024.findings-acl.137 
+
+[4] Scott Deerwester, Susan T. Dumais, George W. Furnas, Thomas K. Landauer, and Richard Harshman. 1990. Indexing by latent semantic analysis. Journal of the American Society for Information Science 41, 6 (1990), 391–407. https://doi.org/10.1002/(SICI)1097-4571(199009)41:6<391::AID-ASI1>3.0.CO;2-9 
+
+[5] Chenlong Deng, Kelong Mao, and Zhicheng Dou. 2024. Learning Interpretable Legal Case Retrieval via Knowledge-Guided Case Reformulation. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing . Association for Computational Linguistics, Miami, Florida, USA, 1253–1265. 
+
+https://doi.org/10.18653/v1/2024.emnlp-main.73 
+
+[6] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: Pre-training of Deep Bidirec-tional Transformers for Language Understanding. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) . 4171–4186. https://doi.org/10.18653/v1/N19-1423 
+
+[7] Matthijs Douze, Alexandr Guzhva, Chengqi Deng, Jeff Johnson, Gergely Szilvasy, Pierre-Emmanuel Mazaré, Maria Lomeli, Lucas Hosseini, and Hervé Jégou. 2024. The Faiss Library. arXiv preprint arXiv:2401.08281 
+
+(2024). https://doi.org/10.48550/arXiv.2401.08281 
+
+[8] Yi Feng, Chuanyi Li, and Vincent Ng. 2024. Legal Case Retrieval: A Survey of the State of the Art. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, Bangkok, Thailand, 6472–6485. 
+
+https://doi.org/10.18653/v1/2024.acl-long.350 
+
+[9] Thibault Formal, Benjamin Piwowarski, and Stéphane Clinchant. 2021. SPLADE: Sparse Lexical and Expansion Model for First Stage Ranking. In Proceedings of the 44th International ACM SIGIR Conference on Research and Development in Information Retrieval . Association for Computing Machinery, New York, NY, USA, 2288–2292. 
+
+https://doi.org/10.1145/3404835.3463098 
+
+35 [10] Cheng Gao, Chaojun Xiao, Zhenghao Liu, Huimin Chen, Zhiyuan Liu, and Maosong Sun. 2024. Enhancing Legal Case Retrieval via Scaling High-quality Synthetic Query-Candidate Pairs. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing . Association for Computational Linguistics. 
+
+https://doi.org/10.18653/v1/2024.emnlp-main.402 
+
+[11] Nathan Halko, Per-Gunnar Martinsson, and Joel A. Tropp. 2011. Finding Structure with Randomness: Proba-bilistic Algorithms for Constructing Approximate Matrix Decompositions. SIAM Rev. 53, 2 (2011), 217–288. 
+
+https://doi.org/10.1137/090771806 
+
+[12] Babak Hassibi, Ali H. Sayed, and Thomas Kailath. 1996. H∞ Optimality of the LMS Algorithm. IEEE Trans-actions on Signal Processing 44, 2 (1996), 267–280. https://doi.org/10.1109/78.485923 
+
+[13] Simon Haykin. 2014. Adaptive Filter Theory (5 ed.). Pearson. [14] Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. 2015. Distilling the Knowledge in a Neural Network. arXiv:1503.02531 [cs.LG] [15] Arthur E. Hoerl and Robert W. Kennard. 1970. Ridge Regression: Biased Estimation for Nonorthogonal Prob-lems. Technometrics 12, 1 (1970), 55–67. https://doi.org/10.1080/00401706.1970.10488634 
+
+[16] Thomas Hofmann, Bernhard Schölkopf, and Alexander J. Smola. 2008. Kernel Methods in Machine Learning. 
+
+The Annals of Statistics 36, 3 (2008), 1171–1220. https://doi.org/10.1214/009053607000000677 
+
+[17] Sebastian Hofstätter, Sheng-Chieh Lin, Jheng-Hong Yang, Jimmy Lin, and Allan Hanbury. 2021. Efficiently Teaching an Effective Dense Retriever with Balanced Topic Aware Sampling. In Proceedings of the 44th In-ternational ACM SIGIR Conference on Research and Development in Information Retrieval . Association for Computing Machinery, New York, NY, USA, 113–122. https://doi.org/10.1145/3404835.3462891 
+
+[18] intfloat. 2024. multilingual-e5-large . https://huggingface.co/intfloat/multilingual-e5-large 
+
+Hugging Face model card. [19] Gautier Izacard, Mathilde Caron, Lucas Hosseini, Sebastian Riedel, Piotr Bojanowski, Armand Joulin, and Edouard Grave. 2022. Unsupervised Dense Information Retrieval with Contrastive Learning. Transactions on Machine Learning Research (2022). https://openreview.net/forum?id=jKN1pXi7b0 
+
+[20] Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang, Xiao Chen, Linlin Li, Fang Wang, and Qun Liu. 2020. TinyBERT: Distilling BERT for Natural Language Understanding. In Findings of the Association for Computational Linguistics: EMNLP 2020 . Association for Computational Linguistics, Online, 4163–4174. 
+
+https://doi.org/10.18653/v1/2020.findings-emnlp.372 
+
+[21] Vladimir Karpukhin, Barlas Oguz, Sewon Min, Patrick Lewis, Ledell Wu, Sergey Edunov, Danqi Chen, and Wen-tau Yih. 2020. Dense Passage Retrieval for Open-Domain Question Answering. In Proceed-ings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP) . 6769–6781. 
+
+https://doi.org/10.18653/v1/2020.emnlp-main.550 
+
+[22] Omar Khattab and Matei Zaharia. 2020. ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT. In Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval . Association for Computing Machinery, New York, NY, USA, 39–48. 
+
+https://doi.org/10.1145/3397271.3401075 
+
+[23] Mohit Kumar, Mathias Brucker, Alexander Valentinitsch, Adnan Husakovic, Ali Abbas, Manuela Geiß, and Bernhard A. Moser. 2025. Operator-Theoretic Framework for Gradient-Free Federated Learning. 
+
+https://arxiv.org/abs/2512.01025 
+
+[24] Mohit Kumar, Bernhard A. Moser, and Lukas Fischer. 2024. On Mitigating the Utility-Loss in Differentially Private Learning: A New Perspective by a Geometrically Inspired Kernel Approach. Journal of Artificial Intelli-gence Research 79 (2024), 515–567. https://doi.org/10.1613/jair.1.15071 
+
+[25] Mohit Kumar, Alexander Valentinitsch, Magdalena Fuchs, Mathias Brucker, Juliana Bowles, Adnan Husakovic, Ali Abbas, and Bernhard A. Moser. 2025. Geometrically Inspired Kernel Machines for Collaborative Learning Beyond Gradient Descent. Journal of Artificial Intelligence Research 83 (July 2025), 35 pages. 
+
+https://doi.org/10.1613/jair.1.16821 
+
+36 [26] Aditya Kusupati, Gantavya Bhatt, Aniket Rege, Matthew Wallingford, Aditya Sinha, Vivek Ramanujan, William Howard-Snyder, Kaifeng Chen, Sham Kakade, Prateek Jain, and Ali Farhadi. 2022. Matryoshka Representation Learning. In Advances in Neural Information Processing Systems . https://arxiv.org/abs/2205.13147 
+
+[27] Chankyu Lee, Rajarshi Roy, Mengyao Xu, Jonathan Raiman, Mohammad Shoeybi, Bryan Catan-zaro, and Wei Ping. 2025. NV-Embed: Improved Techniques for Training LLMs as Gener-alist Embedding Models. In The Thirteenth International Conference on Learning Representations .
+
+https://openreview.net/forum?id=lgsyLSsDRe Spotlight. [28] Sean Lee, Aamir Shakir, Julius Lipp, and Darius Koenig. 2024. Open Source Gets DE-licious: Mixedbread x deepset German/English Embeddings .
+
+https://www.mixedbread.com/blog/deepset-mxbai-embed-de-large-v1 Mixedbread blog post. [29] Xianming Li and Jing Li. 2023. AnglE-optimized Text Embeddings. arXiv preprint arXiv:2309.12871 (2023). 
+
+https://doi.org/10.48550/arXiv.2309.12871 
+
+[30] J. MacQueen. 1967. Some Methods for Classification and Analysis of Multivariate Observations. In Proceedings of the Fifth Berkeley Symposium on Mathematical Statistics and Probability, Volume 1: Statistics . University of California Press, Berkeley, CA, 281–297. https://projecteuclid.org/euclid.bsmsp/1200512992 
+
+[31] Mixedbread and deepset. 2024. mixedbread-ai/deepset-mxbai-embed-de-large-v1 .
+
+https://huggingface.co/mixedbread-ai/deepset-mxbai-embed-de-large-v1 Hugging Face model card. [32] Niklas Muennighoff, Nouamane Tazi, Loic Magne, and Nils Reimers. 2023. MTEB: Massive Text Em-bedding Benchmark. In Proceedings of the 17th Conference of the European Chapter of the Association for Computational Linguistics . Association for Computational Linguistics, Dubrovnik, Croatia, 2014–2037. 
+
+https://doi.org/10.18653/v1/2023.eacl-main.148 
+
+[33] Jianmo Ni, Chen Qu, Jing Lu, Zhuyun Dai, Gustavo Hernández Ábrego, Vincent Y. Zhao, Yi Luan, Keith B. Hall, Ming-Wei Chang, and Yinfei Yang. 2022. Large Dual Encoders Are Generaliz-able Retrievers. In Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing . Association for Computational Linguistics, Abu Dhabi, United Arab Emirates, 9844–9855. 
+
+https://doi.org/10.18653/v1/2022.emnlp-main.669 
+
+[34] Nils Reimers and Iryna Gurevych. 2019. Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks. In Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP) . 3982–3992. 
+
+https://doi.org/10.18653/v1/D19-1410 
+
+[35] Republic of Austria. 2026. Legal Information System of the Republic of Austria (RIS) .
+
+https://www.ris.bka.gv.at/ Official portal for Austrian legal information. [36] David E. Rumelhart, Geoffrey E. Hinton, and Ronald J. Williams. 1986. Learning Representations by Back-Propagating Errors. Nature 323, 6088 (1986), 533–536. https://doi.org/10.1038/323533a0 
+
+[37] Tetsuya Sakai. 2006. Evaluating Evaluation Metrics Based on the Bootstrap. In Proceedings of the 29th Annual International ACM SIGIR Conference on Research and Development in Information Retrieval . Association for Computing Machinery, New York, NY, USA, 525–532. https://doi.org/10.1145/1148170.1148261 
+
+[38] Gerard Salton and Christopher Buckley. 1988. Term-weighting approaches in auto-matic text retrieval. Information Processing & Management 24, 5 (1988), 513–523. 
+
+https://doi.org/10.1016/0306-4573(88)90021-0 
+
+[39] Victor Sanh, Lysandre Debut, Julien Chaumond, and Thomas Wolf. 2019. DistilBERT, a Distilled Version of BERT: Smaller, Faster, Cheaper and Lighter. arXiv preprint arXiv:1910.01108 (2019). 
+
+https://doi.org/10.48550/arXiv.1910.01108 
+
+[40] Keshav Santhanam, Omar Khattab, Jon Saad-Falcon, Christopher Potts, and Matei Zaharia. 2022. Col-BERTv2: Effective and Efficient Retrieval via Lightweight Late Interaction. In Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies . Association for Computational Linguistics, Seattle, United States, 3715–3734. 
+
+https://doi.org/10.18653/v1/2022.naacl-main.272 
+
+37 [41] Ali H. Sayed. 2008. Adaptive Filters . Wiley, Hoboken, NJ. [42] Bernhard Schölkopf and Alexander J. Smola. 2002. Learning with Kernels: Support Vector Machines, Regular-ization, Optimization, and Beyond . MIT Press, Cambridge, MA. [43] Hongjin Su, Weijia Shi, Jungo Kasai, Yizhong Wang, Yushi Hu, Mari Ostendorf, Wen-tau Yih, Noah A. Smith, Luke Zettlemoyer, and Tao Yu. 2022. One Embedder, Any Task: Instruction-Finetuned Text Embeddings. arXiv preprint arXiv:2212.09741 (2022). https://doi.org/10.48550/arXiv.2212.09741 
+
+[44] Chongyang Tao, Chang Liu, Tao Shen, Can Xu, Xiubo Geng, Binxing Jiao, and Daxin Jiang. 2024. ADAM: Dense Retrieval Distillation with Adaptive Dark Examples. In Findings of the Association for Computa-tional Linguistics: ACL 2024 . Association for Computational Linguistics, Bangkok, Thailand, 11639–11651. 
+
+https://doi.org/10.18653/v1/2024.findings-acl.692 
+
+[45] Nandan Thakur, Nils Reimers, Andreas Rücklé, Abhishek Srivastava, and Iryna Gurevych. 2021. BEIR: A Heterogenous Benchmark for Zero-shot Evaluation of Information Retrieval Models. arXiv preprint arXiv:2104.08663 (2021). https://doi.org/10.48550/arXiv.2104.08663 
+
+[46] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention Is All You Need. In Advances in Neural Information Processing Systems ,Vol. 30. [47] Liang Wang, Nan Yang, Xiaolong Huang, Binxing Jiao, Linjun Yang, Daxin Jiang, Rangan Majumder, and Furu Wei. 2022. Text Embeddings by Weakly-Supervised Contrastive Pre-training. arXiv preprint arXiv:2212.03533 
+
+(2022). https://doi.org/10.48550/arXiv.2212.03533 
+
+[48] Liang Wang, Nan Yang, Xiaolong Huang, Linjun Yang, Rangan Majumder, and Furu Wei. 2024. Multilingual E5 Text Embeddings: A Technical Report. arXiv preprint arXiv:2402.05672 (2024). 
+
+https://doi.org/10.48550/arXiv.2402.05672 
+
+[49] Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi, Pierric Cistac, Tim Rault, Remi Louf, Morgan Funtowicz, Joe Davison, Sam Shleifer, Patrick von Platen, Clara Ma, Yacine Jer-nite, Julien Plu, Canwen Xu, Teven Le Scao, Sylvain Gugger, Mariama Drame, Quentin Lhoest, and Alexander Rush. 2020. Transformers: State-of-the-Art Natural Language Processing. In Proceedings of the 2020 Confer-ence on Empirical Methods in Natural Language Processing: System Demonstrations . Association for Compu-tational Linguistics, Online, 38–45. https://doi.org/10.18653/v1/2020.emnlp-demos.6 
+
+[50] Hansi Zeng, Hamed Zamani, and Vishwa Vinay. 2022. Curriculum Learning for Dense Retrieval Dis-tillation. In Proceedings of the 45th International ACM SIGIR Conference on Research and Develop-ment in Information Retrieval . Association for Computing Machinery, New York, NY, USA, 1979–1983. 
+
+https://doi.org/10.1145/3477495.3531791 
+
+[51] Lucia Zheng, Neel Guha, Javokhir Arifov, Sarah Zhang, Michal Skreta, Christopher D. Manning, Peter Hender-son, and Daniel E. Ho. 2025. A Reasoning-Focused Legal Retrieval Benchmark. In Proceedings of the 4th ACM Symposium on Computer Science and Law . https://doi.org/10.1145/3709025.3712219 
+
+38

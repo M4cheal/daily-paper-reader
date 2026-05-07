@@ -1,0 +1,906 @@
+Title: Chebyshev-Augmented One-Shot Transfer Learning for PINNs on Nonlinear Differential Equations
+
+URL Source: https://arxiv.org/pdf/2605.01634v1
+
+Published Time: Tue, 05 May 2026 01:02:43 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+Published as a conference paper at ICLR 2026 
+
+# CHEBYSHEV -A UGMENTED ONE -S HOT TRANSFER 
+
+# LEARNING FOR PINN S ON NONLINEAR DIFFEREN -
+
+# TIAL EQUATIONS 
+
+Yiqi Rao 
+
+Harvard University 
+
+herryrao@g.harvard.edu 
+
+Pavlos Protopapas 
+
+Harvard University 
+
+pprotopapas@g.harvard.edu 
+
+# ABSTRACT 
+
+Physics-Informed Neural Networks (PINNs) offer a flexible paradigm for solving differential equations by embedding governing laws into the training objective. A persistent limitation is instance specificity: standard PINNs typically require retraining for each new forcing term, boundary/initial condition, or parameter set-ting. One-shot transfer learning (OTL) addresses this bottleneck for linear oper-ators by freezing a pretrained latent representation and computing optimal output weights in closed form, but for nonlinear problems closed-form adaptation is gen-erally unavailable because the loss is nonconvex in the output layer. In this paper we substantially broaden the class of nonlinearities amenable to one-shot PINN transfer by combining OTL with Chebyshev polynomial surrogates. We approximate general smooth weakly nonlinear terms by truncated Chebyshev expansions over a prescribed solution range, yielding a polynomial nonlinearity that can be handled by a perturbative decomposition into linear subproblems. A multi-head PINN learns a reusable latent space associated with the dominant linear operator; at test time, solutions to new instances are obtained via a sequence of closed-form linear solves in the output layer, without retraining the network body. We provide a unified derivation of the framework for ODEs and PDEs and demon-strate accuracy and fast online adaptation on nonlinear benchmarks, including non-polynomial and singular ODE nonlinearities as well as a reaction–diffusion PDE with saturating kinetics, demonstrating the method’s utility in many-query regimes. 
+
+# 1 INTRODUCTION 
+
+PINNs have become a widely used tool for solving forward and inverse differential-equation prob-lems by minimizing residuals of the governing equations alongside boundary/initial conditions (La-garis et al., 1998; Raissi et al., 2019; Karniadakis et al., 2021; Desai et al., 2022). Despite their flexibility, a core drawback remains: they are typically trained separately for each problem instance. Even when two problems share the same operator but differ only in forcing or boundary data, stan-dard PINN approaches generally require a new optimization run, limiting their utility in many-query, real-time, or interactive settings where rapid adaptation is required. Transfer learning for PINNs aims to amortize training across a family of related problems. A par-ticularly strong form is one-shot transfer learning (OTL): for linear ODE/PDE families, a shared network body can be frozen and the output-layer weights computed in closed form, yielding fast adaptation with a single matrix inversion (Desai et al., 2022; Lei et al., 2023). However, the presence of nonlinear terms renders the optimization problem nonconvex in the output weights, precluding closed-form adaptation in general. A promising recent direction is to restore linear solvability via perturbative decomposition. For non-linearities that appear as a small polynomial perturbation, the nonlinear problem can be expressed as a sequence of linear subproblems whose right-hand sides depend on lower-order solutions (Lei et al., 2023; Auroy & Protopapas, 2025; Alexandrino et al., 2026). Each linear subproblem can then be 1
+
+> arXiv:2605.01634v1 [cs.LG] 2 May 2026
+
+Published as a conference paper at ICLR 2026 solved by one-shot weight updates. While effective, this framework is restricted to weak polynomial nonlinearities and to regimes where the perturbative expansion remains valid. In this work, we propose to relax the restrictive polynomial assumption by approximating weak nonlinear terms with truncated Chebyshev polynomial expansions (Trefethen, 2019; Boyd, 2001; Mason & Handscomb, 2002). This transforms a broad class of smooth nonlinearities into polynomial surrogates, enabling perturbative continuation and one-shot transfer learning. Concretely, we: • construct Chebyshev surrogates for general weak nonlinear terms, including non-polynomial response functions, over prescribed solution ranges; • derive a perturbative reduction into a sequence of linear subproblems, each solved via one-shot output-layer updates using a pretrained multi-head PINN body; • validate the proposed framework on nonlinear ODE and PDE benchmarks, demonstrating accuracy and fast online adaptation. The proposed method targets many-query regimes in which the dominant linear operator is fixed and nonlinear effects are moderate over bounded solution ranges. The remainder of the paper is organized as follows: Section 3 introduces the problem setting, Sec-tion 4 presents the Chebyshev-augmented one-shot framework, Section 5 reports experimental re-sults on nonlinear ODE and PDE benchmarks, Section 6 concludes with a discussion of limitations and future directions, and Section 7 concludes the work. 
+
+# 2 RELATED WORK 
+
+PINNs and failure modes. PINNs trace back to early neural-network solvers for differential equations (Lagaris et al., 1998) and have been popularized by modern autograd-based formula-tions (Raissi et al., 2019; Karniadakis et al., 2021). Known failure modes include spectral bias and poor extrapolation (Krishnapriyan et al., 2021; Xu et al., 2019), motivating improved architectures, sampling, and training strategies. 
+
+Multi-instance training and transfer. Bundle-style and multi-head training amortize computa-tion by training on multiple instances simultaneously (Flamant et al., 2020; Zou & Karniadakis, 2023). One-shot transfer learning for linear families provides closed-form adaptation by reducing inference to a least-squares solve in the output layer (Desai et al., 2022). Operator-learning meth-ods such as DeepONet and Fourier/Neural Operators provide alternative amortization mechanisms, learning maps between function spaces (Lu et al., 2021; Li et al., 2021; Kovachki et al., 2023). Un-like operator-learning approaches, which aim to learn mappings between function spaces, one-shot transfer methods retain explicit equation structure and target fast adaptation under a fixed operator. 
+
+Perturbative PINNs for nonlinear problems. Perturbative OTL frameworks recover closed-form adaptation for certain nonlinear ODEs/PDEs by expanding solutions in a small parameter and solv-ing a sequence of linear problems (Lei et al., 2023; Auroy & Protopapas, 2025; Alexandrino et al., 2026). Our method retains the one-shot adaptation principle but uses Chebyshev approximation to broaden the nonlinearity class beyond polynomials. 
+
+Chebyshev approximation and spectral methods. Chebyshev polynomials provide near-minimax polynomial approximations with strong error guarantees for smooth analytic functions and form the backbone of many spectral methods (Trefethen, 2019; Boyd, 2001). We leverage these approximation properties not for discretization, but to construct polynomial surrogates that make nonlinear one-shot transfer tractable. 
+
+# 3 PROBLEM SETTING 
+
+We study one-shot transfer for families of weak nonlinear differential equations in a perturbative regime, targeting many-query settings. Here, a query refers to solving the same differential oper-ator under new forcing terms, boundary conditions, or parameters. Let s denote the independent 2Published as a conference paper at ICLR 2026 variables: s = t for ODEs and s = ( x, t ) for PDEs, where x ∈ Ωx ⊂ Rd and t ∈ [0 , T ]. We write Ω = Ω x × [0 , T ] for space–time (with Ω = [0 , T ] in the ODE case) and ∂Ω for the collec-tion of boundary/initial sets. For clarity we present a scalar unknown u : Ω → R; extensions to vector-valued systems follow component-wise without conceptual changes. We consider equation families of the form 
+
+Du(s) + ε N u(s) = f (s; η), s ∈ Ω, (1) subject to initial/boundary constraints 
+
+Bu(s) = b(s; η), s ∈ ∂Ω, (2) where D is a fixed linear differential operator that defines the dominant dynamics and is shared across the family, N is a pointwise nonlinearity which may be non-polynomial, B collects the bound-ary/initial operators (Dirichlet/Neumann and initial conditions), and η indexes instance-dependent inputs such as forcing terms and boundary/initial data. The scalar ε plays the role of a perturbation strength parameter. In some applications, ε is a phys-ical coefficient already present in the model. When the original equation does not include such a multiplier, we treat ε as a formal homotopy parameter; we solve the family Du + ε N (u) = f and evaluate the approximation. Equivalently, when admissible, one may induce a small effective ε by rescaling the unknown and/or coefficients so that the nonlinear contribution is moderate over the solution regime of interest. Our objective is to design a method with a clear offline/online split. Offline, we train once to learn a latent representation associated with the linear operator D from a bundle of linear tasks. Online, for each new nonlinear instance equation 1–equation 2 (i.e., each new query), we compute an approxi-mation of u without retraining the network body or modifying the learned latent representation. The online computation should reduce to a small number of closed-form linear solves in the output layer (one-shot transfer), rather than iterative gradient-based optimization. 
+
+# 4 METHOD 
+
+4.1 OVERVIEW 
+
+As described above, our framework follows a clear offline/online split: we learn an operator-aware representation offline once, then solve new nonlinear instances online via a small number of closed-form output-layer updates. In the offline stage, we train a multi-head PINN on a bundle of linear tasks that share the same linear operator D. This learns a shared feature map H(s) ∈ Rh (the network body), which captures operator-dependent structure. After training, we freeze H. With H fixed, any linear instance 
+
+Du = g, Bu = h
+
+can be solved by a convex least-squares solve over the output-layer weights. The corresponding system matrix used in the fit depends only on D and B, so it can be assembled and factorized once and reused across all the linear tasks. In the online stage, given a nonlinear instance equation 1–equation 2 (i.e., a new query), we first ap-proximate the pointwise nonlinearity N (u) by a truncated Chebyshev expansion over a prescribed solution range u ∈ [umin , u max ]. This produces a surrogate map Nm(u) represented in the Cheby-shev basis whose coefficients are computed by Gauss–Chebyshev quadrature and whose evaluation uses the standard three-term recurrence (details in Appendix A.1.1). We then construct a truncated perturbation expansion in ε, u(s; ε) ≈ Ppj=0 εj uj (s), substitute it into the surrogate equation Du + εNm(u) = f , and match powers of ε. This yields p + 1 linear subprob-lems sharing the operator D; the right-hand side at order j depends only on the previously computed lower-order terms {u0, . . . , u j−1}. We impose evenly-splitted boundary/initial constraints on every order, so that the truncated series satisfies the original boundary/initial constraints up to truncation error. Each linear subproblem is then solved by one-shot adaptation using the frozen feature map 
+
+H.3Published as a conference paper at ICLR 2026 Section 4.2 states the Chebyshev surrogate used in the online stage, and Section 4.3 presents the resulting perturbative linear recursion. Section 4.4 describes the multi-head pretraining procedure used to learn a reusable operator-aware feature map for D, while Section 4.5 presents the closed-form one-shot update that computes output weights. Finally, Section 4.6 summarizes the complete online pipeline for solving nonlinear instances by sequential one-shot solves across perturbation orders and reconstructing u from the truncated series. 4.2 CHEBYSHEV SURROGATE 
+
+The goal of this step is to replace a general nonlinear term by a polynomial surrogate on a bounded solution range, enabling perturbative decomposition and closed-form adaptation in later stages. We approximate the pointwise nonlinearity N (u) by a truncated Chebyshev series on a prescribed range u ∈ [umin , u max ] by mapping u affinely to ξ ∈ [−1, 1] and expanding in Chebyshev polyno-mials of the first kind. Concretely, we use the surrogate 
+
+N (u) ≈ N m(u) := 
+
+> m
+
+X
+
+> ℓ=0
+
+cℓ Tℓ(Φ( u)) , (3) where Φ : [ umin , u max ] → [−1, 1] is the standard affine map. The coefficients {cℓ} are computed by weighted Chebyshev projections, approximated in practice by Gauss–Chebyshev quadrature; eval-uation uses the standard three-term recurrence. Full details of the affine map, coefficient formulas, quadrature rules, and stable evaluation are provided in Appendix A.1.1. 4.3 PERTURBATIVE EXPANSION AND LINEAR SUBPROBLEM RECURSION 
+
+We solve the surrogate problem obtained by replacing N with Nm in equation 1: 
+
+Du(s) + ε Nm
+
+ u(s) = f (s; η), Bu = b(·; η). (4) We seek a truncated series in the same perturbation parameter ε, which we treat as small in the regime of interest, of the form 
+
+u(s; ε) ≈
+
+> p
+
+X
+
+> j=0
+
+εj uj (s). (5) Substituting equation 5 into equation 4 requires expanding Nm(u(s; ε)) in powers of ε. To preserve numerical stability, we perform this expansion directly in the Chebyshev basis using a Chebyshev recurrence lifted to truncated ε-series; the explicit forcing construction is given in Appendix A.1.2. Matching powers of ε yields a sequence of linear problems with shared operator D:
+
+Du0(s) = f (s; η), Bu0 = b0(·; η), (6) 
+
+Duj (s) = −G j−1(s), Buj = bj (·; η), j = 1 , . . . , p. (7) Here, the boundary/initial data {bj } are chosen so that the truncated series Ppj=0 εj uj satisfies the original constraints up to truncation error, for example by evenly splitting the constraints across orders. Thus the nonlinear problem reduces to p + 1 linear subproblems governed by the same operator D. Each linear solve in equation 6–equation 7 is carried out by one-shot adaptation with the frozen feature map H (Section 4.5). 4.4 MULTI -HEAD PRETRAINING ON LINEAR BUNDLES 
+
+All subproblems in equation 6–equation 7 share the same dominant linear operator D, so we learn a reusable feature map only once. This offline training cost is amortized across all subsequent linear solves. We parameterize the solution with a shared network body Hθ (s) and K linear heads. A clear il-lustration of the multi-head architecture is shown in Appendix A.1.3 (Figure 4). The shared body is intended to capture operator-specific structure common to all tasks, while the heads account for task-specific forcing and boundary data. In settings where the linear part contains higher-order 4Published as a conference paper at ICLR 2026 derivatives, we use the standard first-order reformulation with auxiliary variables (details and an example are given in Appendix A.1.3). In the PDE case, it is convenient to view the frozen feature map as a matrix Hθ (s) ∈ R2×h whose rows correspond to the two components of the first-order state. Each head uses a single weight vector Wk ∈ Rh that is shared across the components of the state vector, ensuring a consistent linear combination of the feature map for both the primary and auxiliary variables. 
+
+ˆu(k)(s) = Hθ (s) Wk, i.e., ˆu(k)(s) = Hθ,u (s)⊤Wk, ˆy(k)(s) = Hθ,y (s)⊤Wk, k = 1 , . . . , K. 
+
+(8) We train the shared parameters θ and all head weights {Wk}Kk=1 by minimizing a weighted sum of physics-informed residual losses and constraint losses (and an optional data loss when manufac-tured solutions are available). The explicit task specification and loss definitions are provided in Appendix A.1.3. 4.5 ONE -SHOT HEAD SOLVE FOR ANY LINEAR SUBPROBLEM 
+
+With the feature map H(s) = Hθ (s) frozen, each linear subproblem sharing D is solved by opti-mizing only the output weights, following the one-shot transfer construction in (Desai et al., 2022) and its perturbative extensions (Lei et al., 2023; Auroy & Protopapas, 2025). We approximate the state by 
+
+ˆu(s) = H(s)W, 
+
+in particular the primary field is ˆu(s) = Hu(s)⊤W .Let {sn}Nr 
+
+> n=1
+
+⊂ Ω and {¯sn}Nb 
+
+> n=1
+
+⊂ ∂Ω be the fixed interior and constraint sampling sets. These sampling sets are shared across all linear subproblems and perturbation orders. Let Ar denote the stacked matrix collecting (DH)( sn) over interior points, and let Ab denote the stacked ma-trix collecting (BHu)(¯ sn)⊤ over constraint points; explicit stacking and dimensions are given in Appendix A.1.4. The corresponding targets are stacked as 
+
+f ∗ := f ∗(sn)Nr
+
+> n=1
+
+, b∗ := b∗(¯ sn)Nb
+
+> n=1
+
+.
+
+These targets encode the forcing and constraint data for the specific linear instance being solved. The one-shot head is obtained by minimizing the same quadratic objective used in training (with θ
+
+fixed): 
+
+min 
+
+> W
+
+wpde 
+
+Nr
+
+Ar W − f ∗ 22 + wbc 
+
+Nb
+
+AbW − b∗ 22. (9) This objective is convex in W and admits a unique solution under standard full-rank conditions; thus we have the closed-form update 
+
+W ∗ = M−1q∗, (10) with 
+
+M = wpde 
+
+Nr
+
+A⊤ 
+
+> r
+
+Ar + wbc 
+
+Nb
+
+A⊤ 
+
+> b
+
+Ab, q∗ = wpde 
+
+Nr
+
+A⊤ 
+
+> r
+
+f ∗ + wbc 
+
+Nb
+
+A⊤ 
+
+> b
+
+b∗. (11) For fixed D, B, frozen H, and fixed sampling sets, M is constant across instances and across per-turbation orders. Consequently, M depends only on the linear operator, the constraint type, and the sampling strategy. Hence M−1 can be precomputed once and reused, and each new linear solve reduces to constructing q∗. This reuse is the key to achieving fast online adaptation in many-query settings. 4.6 ONLINE SOLVE FOR NONLINEAR INSTANCES 
+
+Given a nonlinear instance equation 1–equation 2, the online stage performs a sequence of one-shot linear solves while keeping the pretrained feature map H fixed. No gradient-based retraining is performed in the online stage. We first select a working range [umin , u max ] and construct the Chebyshev surrogate Nm as in Section 4.2. We then compute the perturbation coefficients {uj }pj=0 
+
+by solving the linear subproblems equation 6–equation 7 sequentially. For each order j, the linear subproblem provides an interior forcing gj (s) (with g0 = f and, for j ≥
+
+1, gj determined by the Chebyshev-based forcing construction in Appendix A.1.2) and a constraint 5Published as a conference paper at ICLR 2026 target bj consistent with the constraint splitting used in equation 6–equation 7. Both the forcing and constraint targets are assembled deterministically from previously computed lower-order solutions. In the first-order PDE example (Appendix A.1.3), we lift the scalar forcing to a vector target by 
+
+f (j)(s) = 
+
+gj (s)0
+
+
+
+,
+
+and apply the constraint operator only to the primary component uj . With the fixed matrices Ar , Ab
+
+(Appendix A.1.4), we form the corresponding stacked targets f (j) and b(j), assemble q(j) from equation 11, and compute the head in closed form: 
+
+Wj = M−1q(j), j = 0 , 1, . . . , p. (12) Since M−1 is reused, the cost of each order-j solve is dominated by forming the right-hand side q(j).The order-j solutions are then given by the primary-component reconstruction uj (s) = Hu(s)⊤Wj ,and the final approximation is 
+
+u(s; ε) = 
+
+> p
+
+X
+
+> j=0
+
+εj uj (s) = 
+
+> p
+
+X
+
+> j=0
+
+εj Hu(s)⊤Wj . (13) This reconstruction completes the online solve for a nonlinear query using only closed-form linear algebra operations. 4.7 ALGORITHMIC SUMMARY 
+
+An algorithmic summary of the offline/online pipeline is provided in Appendix A.1.5. 
+
+# 5 RESULTS 
+
+We evaluate the proposed Chebyshev-augmented one-shot perturbative PINN on three nonlinear benchmarks: two second-order ODEs with pointwise nonlinearities and one reaction–diffusion PDE with a rational reaction term. The goal of these experiments is to assess accuracy and online effi-ciency under one-shot nonlinear transfer. And to demonstrate the efficiency, we compare the runtime of our method with a regular baseline where we freeze the pretrained feature map and retrains only the linear heads via gradient descent at test time. All experiments follow the offline/online workflow described in Section 4. We report mean squared error (MSE) metrics and time per online solve; full implementation details, architectures, sampling, metric definitions, timing protocol, baseline training settings, and ablation results are provided in Appendix A.2 and Appendix A.3. 5.1 BENCHMARKS AND EVALUATION SETUP 
+
+ODE benchmarks. We consider the following families on t ∈ [0 , 5] :
+
+ODE1: u′′ (t) + δ u ′(t) + α u (t) + ε cos  u(t) = β cos( ωt ), (14) 
+
+ODE2: u′′ (t) + δ u ′(t) + α u (t) + ε u (t)−2 = γ − e−t. (15) ODE1 tests the ability of the surrogate-and-perturbation pipeline to handle a smooth non-polynomial nonlinearity cos( u), which cannot be represented exactly by finite polynomial perturbations, while ODE2 probes a more challenging singular nonlinearity u−2 (the test distribution is chosen to keep trajectories away from u = 0 ; see Appendix A.2). 
+
+PDE benchmark. On Ω = [0 , 1] × [0 , 1] , we consider 
+
+PDE1: ut(x, t ) = D u xx (x, t ) + ε
+
+ u(x, t )
+
+u(x, t ) + 1 − δ u (x, t )
+
+
+
++ f (x, t ), (16) with constant boundary/initial conditions and a forcing term f derived from manufactured solutions. This benchmark targets a reaction–diffusion regime where the dominant linear operator is parabolic and the nonlinear reaction term is rational in u.6Published as a conference paper at ICLR 2026 
+
+Baseline: head retraining. In addition to our closed-form one-shot online solve, we consider a baseline that preserves the same pretrained feature map but replaces the closed-form head compu-tation with iterative optimization. Specifically, we freeze the shared body Hθ learned in the offline stage and optimize only the linear head W for the target nonlinear instance using gradient descent on the same objective function. Training hyperparameters and settings are reported in Appendix A.2.7. 
+
+What is measured. For ODE1–ODE2, we report the mean squared equation residual evaluated on a uniform grid of 100 time points and averaged across 100 test instances. For PDE1, we report the mean squared error against the manufactured truth on a fixed 61 ×61 evaluation grid, averaged across 
+
+32 test instances. All reported online times exclude offline training and the one-time precomputation of M−1 and reflect only the per-query cost of the online stage (Appendix A.2.6). For the baseline, we report the wall-clock time to reach a prescribed error threshold (early stopping). Specifically, we stop learning once the mean squared error falls below τ ∈ { 5 × 10 −4, 5 × 10 −3, 10 −2} respectively for each benchmark and record the average time of the runs that successfully reach the threshold. 5.2 SUMMARY 
+
+Table 1 summarizes the main quantitative outcomes across all three benchmarks, including the on-line settings used (nonlinearity strength ε, perturbation order p, Chebyshev degree m, and quadra-ture size M ). Across all cases, the online stage consists of sequential one-shot solves across orders 
+
+{uj }pj=0 with a fixed pretrained feature map and a task-invariant inverse M−1.Table 1: Summary results of our method on all the systems investigated. Training with a small number of heads is sufficient to enable accurate one-shot transfer to unseen nonlinear instances within the prescribed regime. All times are reported for runs on a CPU.                                              
+
+> Benchmark Nonlinearity Online (ε, p, m, M )MSE Online time (s) Baseline time (s)
+> ODE1 cos( u)(0 .5,12 ,20 ,1000) 3.83 ×10 −69.63 ×10 −28.86
+> ODE2 u−2(0 .1,12 ,20 ,1000) 5.31 ×10 −57.85 ×10 −224 .95
+> PDE1 uu+1 −δu (0 .5,20 ,30 ,1000) 7.12 ×10 −59.61 ×10 −2221 .58
+
+5.3 ODE1 RESULTS : COSINE NONLINEARITY 
+
+Using the configuration in Table 1, ODE1 achieves a mean equation-residual MSE of 3.83 × 10 −6
+
+across 100 test instances, while retaining 9.63 × 10 −2s online time per instance. Beyond residual metrics, we compare the reconstructed series solution against a numerical reference solver (RK45). As shown in Figure 1 (left), the one-shot transfer prediction closely tracks the numerical trajectories despite being obtained without any gradient-based retraining at test time for a subset of test instances. To visualize the agreement over time, Figure 1 (right) plots the mean discrepancy 
+
+∆( t) := 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+
+
+u(i)TL (t) − u(i)ref (t)
+
+
+
+,
+
+computed over the test suite on the same uniform grid. The discrepancy remains small throughout 
+
+[0 , 5] , indicating that the online surrogate-and-perturbation recursion yields a stable reconstruction over the time interval. 7Published as a conference paper at ICLR 2026 
+
+Figure 1: ODE1 equation 14. Left: overlay of one-shot transfer predictions uTL (t) (solid) and numerical reference solutions uref (t) (dashed) for a representative subset of test instances. Right: 
+
+mean solution discrepancy over the same subset of test instances (red line indicates ∆( t) = 0 ). 5.4 ODE2 RESULTS : INVERSE -SQUARE NONLINEARITY 
+
+ODE2 is more sensitive due to the inverse-square term u−2, which can amplify errors if trajectories approach u = 0 . Under the configuration in Table 1, the method attains a mean equation-residual MSE of 5.31 × 10 −5 across 100 instances with an average online time of 7.85 × 10 −2 seconds per solve. Despite the increased difficulty, and the potential amplification of approximation errors near singularities, the trajectory overlays in Figure 2 (left) show that the one-shot transfer solutions remain in close agreement with the numerical references across the interval. Figure 2 (right) reports the mean discrepancy ∆( t) as in ODE1. The discrepancy remains small in magnitude relative to the solution scale in Figure 2 (left), supporting the feasibility of the Chebyshev surrogate combined with one-shot perturbative solves in this regime. 
+
+Figure 2: ODE2 equation 15. Left: overlay of one-shot transfer predictions uTL (t) (solid) and numerical reference solutions uref (t) (dashed) for a representative subset of test instances. Right: 
+
+mean solution discrepancy over the same subset of test instances (red line indicates ∆( t) = 0 ). 5.5 PDE1 RESULTS : REACTION –DIFFUSION WITH MANUFACTURED FORCING 
+
+For PDE1, the forcing term f (x, t ) is constructed from manufactured solutions, enabling direct evaluation of solution error on a fixed grid. Using the configuration in Table 1, the method achieves an average solution MSE of 7.12 × 10 −5 on a 61 × 61 evaluation grid, with an average online time of 9.61 × 10 −2 seconds per solve. 8Published as a conference paper at ICLR 2026 Figure 3 visualizes a representative prediction. The left panel shows the predicted field uTL (x, t ),while the right panel reports the pointwise squared error  uTL (x, t ) − utrue (x, t )2. The error remains small over most of the domain, with localized increases near the boundary regions in this instance. These boundary-localized errors are consistent with truncation effects in the perturbative reconstruction and finite Chebyshev approximation. 
+
+Figure 3: PDE1 equation 16. Left: predicted field uTL (x, t ) on the [0 , 1] ×[0 , 1] space–time domain. 
+
+Right: pointwise squared error  uTL (x, t ) − utrue (x, t )2 against the manufactured solution on the same grid. 5.6 BRIEF DISCUSSION 
+
+Across all three benchmarks, the proposed method achieves low MSE with relatively short online solve times per instance. ODE1 demonstrates strong agreement for a smooth bounded nonlinearity, while ODE2 highlights that the approach remains effective for a singular inverse-power term under a small-nonlinearity regime. PDE1 confirms that the same offline/online pipeline transfers to a spatiotemporal parabolic operator with a rational reaction term, yielding accurate reconstructions against a manufactured ground truth. In addition, we notice that the conventional gradient descent baseline is substantially slower at test time even though it freezes the same pretrained feature map and optimizes only the final linear head. This is orders of magnitude larger than the O(10 −1)s per-instance online cost of our one-shot solves in Table 1. Moreover, the baseline is less reliable across instances and can fail to reach comparable accuracy without many iterations, highlighting both the efficiency and robustness benefits of the proposed online adaptation framework. Taken together, these results demonstrate that Chebyshev surrogates can effectively extend one-shot perturbative PINNs beyond polynomial nonlinearities while retaining fast online adaptation. To quantify sensitivity to key online hyperparameters, we perform ablation studies over perturbative strength ε, perturbation order p, and Chebyshev degree m for ODE1 and PDE1 in Appendix A.3. We also report training and optimization settings for the baseline in Appendix A.2.7. 
+
+# 6 DISCUSSION 
+
+Our framework inherits the strengths of one-shot transfer for linear operators: fast inference and reusability of latent features (Desai et al., 2022). Meanwhile, it extends applicability to a broad class of nonlinearities via Chebyshev surrogates. This combination enables efficient many-query adaptation while preserving explicit equation structure. 
+
+Limitations. The method is not a universal replacement for operator learning. When nonlinearities are very strong, solutions leave bounded ranges, or chaotic behaviors develop, surrogate polynomials may require high degree or piecewise treatment, and the perturbation sequence may become unsta-ble. In such regimes, full operator-learning approaches or instance-specific PINN training strategies may be more appropriate. 9Published as a conference paper at ICLR 2026 
+
+# 7 CONCLUSION 
+
+We presented a Chebyshev-augmented framework for one-shot transfer learning in PINNs applied to nonlinear ODEs and PDEs. By approximating general nonlinear terms with Chebyshev polyno-mials and coupling this surrogate with a perturbative expansion, we reduce a nonlinear problem to a sequence of linear subproblems, each solvable by closed-form output-layer updates in a pretrained latent space. This construction preserves the efficiency and reusability of one-shot transfer while extending its applicability beyond polynomial nonlinearities. The resulting method targets many-query settings, offering fast adaptation across new forcing terms and boundary/initial conditions without retraining network bodies or modifying the learned feature representation. This framework is particularly relevant for practitioners who seek to rapidly obtain approximate solutions to differential equations with the same dominant operator but under varying initial/boundary conditions, forcings, or coefficients. To our knowledge, this is the first framework that combines Chebyshev approximation with one-shot perturbative PINNs to enable closed-form nonlinear adaptation beyond polynomial nonlinearities. Future directions include adaptive or piecewise Chebyshev surrogates to extend the perturbative regime, integration with data-rich or high-dimensional settings, and further optimization of the on-line pipeline for large-scale many-query applications. DECLARATION OF AI USAGE 
+
+The authors used ChatGPT to assist with language refinement to improve readability and wording. The tool was not used to generate experimental results or to formulate mathematical arguments. All equations, derivations, and interpretations were critically reviewed by the authors, and the authors take full responsibility for the contents of the work. 
+
+# REFERENCES 
+
+Duarte Alexandrino, Ben Moseley, and Pavlos Protopapas. Ptl-pinns: Perturbation-guided trans-fer learning with physics-informed neural networks for nonlinear systems. arXiv preprint arXiv:2601.12093 , 2026. Samuel Auroy and Pavlos Protopapas. One-shot transfer learning for nonlinear pdes with per-turbative pinns. In Machine Learning and the Physical Sciences Workshop (NeurIPS) , 2025. arXiv:2511.11137. John P. Boyd. Chebyshev and Fourier Spectral Methods . Dover, 2001. Shaan Desai, Marios Mattheakis, Hayden Joy, Pavlos Protopapas, and Stephen Roberts. One-shot transfer learning of physics-informed neural networks. arXiv preprint arXiv:2110.11286 , 2022. Cedric Flamant, Pavlos Protopapas, and David Sondak. Solving differential equations using neural network solution bundles. arXiv preprint arXiv:2006.14372 , 2020. George Em Karniadakis, Ioannis G Kevrekidis, Lu Lu, Paris Perdikaris, Sifan Wang, and Liu Yang. Physics-informed machine learning. Nature Reviews Physics , 3(6):422–440, 2021. Nikola Kovachki, Zongyi Li, Burigede Liu, Kamyar Azizzadenesheli, Kaushik Bhattacharya, An-drew Stuart, and Anima Anandkumar. Neural operator: Learning maps between function spaces with applications to PDEs. Journal of Machine Learning Research , 2023. Aditi S. Krishnapriyan, Amir Gholami, Shandian Zhe, Robert M. Kirby, and Michael W. Mahoney. Characterizing possible failure modes in physics-informed neural networks. In NeurIPS , 2021. I. E. Lagaris, A. Likas, and D. I. Fotiadis. Artificial neural networks for solving ordinary and partial differential equations. IEEE Transactions on Neural Networks , 9(5):987–1000, 1998. Wanzhou Lei, Pavlos Protopapas, and Joy Parikh. One-shot transfer learning for nonlinear odes. 
+
+arXiv preprint arXiv:2311.14931 , 2023. 10 Published as a conference paper at ICLR 2026 Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya, An-drew Stuart, and Anima Anandkumar. Fourier neural operator for parametric partial differential equations. arXiv preprint arXiv:2010.08895 , 2021. Lu Lu, Pengzhan Jin, Guofei Pang, Zhongqiang Zhang, and George Em Karniadakis. Learning nonlinear operators via DeepONet based on the universal approximation theorem of operators. 
+
+Nature Machine Intelligence , 3(3):218–229, 2021. John C. Mason and David C. Handscomb. Chebyshev Polynomials . Chapman and Hall/CRC, 2002. Maziar Raissi, Paris Perdikaris, and George Em Karniadakis. Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations. Journal of Computational Physics , 378:686–707, 2019. Lloyd N. Trefethen. Approximation Theory and Approximation Practice . SIAM, 2 edition, 2019. Zhi-Qin John Xu, Yaoyu Zhang, and Yanyang Xiao. Training behavior of deep neural network in frequency domain. arXiv preprint arXiv:1807.01251 , 2019. Zongren Zou and George Em Karniadakis. L-hydra: Multi-head physics-informed neural networks. 
+
+arXiv preprint arXiv:2301.02152 , 2023. 
+
+# A APPENDIX 
+
+The code has been made publicly available on: https://github.com/ryqherry/ Cheby-PINNs .A.1 ADDITIONAL METHOD DETAILS 
+
+A.1.1 CHEBYSHEV SURROGATE CONSTRUCTION VIA GAUSS –C HEBYSHEV QUADRATURE 
+
+The goal of this step is to replace a general nonlinear term by a polynomial surrogate on a bounded solution range, enabling perturbative decomposition and closed-form adaptation in later stages. We approximate the pointwise nonlinearity N (u) by a truncated Chebyshev series on a prescribed range u ∈ [umin , u max ]. Define the affine map Φ : [ umin , u max ] → [−1, 1] by 
+
+ξ = Φ( u) := 2u − (umax + umin )
+
+umax − umin 
+
+, u = Φ −1(ξ) = umax − umin 
+
+2 ξ + umax + umin 
+
+2 . (17) Let ˜N (ξ) := N (Φ −1(ξ)) .We employ Chebyshev polynomials of the first kind {Tℓ}ℓ≥0 defined by the three-term recurrence 
+
+T0(ξ) = 1 , T1(ξ) = ξ, Tℓ+1 (ξ) = 2 ξ T ℓ(ξ) − Tℓ−1(ξ), ℓ ≥ 1. (18) In the main paper we use the truncated surrogate N (u) ≈ N m(u) defined in equation 3. The coefficients are given by weighted Chebyshev projections: 
+
+c0 = 1
+
+π
+
+Z 1
+
+> −1
+
+˜N (ξ)
+
+p1 − ξ2 dξ, (19) 
+
+cℓ = 2
+
+π
+
+Z 1
+
+> −1
+
+˜N (ξ) Tℓ(ξ)
+
+p1 − ξ2 dξ, ℓ ≥ 1. (20) We approximate equation 19–equation 20 using Gauss–Chebyshev quadrature (first kind). With M
+
+quadrature nodes ξj = cos θj and θj = (2 j−1) π 
+
+> 2M
+
+, j = 1 , . . . , M , we use 
+
+c0 ≈ 1
+
+M
+
+> M
+
+X
+
+> j=1
+
+˜N (ξj ), (21) 
+
+cℓ ≈ 2
+
+M
+
+> M
+
+X
+
+> j=1
+
+˜N (ξj ) Tℓ(ξj ), ℓ ≥ 1. (22) 11 Published as a conference paper at ICLR 2026 In implementation, for each node ξj we compute {Tℓ(ξj )}mℓ=0 by iterating equation 18. We choose 
+
+M sufficiently large to reduce numerical error when ˜N varies rapidly near ξ = ±1.Given coefficients {cℓ}, evaluation of Nm(u) at a point proceeds by computing ξ = Φ( u), gen-erating {Tℓ(ξ)}mℓ=0 via equation 18, and forming the sum in equation 3. We keep the Chebyshev representation throughout; in particular, we do not require any conversion to a monomial basis to carry out the perturbative recursion below. A.1.2 PERTURBATIVE EXPANSION AND LINEAR SUBPROBLEM RECURSION 
+
+Substituting the truncated series ansatz equation 5 into the surrogate problem equation 4 requires expanding Nm(u(s; ε)) in powers of ε. To preserve numerical stability, we perform this expansion directly in the Chebyshev basis. Let ξ(s; ε) := Φ( u(s; ε)) . Since Φ is affine, 
+
+ξ(s; ε) = ξ0(s) + 
+
+> p
+
+X
+
+> j=1
+
+εj ξj (s), ξ0(s) = Φ( u0(s)) , ξj (s) = α u j (s) ( j ≥ 1) , (23) where α = 2 
+
+> umax −umin
+
+.For each ℓ, define coefficients τℓ,j (s) by the truncated series 
+
+Tℓ
+
+ ξ(s; ε) =
+
+> p
+
+X
+
+> j=0
+
+εj τℓ,j (s) + O(εp+1 ). (24) That is, τℓ,j (s) denotes the coefficient of εj in the expansion of Tℓ(ξ(s; ε)) . We compute {τℓ,j }
+
+using the Chebyshev recurrence lifted to ε-series. Initialize 
+
+τ0,0 = 1 , τ0,j = 0 ( j ≥ 1) , τ1,j = ξj , j = 0 , 1, . . . , p, (25) and for ℓ ≥ 1 define 
+
+τℓ+1 ,j = 2 
+
+> j
+
+X
+
+> k=0
+
+ξk τℓ,j −k − τℓ−1,j , j = 0 , 1, . . . , p, (26) where the sum Pjk=0 ξk τℓ,j −k is the coefficient of εj in the product ξ(s; ε) Tℓ(ξ(s; ε)) for the recur-rence. This follows from the Cauchy product of truncated ε-series. That is, multiplying the truncated 
+
+ε-series ξ(s; ε) = Ppk=0 εkξk(s) and Tℓ(ξ(s; ε)) = Ppr=0 εr τℓ,r (s) yields the coefficient 
+
+[εj ] ξ T ℓ =
+
+> j
+
+X
+
+> k=0
+
+ξk τℓ,j −k.
+
+Using equation 3 and equation 24, the surrogate nonlinearity expands as 
+
+Nm(u(s; ε)) = 
+
+> m
+
+X
+
+> ℓ=0
+
+cℓ Tℓ
+
+ ξ(s; ε) =
+
+> p
+
+X
+
+> j=0
+
+εj Gj (s) + O(εp+1 ), Gj (s) := 
+
+> m
+
+X
+
+> ℓ=0
+
+cℓ τℓ,j (s). (27) Thus, Gj (s) collects all contributions to the nonlinearity at order εj and depends only on lower-order solution components through τℓ,j .Substituting equation 5 and equation 27 into equation 4 and matching powers of ε yields the linear subproblems equation 6–equation 7 in the main paper. A.1.3 MULTI -HEAD PRETRAINING DETAILS 
+
+All subproblems in equation 6–equation 7 share the same dominant linear operator D, so we learn a reusable feature map only once. This offline training cost is amortized across all subsequent linear solves. For differential equations whose linear part contains higher-order derivatives, our 12 Published as a conference paper at ICLR 2026 implementation follows the standard first-order reformulation: we introduce auxiliary variables so that the linear operator acts on a vector-valued state. For example, for a diffusion-type operator 
+
+ut − κu xx we introduce y := ux and define the state u := [ u, y ]⊤, yielding the linear system 
+
+Du =
+
+ut − κ y x
+
+ux − y
+
+
+
+, f (s) = 
+
+f (s)0
+
+
+
+, (28) with constraints applied to the primary component u (e.g. Dirichlet/initial values). In ODE settings, similar auxiliary variables can be introduced when D contains higher-order derivatives (Lei et al., 2023). We parameterize the solution with a shared network body Hθ (s) and K linear heads as in equa-tion 8. The following Figure 4 illustrates the general architecture of the multi-head PINN we use for pretraining 
+
+Figure 4: Multi-head PINN architecture used in the offline stage. A shared body produces features 
+
+Hθ (s) and each head corresponds to a linear output layer with weights Wk, k = 1 , . . . , K .For head k we specify a linear instance with fixed (D, B) and task-dependent targets 
+
+Du = fk in Ω, Bu = bk on ∂Ω, (29) where B acts on the primary field u (the first component of u). The forcing fk and bound-ary/initial data bk vary across heads, while the operator D and constraint type B remain fixed. Let 
+
+{sn}Nr 
+
+> n=1
+
+⊂ Ω be interior points and {¯sn}Nb 
+
+> n=1
+
+⊂ ∂Ω be constraint points.We define the per-head physics-informed losses that enforce the governing equations and constraints for each linear task in the training bundle 
+
+L(k)pde (θ, W k) := 1
+
+NrNrX
+
+> n=1
+
+Dˆu(k)(sn) − fk(sn) 22
+
+, (30) 
+
+L(k)bc (θ, W k) := 1
+
+NbNbX
+
+> n=1
+
+Bˆu(k)(¯ sn) − bk(¯ sn) 2
+
+. (31) When manufactured solutions are available for the training bundle, we add a data loss term 
+
+L(k)data (θ, W k) := 1
+
+NrNrX
+
+> n=1
+
+ˆu(k)(sn) − uref  
+
+> k
+
+(sn) 2
+
+, (32) and set its weight to zero otherwise. We train the shared parameters θ and all head weights {Wk}Kk=1 by minimizing 
+
+min  
+
+> θ, {Wk}
+> K
+
+X
+
+> k=1
+
+
+
+wpde L(k)pde (θ, W k) + wbc L(k)bc (θ, W k) + wdata L(k)data (θ, W k)
+
+
+
+, (33) with wpde , w bc ≥ 0 and wdata ≥ 0. After training, we freeze θ (hence H) and discard the training heads; only the frozen feature map is retained for all subsequent one-shot solves on new tasks. 13 Published as a conference paper at ICLR 2026 A.1.4 ONE -SHOT HEAD SOLVE CONSTRUCTION 
+
+Let {sn}Nr 
+
+> n=1
+
+⊂ Ω and {¯sn}Nb 
+
+> n=1
+
+⊂ ∂Ω be the fixed interior and constraint sampling sets. These sampling sets are shared across all linear subproblems and perturbation orders. We form the stacked operator–feature matrices 
+
+Ar := 
+
+
+
+(DH)( s1)
+
+...
+
+(DH)( sNr )
+
+ ∈ R(qN r )×h, Ab := 
+
+
+
+(BHu)(¯ s1)⊤
+
+...
+
+(BHu)(¯ sNb )⊤
+
+ ∈ RNb×h, (34) where q is the state dimension (which depends on the system we aim to solve; here, q = 2 for the first-order diffusion system equation 28). The corresponding targets are stacked as 
+
+f ∗ := f ∗(sn)Nr 
+
+> n=1
+
+∈ RqN r , b∗ := b∗(¯ sn)Nb 
+
+> n=1
+
+∈ RNb .
+
+These targets encode the forcing and constraint data for the specific linear instance being solved. For system equation 28, f ∗(s) = [ g(s), 0] ⊤ contains the scalar forcing g in the primary equation and a zero target for the auxiliary constraint. A.1.5 ALGORITHMIC SUMMARY 
+
+Algorithm 1 Chebyshev-augmented one-shot perturbative PINN (offline/online pipeline) 
+
+Require: Dominant linear operator D and constraint operator B; sampling sets {sn}Nr 
+
+> n=1
+
+⊂ Ω, {¯sn}Nb 
+
+> n=1
+
+⊂
+
+∂Ω; weights wpde , w bc > 0; Chebyshev degree m, quadrature size M ; perturbation order p.
+
+Require: Nonlinear instance (f (·; η), b (·; η)) and target ε.
+
+Offline: multi-head pretraining and precomputation. 
+
+1: Train the multi-head model equation 8 by minimizing equation 33; freeze H(s) = Hθ (s).2: Assemble fixed matrices Ar , Ab from equation 34. 3: Form M using equation 11 and store M−1.
+
+Online: Chebyshev surrogate + perturbative one-shot solves. 
+
+4: Choose [umin , u max ] and compute Chebyshev coefficients {cℓ}mℓ=0 via equation 21–equation 22. 5: Initialize order-0 targets from equation 6 and form q(0) via equation 11; set W0 = M−1q(0) .6: for j = 1 to p do 
+
+7: Build the forcing term for order j using the Chebyshev lifted recurrence equation 24–equation 27 and the order equations equation 7. 8: Form q(j) from the stacked targets (f (j), b(j)) via equation 11 and compute Wj = M−1q(j).9: end for 
+
+10: Reconstruct u(s; ε) = Ppj=0 εj Hu(s)⊤Wj .
+
+A.2 EXPERIMENTAL DETAILS 
+
+This section collects implementation details, architectures, sampling, and metric definitions refer-enced in Section 5. A.2.1 METRICS 
+
+ODE residual MSE. For each ODE instance, the equation residual is evaluated on Nt = 100 
+
+uniformly spaced points in [0 , 5] . We report the mean squared residual, and then average over 100 
+
+test instances. 
+
+PDE solution MSE. For PDE1 we evaluate the pointwise squared error against the manufactured solution on a fixed 61 ×61 ( x, t ) grid and average over the grid; the reported value is averaged across the full test suite. A.2.2 CHEBYSHEV SURROGATE SETTINGS 
+
+All surrogates use Gauss–Chebyshev quadrature with M = 1000 nodes. 
+
+ODE1. We approximate cos( u) on [umin , u max ] = [ −4.0, 4.0] with degree m = 20 .14 Published as a conference paper at ICLR 2026 
+
+ODE2. We approximate u−2 on [umin , u max ] = [0 .5, 6.0] with degree m = 20 .
+
+PDE1. We approximate uu+1 − δu on [umin , u max ] = [ −0.9, 1.0] with degree m = 30 .A.2.3 CONSTRAINT SPLITTING ACROSS PERTURBATION ORDERS 
+
+We use an even split of constant boundary/initial constraints across perturbation orders. If the target constraint value is b, then each order solves with 
+
+beach = b
+
+Ppj=0 εj ,
+
+so that reconstructing u(p)(s; ε) = Ppj=0 εj uj (s) satisfies the original constraint at the target ε.A.2.4 ODE ARCHITECTURES AND TRAINING SETTINGS 
+
+Both ODE benchmarks (ODE1–ODE2) use the same multi-head network body with Sigmoid Linear Unit (SiLU) activations and K = 10 heads. The optimizer is Adam with learning rate 4 × 10 −4 and a StepLR scheduler (step size 100 , γ = 0 .92 ). Loss weights are αode = 0 .5 and αic = 1 .5. ODE1 is trained for 5000 iterations and ODE2 for 8000 iterations, each using 50 training points on [0 , 5] .
+
+Train/test distributions. The full parameter ranges, initial-condition ranges, and test-suite sizes are those listed in the main text (Section 5) and in the project configuration. A.2.5 PDE1 ARCHITECTURE AND TRAINING SETTINGS 
+
+First-order system. To enforce the diffusion operator, we introduce y = ux and enforce a first-order system at interior points, with boundary/initial conditions applied to u only. 
+
+Network and optimization. The PDE network takes (x, t ) ∈ R2 as input, uses SiLU activations, and has K = 16 heads. Training uses Adam with initial learning rate 10 −3 and StepLR decay (step size 100 , γ = 0 .98 ) for 20000 iterations. Interior sampling uses a 50 × 50 grid; boundary sampling uses 100 points on t = 0 and 100 points on each spatial boundary x ∈ { 0, 1}. Loss weights are 
+
+wpde = wbc = wdata = 1 .
+
+Manufactured solutions. Offline heads use u(x, t ) = A sin(2 πx ) sin( kπt ) + b with A ∈{0.5, −0.5} and k taking 8 evenly spaced values in [1 , 2] , yielding 16 tasks. The test set uses 
+
+u(x, t ) = A x (x − 1) sin( kt ) + b with A ∈ { 1, 2}, k ∈ { π, 2π, 3π, 4π}, and b ∈ { 0.2, 0.4, 0.6, 0.8},and defines f (x, t ) by substitution into equation 16. A.2.6 TIMING PROTOCOL 
+
+Reported online times include surrogate construction and the sequential computation of orders 
+
+{uj }pj=0 , and exclude offline training and the one-time precomputation of M−1.A.2.7 GRADIENT DESCENT BASELINE 
+
+Frozen trunk and head parameterization. This baseline employs the same pretrained multi-head backbone as the proposed method and freezes all shared-body parameters. At test time, we optimize only the final linear head parameters W that map the frozen features to the solution state. Thus, this baseline measures the cost of iterative per-instance adaptation while keeping the representation fixed, in contrast to our closed-form one-shot head solve. 
+
+Objective. For ODE1–ODE2, we minimizes a physics-informed objective consisting of the ODE residual loss (enforcing the first-order system) plus an initial-condition (IC) loss. For PDE1, we minimizes the PDE residual loss on interior points plus a boundary/initial-condition loss on con-straint points. All baseline runs use the same nonlinear instances (test suite) as used for evaluating our one-shot method. 15 Published as a conference paper at ICLR 2026 
+
+Optimization, scheduling, and stopping. We use Adam with a StepLR schedule. For ODE2 and PDE1, we additionally apply gradient clipping with max-norm 1.0 to improve stability. We employ an early-stopping criterion based on the mean-squared residual of the primary differential equation, with a maximum iteration cap. If the early-stopping criterion is not met within the cap, the run is marked as reaching the maximum iteration limit. 
+
+Timing protocol. Baseline online time includes the full per-instance head optimization loop until early stopping or the iteration cap. Reported runtimes are averaged across test instances that termi-nate before the cap. As with our method, all online times exclude offline multi-head training and any one-time precomputations. Table 2: Baseline: optimization and stopping (CPU).                            
+
+> Benchmark Adam LR StepLR (step, γ)Stop / cap
+> ODE1 10 −2(100 ,0.92) 5×10 −4/2×10 4
+> ODE2 10 −2(100 ,0.92) 5×10 −3/2×10 4
+> PDE1 3×10 −3(200 ,0.96) 1×10 −2/4×10 3
+
+Table 3: Baseline: sampling and loss weights.                     
+
+> Benchmark Points per iter Weights Stabilization / init
+> ODE1 Nt= 100 (wode , w ic ) = (0 .5,1.5) none / zero ODE2 Nt= 100 (wode , w ic ) = (0 .5,1.5) clip( 1.0) / random PDE1 I= 60 ,B= 200 (wpde , w bc ) = (1 ,1) clip( 1.0) / zero
+
+A.3 ABLATION STUDY 
+
+We report ablations over perturbation strength ε, perturbation order p, and Chebyshev degree m for ODE1 and PDE1. Unless otherwise specified, all other online settings follow the default configura-tions used in Table 1, and MSE is computed using the same metrics described in Appendix A.2.1. For ODE1, all ablation studies are evaluated on the first parameter/initial-condition instance drawn from the same random test-generation procedure used in the main experiments. For PDE1, all ablation studies are evaluated on a fixed manufactured instance with parameters A = 2 , k = 2 π,and b = 0 .4 (as defined in Appendix A.2.5), with all other settings unchanged. Table 4: ODE1 ablation over perturbation strength ε.                
+
+> εMSE 0.05 3.40 ×10 −8
+> 0.10 1.53 ×10 −6
+> 0.20 7.94 ×10 −7
+> 0.50 2.56 ×10 −6
+> 0.80 2.74 ×10 −5
+
+16 Published as a conference paper at ICLR 2026 Table 5: ODE1 ablation over perturbation order p.
+
+p MSE 1 6.64 × 10 −4
+
+2 9.97 × 10 −5
+
+3 4.06 × 10 −5
+
+4 2.63 × 10 −5
+
+5 5.44 × 10 −6
+
+6 2.91 × 10 −6
+
+7 7.55 × 10 −6
+
+8 1.75 × 10 −6
+
+9 2.51 × 10 −6
+
+10 1.80 × 10 −7
+
+11 5.73 × 10 −7
+
+12 2.56 × 10 −6
+
+13 2.46 × 10 −6
+
+14 1.51 × 10 −5
+
+15 8.75 × 10 −6
+
+16 3.82 × 10 −7
+
+17 2.58 × 10 −6
+
+18 5.64 × 10 −6
+
+19 3.82 × 10 −7
+
+20 2.38 × 10 −7
+
+Table 6: ODE1 ablation over Chebyshev degree m.
+
+m MSE 1 4.52 × 10 −1
+
+2 1.01 × 10 −1
+
+3 1.01 × 10 −1
+
+4 2.54 × 10 −3
+
+5 2.54 × 10 −3
+
+6 1.23 × 10 −5
+
+7 1.23 × 10 −5
+
+8 4.92 × 10 −7
+
+9 4.84 × 10 −7
+
+10 1.11 × 10 −7
+
+11 1.22 × 10 −7
+
+12 2.46 × 10 −5
+
+13 3.54 × 10 −5
+
+14 7.71 × 10 −6
+
+15 1.46 × 10 −5
+
+16 9.23 × 10 −7
+
+17 9.06 × 10 −7
+
+18 6.67 × 10 −6
+
+19 6.58 × 10 −6
+
+20 2.56 × 10 −6
+
+Table 7: PDE1 ablation over perturbation strength ε.
+
+ε MSE 0.05 3.84 × 10 −6
+
+0.10 3.94 × 10 −6
+
+0.20 4.66 × 10 −6
+
+0.50 2.91 × 10 −5
+
+0.80 2.41 × 10 −4
+
+17 Published as a conference paper at ICLR 2026 Table 8: PDE1 ablation over perturbation order p.
+
+p MSE 1 1.42 × 10 −5
+
+2 4.00 × 10 −5
+
+3 3.63 × 10 −5
+
+4 3.23 × 10 −5
+
+5 3.00 × 10 −5
+
+6 2.92 × 10 −5
+
+7 2.89 × 10 −5
+
+8 2.88 × 10 −5
+
+9 2.89 × 10 −5
+
+10 2.90 × 10 −5
+
+11 2.91 × 10 −5
+
+12 2.91 × 10 −5
+
+13 2.91 × 10 −5
+
+14 2.91 × 10 −5
+
+15 2.91 × 10 −5
+
+16 2.91 × 10 −5
+
+17 2.91 × 10 −5
+
+18 2.91 × 10 −5
+
+19 2.91 × 10 −5
+
+20 2.91 × 10 −5
+
+Table 9: PDE1 ablation over Chebyshev degree m.
+
+m MSE 2 4.10 × 10 −4
+
+4 1.86 × 10 −4
+
+6 8.50 × 10 −5
+
+8 2.75 × 10 −5
+
+10 3.50 × 10 −5
+
+12 2.75 × 10 −5
+
+14 2.93 × 10 −5
+
+16 2.92 × 10 −5
+
+18 2.90 × 10 −5
+
+20 2.91 × 10 −5
+
+22 2.91 × 10 −5
+
+24 2.91 × 10 −5
+
+26 2.91 × 10 −5
+
+28 2.91 × 10 −5
+
+30 2.91 × 10 −5
+
+32 2.91 × 10 −5
+
+34 2.91 × 10 −5
+
+36 2.91 × 10 −5
+
+38 2.91 × 10 −5
+
+40 2.91 × 10 −5
+
+18
