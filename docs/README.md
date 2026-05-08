@@ -6,73 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-07
-- 运行时间：2026-05-07 21:02:00 UTC
+- 最新运行日期：2026-05-08
+- 运行时间：2026-05-08 20:39:30 UTC
 - 运行状态：成功
 - 本次总论文数：17
 - 精读区：6
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 17 篇 AI 论文，聚焦测试时自适应（TTA）在目标检测与快速权重学习中的高分突破。
-重点推荐奖励引导的语义演化与 FAAST 关联学习，两者均以 9.5 高分刷新了模型动态进化的效率上限。
-建议优先研读 TTA 相关成果，掌握模型在部署阶段实时优化与抗干扰的核心前沿技术。
-- 详情：[/202605/07/README](/202605/07/README)
+今日深度解析 17 篇 AI 论文，聚焦测试时聚合一致性与世界动作模型的自适应进化。
+重点推荐通过能量最小化统一聚合框架，以及让机器人学会何时信任“想象”的自适应执行策略。
+建议关注具身智能中的物理潜空间推理，探索多模态对齐在复杂机器人控制中的实战潜力。
+- 详情：[/202605/08/README](/202605/08/README)
 
 ### 精读区论文标签
-1. [Reward-Guided Semantic Evolution for Test-time Adaptive Object Detection](/202605/07/2605.04531v1-reward-guided-semantic-evolution-for-test-time-adaptive-object-detection)  
-   标签：评分：9.5/10、query:tta
-   evidence：针对视觉语言模型测试时间自适应目标检测的免训练框架
-2. [FAAST: Forward-Only Associative Learning via Closed-Form Fast Weights for Test-Time Supervised Adaptation](/202605/07/2605.04651v1-faast-forward-only-associative-learning-via-closed-form-fast-weights-for-test-time-supervised-adaptation)  
-   标签：评分：9.5/10、query:tta
-   evidence：用于测试时间监督自适应的前向快速权重技术
-3. [Stream-T1: Test-Time Scaling for Streaming Video Generation](/202605/07/2605.04461v1-stream-t1-test-time-scaling-for-streaming-video-generation)  
+1. [Joint Consistency: A Unified Test-Time Aggregation Framework via Energy Minimization](/202605/08/2605.06219v1-joint-consistency-a-unified-test-time-aggregation-framework-via-energy-minimization)  
    标签：评分：9.0/10、query:tta
-   evidence：流式视频生成的测试时间缩放框架
-4. [Temporal Structure Matters for Efficient Test-Time Adaptation in Wearable Human Activity Recognition](/202605/07/2605.04617v1-temporal-structure-matters-for-efficient-test-time-adaptation-in-wearable-human-activity-recognition)  
+   evidence：统一的测试时间聚合框架
+2. [When to Trust Imagination: Adaptive Action Execution for World Action Models](/202605/08/2605.06222v1-when-to-trust-imagination-adaptive-action-execution-for-world-action-models)  
    标签：评分：9.0/10、query:tta
-   evidence：针对在线流数据的效率测试时间自适应
-5. [Mitigating Label Shift in Tabular In-Context Learning via Test-Time Posterior Adjustment](/202605/07/2605.04363v1-mitigating-label-shift-in-tabular-in-context-learning-via-test-time-posterior-adjustment)  
+   evidence：基于未来-现实验证的世界动作模型自适应执行
+3. [BitCal-TTS: Bit-Calibrated Test-Time Scaling for Quantized Reasoning Models](/202605/08/2605.05561v1-bitcal-tts-bit-calibrated-test-time-scaling-for-quantized-reasoning-models)  
    标签：评分：8.5/10、query:tta
-   evidence：针对表格基础模型的测试时间后验调整方法，用于缓解标签偏移
-6. [LaST-R1: Reinforcing Robotic Manipulation via Adaptive Physical Latent Reasoning](/202605/07/2604.28192v2-last-r1-reinforcing-robotic-manipulation-via-adaptive-physical-latent-reasoning)  
+   evidence：推理模型的自适应测试时间计算分配
+4. [VLA-GSE: Boosting Parameter-Efficient Fine-Tuning in VLA with Generalized and Specialized Experts](/202605/08/2605.06175v1-vla-gse-boosting-parameter-efficient-fine-tuning-in-vla-with-generalized-and-specialized-experts)  
    标签：评分：8.0/10、query:tta
-   evidence：针对VLA模型中自适应物理潜空间推理的强化学习后训练框架
+   evidence：视觉-语言-动作（VLA）模型的参数高效微调
+5. [OA-WAM: Object-Addressable World Action Model for Robust Robot Manipulation](/202605/08/2605.06481v1-oa-wam-object-addressable-world-action-model-for-robust-robot-manipulation)  
+   标签：评分：8.0/10、query:tta
+   evidence：用于视觉-语言-动作策略的对象可寻址世界动作模型
+6. [Hedging Memory Horizons for Non-Stationary Prediction via Online Aggregation](/202605/08/2605.06541v1-hedging-memory-horizons-for-non-stationary-prediction-via-online-aggregation)  
+   标签：评分：8.0/10、query:tta
+   evidence：分布偏移下的在线预测及模型无关的自适应方法
 
 ### 速读区论文标签
-1. [Beyond SFT-to-RL: Pre-alignment via Black-Box On-Policy Distillation for Multimodal RL](/202605/07/2604.28123v2-beyond-sft-to-rl-pre-alignment-via-black-box-on-policy-distillation-for-multimodal-rl)  
+1. [MotuBrain: An Advanced World Action Model for Robot Control](/202605/08/2604.27792v2-motubrain-an-advanced-world-action-model-for-robot-control)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态强化学习与大语言模型的分布对齐
-2. [Adaptive Data Compression and Reconstruction for Memory-Bounded EEG Continual Learning](/202605/07/2605.03085v1-adaptive-data-compression-and-reconstruction-for-memory-bounded-eeg-continual-learning)  
+   evidence：用于机器人控制和视频-动作联合预测的世界动作模型
+2. [LaST-R1: Reinforcing Robotic Manipulation via Adaptive Physical Latent Reasoning](/202605/08/2604.28192v3-last-r1-reinforcing-robotic-manipulation-via-adaptive-physical-latent-reasoning)  
    标签：评分：7.0/10、query:tta
-   evidence：在内存限制下对未标记受试者流进行在线自适应
-3. [CAST: Mitigating Object Hallucination in Large Vision-Language Models via Caption-Guided Visual Attention Steering](/202605/07/2605.04641v1-cast-mitigating-object-hallucination-in-large-vision-language-models-via-caption-guided-visual-attention-steering)  
+   evidence：视觉-语言-动作模型的自适应物理潜变量推理
+3. [REALM: An RGB and Event Aligned Latent Manifold for Cross-Modal Perception](/202605/08/2605.00271v2-realm-an-rgb-and-event-aligned-latent-manifold-for-cross-modal-perception)  
    标签：评分：7.0/10、query:tta
-   evidence：大视觉语言模型推理时的免训练幻觉缓解
-4. [VTAgent: Agentic Keyframe Anchoring for Evidence-Aware Video TextVQA](/202605/07/2605.04870v1-vtagent-agentic-keyframe-anchoring-for-evidence-aware-video-textvqa)  
+   evidence：利用LoRA进行事件流的跨模态感知与自适应
+4. [MILE: Mixture of Incremental LoRA Experts for Continual Semantic Segmentation across Domains and Modalities](/202605/08/2605.03555v1-mile-mixture-of-incremental-lora-experts-for-continual-semantic-segmentation-across-domains-and-modalities)  
    标签：评分：7.0/10、query:tta
-   evidence：视频文本问答的推理阶段关键帧锚定
-5. [ConsisVLA-4D: Advancing Spatiotemporal Consistency in Efficient 3D-Perception and 4D-Reasoning for Robotic Manipulation](/202605/07/2605.05126v1-consisvla-4d-advancing-spatiotemporal-consistency-in-efficient-3d-perception-and-4d-reasoning-for-robotic-manipulation)  
+   evidence：使用LoRA专家进行跨领域和跨模态的持续语义分割
+5. [AdapShot: Adaptive Many-Shot In-Context Learning with Semantic-Aware KV Cache Reuse](/202605/08/2605.03644v1-adapshot-adaptive-many-shot-in-context-learning-with-semantic-aware-kv-cache-reuse)  
    标签：评分：7.0/10、query:tta
-   evidence：具有时空感知和推理能力的机器人操作VLA框架
-6. [Chebyshev-Augmented One-Shot Transfer Learning for PINNs on Nonlinear Differential Equations](/202605/07/2605.01634v1-chebyshev-augmented-one-shot-transfer-learning-for-pinns-on-nonlinear-differential-equations)  
+   evidence：大型语言模型的自适应多样本上下文学习
+6. [StateVLM: A State-Aware Vision-Language Model for Robotic Affordance Reasoning](/202605/08/2605.03927v1-statevlm-a-state-aware-vision-language-model-for-robotic-affordance-reasoning)  
+   标签：评分：7.0/10、query:tta
+   evidence：使VLM适应机器人任务的训练策略
+7. [Uncertainty-Aware Exploratory Direct Preference Optimization for Multimodal Large Language Models](/202605/08/2605.04874v1-uncertainty-aware-exploratory-direct-preference-optimization-for-multimodal-large-language-models)  
    标签：评分：6.5/10、query:tta
-   evidence：无需完全重新训练的单样本迁移学习自适应
-7. [VL-SAM-v3: Memory-Guided Visual Priors for Open-World Object Detection](/202605/07/2605.03456v2-vl-sam-v3-memory-guided-visual-priors-for-open-world-object-detection)  
+   evidence：多模态大语言模型的直接偏好优化
+8. [Balancing Stability and Plasticity in Sequentially Trained Early-Exiting Neural Networks](/202605/08/2605.05358v1-balancing-stability-and-plasticity-in-sequentially-trained-early-exiting-neural-networks)  
    标签：评分：6.5/10、query:tta
-   evidence：推理时用于开放世界检测的检索增强外部视觉记忆
-8. [PRISM: Exposing and Resolving Spurious Isolation in Federated Multimodal Continual Learning](/202605/07/2605.01061v1-prism-exposing-and-resolving-spurious-isolation-in-federated-multimodal-continual-learning)  
+   evidence：顺序训练自适应网络中的稳定性与塑性分析
+9. [Where Do Prompt Perturbations Break Generation? A Segment-Level View of Robustness in LoRA-Tuned Language Models](/202605/08/2605.01605v1-where-do-prompt-perturbations-break-generation-a-segment-level-view-of-robustness-in-lora-tuned-language-models)  
    标签：评分：6.0/10、query:tta
-   evidence：联邦多模态持续学习与干扰感知子空间方法
-9. [The Perceptual Bandwidth Bottleneck in Vision-Language Models: Active Visual Reasoning via Sequential Experimental Design](/202605/07/2605.01345v2-the-perceptual-bandwidth-bottleneck-in-vision-language-models-active-visual-reasoning-via-sequential-experimental-design)  
+   evidence：用于模型自适应鲁棒性的适配器稳定性正则化器
+10. [Seeing Realism from Simulation: Efficient Video Transfer for Vision-Language-Action Data Augmentation](/202605/08/2605.02757v1-seeing-realism-from-simulation-efficient-video-transfer-for-vision-language-action-data-augmentation)  
    标签：评分：6.0/10、query:tta
-   evidence：通过视觉语言模型的顺序实验设计进行主动视觉推理
-10. [MER-DG: Modality-Entropy Regularization for Multimodal Domain Generalization](/202605/07/2605.01967v1-mer-dg-modality-entropy-regularization-for-multimodal-domain-generalization)  
+   evidence：用于VLA数据增强和解决领域差距的视频迁移
+11. [Dual-Foundation Models for Unsupervised Domain Adaptation](/202605/08/2605.03365v1-dual-foundation-models-for-unsupervised-domain-adaptation)  
    标签：评分：6.0/10、query:tta
-   evidence：针对新环境的多模态领域泛化
-11. [Kernel Affine Hull Machines for Compute-Efficient Query-Side Semantic Encoding](/202605/07/2605.02950v1-kernel-affine-hull-machines-for-compute-efficient-query-side-semantic-encoding)  
-   标签：评分：6.0/10、query:tta
-   evidence：推理时的固定教师查询自适应问题
+   evidence：语义分割的无监督领域自适应
 
 
 <div class="dpr-home-promo-card">
