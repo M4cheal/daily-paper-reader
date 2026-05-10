@@ -1,0 +1,1117 @@
+Title: Compress Then Adapt? No, Do It Together via Task-aware Union of Subspaces
+
+URL Source: https://arxiv.org/pdf/2605.02829v1
+
+Published Time: Tue, 05 May 2026 02:20:10 GMT
+
+Number of Pages: 28
+
+Markdown Content:
+# Compress Then Adapt? No, Do It Together via Task-aware Union of Subspaces 
+
+Jingze Ge 1, Yun Liu 2, Xue Geng 3, Wanqi Dong 1, Wang Zhe Mark 3, Min Wu 3,and Xulei Yang 3 
+
+> 1
+
+National University of Singapore  
+
+> 2
+
+Nankai University  
+
+> 3
+
+Institute for Infocomm Research (I 2R), A*STAR 
+
+jingze.ge@u.nus.edu, liuyun@mail.nankai.edu.cn, geng_xue@i2r.a-star.edu.sg, wanqi.dong@u.nus.edu, wumin@a-star.edu.sg, YANG_XULEI@I2R.A-STAR.EDU.SG 
+
+Abstract. Adapting large pretrained models to diverse tasks is now rou-tine, yet the two dominant strategies of parameter-efficient fine-tuning (PEFT) and low-rank compression are typically composed in sequence. This decoupled practice first compresses and then fine-tunes adapters, potentially misaligning the compressed subspace with downstream ob-jectives and squandering a global parameter budget. To overcome this limitation, we introduce JACTUS (Joint Adaptation and Compression with a Task-aware Union of Subspaces), a single framework that uni-fies compression and adaptation. From a small calibration set, JACTUS estimates input and pre-activation gradient covariances, forms their or-thogonal union with the pretrained weight subspace, performs a pro-jected low-rank approximation inside this union, allocates rank globally by marginal gain per parameter, and trains only a compact core matrix. This explicitly mitigates the potential misalignment between the com-pressed subspace and downstream objectives by coupling the directions preserved for compression with those required for adaptation, yielding a deployable low-rank model that avoids retaining full frozen weights while enabling fast and robust tuning. On vision, JACTUS attains an average 89.2% accuracy on ViT-Base across eight datasets at 80% re-tained parameters, surpassing strong 100% PEFT baselines ( e.g ., DoRA 87.9%). On language, JACTUS achieves an 80.9% average on Llama2-7B commonsense QA at the same 80% retained-parameter budget, outper-forming 100% PEFT ( e.g ., DoRA 79.7%) and exceeding prior compress-then-finetune pipelines under the same ratained-parameter budget. We will release code. 
+
+## 1 Introduction 
+
+Modern vision and language models [10, 26, 43, 44] deliver strong performance but are expensive to adapt and deploy at scale [45, 56]. Parameter-Efficient Fine-Tuning (PEFT) methods such as LoRA [17] and its variants [25, 31, 46, 53] greatly reduce training cost by introducing low-rank adapters on top of frozen 
+
+> arXiv:2605.02829v1 [cs.AI] 4 May 2026
+
+2 Ge et al. Frozen       
+
+> Trainble
+> (a) LoRA /DoRA /PiSSA
+> 𝑥
+> 𝑦
+> W
+> A
+> BU
+> 𝑉 !
+> (b) SVFT
+> 𝑦
+> 𝚺 𝐌
+> 𝑥
+> V
+> 𝑆 "#𝑥
+> WS
+> 𝑦
+> Truncate
+> SVD
+> V
+> UA
+> B
+> A
+> B
+> 𝑥
+> 𝑦
+> (c) SVD -LLM
+> 𝐐 𝑳
+> (𝒌 𝒑 )
+> S
+> 𝐐 𝑹
+> (𝒌 𝒑 )
+> 𝑥
+> 𝑦
+> (d) JACTUS
+> Parameter -Efficient Fine -tuning Compression then LoRA Fine -tuning Joint Adapt. & Compress
+
+Fig. 1: Comparison of three paradigms: PEFT, compression then fine-tuning, and our joint adaptation and compression. 
+
+weights, yet at inference time the full pre-trained weights must still be retained. Conversely, low-rank compression via Singular Value Decomposition (SVD)-family techniques [16, 36, 47, 50] reduces the number of deployed parameters, but typically selects directions by weight-space energy or activation heuris-tics [1,30],which only indirectly reflect downstream objectives. In practice, these two lines of work are often composed in sequence, where one first compresses a pretrained model and then fine-tunes it [18, 47, 52, 55]. However, this seemingly modular pipeline exposes a fundamental tension between subspace preservation and task adaptation. Compression typically selects a low-rank subspace to reduce reconstruction error or to preserve pretrained behavior, whereas downstream adaptation requires degrees of freedom that align with task-specific gradients. When the compressed subspace is fixed in advance, the model is committed to a task-agnostic parameterization that can discard directions important for the downstream objective. As a result, subsequent low-rank adaptation, even when it can be merged back into the compressed weights at deployment, may be intrin-sically limited in recovering the lost task-relevant capacity, leading to persistent accuracy and robustness gaps under a fixed global budget. This limitation be-comes more pronounced in resource-constrained settings where the budget must be allocated across layers in a principled manner. Therefore, the central chal-lenge is to select a shared low-rank subspace and allocate a global budget so that compression preserves task-relevant capacity while adaptation uses it effectively. As illustrated in Fig. 1, unifying compression and adaptation is not as simple as chaining existing techniques. To achieve this synergy, we must define a search space that (i) preserves task-relevant capacity and (ii) supports effective task-specific updates under a fixed global parameter budget. Achieving both requires a task-aware mechanism that bridges the subspace favored by compression and the directions demanded by downstream objectives, so that the deployed low-rank model avoids the accuracy gaps caused by subspace misalignment. To this end, JACTUS (Joint Adaptation and Compression with a Task-aware Union of Subspaces) performs task-aware compression and tuning jointly within a single shared search space. Given a small calibration set, JACTUS estimates task-aware second-order statistics [1, 30] on both sides of each linear layer: the input covariance Cx and the pre-activation gradient covariance Cg .Together, they induce a bilateral, downstream-informed metric that emphasizes loss-sensitive directions. We then construct an orthogonal union between the task-aware subspaces (from Cx, Cg ) and the high-energy weight subspaces (from Joint Compression and Adaptation 3
+
+the SVD of W), yielding left/right union bases ( QL/QR) that cover both signals while removing redundancy. Within this union, we compute a projected low-rank approximation [2, 13] by performing SVD on the small core Q⊤ 
+
+> L
+
+WQ R, whose spectrum directly guides rank allocation. Finally, under a global parameter budget, JACTUS greedily allocates ranks across layers based on marginal gain per parameter, and fine-tunes only the low-dimensional core matrix inside the fixed union subspace, as shown in Fig. 2. We further show that once the union subspaces are fixed, core-only optimization is basis-invariant : it explores the same attainable solutions as updating the factor bases, but at substantially lower cost. This design closes the loop between compression and adaptation. Compared to SVD-only pipelines [16, 36, 47, 50], JACTUS selects directions under a task-aware bilateral metric rather than weight energy alone. Compared to PEFT approaches [17, 20, 24, 25, 27, 31, 41, 46, 53, 54], it removes the need to retain full frozen weights at inference: the trained model is the compact low-rank form. The global allocator further reconciles heterogeneous layer sizes and spectra by spending budget where the next singular direction provides the largest reduction in projected error per parameter. We evaluate JACTUS on image classification with ViT-Base/Large [10] and Swin-Base/Large [26] across eight datasets, and on Llama2-7B [44] for com-monsense question answering and mathematical reasoning. Under 80% retained-parameter budgets, JACTUS outperforms strong 100% PEFT baselines on both modalities ( e.g ., ViT-Base average 89.2% vs . DoRA [25] 87.9%, and Llama2-7B commonsense average 80.9% vs . DoRA 79.7%), and degrades smoothly at 60% and 40% budgets while remaining competitive. Ablations show that (i) the joint union subspace strictly dominates weight-only or task-only subspaces; (ii) moderate calibration (about 1K examples) suffices for stable statistics; and (iii) global rank allocation yields sizable gains over uniform per-layer allocation. The contributions of this work include: 
+
+– We introduce JACTUS , a framework that unifies compression and adapta-tion by operating in an orthogonal union of weight and task-aware subspaces derived from input and gradient covariances. 
+
+– We build a task-aware union of subspaces where input/gradient covari-ances identify downstream-sensitive left/right directions and are fused with weight singular subspaces via orthogonalization. On top of that, we perform 
+
+cost-aware global rank allocation to distribute ranks across layers under a fixed parameter budget. 
+
+– We prove a subspace invariance result showing that, once the working union subspaces are fixed, optimizing only the core matrix is equivalent to updating factor bases within those subspaces, enabling efficient fine-tuning. 4 Ge et al. 
+
+## 2 Related Work 
+
+2.1 Low-Rank Compression via SVD 
+
+Activation-aware SVD (ASVD) [50] leverages activation statistics for training-free calibration, but it is not explicitly aligned with downstream loss/gradient geometry and can degrade under high compression or cross-task transfer. Fisher-weighted SVD (FWSVD) [16] incorporates empirical Fisher for task importance, yet selection is still formulated in a weight-space metric and does not model the bilateral structure induced by inputs and gradients. SVD-LLM [47] stabi-lizes truncation via whitening and closed-form updates, but continues to opti-mize weight reconstruction and typically decouples compression from adaptation. Dobi-SVD [36] makes truncation differentiable and reconstructs weights via in-cremental PCA; however, its activation-only reconstruction can be sensitive to the calibration set and still requires a separate fine-tuning stage to recover per-formance. Overall, SVD-style compression often determines the retained subspace from weight energy or partial task cues, while adaptation is performed later in a different search space, which is an implicit source of subspace mismatch. In con-trast, JACTUS explicitly constructs a task-aware union of subspaces shared by compression and tuning, and couples it with a cost-aware global rank allocation across layers to preserve task-relevant capacity under a fixed deployment budget. 
+
+2.2 Parameter-Efficient Fine-Tuning (PEFT) 
+
+LoRA [17] and its variants (e.g., DoRA [25], PiSSA [31], OLoRA [46], AdaLoRA [53], HydraLoRA [41], VeRA [20], AFLoRA [27]) reduce training cost via low-rank adapters, but the deployed model typically retains full weights. SVFT [24] re-parameterizes updates via a sparse intermediate matrix, yet storing both full 
+
+U and V can increase deployment storage. More broadly, PEFT is primarily designed to approximate full fine-tuning without changing the base parameteri-zation, and thus does not directly address the setting where weights are already low-rank compressed and the question is how to adapt efficiently within this constrained structure. JACTUS targets this compressed-deployment regime: once the task-aware subspace is fixed, it performs tuning by updating only compact core matrices, which is equivalent to fine-tuning the full low-rank structure while keeping a PEFT-level memory footprint. This connects PEFT-style training efficiency with low-rank deployment without expanding the compressed parameterization. 
+
+## 3 Methodology 
+
+To achieve an integrated approach to model compression and task adaptation, the core process of JACTUS is divided into three steps. As illustrated in Fig. 2, (i) we construct a task-aware union subspace guided by K-FAC statistics, merging Joint Compression and Adaptation 5W
+
+x a
+
+y  
+
+> 𝐀 =𝐀 ℒ/𝐀 𝐀
+
+ℒ       
+
+> (a) Task-aware statistics via forward &
+> backward hooks on calibration dataset.
+> forward
+> backward
+> hooks
+> 𝐀 𝐀 =𝐀 𝐀 𝐀 ⊤𝐀 𝐀 =𝐀 𝐀 𝐀 ⊤
+
+𝐀 𝐀 𝐀 𝐀 ⋃
+
+⋃
+
+> QR
+
+𝐀 𝐀    
+
+> (b) Weight and task subspaces are merged and
+> orthogonalized via QR to form joint bases.
+> 𝐀 𝐀 𝐀 𝐀 𝐀 𝐀
+> 𝐀 𝐀 𝐀 𝐀 𝐀 𝐀 𝐀 𝐀 𝐀 𝐀 𝐀 𝐀
+
+𝐀 𝐀 𝐀 𝐀 
+
+> 𝐀 𝐀
+
+𝐀 𝐀        
+
+> 𝐀 𝐀
+> 𝐀 𝐀 𝐀
+> 𝐀 𝐀 𝐀 𝐀 𝐀 𝐀
+> Weight Subspace Task Subspace Union of Subspace Frozen Trainable
+> Truncate
+> SVD Rank 𝐀 𝐀
+> Allocated
+
+𝐀 𝐀   
+
+> (𝐀 𝐀 )
+> 𝐀 𝐀 ×𝐀 𝐀
+> (c) Optimizing only on
+> the core matrix S.
+
+S
+
+𝐀 𝐀 
+
+> (𝐀 𝐀 )
+> 1k calibration dataset
+
+x
+
+y 
+
+> 𝐀 𝐀 Orthogonalize
+
+Fig. 2: Overview of the proposed subspace-based adaptation. (a) Activation and gra-dient covariances Cx and Cg are estimated on the calibration set. (b) Uw , Vw , Ug , Vx
+
+are obtained by applying SVD to W, Cx, and Cg , then truncated by energy thresholds 
+
+α, β, γ to ranks kw , k i, k o; the merged subspaces form joint bases QL, QR with ranks 
+
+kL, k R satisfying kw + ki = kL and kw + ko = kR. (c) A global rank allocator assigns rank kp to each linear layer. 
+
+pretrained weight structure with task sensitivity and performing projected low-rank approximation within this subspace; (ii) given a total parameter budget, we perform cost-aware global rank allocation via a greedy marginal-gain strategy to assign per-layer ranks; and (iii) we optimize core matrices only by leveraging low-rank reparameterization invariance, which enables efficient post-adaptation fine-tuning. We will elaborate on our method focusing on an arbitrary linear layer y = Wx (where the weight W ∈ Rdout ×din ) in a large foundation model. 
+
+3.1 Task-aware Union of Subspaces Guided by K-FAC 
+
+Traditional low-rank compression methods, such as SVD, primarily select sub-spaces based on the singular spectrum of the weight matrix ( i.e ., its cumulative energy). This selection criterion may have a weak correlation with downstream task performance, leading to a subspace misalignment problem. To address this issue, we introduce task-aware statistics using K-FAC(Kronecker-factorized Ap-proximate curvature) [30], extracting key information directly from the data distribution and loss function of the downstream task using a small calibration set [12, 33]. 
+
+Task-aware Statistics Estimation. We estimate two task-aware second-order moments for a linear layer a = Wx: the input covariance Cx = E[xx ⊤] ∈
+
+Rdin ×din and the pre-activation gradient covariance Cg = E[δδ ⊤] ∈ Rdout ×dout ,where δ = ∂L/∂a . From the natural-gradient and K-FAC perspectives [1,30], the Gauss–Newton/Fisher block for W in such a layer admits a Kronecker-factored approximation 
+
+FW ≈ E[δδ ⊤] ⊗ E[xx ⊤] = Cg ⊗ Cx,
+
+so that Cx and Cg are precisely the two Kronecker factors capturing input- and output-side curvature, respectively [1, 30]. Selecting directions by the principal eigenspaces of (Cx, Cg ) therefore amounts to choosing directions that are im-6 Ge et al. 
+
+portant under a downstream-induced, bilateral (left/right) Fisher metric rather than by weight energy alone. In practice, we accumulate Cx and Cg efficiently from a small calibration set via streaming estimates with forward/backward hooks. To enhance numerical stability and handle input directions potentially not covered by the calibration set, we apply ridge regularization 
+
+˜Cx = Cx + τxI, ˜Cg = Cg + τg I,
+
+where the I is the identity matrix, and the regularization coefficients τx =
+
+ϵ tr( Cx)/d in and τg = ϵ tr( Cg )/d out are to maintain scale invariance [23, 42]. This step explicitly encodes task sensitivity into left and right metric matrices, laying the foundation for constructing task-aligned subspaces. To construct a low-rank representation that both effectively reconstructs the original weights and remains sensitive to critical directions for the downstream task, we pro-pose building a task-aware subspace union and performing a projected low-rank approximation within it. 
+
+Weight-Task Subspace Fusion Pretrained weights and task statistics pro-vide complementary signals. Weight-derived subspaces capture compressible global structure, while task-aware subspaces capture directions most sensitive to the downstream loss. Using only one source introduces bias by either favoring high-energy but less relevant directions or chasing calibration noise, so we first identify both subspaces and then merge them. This yields a search space that is simul-taneously reconstructive and task-aligned under the same parameter budget. There are two types of subspaces: 1. Weight Subspace : We perform SVD on the original weight matrix W and select the subspaces spanned by the top kw left and right singular vectors (e.g ., those capturing an energy threshold α) [13], denoted as span( Uw) and 
+
+span( Vw), respectively. 2. Task Subspace : We perform eigendecomposition on the regularized covari-ance matrices ˜Cg and ˜Cx and select the subspaces spanned by the top ko
+
+and ki eigenvectors (those capturing cumulative eigenvalue thresholds β and 
+
+γ), denoted as span( Ug ) and span( Vx), respectively. To avoid subspace redundancy and ensure numerical stability, we use QR decomposition to orthogonalize [13] the concatenated subspaces. This guaran-tees that the union subspace forms a well-conditioned orthogonal basis that fully spans the combined representational directions of pretrained weights and task sensitivity. Without orthogonalization, overlapping directions can lead to redun-dant representations and unstable projections, which degrade both the low-rank approximation and subsequent global rank allocation. Thus, we merge these two types of subspaces via orthogonalization to construct the left and right orthog-onal union subspace bases, QL and QR:
+
+QL = orth  [Uw, Ug ] ∈ Rdout ×kL
+
+QR = orth  [Vw, Vx] ∈ Rdin ×kRJoint Compression and Adaptation 7
+
+where orth( ·) denotes the orthogonalization of a set of column vectors ( e.g ., via QR decomposition), and kL ≤ kw + ko and kR ≤ kw + ki are the dimensions of the union subspaces. This union subspace considers both weight energy and task sensitivity, and its representational capacity is no worse than that of either individual subspace. This fundamentally alleviates the performance recovery bot-tleneck encountered in post-compression fine-tuning, which often operates in a suboptimal subspace. Having obtained the target low-rank search subspace, we next require an initial point within this subspace to start optimization effectively; therefore, we initialize by projecting W onto the constructed subspace: 
+
+Wproj = Q⊤ 
+
+> L
+
+WQ R ∈ RkL×kR
+
+Next, we perform SVD on Wproj , which has a much smaller dimension than the original weight matrix: Wproj = ¯UΣ ¯V⊤. This step not only reduces the computational cost of SVD but also leads to a more stable estimation of the singular spectrum. The squared values of the resulting singular values, {ˆσ2 
+
+> i
+
+},form the marginal gain curve for this layer within the union subspace. The gain from increasing the rank from k to k + 1 , measured as the reduction in squared Frobenius reconstruction error, is approximated by ˆσ2 
+
+> k+1
+
+[11]. 
+
+3.2 Cost-Aware Global Rank Allocator 
+
+When compressing a large model to a low-rank form, the total number of re-maining parameters is a hard constraint. Prior practice ( e.g ., SVD-LLM [47]) often allocates the parameter budget independently across linear layers, implic-itly assuming that every rank increment is equally cost-effective. This overlooks two facts: (i) layers have different dimensions, hence different parameter costs per rank, and (ii) their singular spectra differ, so the benefit (in reconstruction or downstream loss) of preserving the next singular direction is heterogeneous. To address these limitations, we propose a cost-aware global rank allocator that shifts the paradigm from isolated layer-wise budgeting to a unified resource pool. Our motivation is grounded in the principle of maximal return on invest-ment: every parameter should be allocated to the layer where it yields the highest performance gain relative to its size footprint. To systematically compare these heterogeneous benefits across layers, we quantify the marginal gain per unit pa-rameter cost . Concretely, for layer p with dimensions dout  
+
+> p
+
+× din  
+
+> p
+
+, increasing the rank by one in a UpV⊤ 
+
+> p
+
+factorization adds ∆params p = dout  
+
+> p
+
++ din  
+
+> p
+
+parameters. In our task-aware union subspace, the projected matrix Wproj ,p yields a stable spectrum {ˆσp,i }; the reduction in squared Frobenius error when moving from rank kp to kp+1 is approximated by gain p(kp → kp+1) ≈ ˆσ2
+
+> p,k p+1
+
+. We therefore rank all candidate increments by 
+
+ρp,k p+1 = ˆσ2
+
+> p,k p+1
+
+∆params p
+
+,
+
+and spend the budget on the largest ratios first, which naturally leads to our global allocator that greedily selects rank increments in decreasing ρ until the budget is exhausted [19]. 8 Ge et al. 
+
+Algorithm 1: Global Rank Allocation under Parameter Budget B
+
+Input : Number of layers P ; layer sizes {dout  
+
+> p
+
+, d in  
+
+> p
+
+}Pp=1 ; squared singular values {ˆσ2
+
+> p,i
+
+} from Wproj ,p ; budget B; bounds {kmin ,p , k max ,p }.
+
+Output: Allocated ranks {kp}Pp=1 .
+
+for p ← 1 to P do 
+
+cost p ← dout  
+
+> p
+
++ din  
+
+> p
+
+;
+
+kp ← kmin ,p ;
+
+Lp ← min  kmax ,p , |{ ˆσ2
+
+> p,i
+
+}| ;used ← PPp=1 kp · cost p;
+
+Initialize max-heap H;
+
+for p ← 1 to P do if kp < L p then 
+
+push  ˆσ2
+
+> p,k p+1
+
+/cost p, p, k p+1  into H;
+
+while H not empty do 
+
+(s, p, i ) ← pop_max (H);
+
+if used + cost p > B then continue ;
+
+kp ← i;used ← used + cost p;
+
+if i < L p then 
+
+push  ˆσ2
+
+> p,i +1
+
+/cost p, p, i +1  into H;
+
+return {kp}Pp=1 ;0 3 6 9 12 15 18 21 
+
+> Layer
+> 500
+> 1000
+> Rank
+
+Compression 40%        
+
+> 036912 15 18 21
+> Layer
+
+Compression 60%        
+
+> 036912 15 18 21
+> Layer
+
+Compression 80%      
+
+> Query Key Value Projection Up Down
+
+Fig. 3: Layer-wise ranks selected by the greedy global allocator for ViT-Large [10] under 40%, 60%, and 80% retained-parameter budget. We plot the ranks of attention (Query/Key/Value/Projection) and MLP (Up/Down) projections across layers. The calibration dataset is extracted from CIFAR-100 [22] training split. 
+
+We detail this procedure in Algorithm 1. Given a target retained-parameter budget c, we induce a global parameter budget B for the whole model. For each layer p, let kmin ,p , k max ,p be layer-wise bounds (defaults: 32 and the number of available singular values, respectively). We initialize kp ← kmin ,p and main-tain a max-heap over the next available ratio ρp,k p+1 . At each step, we pop the largest ratio that still fits the remaining budget, assign one more rank to that layer, update the used parameters, and push its next candidate (if any). This process continues until the heap is empty or the budget is exhausted. The procedure is anytime and monotone: as B grows, ranks only increase; it also Joint Compression and Adaptation 9
+
+adapts to heterogeneous spectra and unequal layer sizes by normalizing gains with per-rank costs. The algorithm selects at most ⌊(B − used 0)/ min p cost p⌋
+
+rank increments, each with a heap operation of O(log P ), yielding an overall complexity O (P 
+
+> p
+
+kp) log P . Because the candidates within each layer follow a nonincreasing spectrum, the procedure naturally spreads the budget over layers whose next singular directions are most valuable. Fig. 3 reports layer-wise ranks under the greedy allocator at a 40%, 60% and 80% retained-parameter budget. Here, the Query, Key, Value, and Projection de-note the self-attention weight matrices, while the Up and Down matrices are the first and second linear maps of the MLP. The allocation is clearly non-uniform: Up and Down consistently receive higher ranks than Query/Key/Value/Projection, and the assigned ranks generally increase with depth across the network. 
+
+3.3 Core-Only Optimization under Low-Rank Subspace Invariance 
+
+After constructing task-aware left/right union subspaces QL ⊂ Rdout and QR ⊂
+
+Rdin with kL = dim QL and kR = dim QR, the cost-aware global rank allocation in the previous section selects a target rank kp ≤ min {kL, k R}. Henceforth, we work with the kp-dimensional working subspaces Q(kp) 
+
+> L
+
+⊆ QL,Q(kp) 
+
+> R
+
+⊆ QR, and all parameterizations use kp columns/rows drawn from these subspaces. While post-compression adaptation typically involves updating the low-rank factors U
+
+and V to recover performance, such unconstrained updates introduce redundant optimization trajectories and unnecessary computational overhead. Instead, we demonstrate that once the optimal task-aligned subspaces are identified, the parameter updates can be strictly confined to a compact core matrix S. To rig-orously justify this core-only optimization strategy, it is essential to abstract away from specific matrix parameterizations and examine the coordinate-free geometric space of achievable weight perturbations. The feasible set for down-stream adaptation is defined as the following basis-free tensor-product space M:
+
+M
+
+
+
+Q(kp) 
+
+> L
+
+, Q(kp)
+
+> R
+
+
+
+= n
+
+X ∈ Rdout ×din Col( X) ⊆ Q(kp) 
+
+> L
+
+,
+
+Row( X) ⊆ Q(kp)
+
+> R
+
+o
+
+.
+
+This space M encompasses all possible low-rank weight matrices whose column and row spans are strictly bounded within the selected task-aware subspaces, regardless of their explicit parameterization. Equivalently, for any choice of bases 
+
+U ∈ Rdout ×kp and V ∈ Rdin ×kp satisfying Span( U) = Q(kp) 
+
+> L
+
+and Span( V) = 
+
+Q(kp) 
+
+> R
+
+, we have the parameterization 
+
+S(U, V) = n
+
+USV ⊤
+
+U ∈ Rdout ×kp , Span( U) = Q(kp) 
+
+> L
+
+,
+
+V ∈ Rdin ×kp , Span( V) = Q(kp) 
+
+> R
+
+,
+
+S ∈ Rkp×kp
+
+o
+
+.
+
+Compression and adaptation therefore reduce to searching for an optimum in-side the fixed, task-specific space M
+
+
+
+Q(kp) 
+
+> L
+
+, Q(kp)
+
+> R
+
+
+
+rather than roaming the full parameterization. The projected SVD step provides one convenient orthonormal 10 Ge et al. 
+
+basis (U, V) for this space together with an initial core S. Crucially, the space 
+
+M
+
+
+
+Q(kp) 
+
+> L
+
+, Q(kp)
+
+> R
+
+
+
+is determined solely by  Q(kp) 
+
+> L
+
+, Q(kp)
+
+> R
+
+—not by a particular choice of bases spanning them. Switching bases only reparameterizes S, leaving the attainable set of solutions unchanged. 
+
+Optimization objective. Once the working subspaces are fixed, our objec-tive is to minimize the loss over M
+
+
+
+Q(kp) 
+
+> L
+
+, Q(kp)
+
+> R
+
+
+
+. Allowing U, V to vary while keeping their spans fixed yields: 
+
+min   
+
+> eU,eS,eV
+
+L
+
+ eU eS eV⊤
+
+s.t. Span( eU) = Q(kp) 
+
+> L
+
+, Span( eV) = Q(kp) 
+
+> R
+
+.
+
+(1) 
+
+Theorem 1. Subspace invariance and parameterization equivalence. 
+
+Let U ∈ Rdout ×kp and V ∈ Rdin ×kp have full column rank, and define S(U, V) = 
+
+{USV ⊤ : S ∈ Rkp×kp }. If U′, V′ satisfy 
+
+Span( U′) = Span( U) = Q(kp) 
+
+> L
+
+,
+
+and Span( V′) = Span( V) = Q(kp) 
+
+> R
+
+,
+
+then there exist invertible RL ∈ Rkp×kp and RR ∈ Rkp×kp with U′ = UR L and 
+
+V′ = VR R, and 
+
+S(U′, V′) = S(U, V) = M
+
+
+
+Q(kp) 
+
+> L
+
+, Q(kp)
+
+> R
+
+
+
+.
+
+Implications. Theorem 1 implies that any update trajectory that keeps 
+
+Span( Ut) = Q(kp) 
+
+> L
+
+and Span( Vt) = Q(kp) 
+
+> R
+
+merely changes coordinates inside 
+
+M
+
+
+
+Q(kp) 
+
+> L
+
+, Q(kp)
+
+> R
+
+
+
+; consequently we can fix any bases U, V spanning Q(kp) 
+
+> L
+
+, Q(kp)
+
+> R
+
+and optimize only the core: 
+
+min 
+
+> S∈Rkp ×kp
+
+L
+
+
+
+U S V⊤
+
+. (2) 
+
+Our preceding steps construct task-aligned QL, QR, determine kp via global rank allocation, and induce the working subspaces Q(kp) 
+
+> L
+
+, Q(kp) 
+
+> R
+
+that capture directions of high downstream sensitivity. Training only S explores the same solution set as jointly updating (U, S, V) under the constraints above, preserving the task-specific geometry while yielding the efficiency of updating a single kp×kp
+
+matrix without sacrificing expressivity inside the intended space. 
+
+## 4 Experiment 
+
+4.1 Setup and Baselines 
+
+We evaluate JACTUS on both vision and language tasks. For vision, we fine-tune ViT-Base/Large [10] and Swin-Base/Large [26] (pre-trained on ImageNet-21k [9]) on eight image-classification benchmarks. For language, we evaluate Joint Compression and Adaptation 11 
+
+Llama2-7B [44] on eight commonsense QA tasks [40] and mathematical reasoning (MATH, GSM8K) [49]. We report results under a retained-parameter budget c,i.e., the percentage of backbone parameters kept in the deployed model. 
+
+Tasks and metrics. For vision, we report top-1 accuracy on CIFAR-100 [22], 
+
+EuroSAT [14], RESISC45 [4], StanfordCars [21], FGVC Aircraft [29], 
+
+DTD [5], CIFAR-10 [22], and OxfordPets [34], plus macro averages (Tabs. 1 and 2). In Tabs. 1 and 2, we abbreviate FGVC Aircraft as Aircraft , Stan-fordCars as Cars , and OxfordPets as Pets . For language, we evaluate BoolQ [6], PIQA [3], SIQA [39], HellaSwag [51], WinoGrande [38], ARC-easy [7], ARC-challenge [7], and OBQA [32] with accuracy and their average (Tab. 4), and report exact-match on MATH [15] and GSM8K [8]. (Tab. 3). 
+
+Baselines. We compare against strong PEFT methods at 100% budget (LoRA [17], DoRA [25], SVFT [24], PiSSA [31] for vision), and two-stage compress-then-adapt pipelines that apply low-rank compression followed by LoRA under the same budget: SVD-LLM [47]+LoRA and Dobi-SVD [36]+LoRA. On vision, we implement an SVD-LLM-style compress-then-adapt baseline for ViT/Swin; we omit a Dobi-SVD variant on vision due to non-trivial adaptation overhead. JAC-TUS estimates task-aware statistics using a 1024-sample calibration set from the training split. Unless otherwise stated, all methods are run with matched data splits and training recipes at each budget (details in the supplement). 
+
+Environment. All experiments use 4 × NVIDIA L40 GPUs with PyTorch [35], Transformers [48], and DeepSpeed [37]. Pretrained backbones are from the of-ficial Hugging Face hub (model IDs in the supplement). We use full-precision AdamW [28]. For JACTUS , we set α = 0 .95 and β = γ = 0 .99 . For PEFT baselines, we follow their default settings (LoRA/DoRA/PiSSA rank 8; SVFT uses d = 8 as in [24]). Other training details (batch size, learning-rate schedules, etc.) are provided in the supplementary material. 
+
+4.2 Image Classification Results Main results. At an 80% retained-parameter budget, JACTUS consistently outperforms the strongest 100% PEFT baselines on all four backbones. Specifi-cally, JACTUS reaches 89.2/90.8 average accuracy on ViT-Base/Large (Tab. 1) and 89.6/91.2 on Swin-Base/Large (Tab. 2), exceeding the best 100% PEFT counterparts (ViT-B: 88.1, ViT-L: 90.3; Swin-B: 88.9, Swin-L: 90.8). As the budget tightens to 60%, performance degrades gracefully and remains competi-tive with full-parameter PEFT (e.g., JACTUS stays above LoRA-100% on ViT-Base/Large and Swin-Base, and is close on Swin-Large; see Tabs. 1 and 2). At 40%, the drop becomes more pronounced (e.g., 81.3 on ViT-Base), reflecting the expected difficulty under very tight retained-parameter budgets. 
+
+Comparison to a two-stage compress-then-adapt baseline. Compared with SVD-LLM [47]+LoRA under the same budgets, JACTUS is consistently better across backbones (Tabs. 1 and 2), and the advantage increases as c de-creases. For example, on ViT-Base the average gain grows from +3.3 at 80% 12 Ge et al. 
+
+Table 1: Fine-tuning on ViT-Base and ViT-Large [10]. Top-1 accuracy (%). Backbone Budget Method CIFAR-100 EuroSAT RESISC45 Cars Aircraft DTD CIFAR-10 Pets Avg. ViT-Base 100% LoRA [17] 92.0 98.4 94.7 77.1 57.3 78.0 98.8 93.1 86.2 100% DoRA [25] 92.6 99.2 95.0 81.8 62.8 79.1 99.0 93.8 87.9 100% PiSSA [31] 92.2 99.2 95.5 79.1 62.6 81.7 98.6 95.9 88.1 100% SVFT [24] 91.4 98.5 94.4 77.5 60.2 81.8 98.7 92.5 86.9 80% SVD-LLM+LoRA 91.6 98.3 94.5 76.8 57.0 77.7 98.6 92.7 85.9 80% JACTUS 92.3 99.1 96.0 84.7 68.2 81.8 98.8 93.4 89.2 
+
+60% SVD-LLM+LoRA 90.1 95.9 92.2 71.5 50.3 74.9 97.6 90.2 82.8 60% JACTUS 91.6 98.5 95.3 78.9 63.2 79.8 98.6 91.6 87.2 40% SVD-LLM+LoRA 81.0 92.4 84.4 54.5 50.8 62.9 94.9 83.4 75.5 40% JACTUS 85.6 95.4 91.9 67.0 55.1 70.5 96.8 88.2 81.3 ViT-Large 100% LoRA [17] 94.9 99.0 94.7 83.3 64.5 81.5 99.1 94.8 89.0 100% DoRA [25] 94.3 98.9 95.4 84.2 69.8 81.7 99.1 94.8 89.8 100% PiSSA [31] 93.6 98.6 95.7 86.7 70.6 82.8 99.0 95.7 90.3 100% SVFT [24] 93.7 98.8 95.4 84.9 68.7 81.3 99.3 93.3 89.4 80% SVD-LLM+LoRA 93.6 98.7 94.2 82.6 64.0 80.8 99.0 94.2 88.4 80% JACTUS 94.6 99.3 96.4 87.8 71.5 82.6 99.3 95.2 90.8 
+
+60% SVD-LLM+LoRA 92.8 97.5 93.6 81.3 61.9 78.6 98.1 92.2 87.0 60% JACTUS 93.5 98.7 95.7 86.9 68.8 81.4 98.8 93.2 89.6 40% SVD-LLM+LoRA 86.3 93.0 91.7 72.5 56.5 71.7 95.0 85.8 81.6 40% JACTUS 87.8 96.0 93.2 77.7 60.3 73.9 96.9 89.4 84.4 
+
+Table 2: Fine-tuning on Swin-Base and Swin-Large [26]. Top-1 accuracy (%). Backbone Budget Method CIFAR-100 EuroSAT RESISC45 Cars Aircraft DTD CIFAR-10 Pets Avg. Swin-Base 100% LoRA [17] 92.1 98.7 94.4 81.6 68.9 77.8 98.8 93.8 88.3 100% DoRA [25] 92.8 99.2 94.2 82.0 69.7 78.5 98.9 93.1 88.6 100% PiSSA [31] 93.1 99.3 94.5 82.1 70.4 79.2 98.9 93.3 88.9 100% SVFT [24] 92.0 99.1 94.4 82.1 69.9 80.1 98.6 93.3 88.7 80% SVD-LLM+LoRA 91.7 97.9 93.9 80.4 68.3 77.4 98.3 92.5 87.6 80% JACTUS 93.3 99.1 95.9 82.2 72.2 82.2 98.9 93.1 89.6 
+
+60% SVD-LLM+LoRA 90.3 96.9 92.5 79.7 68.0 76.5 97.1 90.8 86.5 60% JACTUS 92.2 98.7 95.0 81.8 71.9 81.6 98.2 92.4 89.0 40% SVD-LLM+LoRA 86.5 92.6 91.5 72.0 59.8 70.8 94.1 86.6 81.7 40% JACTUS 88.2 96.4 93.6 76.9 64.2 74.6 96.8 90.7 85.2 Swin-Large 100% LoRA [17] 94.9 99.1 96.3 83.3 73.9 83.8 98.9 94.3 90.6 100% DoRA [25] 94.8 99.1 96.6 84.6 73.6 84.1 99.0 94.3 90.8 100% PiSSA [31] 94.6 99.3 96.5 84.0 74.1 84.2 99.1 94.5 90.8 100% SVFT [24] 94.2 99.1 95.8 83.2 73.8 84.1 98.9 94.3 90.4 80% SVD-LLM+LoRA 94.4 98.7 95.8 82.6 73.0 83.1 98.8 94.0 90.1 80% JACTUS 95.2 99.2 96.7 86.2 74.2 84.4 99.1 94.4 91.2 
+
+60% SVD-LLM+LoRA 93.4 98.2 94.9 81.3 71.6 81.9 98.0 92.3 89.0 60% JACTUS 94.0 98.5 95.3 84.7 72.9 83.1 98.7 93.3 90.1 40% SVD-LLM+LoRA 88.5 95.7 92.2 73.0 58.5 73.8 97.1 90.1 82.9 40% JACTUS 91.7 97.3 93.6 78.8 65.0 77.5 97.6 92.1 86.7 
+
+(89.2 vs 85.9) to +4.4 at 60% (87.2 vs 82.8) and +5.8 at 40% (81.3 vs 75.5). Similar trends of gap widdening hold for ViT-Large and Swin models (see Tabs. 1 and 2). Overall, these results indicate that decoupling compression and adap-tation amplifies subspace mismatch under tighter budgets, whereas JACTUS mitigates it by jointly aligning retained directions with task-sensitive signals. 
+
+4.3 Scaling Up to Large Language Models Commonsense QA. At 80% retained-parameter budget, JACTUS achieves an averaged 80.9% across eight tasks (Tab. 4), surpassing 100% PEFT base-Joint Compression and Adaptation 13 
+
+Table 4: CommonsenseQA on Llama2-7B [44]. Accuracy (%). Results of LoRA and DoRA are taken from DoRA [25]. Budget Method BoolQ PIQA SIQA HellaSwag WinoGrande ARC-e ARC-c OBQA Avg. 100% LoRA [17] 69.8 79.9 79.5 83.6 82.6 79.8 64.7 81.0 77.6 100% DoRA [25] 71.8 83.7 76.0 89.1 82.6 83.7 68.2 82.4 79.7 100% SVFT [24] 71.2 81.0 76.3 89.6 81.1 81.8 66.5 81.4 78.5 80% SVD-LLM [47]+LoRA 68.9 80.2 76.9 81.6 82.1 79.6 63.2 79.1 76.5 80% Dobi-SVD [36]+LoRA 69.2 81.7 77.6 82.1 82.5 78.3 64.3 79.7 76.9 80% JACTUS 70.7 82.9 80.6 93.0 83.3 85.4 71.7 79.6 80.9                                                             
+
+> 60% SVD-LLM [47]+LoRA 65.2 69.4 67.4 68.3 74.5 75.6 53.2 70.4 68.0 60% Dobi-SVD [36]+LoRA 66.0 70.7 72.0 75.3 78.0 78.7 58.9 72.6 71.5 60% JACTUS 66.8 79.8 77.4 87.8 78.5 76.9 61.5 75.4 75.5
+> 40% SVD-LLM [47]+LoRA 62.2 64.3 56.8 53.1 59.1 44.2 32.9 40.7 51.7 40% Dobi-SVD [36]+LoRA 64.4 61.8 64.3 50.5 59.3 47.0 30.8 40.0 52.3 40% JACTUS 62.6 64.4 66.6 61.1 60.0 56.9 43.0 56.6 58.9
+
+lines (DoRA [25] 79.7%, SVFT [24] 78.5%, LoRA [17] 77.6%). The improve-ment is broad-based, with a notable margin on HellaSwag (JACTUS 93.0% vs .DoRA 89.1%). At 60% and 40% retained-parameter budget, JACTUS remains robust (75.5%, 58.9%) and clearly outperforms two-stage SVD-LLM+LoRA [47] (68.0%, 51.7%) and Dobi-SVD+LoRA [36] (71.5%, 52.3%). 
+
+Mathematical reasoning. On Meta-Math [49] fine-tuning, JACTUS at 80% reaches 13.8% on MATH and 62.5% on GSM8K (Tab. 3), outperforming 100% PiSSA [31] (7.5% / 53.2%) and 100% LoRA [17] (5.9% / 43.2%). As the budget tightens to 60% and 40%, performance scales smoothly (11.1% / 51.5% and 8.8% / 46.2%), remaining competitive with 100% PEFT overall. 
+
+Table 3: MetaMath results on Llama2-7B (Accuracy %, pass@1). LoRA and PiSSA results are from [31].                 
+
+> Budget Method MATH GSM8K 100% LoRA [17] 5.9 43.2 100% PiSSA [31] 7.5 53.2 80% JACTUS 13.8 62.5
+> 60% JACTUS 11.1 51.5 40% JACTUS 8.8 46.2
+
+4.4 Ablation Studies 
+
+We ablate the role of the joint subspace, calibration size, and rank allocation. Unless specified, the results are reported on CommonsenseQA [40]. 
+
+Weight vs . task vs . joint subspace. We compare (i) Weight-Only (pre-trained weight subspace), (ii) Task-Only (task gradient subspace), and (iii) 
+
+JACTUS (their orthogonal union) at 60% retained-parameter budget (see Tab. 5). Averaged over tasks, JACTUS achieves 75.5%, while Weight-Only yields 69.5% and Task-Only 49.8%. The joint subspace strictly contains the two single-source subspaces as special cases, hence it can retain stable pretrained directions while admitting task-specific adaptations; this explains both the sizable gap over Task-Only and the consistent improvements over Weight-Only on harder datasets (e.g ., HellaSwag, ARC-c) [40]. 
+
+Calibration set size. Varying the calibration size among {512, 1024, 2048} at 60% retained-parameter budget Tab. 6 shows that moderate calibration is 14 Ge et al.                                                                                                       
+
+> Table 5: Ablation of subspace choice at 60% parameters on CommonsenseQA. Method BoolQ PIQA SIQA HSwag. WG. ARC-e ARC-c OBQA Avg. Weight-Only 64.8 70.7 71.1 83.4 72.7 68.0 55.1 70.2 69.5 Task-Only 62.1 55.0 43.3 45.6 57.8 53.9 34.6 46.2 49.8
+> JACTUS 66.8 79.8 77.4 87.8 78.5 76.9 61.5 75.4 75.5
+> Table 6: Ablation of calibration set size at 60% parameters on CommonsenseQA. Size of Calib. BoolQ PIQA SIQA HSwag. WG. ARC-e ARC-c OBQA Avg. 512 65.3 77.0 76.8 85.6 76.0 73.8 61.3 74.6 73.8
+> 1024 66.8 79.8 77.4 87.8 78.5 76.9 61.5 75.4 75.5
+> 2048 66.5 78.9 78.2 86.8 79.3 75.4 62.2 74.1 75.2
+> Table 7: Ablation of rank allocation at 60% parameters on CommonsenseQA. Setting BoolQ PIQA SIQA HSwag. WG. ARC-e ARC-c OBQA Avg.
+> Layerwise 66.8 79.8 77.4 87.8 78.5 76.9 61.5 75.4 75.5 Uniform 65.5 72.0 73.1 84.4 73.9 72.9 55.2 73.0 71.3
+
+sufficient: accuracy rises from 73.8% (512) to a peak of 75.5% (1024), and re-mains 75.2% at 2048. Beyond ∼1k examples the returns become diminishing and fluctuate slightly, indicating that the estimated task statistics are stable once a modest coverage of the input/gradient distribution is reached. This property is desirable for practical deployments where collecting a small, representative calibration set is much cheaper than full dataset fine-tuning. 
+
+Rank allocation: layer-wise vs . uniform. We control for the overall bud-get and compare uniform rank allocation (fixed 60% per matrix) against layer-wise allocation guided by task-aware statistics in Tab. 7. Layer-wise JACTUS improves the average from 71.3% (Uniform) to 75.5%. This indicates that our cost-aware global rank allocation can concentrate rank on matrices with higher effective energy and larger marginal gains for downstream objectives, thereby supporting the effectiveness of the proposed approach. 
+
+## 5 Conclusion 
+
+We presented JACTUS , a unified framework for joint task-aware adaptation and model compression. JACTUS bridges PEFT and post-hoc compression by constructing an orthogonal union of subspaces that combines the pre-trained weight structure with task-sensitive directions estimated from a small calibration set via task-aware statistics (Cx, Cg ). Within this joint subspace, we perform a projected low-rank approximation, allocate global ranks under a fixed parameter budget using a cost-aware marginal-gain strategy, and fine-tune only the compact core matrices. Across architectures (ViT, Swin, Llama2-7B) and modalities (vi-sion, commonsense, math reasoning), JACTUS consistently improves accuracy at the same retained-parameter budget, including in high-compression regimes. Joint Compression and Adaptation 15 
+
+Overall, our results suggest that compression and adaptation are best treated as a single optimization problem within a task-aware representation space. 
+
+Future work. We plan to incorporate (Cx, Cg ) more directly into the objec-tive, enabling online updates of the subspaces and rank allocation during training rather than only at initialization. We also aim to design a statistics-driven global allocator that uses statistical sensitivity as a proxy for marginal gain, moving toward end-to-end task-aware joint compression and adaptation. 
+
+## References 
+
+1. Amari, S.i.: Natural gradient works efficiently in learning. Neural Computation 
+
+10 (2), 251–276 (1998). https://doi.org/10.1162/089976698300017746 2, 5 2. Ben-Israel, A., Greville, T.N.E.: Generalized Inverses: Theory and Applications. CMS Books in Mathematics, Springer, New York, 2 edn. (2003). https://doi. org/10.1007/978-0-387-21524-5 33. Bisk, Y., Zellers, R., Le Bras, R., Gao, J., Choi, Y.: Piqa: Reasoning about physical commonsense in natural language. In: Proceedings of the Thirty-Fourth AAAI Conference on Artificial Intelligence (2020) 11, 21 4. Cheng, G., Han, J., Lu, X.: Remote sensing image scene classification: Benchmark and state of the art. Proceedings of the IEEE 105 (10), 1865–1883 (2017) 11, 21 5. Cimpoi, M., Maji, S., Kokkinos, I., Mohamed, S., Vedaldi, A.: Describing textures in the wild. In: CVPR. pp. 3606–3613 (2014) 11, 21 6. Clark, C., Lee, K., Chang, M.W., Kwiatkowski, T., Collins, M., Toutanova, K.: Boolq: Exploring the surprising difficulty of natural yes/no questions. In: Proceed-ings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (2019) 11, 21 7. Clark, P., Cowhey, I., Etzioni, O., Khot, T., Sabharwal, A., Schoenick, C., Tafjord, O.: Think you have solved question answering? try arc, the ai2 reasoning challenge. arXiv preprint arXiv:1803.05457 (2018) 11, 21 8. Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R., Hesse, C., Schulman, J.: Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 (2021) 11, 21 9. Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L.: ImageNet: A large-scale hierarchical image database. In: CVPR. pp. 248–255 (2009) 10 10. Dosovitskiy, A.: An image is worth 16x16 words: Transformers for image recogni-tion at scale. In: ICLR (2021) 1, 3, 8, 10, 12, 21, 22 11. Eckart, C., Young, G.: The approximation of one matrix by another of lower rank. Psychometrika 1(3), 211–218 (1936) 7 12. Frantar, E., Ashkboos, S., Hoefler, T., Alistarh, D.: GPTQ: Accurate post-training quantization for generative pre-trained transformers. arXiv preprint arXiv:2210.17323 (2022) 5 13. Golub, G.H., Van Loan, C.F.: Matrix Computations. Johns Hopkins Univer-sity Press, Baltimore, MD, 4 edn. (2013). https : / / doi . org / 10 . 1137 / 1 . 9781421407944 3, 6 14. Helber, P., Bischke, B., Dengel, A., Borth, D.: EuroSAT: A novel dataset and deep learning benchmark for land use and land cover classification. IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing 12 (7), 2217– 2226 (2019) 11, 21 16 Ge et al. 15. Hendrycks, D., Burns, C., Kadavath, S., Arora, A., Basart, S., Tang, E., Song, D., Steinhardt, J.: Measuring mathematical problem solving with the math dataset. NeurIPS Datasets and Benchmarks Track (2021) 11, 21 16. Hsu, Y.C., Hua, T., Chang, S., Lou, Q., Shen, Y., Jin, H.: Language model com-pression with weighted low-rank factorization (2022), https://arxiv.org/abs/ 2207.00112 2, 3, 4 17. Hu, E.J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W.: LoRA: Low-rank adaptation of large language models. In: ICLR (2022) 1, 3, 4, 11, 12, 13, 23, 24 18. Hwang, I., Park, H., Lee, Y., Yang, J., Maeng, S.: Pc-lora: Low-rank adapta-tion for progressive model compression with knowledge distillation. arXiv preprint arXiv:2406.09117 (2024). https://doi.org/10.48550/arXiv.2406.09117 , https: //arxiv.org/abs/2406.09117 219. Khuller, S., Moss, A., Naor, J.S.: The budgeted maximum coverage problem. In-formation Processing Letters 70 (1), 39–45 (1999). https://doi.org/10.1016/ S0020-0190(99)00031-9 720. Kopiczko, D.J., Blankevoort, T., Asano, Y.M.: VeRA: Vector-based random matrix adaptation. In: ICLR (2024) 3, 4 21. Krause, J., Stark, M., Deng, J., Fei-Fei, L.: 3D object representations for fine-grained categorization. In: ICCV Workshops. pp. 554–561 (2013) 11, 21 22. Krizhevsky, A., Hinton, G.: Learning multiple layers of features from tiny images. Master’s thesis, University of Tront (2009) 8, 11, 21 23. Ledoit, O., Wolf, M.: A well-conditioned estimator for large-dimensional covariance matrices. Journal of Multivariate Analysis 88 (2), 365–411 (2004). https://doi. org/10.1016/j.jmva.2003.11.009 624. Lingam, V.C., Neerkaje, A., Vavre, A., Shetty, A., Gudur, G.K., Ghosh, J., Choi, E., Dimakis, A., Bojchevski, A., Sanghavi, S.: SVFT: Parameter-efficient fine-tuning with singular vectors. In: NeurIPS. pp. 41425–41446 (2024) 3, 4, 11, 12, 13, 23, 24 25. Liu, S.Y., Wang, C.Y., Yin, H., Molchanov, P., Wang, Y.C.F., Cheng, K.T., Chen, M.H.: DoRA: Weight-decomposed low-rank adaptation. In: ICML. pp. 32100– 32121 (2024) 1, 3, 4, 11, 12, 13 26. Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., Lin, S., Guo, B.: Swin transformer: Hierarchical vision transformer using shifted windows. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) (2021) 1, 3, 10, 12, 21, 22, 23 27. Liu, Z., Kundu, S., Li, A., Wan, J., Jiang, L., Beerel, P.A.: Aflora: Adaptive freezing of low rank adaptation in parameter efficient fine-tuning of large models (2024), 
+
+https://arxiv.org/abs/2403.13269 3, 4 28. Loshchilov, I., Hutter, F.: Decoupled weight decay regularization. In: ICLR (2017) 11 29. Maji, S., Rahtu, E., Kannala, J., Blaschko, M., Vedaldi, A.: Fine-grained visual classification of aircraft. arXiv preprint arXiv:1306.5151 (2013) 11, 21 30. Martens, J., Grosse, R.: Optimizing neural networks with kronecker-factored ap-proximate curvature. In: Proceedings of the 32nd International Conference on Ma-chine Learning (ICML). pp. 2408–2417 (2015), https://arxiv.org/abs/1503. 05671 , arXiv:1503.05671 2, 5 31. Meng, F., Wang, Z., Zhang, M.: PiSSA: Principal singular values and singular vec-tors adaptation of large language models. In: NeurIPS. pp. 121038–121072 (2024) 1, 3, 4, 11, 12, 13 Joint Compression and Adaptation 17 32. Mihaylov, T., Clark, P., Khot, T., Sabharwal, A.: Can a suit of armor conduct electricity? a new dataset for open book question answering. In: Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing (2018) 11, 21 33. Nagel, M., Amjad, R.A., van Baalen, M., Louizos, C., Blankevoort, T.: Up or down? Adaptive rounding for post-training quantization. In: Proceedings of the 37th International Conference on Machine Learning. PMLR, vol. 119, pp. 7197– 7206 (2020), https://proceedings.mlr.press/v119/nagel20a.html 534. Parkhi, O.M., Vedaldi, A., Zisserman, A., Jawahar, C.: Cats and dogs. In: CVPR. pp. 3498–3505 (2012) 11, 21 35. Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., et al.: PyTorch: An imperative style, high-performance deep learning library. In: NeurIPS. pp. 8026–8037 (2019) 11 36. Qinsi, W., Ke, J., Tomizuka, M., Keutzer, K., Xu, C.: Dobi-SVD: Differentiable SVD for LLM compression and some new perspectives. In: The Thirteenth Inter-national Conference on Learning Representations (2025), https://openreview. net/forum?id=kws76i5XB8 2, 3, 4, 11, 13, 23, 24 37. Rasley, J., Rajbhandari, S., Ruwase, O., He, Y.: Deepspeed: System optimizations enable training deep learning models with over 100 billion parameters. Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining (2020), https://api.semanticscholar.org/CorpusID:221191193 
+
+11 38. Sakaguchi, K., Le Bras, R., Bhagavatula, C., Choi, Y.: Winogrande: An adversarial winograd schema challenge at scale. In: Proceedings of the AAAI Conference on Artificial Intelligence (2020) 11, 21 39. Sap, M., Rashkin, H., Chen, D., Le Bras, R., Choi, Y.: Socialiqa: Commonsense reasoning about social interactions. In: Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (2019) 11, 21 40. Talmor, A., Herzig, J., Lourie, N., Berant, J.: CommonsenseQA: A question an-swering challenge targeting commonsense knowledge. In: Burstein, J., Doran, C., Solorio, T. (eds.) Proceedings of the 2019 Conference of the North American Chap-ter of the Association for Computational Linguistics: Human Language Technolo-gies, Volume 1 (Long and Short Papers). pp. 4149–4158. Association for Compu-tational Linguistics, Minneapolis, Minnesota (Jun 2019). https://doi.org/10. 18653/v1/N19-1421 , https://aclanthology.org/N19-1421/ 11, 13, 21, 23, 24, 27, 28 41. Tian, C., Shi, Z., Guo, Z., Li, L., Xu, C.: HydraLoRA: An asymmetric LoRA architecture for efficient fine-tuning. In: NeurIPS. pp. 9565–9584 (2024) 3, 4 42. Tikhonov, A.N.: Solution of incorrectly formulated problems and the regularization method. Soviet Math. Dokl. 5, 1035–1038 (1963) 6 43. Touvron, H., Lavril, T., Izacard, G., Martinet, X., Lachaux, M., Lacroix, T., Rozière, B., Goyal, N., Hambro, E., Azhar, F., Rodriguez, A., Joulin, A., Grave, E., Lample, G.: Llama: Open and efficient foundation language models. CoRR abs/2302.13971 (2023). https://doi.org/10.48550/ARXIV.2302.13971 ,
+
+https://doi.org/10.48550/arXiv.2302.13971 144. Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babaei, Y., Bash-lykov, N., Batra, S., Bhargava, P., Bhosale, S., Bikel, D., Blecher, L., Ferrer, C.C., Chen, M., Cucurull, G., Esiobu, D., Fernandes, J., Fu, J., Fu, W., Fuller, B., Gao, C., Goswami, V., Goyal, N., Hartshorn, A., Hosseini, S., Hou, R., Inan, H., 18 Ge et al. Kardas, M., Kerkez, V., Khabsa, M., Kloumann, I., Korenev, A., Koura, P.S., Lachaux, M.A., Lavril, T., Lee, J., Liskovich, D., Lu, Y., Mao, Y., Martinet, X., Mihaylov, T., Mishra, P., Molybog, I., Nie, Y., Poulton, A., Reizenstein, J., Rungta, R., Saladi, K., Schelten, A., Silva, R., Smith, E.M., Subramanian, R., Tan, X.E., Tang, B., Taylor, R., Williams, A., Kuan, J.X., Xu, P., Yan, Z., Zarov, I., Zhang, Y., Fan, A., Kambadur, M., Narang, S., Rodriguez, A., Stojnic, R., Edunov, S., Scialom, T.: Llama 2: Open foundation and fine-tuned chat models. CoRR abs/2307.09288 (2023). https://doi.org/10.48550/arXiv.2307.09288 ,
+
+https://arxiv.org/abs/2307.09288 1, 3, 11, 13, 22, 23, 24, 26, 27, 28 45. Wan, Z., Wang, X., Liu, C., Alam, S., Zheng, Y., Liu, J., Qu, Z., Yan, S., Zhu, Y., Zhang, Q., Chowdhury, M., Zhang, M.: Efficient large language models: A survey (2024), https://arxiv.org/abs/2312.03863 146. Wang, X., Chen, T., Ge, Q., Xia, H., Bao, R., Zheng, R., Zhang, Q., Gui, T., Huang, X.: Orthogonal subspace learning for language model continual learning (2023), https://arxiv.org/abs/2310.14152 1, 3, 4 47. Wang, X., Zheng, Y., Wan, Z., Zhang, M.: SVD-LLM: Truncation-aware singular value decomposition for large language model compression. In: International Con-ference on Learning Representations (ICLR) (2025), https://openreview.net/ forum?id=LNYIUouhdt 2, 3, 4, 7, 11, 13, 23, 24 48. Wolf, T., Debut, L., Sanh, V., Chaumond, J., Delangue, C., Moi, A., Cistac, P., Rault, T., Louf, R., Funtowicz, M., Davison, J., Shleifer, S., von Platen, P., Ma, C., Jernite, Y., Plu, J., Xu, C., Scao, T.L., Gugger, S., Drame, M., Lhoest, Q., Rush, A.M.: Transformers: State-of-the-art natural language processing. In: EMNLP. pp. 38–45 (2020) 11 49. Yu, L., Jiang, W., Shi, H., Yu, J., Liu, Z., Zhang, Y., Kwok, J.T., Li, Z., Weller, A., Liu, W.: Metamath: Bootstrap your own mathematical questions for large language models. arXiv preprint arXiv:2309.12284 (2023) 11, 13, 21, 23, 24 50. Yuan, Z., Shang, Y., Song, Y., Wu, Q., Yan, Y., Sun, G.: Asvd: Activation-aware singular value decomposition for compressing large language models (2023) 2, 3, 4 51. Zellers, R., Holtzman, A., Bisk, Y., Farhadi, A., Choi, Y.: Hellaswag: Can a machine really finish your sentence? In: Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics (2019) 11, 21 52. Zhang, M., Chen, H., Shen, C., Yang, Z., Ou, L., Yu, X., Zhuang, B.: Loraprune: Structured pruning meets low-rank parameter-efficient fine-tuning. In: Findings of the Association for Computational Linguistics: ACL 2024. pp. 3013–3026. As-sociation for Computational Linguistics, Bangkok, Thailand (Aug 2024). https: //doi.org/10.18653/v1/2024.findings-acl.178 , https://aclanthology.org/ 2024.findings-acl.178/ 253. Zhang, Q., Chen, M., Bukharin, A., He, P., Cheng, Y., Chen, W., Zhao, T.: Adap-tive budget allocation for parameter-efficient fine-tuning. In: ICLR (2023) 1, 3, 454. Zhang, Q., Chen, M., Bukharin, A., Karampatziakis, N., He, P., Cheng, Y., Chen, W., Zhao, T.: Adalora: Adaptive budget allocation for parameter-efficient fine-tuning (2023), https://arxiv.org/abs/2303.10512 355. Zhao, W., Huang, Y., Han, X., Liu, Z., Zhang, Z., Li, K., Chen, C., Yang, T., Sun, M.: Ca-lora: Adapting existing lora for compressed llms to enable efficient multi-tasking on personal devices. arXiv preprint arXiv:2307.07705 (2024). https: //doi.org/10.48550/arXiv.2307.07705 , https://arxiv.org/abs/2307.07705 256. Zhou, Z., Ning, X., Hong, K., Fu, T., Xu, J., Li, S., Lou, Y., Wang, L., Yuan, Z., Li, X., Yan, S., Dai, G., Zhang, X.P., Dong, Y., Wang, Y.: A survey on efficient Joint Compression and Adaptation 19 inference for large language models. CoRR abs/2404.14294 (2024). https:// doi.org/10.48550/arXiv.2404.14294 , https://arxiv.org/abs/2404.14294 120 Ge et al. 
+
+## Appendix A: Basis Invariance and Core-only Equivalence 
+
+Subspace invariance and parameterization equivalence. Let U ∈ Rdout ×kp
+
+and V ∈ Rdin ×kp have full column rank, and define S(U, V) = {USV ⊤ : S ∈
+
+Rkp×kp }. If U′, V′ satisfy 
+
+Span( U′) = Span( U) = Q(kp) 
+
+> L
+
+,
+
+and Span( V′) = Span( V) = Q(kp) 
+
+> R
+
+,
+
+then there exist invertible RL ∈ Rkp×kp and RR ∈ Rkp×kp with U′ = UR L and 
+
+V′ = VR R, and 
+
+S(U′, V′) = S(U, V) = M
+
+
+
+Q(kp) 
+
+> L
+
+, Q(kp)
+
+> R
+
+
+
+.
+
+Proof. Since Span( U′) = Span( U) and both have full column rank kp, there exists an invertible RL ∈ Rkp×kp such that U′ = UR L. Indeed, each column of 
+
+U′ is a linear combination of the columns of U, so U′ = UR L for some RL; if 
+
+RL were singular, then rank( U′) ≤ rank( RL) < k p, contradicting full column rank. The same argument gives an invertible RR with V′ = VR R.We first show S(U′, V′) = S(U, V). For any S′,
+
+U′S′V′⊤ = UR LS′(VR R)⊤ = U RLS′R⊤
+
+> R
+
+V⊤,
+
+so S(U′, V′) ⊆ S (U, V). Conversely, for any S,
+
+USV ⊤ = U′ R−1 
+
+> L
+
+S(R−1 
+
+> R
+
+)⊤V′⊤ ,
+
+so S(U, V) ⊆ S (U′, V′), proving equality. Next, since Span( U) = Span( Q(kp) 
+
+> L
+
+) and both have full column rank, there exists an invertible AL with U = Q(kp) 
+
+> L
+
+AL, and similarly an invertible AR with 
+
+V = Q(kp) 
+
+> R
+
+AR. Then for any S,
+
+USV ⊤ = Q(kp)
+
+> L
+
+ ALSA ⊤
+
+> R
+
+  Q(kp)
+
+> R
+
+⊤,
+
+hence S(U, V) ⊆ M (Q(kp) 
+
+> L
+
+, Q(kp) 
+
+> R
+
+). Conversely, any element of M(Q(kp) 
+
+> L
+
+, Q(kp) 
+
+> R
+
+)
+
+has the form 
+
+Q(kp) 
+
+> L
+
+T Q(kp)
+
+> R
+
+⊤ = U A−1 
+
+> L
+
+T(A−1 
+
+> R
+
+)⊤V⊤,
+
+so lies in S(U, V). Thus S(U, V) = M(Q(kp) 
+
+> L
+
+, Q(kp) 
+
+> R
+
+), and combining with the first part gives the claimed equalities. Joint Compression and Adaptation 21 
+
+Table A1: Vision benchmarks used in experiments: number of classes and split sizes. Dataset #Classes #Train #Test 
+
+CIFAR-100 [22] 100 50,000 10,000 
+
+EuroSAT [14] 10 10,000 5,000 
+
+RESISC45 [4] 45 25,200 6,300 
+
+StanfordCars [21] 196 8,144 8,041 
+
+FGVC Aircraft [29] 100 6,667 3,333 
+
+DTD [5] 47 3,760 1,880 
+
+CIFAR-10 [22] 10 50,000 10,000 
+
+OxfordPets [34] 37 3,680 3,669 
+
+Table A2: Language generation benchmarks used in our experiments: training sources and evaluation split sizes. Dataset #Train #Test 
+
+CommonsenseQA fine-tuning experiment 
+
+CommonsenseQA [40] 9,741 1,140 
+
+BoolQ [6] – 3,270 
+
+PIQA [3] – 1,838 
+
+SIQA [39] – 1,954 
+
+HellaSwag [51] – 10,042 
+
+WinoGrande [38] – 1,267 
+
+ARC-Easy [7] – 2,376 
+
+ARC-Challenge [7] – 1,172 
+
+OBQA [32] – 500 
+
+MetaMath fine-tuning experiment 
+
+MetaMath [49] 395,000 –
+
+GSM8K [8] – 1,319 
+
+MATH [15] – 5,000 
+
+## Appendix B: Experimental Details and Hyperparameters 
+
+Vision benchmarks 
+
+For the vision experiments, we follow a standard image classification protocol on eight benchmarks. The number of classes and the train/test split sizes for each dataset are summarized in Tab. A1. For the language generation experiments, we conduct two separate fine-tuning protocols. In the first protocol, we fine-tune on the CommonsenseQA [40] training split and evaluate the resulting model on eight established commonsense reasoning benchmarks. In the second protocol, we fine-tune on the MetaMath [49] training set and directly evaluate the model on GSM8K [8] and MATH [15] for mathematical reasoning. The training sources and the test split sizes for all datasets are summarized in Tab. A2. For ViT-Base/Large [10] and Swin-Base/Large [26] backbones, we use dataset-specific hyperparameters, but for a given backbone–dataset pair we keep the 22 Ge et al. 
+
+Table A3: Hyperparameters for ViT-Base/Large [10] fine-tuning on a single NVIDIA L40 GPU. Batch size is the global batch size and is shared across methods and com-pression rates for each backbone–dataset pair. Backbone Dataset Batch size Learning rate Warmup ratio Weight decay Epochs ViT-Base                                                                                                                 
+
+> CIFAR-100 32 2×10 −40.06 0.05 15
+> EuroSAT 32 1×10 −40.06 0.05 12
+> RESISC45 32 5×10 −40.06 0.05 12
+> StanfordCars 32 5×10 −40.10 0.05 15
+> FGVC Aircraft 32 5×10 −40.10 0.05 15
+> DTD 32 5×10 −40.10 0.05 12
+> CIFAR-10 32 2×10 −40.05 0.05 10
+> OxfordPets 32 2×10 −40.10 0.05 12 ViT-Large
+> CIFAR-100 32 1×10 −40.06 0.05 15
+> EuroSAT 32 7×10 −50.06 0.05 12
+> RESISC45 32 2×10 −40.06 0.05 12
+> StanfordCars 32 2×10 −40.10 0.05 15
+> FGVC Aircraft 32 2×10 −40.10 0.05 15
+> DTD 32 2×10 −40.10 0.05 12
+> CIFAR-10 32 1×10 −40.05 0.05 10
+> OxfordPets 32 1×10 −40.10 0.05 12
+
+global batch size and training schedule identical across all methods and com-pression rates. The detailed hyperparameters for ViT-Base/Large and Swin-Base/Large are listed in Tabs. A3 and A4, respectively. In all ViT and Swin experiments, JACTUS is applied to all linear projections inside the attention and MLP blocks: the query, key, value, and output projections, as well as the MLP up- and down-projection matrices. All remaining modules, including em-beddings, layer normalizations, and classification heads, remain dense. 
+
+Joint subspace estimation, statistics, and rank allocation 
+
+For each dataset, we estimate the joint subspace and second-order statistics using a small calibration set. Concretely, we uniformly sample 1,024 examples from the training split of the corresponding dataset, shuffle them, and run the (frozen) model to collect the input and gradient features. The covariance matrices Cx
+
+and Cg are estimated over these calibration examples using a batch size of 8 and an exponential running average. For ViT [10] and Swin [26] backbones, the statistics are accumulated in fp32 
+
+to avoid numerical issues. For Llama2-7B [44], we instead use bf16 statistics due to memory constraints at scale. In all experiments, we use a fixed ridge regularization coefficient of 10 −5 when inverting the covariance matrices. The rank allocator uses a per-layer lower bound kmin on the allowed rank to avoid degenerate solutions. For all ViT and Swin experiments we set kmin = 32 .Under the compression regimes considered in the main paper (compression rates between 40% and 80% ), no layer in the vision or LLM experiments actually hits this lower bound, so the ranks are effectively determined by the optimizer. The global compression rate c is defined over all trainable parameters but excludes Joint Compression and Adaptation 23 
+
+Table A4: Hyperparameters for Swin-Base/Large [26] fine-tuning on a single NVIDIA L40 GPU. Batch size is the global batch size and is shared across methods and com-pression rates for each backbone–dataset pair. Backbone Dataset Batch size Learning rate Warmup ratio Weight decay Epochs Swin-Base                                                                                                                 
+
+> CIFAR-100 32 1×10 −40.06 0.05 15
+> EuroSAT 32 1×10 −40.06 0.05 12
+> RESISC45 32 1×10 −40.06 0.05 12
+> StanfordCars 32 2×10 −40.10 0.05 15
+> FGVC Aircraft 32 2×10 −40.10 0.05 15
+> DTD 32 2×10 −40.10 0.05 12
+> CIFAR-10 32 1×10 −40.05 0.05 10
+> OxfordPets 32 1×10 −40.10 0.05 12 Swin-Large
+> CIFAR-100 32 7×10 −50.06 0.05 15
+> EuroSAT 32 5×10 −50.06 0.05 12
+> RESISC45 32 5×10 −50.06 0.05 12
+> StanfordCars 32 1×10 −40.10 0.05 15
+> FGVC Aircraft 32 1×10 −40.10 0.05 15
+> DTD 32 1×10 −40.10 0.05 12
+> CIFAR-10 32 7×10 −50.05 0.05 10
+> OxfordPets 32 7×10 −50.10 0.05 12
+
+Table A5: Hyperparameters for Llama2-7B [44] fine-tuning on CommonsenseQA [40] under different compression rates. All runs use a global batch size of 128, warmup ratio 0.03, weight decay 0, maximum sequence length 1024, and bf16 training. Comp. Rate Method Learning rate Epochs 100% SVFT [24] 5 × 10 −4 180% JACTUS 1 × 10 −4 180% SVD-LLM [47]+LoRA [17] 2 × 10 −4 180% Dobi-SVD [36]+LoRA 2 × 10 −4 160% JACTUS 2 × 10 −4 260% SVD-LLM+LoRA 4 × 10 −4 260% Dobi-SVD+LoRA 4 × 10 −4 240% JACTUS 2 × 10 −4 240% SVD-LLM+LoRA 4 × 10 −4 240% Dobi-SVD+LoRA 4 × 10 −4 2
+
+Table A6: Hyperparameters for JACTUS on MetaMATH [49] with Llama2-7B [44]. All runs use a global batch size of 128, warmup ratio 0.03, weight decay 0, maximum sequence length 1024, bf16 training, cosine learning rate schedule. Comp. Rate Method Learning rate Epochs 80% JACTUS 1 × 10 −4 160% JACTUS 2 × 10 −4 240% JACTUS 2 × 10 −4 224 Ge et al. 
+
+the embedding layers: we first convert c into a total rank budget B, subtract the budget that would be assigned to the embeddings, and then allocate the remaining budget across the attention and MLP matrices only. 
+
+Language generation benchmarks 
+
+For language generation, we evaluate on CommonsenseQA [40] and MetaMATH [49] using Llama2-7B [44] as the base model. The train/validation/test splits of these benchmarks follow the standard dataset splits. On CommonsenseQA, the SVFT [24] baseline does not report fine-tuning results for Llama2-7B. We there-fore reproduce SVFT in the banded setting recommended by the original pa-per, using a band width d = 8 . For SVD-LLM [47]+LoRA [17] and Dobi-SVD [36]+LoRA, we start from the official compressed checkpoints at compres-sion rates 80% , 60% , and 40% , and attach a LoRA adapter to each low-rank matrix. All such models are then fine-tuned on the CommonsenseQA training set. For Dobi-SVD, we use the unremapping checkpoints released by the authors to ensure a fair comparison. All language experiments use a unified global batch size of 128 and the same optimization hyperparameters: weight decay is set to 0 and the warmup ratio to 0.03. We implement this global batch size using data-parallel training with appropriate choices of per-device batch size, gradient accumulation steps, and the number of GPUs. For both CommonsenseQA and MetaMATH, we train with a maximum sequence length of 1024 and use bf16 precision. The learning rate is scheduled with a cosine decay scheduler, and we fix the random seed to 42 for all runs. During fine-tuning, we adopt an instruction-following prompt format. Given a task-specific instruction string {instruction} , we construct the input as: 
+
+Below is an instruction that describes a task. Write a response that appropriately completes the request. ### Instruction:{instruction} ### Response: 
+
+At inference time, we decode with top-p sampling using p = 1 (i.e ., effectively greedy decoding) and temperature 0, with a maximum length of 1024 tokens. The method- and compression-specific learning rates and numbers of epochs on CommonsenseQA are summarized in Tab. A5. For MetaMATH, we reuse the same global batch size, warmup ratio, weight decay, and optimization settings, and only vary the learning rate and the number of epochs as shown in Tab. A6. 
+
+## Appendix C: Robustness to Random Seeds 
+
+To evaluate optimization stability, we repeat selected configurations with three different random seeds under the same training recipe (data split, batch size, Joint Compression and Adaptation 25 
+
+Table A7: Language tasks on Llama2-7B at 60% retained parameters with 100% PEFT baselines. (mean ±std over 3 runs). Method BoolQ PIQA Overall Avg. LoRA (100%) 69.8 ± 0.3 79.9 ± 0.2 77.6 ± 0.3 DoRA (100%) 71.8 ± 0.2 83.7 ± 0.2 79.7 ± 0.2 SVD-LLM+LoRA (60%) 65.2 ± 0.3 69.4 ± 0.2 68.0 ± 0.2 JACTUS (60%) 66.8 ± 0.2 79.8 ± 0.3 75.5 ± 0.2 
+
+Table A8: Vision tasks on ViT-Base at 60% retained parameters with 100% base-lines. (mean ±std over 3 runs). Method CIFAR-100 RESISC45 Overall Avg. LoRA (100%) 92.0 ± 0.1 94.4 ± 0.3 86.2 ± 0.2 DoRA (100%) 92.6 ± 0.2 94.2 ± 0.2 87.9 ± 0.2 SVD-LLM+LoRA (60%) 90.1 ± 0.2 92.5 ± 0.3 85.9 ± 0.2 JACTUS (60%) 91.6 ± 0.2 95.0 ± 0.3 87.2 ± 0.3 
+
+optimizer, and schedule). We report mean ± standard deviation over three runs. Baselines are reproduced under the same setup for fairness. The last column re-ports the overall average across all evaluated tasks in the corresponding bench-mark suite, while only representative tasks are shown here for brevity. Across both language and vision tasks, JACTUS consistently exhibits small variance (typically < 0.3) while maintaining higher mean accuracy. This indi-cates stable convergence behavior under strict retained-parameter budgets. 
+
+## Appendix D: Training Efficiency and Memory Usage 
+
+Beyond deployment efficiency, we further evaluate the training-time efficiency of JACTUS. Since JACTUS introduces a one-time calibration stage before fine-tuning, a natural question is whether compression-aware adaptation increases the overall training cost. 
+
+Training protocol. The training procedure consists of two stages: 
+
+– Calibration. We first run the frozen pretrained model on a small calibration set (1,024 training samples) to collect activation and gradient statistics for estimating the joint subspace. This stage involves only forward and backward passes, without parameter updates, and is performed only once for each task. 
+
+– Fine-tuning. After compression, adaptation is performed entirely in the reduced low-rank parameter space. Importantly, calibration is a one-time overhead and does not scale with the number of training epochs. 
+
+Wall-clock training time. Table A9 summarizes the wall-clock training time. Although JACTUS introduces a short calibration stage, the subsequent fine-tuning phase becomes more efficient due to the reduced number of trainable parameters and lower memory traffic. For ViT-Base on CIFAR-100 , calibration takes only 0.04h, while the fine-tuning time is reduced from 1.18h with standard LoRA/DoRA to 1.05h with JACTUS, resulting in a lower total training time of 1.09h. A similar trend is observed for Llama2-7B on CommonsenseQA: JACTUS requires only 0.25h for calibration, reduces fine-tuning time from 9.20h to 8.81h, and yields a slightly lower total training time of 9.06h. These results indicate that the calibration overhead is small in practice and can be largely offset by the improved optimization efficiency in the compressed space. 26 Ge et al.                         
+
+> Table A9: Training efficiency and memory comparison between JACTUS (60% pa-rameter budget) and standard PEFT methods (100% parameter budget). ViT-Base is trained on CIFAR-100, while Llama2-7B is trained on CommonsenseQA.
+> Backbone Method Calibration Tune Total Memory
+> ViT-Base LoRA/DoRA -1.18h 1.18h 5.9G
+> JACTUS 0.04h 1.05h 1.09h 4.3G
+> Llama2-7B LoRA/DoRA -9.20h 9.20h 42.8G
+> JACTUS 0.25h 8.81h 9.06h 40.2G
+
+Peak memory usage. Because JACTUS performs optimization directly in the compressed subspace, it reduces both the number of trainable parameters and the associated optimizer states, leading to lower peak GPU memory usage during training. As shown in Table A9, for ViT-Base, peak memory is reduced from 5.9G to 4.3G; for Llama2-7B, it decreases from 42.8G to 40.2G. Therefore, JACTUS not only maintains comparable or slightly better end-to-end training time, but also consistently improves memory efficiency across both vision and language backbones. 
+
+## Appendix E: Trade-offs between Compression and Performance 
+
+In this section, we provide additional quantitative evidence on the trade-off be-tween performance and computational efficiency achieved by JACTUS under different compression rates. Specifically, we report accuracy–compression curves for Llama2-7B [44] averaged over eight language generation benchmarks (as sum-marized in Tab. 3), together with throughput–compression curves measured for Llama2-7B in a deployment-oriented setting. 
+
+Accuracy vs. Compression 
+
+Figure A1 shows the overall average end-task accuracy across eight language generation benchmarks as a function of the compression rate for Llama2-7B [44]. For each parameter budget, we compare the dense baseline (100% parameters) with JACTUS under multiple compression rates. Overall, JACTUS preserves most of the dense-model accuracy at moderate compression rates ( e.g ., 80% and 60% of the original parameters), while degrad-ing gracefully under more aggressive compression, such as 40%. The resulting curves are generally smooth, suggesting that the proposed global rank alloca-tor can distribute model capacity effectively across layers rather than causing abrupt performance collapse under tight parameter budgets. Across these lan-guage benchmarks, JACTUS consistently outperforms naive low-rank baselines at the same nominal compression rate, indicating that cross-layer allocation guided by empirical covariance statistics is important for maintaining down-stream accuracy. Joint Compression and Adaptation 27 40 60 80 100 
+
+Compression rate 
+
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> 80
+> 85
+> Accuracy on CommonsenseQA
+> JACTUS
+> SVD-LLM+LoRA
+> Dobi-SVD+LoRA
+> LoRA (100%)
+> DoRA (100%)
+> SVFT (100%)
+
+Fig. A1: Overall average accuracy vs. compression rate on eight language generation benchmarks with Llama2-7B. JACTUS maintains competitive performance at moder-ate compression and degrades gracefully as compression becomes more aggressive. 100% (Dense)     
+
+> 80% (JACTUS)
+> 60% (JACTUS)
+> 40% (JACTUS)
+> 0
+> 10000
+> Throughput (tokens/s)
+> 6281 7736
+> 9755
+> 13262
+> BS=1
+> 100% (Dense)
+> 80% (JACTUS)
+> 60% (JACTUS)
+> 40% (JACTUS)
+> 0
+> 5000
+> 10000
+> Throughput (tokens/s)
+> 5894 7164
+> 8914
+> 11608
+> BS=8
+> 100% (Dense)
+> 80% (JACTUS)
+> 60% (JACTUS)
+> 40% (JACTUS)
+> 0
+> 5000
+> 10000
+> Throughput (tokens/s)
+> 6224 6721
+> 8347
+> 10744
+> BS=32
+> 1.0
+> 1.5
+> 2.0
+> Speedup (×)
+> 1.0
+> 1.5
+> 2.0
+> Speedup (×)
+> 1.0
+> 1.5
+> Speedup (×)
+> Dense (100%) JACTUS (Compressed)
+
+Fig. A2: Throughput and speedup under different global batch sizes (BS) as a func-tion of the compression rate on CommonsenseQA [40] with Llama2-7B [44]. Blue bars show the throughput of the dense model and orange bars show the throughput of the model compressed by JACTUS (left axis, in tokens/s), while the green curve shows the speedup over the dense baseline (right axis). 
+
+Throughput vs. Compression 
+
+To understand the impact of JACTUS on deployment-time efficiency, we also measure the decoding throughput of Llama2-7B [44] on CommonsenseQA [40] under different compression rates. We first compress the model using a calibra-tion set of 1,024 examples drawn from the CommonsenseQA training split, and then evaluate end-to-end generation throughput (in tokens per second) on the test set. Figure A2 reports the results for three global batch sizes, BS = 1 , 8, 32 .Blue bars correspond to the dense (100%) model, orange bars to JACTUS-compressed models at 80%, 60%, and 40% parameter budgets, and the green curve shows the speedup relative to the dense baseline. Across all batch sizes, throughput increases monotonically as compression becomes more aggressive. At a moderate compression rate of 60%, JACTUS already delivers approximately 
+
+1.2–1.5× speedup over the dense model. When the budget is further reduced to 40%, the speedup approaches 2× for small and medium batch sizes and re-mains substantial (around 1.7×) even at BS = 32 . Together with the accuracy– compression trends in Figure A1, these results show that JACTUS can provide 28 Ge et al. 0 4 8 12 16 20 24 28                     
+
+> Layer
+> 0
+> 1000
+> 2000
+> 3000
+> Rank
+> Compression 40%
+> 04812 16 20 24 28
+> Layer
+> Compression 60%
+> 04812 16 20 24 28
+> Layer
+> Compression 80%
+> Query Key Value Output Up Down Gate
+
+Fig. A3: Layer-wise ranks selected by the greedy global allocator for Llama2-7B [44] under 40%, 60%, and 80% compression. We plot the ranks of attention (Query/Key/Value/Output) and MLP (Up/Down/Gate) projections as a function of layer index. The calibration set is built from the CommonsenseQA [40] training split. 
+
+meaningful inference-time wall-clock gains while preserving competitive overall performance across language generation benchmarks. 
+
+## Appendix F: Rank Allocation Visualizations 
+
+In this section, we provide additional visualizations of the layer-wise ranks se-lected by the JACTUS allocator. Since the main text already presents the rank allocation behavior on the vision backbone (ViT), here we provide the corre-sponding visualization for Llama2-7B. For this model, we run the greedy global rank allocation algorithm on a fixed calibration set and visualize the resulting ranks of different submodules across layers under different compression rates. These results complement the quantitative accuracy and throughput compar-isons in Figs. A1 and A2 by illustrating how JACTUS distributes its parameter budget within a large language model. 
+
+Llama2-7B on CommonsenseQA 
+
+Fig. A3 shows the layer-wise rank allocation for Llama2-7B [44] under 40%, 60%, and 80% compression. Specifically, we report the ranks assigned to the self-attention projections (Query, Key, Value, and Output) and the MLP projections (Up, Down, and Gate) at each layer. The calibration set is sampled from the CommonsenseQA training split [40]. Consistent with the trend observed for ViT in the main text, JACTUS tends to assign larger ranks to deeper layers, while relatively suppressing the ranks of the Key and Value projections. In addition, the MLP projections generally receive higher ranks than several attention projections, suggesting that the al-locator identifies them as more parameter-sensitive components under the same budget. As the compression rate becomes more aggressive, from 80% to 40%, the overall rank scale decreases accordingly, while the qualitative allocation pattern remains largely stable. This indicates that JACTUS consistently prioritizes later layers and capacity-intensive modules even under tighter parameter budgets.

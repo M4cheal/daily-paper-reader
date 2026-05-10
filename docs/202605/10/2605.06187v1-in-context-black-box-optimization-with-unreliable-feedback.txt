@@ -1,0 +1,1840 @@
+Title: In-Context Black-Box Optimization with Unreliable Feedback
+
+URL Source: https://arxiv.org/pdf/2605.06187v1
+
+Published Time: Fri, 08 May 2026 01:30:17 GMT
+
+Number of Pages: 31
+
+Markdown Content:
+# In-Context Black-Box Optimization with Unreliable Feedback 
+
+Nicolas S. Blumer Julien Martinelli Samuel Kaski 
+
+ELLIS Institute Finland ELLIS Institute Finland ELLIS Institute Finland Aalto University Aalto University Aalto University University of Manchester 
+
+Abstract 
+
+Black-box optimization in science and engineering often comes with side infor-mation: experts, simulators, pretrained predictors, or heuristics can suggest which candidates look promising. This information can accelerate search, but it can also be biased, input-dependent, or misleading. Feedback-aware BO methods typically handle one task at a time, limiting their ability to generalize over multiple sources of feedback. In-context optimizers address cross-task adaptation, but usually as-sume that optimization history is the only available signal at test time. We study 
+
+feedback-informed in-context black-box optimization (FICBO), where a pretrained optimizer conditions on both the observed history and cheap auxiliary feedback for the current candidate set. We introduce a structured feedback prior that models how feedback sources vary in their access, relevance, and distortion relative to the true objective, and use it to pretrain a feedback-aware transformer. At test time, the model estimates source reliability in context by comparing observed objec-tive values with auxiliary signals, improving query selection. On synthetic and real-world tasks, FICBO effectively exploits informative feedback while remaining robust to weak or misleading sources, improving over other baselines. Empirical investigations further illustrate how the model perceives test-time sources, offering insights into its interpretability and decision-making process. 
+
+1 Introduction 
+
+Optimizing expensive black-box experiments is a central problem in many scientific and engineering applications, including biology [ 1], chemistry [ 2], and materials science [ 3]. In many such settings, domain experts can offer informed feedback through manual assessment, hand-crafted heuristics, or surrogate models of how the system behaves, grounded in years of experience but capturing only part of the underlying mechanism [ 4]. Such feedback can substantially accelerate search, but it may also be biased, context-dependent, or only locally informative [ 5 , 6]. Yet such feedback is rarely globally reliable; its quality is unknown beforehand and may degrade precisely in the novel parts of the design space that optimization is driven to explore. The optimizer must therefore infer source reliability on the fly, from the data collected during search. A natural framework for optimizing expensive objectives under such imperfect guidance is Bayesian optimization (BO), which models the unknown objective with a probabilistic surrogate, often a Gaussian process [ 7 ], and selects the next design through an acquisition function that balances exploration and exploitation [ 8]. This probabilistic and sequential structure makes BO particularly well suited to settings with auxiliary feedback, since such information can shape inference and guide design selection. Existing feedback-aware BO methods exploit expert knowledge through informative priors or user beliefs over the objective [ 2, 4 , 5, 9 ]. Most encode this knowledge as a static prior over the acquisition function, whose influence is controlled by a parameter the user must specify in advance [ 4, 10 ]. Yet the right degree of influence depends on the very reliability of the expert, which is unknown a priori and may vary across the search space. 
+
+> Preprint.
+> arXiv:2605.06187v1 [cs.LG] 7 May 2026
+
+Amortized optimization offers a natural way to learn this feedback-adaptive behavior across tasks. By pretraining a neural optimizer on a distribution of synthetic tasks with diverse feedback, one can move part of the optimization burden offline and encode assumptions about the expected problem class directly into the task prior. The resulting model can then adapt in context to a new problem from its optimization history alone, without task-specific retraining. Recent work has shown this paradigm to be highly effective in settings such as Bayesian experimental design and BO [11–14]. However, existing amortized optimizers typically take only the standard optimization history as input. They are not designed for settings where an auxiliary source is available at test time and may help on some tasks, be irrelevant on others, or induce negative transfer if overused [ 5]. We therefore aim to learn through pretraining how such feedback should modulate posterior inference and query selection. 
+
+Contributions. We introduce FICBO (Feedback-informed In-Context BO), an in-context black-box optimization framework for settings with unreliable auxiliary feedback, using expert sources as a primary example (Figure 1). Concretely, we contribute: (1) conceptually, a formulation in which an optimizer receives auxiliary feedback at test time and must infer its reliability on-the-fly; (2) methodologically, a feedback-aware amortized BO framework pretrained under a feedback prior over source reliability; and (3) empirically, an evaluation protocol spanning synthetic and real tasks, with ablations over feedback strength and bias type, comparisons against classical and amortized baselines, and empirical investigations that illustrate how the model perceives test-time sources. Model 
+
+Transformer 
+
+Embedder  
+
+> Features Feedback
+
+Posterior Policy 
+
+Deployment Feedback Prior 
+
+Training Inference 
+
+> locally useful
+> misleading
+
+Data                    
+
+> Feedback Features
+> Sample
+> History
+> globally useful
+> Methods Surrogate and
+> acqf. amortized Auxiliary feedback at test time Feedback-aware pretraining
+> Vanilla BO [8] ✗✗✗
+> πBO [4], CoExBO [9] ✗✓✗
+> PFNs4BO [ 15 ], GIT-BO [ 16 ], BoFormer [ 17 ]✗✗✗
+> NAP [12], PABBO [18], TAMO [14] ✓✗✗
+> FICBO (This work) ✓✓✓
+
+Figure 1: Feedback-aware amortized BO (FICBO) and related work. During training, tasks are sampled from a feedback prior with auxiliary sources of varying reliability. A transformer model learns both posterior prediction and query selection from standard features and feedback. At deployment, it conditions on the optimization history and the available feedback to guide search. 
+
+2 Background: in-context black-box optimization 
+
+We consider the black-box optimization problem 
+
+x⋆ ∈ arg max  
+
+> x∈X
+
+f (x), (1) where X ⊆ Rd is the design space and f : X → R is unknown and accessible only through expensive evaluations. At round t, querying xt yields a noisy observation yt = f (xt) + εt with εt ∼ N (0 , σ 2),and the history after t rounds is Ht = {(xi, y i)}ti=1 .Classical methods solve each optimization problem independently. In contrast, in-context black-box optimization leverages commonalities across related problems by shifting computation offline. This 2motivates defining a distribution over related tasks, τ ∼ p(τ ), where each task has its own objective 
+
+fτ . By pretraining across such tasks, a neural optimizer can adapt at test time to a new problem directly from its observed history, without requiring task-specific retraining. We focus on a pool-based setting, where each task τ is associated with a finite candidate set Qτ =
+
+{xτj }Nτ
+
+> j=1
+
+. At round t, the optimizer selects xτt ∈ Qτt ⊆ Qτ , observes yτt = fτ (xτt ) + ετt with 
+
+ετt ∼ N (0 , σ 2 
+
+> τ
+
+), and updates the corresponding history Hτt = {(xτi , y τi )}ti=1 . The optimizer comprises a predictive component 
+
+qϕ(y | x, H τt ), (2) which estimates the value of a candidate x ∈ Qτt , and a policy that directly selects the next query, 
+
+xτt ∼ πψ (· | Hτt , Q τt ), (3) with Qτt+1 = Qτt \ { xt}. The policy is the primary object, as it determines which candidate is evaluated next. The predictive model serves as an auxiliary training signal, providing predictions with uncertainty for interpretability and potentially acting as a faster GP surrogate [12–14]. Training proceeds offline over trajectories sampled from p(τ ), optimizing 
+
+max  
+
+> θ
+
+Eτ ∼p(τ )
+
+h TτX
+
+> t=1
+
+rτt
+
+i
+
+, (4) where y∗ 
+
+> t
+
+= max i≤t yτi denotes the best value observed up to round t, rτt = max( yτt − y∗
+
+> t−1
+
+, 0) 
+
+is the improvement over it, and θ is the parameters of the policy. Unlike classical BO, which maximizes an acquisition function at each step, the in-context optimizer is trained end-to-end to maximize cumulative reward over the full trajectory, replacing repeated model fitting and acquisition optimization with a learned procedure that transfers directly to new problems at test time [12–14]. 
+
+3 Method 
+
+We extend the in-context black-box optimization setup (Section 2) to a feedback-aware setting, where the optimizer also receives candidate-wise auxiliary feedback over the pool, 
+
+uτ = {uτ (x) : x ∈ Qτ }. (5) We assume feedback is available for every point in the query set; if the source is too expensive to query exhaustively, one can fit a cheap surrogate to a small number of labeled points, as in preference elicitation [ 9 , 18 , 19 ], though this may itself introduce bias that the model must then account for. The remainder of this section specifies the corresponding feedback prior, the feedback-aware posterior and policy, and the architecture and training objectives used to learn them. The signal uτ conveys source-specific information about candidate quality rather than ordinary input features. Its usefulness may vary across tasks and regions of the design space: uτ (x) may be noisy, systematically biased, only locally informative, or misleading. The central challenge is to infer from the observed optimization history how strongly this signal should influence search on the current task. 
+
+3.1 A prior over feedback mechanisms 
+
+Following the amortized pretraining paradigm [ 13 , 18 , 20 , 21 ], we pretrain on synthetic optimization episodes sampled from a joint prior over objectives and auxiliary feedback sources. Each task is 
+
+τ =  Qτ
+
+> full
+
+, P τ
+
+> model
+
+, H τ 
+
+> 0
+
+, f τ , h τ , T τ , (6) where Qτ 
+
+> full
+
+= {xfull  
+
+> j
+
+}Nτ 
+
+> j=1
+
+is a latent candidate pool, P τ 
+
+> model
+
+is the projection visible to the optimizer, 
+
+Hτ 
+
+> 0
+
+is the initial history, fτ is the objective, hτ is the feedback-generating map, and T τ is the horizon. The optimizer sees only 
+
+xτj = P τ
+
+> model
+
+xfull  
+
+> j
+
+, Qτ = {xτj : xfull  
+
+> j
+
+∈ Qτ
+
+> full
+
+}, (7) while objective and feedback values are generated as yτj = fτ (xfull  
+
+> j
+
+) + ετj and uτj = hτ (xfull  
+
+> j
+
+). The latent source variable and bias parameters are unobserved. 
+
+Input visibility. We randomize the visibility pattern by sampling a source-visible input dimension 
+
+dτ 
+
+> src
+
+and an overlap oτ between the optimizer’s features and those available to the source. The latent 3input has dimension dτ 
+
+> full
+
+= dℓ + dτ
+
+> src
+
+, where dℓ is the optimizer input dimension. In the feature-split construction, this induces 
+
+xfull =  xmodel , xshared , xsrc 
+
+, P model xfull = ( xmodel , xshared ), P src xfull = ( xshared , xsrc ). (8) Here xmodel ∈ Rdℓ−oτ
+
+is optimizer-only, xsrc ∈ Rdτ 
+
+> src
+
+is source-only, and xshared ∈ Roτ
+
+is visible to both. This generates tasks where feedback may contain information absent from the optimizer’s input while remaining incomplete or biased. We use two complementary source priors: a feature-split additive prior, which models information asymmetry, and a reweighted latent-component prior, which models incorrect relevance assumptions. 
+
+Feature-split additive prior. In the additive prior, the objective combines two independent GP components: one depending on features visible only to the optimizer, and one depending on features visible to the source. We sample f model  
+
+> τ
+
+∼ GP (0 , k model  
+
+> τ
+
+) on xmodel and f src  
+
+> τ
+
+∼ GP (0 , k src  
+
+> τ
+
+) on 
+
+(xshared , xsrc ), and set 
+
+fτ (xfull ) = (1 − wτ ) f model  
+
+> τ
+
+(xmodel ) + wτ f src  
+
+> τ
+
+(xshared , xsrc )
+
+p(1 − wτ )2 + w2
+
+> τ
+
+, wτ ∈ [0 , 1] . (9) The normalization keeps the output scale independent of wτ . The source’s ideal signal is gτ (xfull ) = 
+
+f src  
+
+> τ
+
+(xshared , xsrc ), so wτ controls source relevance: large wτ makes the source-visible component central to the objective, while small wτ makes it accurate but weakly relevant. The ideal signal is then distorted as ˜gτ = Bτ [gτ ], where Bτ may add noise, global shifts, smooth GP-shaped bias, local reliability effects, or rare replacements; examples are shown in Figure 2. The distorted signal can be used directly, or, in the model-based branch, passed through a source model initialized from additional source-only observations 
+
+Dτ 
+
+> src
+
+=   Psrc xfull  
+
+> i
+
+, ˜gτ (xfull  
+
+> i
+
+) nsrc  
+
+> i=1
+
+, Mτ = Init Hτ
+
+ Dτ
+
+> src
+
+. (10) Here Init Hτ denotes fitting or conditioning a source model, such as a GP regressor, or a tree-based predictor. The feedback map is 
+
+hτ (xfull ) = 
+
+(˜gτ (xfull ), direct source ,Mτ (Psrc xfull ), model-based source . (11) The source model is initialized once from Dτ
+
+> src
+
+, separate from the optimizer’s query pool or context, and held fixed during the BO episode. Intuitively, auxiliary sources like human experts or pretrained models typically have access to different features than the optimizer or rely on prior observations that the optimizer cannot see directly. Training a surrogate on a separate dataset simulates this scenario. 
+
+Reweighted mixture latent-component prior. The second variant makes reliability a matter of component weighting rather than feature access. Let Kτ = Kreal + Kτ 
+
+> decoy
+
+and sample independent GP components zτ, 1, . . . , z τ,K τ on xfull . Only the first Kreal components determine the objective: 
+
+fτ (xfull ) = 1
+
+√Kreal 
+
+> Kreal
+
+X
+
+> k=1
+
+zτ,k (xfull ). (12) The source forms feedback from a masked and reweighted combination of real and decoy components. With mτ, 1 = 1 , mτ,k ∼ Bernoulli( psrc ) for k > 1, and Sτ = {k : mτ,k = 1 }, we sample 
+
+¯aτ,S τ ∼ Dirichlet  αsrc 1|Sτ |
+
+, aτ,k = p|Sτ | ¯aτ,k I{k ∈ Sτ }. (13) The source signal and feedback are then 
+
+gτ (xfull ) = 
+
+> Kτ
+
+X
+
+> k=1
+
+aτ,k zτ,k (xfull ), hτ = Bτ [gτ ], (14) where Bτ may again be the identity or one of the degradation operators in Figure 2. This prior produces coherent but unreliable sources: the source may ignore real components, overemphasize some of them, or attend to decoys that do not affect the objective. 
+
+Inference problem induced by the prior. In both priors, the learner receives the pool feedback 
+
+{(xτj , u τj ) : xτj ∈ Qτ } and the evaluated history Hτt , but not wτ , hidden coordinates, latent compo-nents, source weights, bias parameters, or source-private data. Here uτj denotes the feedback attached to the projected candidate xτj . Source reliability must therefore be inferred in context, from how feedback values agree with observed objective evaluations. Further details regarding source-data sampling schemes are deferred to Appendix B. 4feedback bias combined GP bias shift local noise replacement 
+
+Figure 2: Illustration of five signal degradation bias types applied to a feedback GP. 
+
+3.2 Feedback-aware model 
+
+For a task τ at round t < T , each point x ∈ Qτ carries both its features and auxiliary feedback 
+
+uτ (x). Evaluated points additionally carry an observed outcome y, giving an augmented history 
+
+eHτt = {(xτi , u τi , y τi )}ti=1 and pool-side feedback U τt = {(x, u τ (x)) : x ∈ Qτt }. We embed each point into a token via learned embedders ex, eu, ey ,
+
+Ectx = Concat( ex(x), e u(u)) + ey (y), Eqry = Concat( ex(x), e u(u)) , (15) where context tokens use (x, u, y ) and query tokens use only (x, u ). A shared transformer backbone maps them to contextualized representations bEctx 
+
+and bEqry 
+
+, with query tokens attending to both the context and the full query set. This allows each contextualized candidate representation bEqry 
+
+to depend on both the optimization history and the pool-wide pattern of auxiliary feedback. Two heads operate on top of the backbone. The policy head maps each contextualized query token to a scalar logit, inducing a categorical distribution over Qτt ,
+
+πψ (xτj | eHτt , U τt ) ∝ exp  MLP ψ ( bEqry  
+
+> j
+
+). (16) The inference head maps each query token to a K-component Gaussian mixture, 
+
+qϕ(y | x, eHτt , U τt ) = 
+
+> K
+
+X
+
+> ℓ=1
+
+wℓ(x) N (y; μℓ(x), σ 2 
+
+> ℓ
+
+(x)) , (17) and can be used in place of the policy head by pairing it with a standard acquisition function α, giving 
+
+xτt+1 = arg max x∈Qτt α(x; qϕ, eHτt , U τt ).
+
+Training. Both heads are trained jointly on synthetic episodes sampled from the task prior. The inference head minimizes a step-wise negative log-likelihood over a prediction-supervision set Sτt ,formed by combining the current candidate pool with additional held-out target points; their labels are used only for training and are not included in eHτt .
+
+Lpred (ϕ) = −Eτ
+
+ 1
+
+TτTτ −1X
+
+> t=0
+
+1
+
+|S τt |
+
+X
+
+> (x,y )∈S τt
+
+log qϕ(y | x, eHτt , U τt )
+
+ . (18) We cast policy learning as a finite-horizon MDP where the state at step t is the augmented history and remaining pool, and optimize with REINFORCE using improvement over the current best as reward, rτt = max( yτt − y∗
+
+> t−1
+
+, 0) . Further details can be found in section D.1. The policy loss is then 
+
+Lpol (ψ) = −Eτ,π ψ
+
+"Tτ −1X
+
+> t=0
+
+log πψ (xτt | eHτt , U τt ) ˜Rτt
+
+#
+
+, (19) where ˜Rτt is the batch-normalized discounted return from step t. The full objective is L = Lpred +
+
+λpol Lpol , optimized with a warm-up phase in which only Lpred is active, and candidates are sampled randomly before joint training begins. The full pretraining procedure is summarized in Algorithm 1. 
+
+4 Related work 
+
+Expert knowledge and feedback in Bayesian optimization and sequential design. A substantial literature studies how external expertise can improve BO and Bayesian experimental design, whether through informative priors, interactive feedback, or auxiliary predictive sources [ 22 ]. Prior-guided 5Best found ( ↑)0 5 10 15 20 25 30                               
+
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 0510 15 20 25 30
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 0510 15 20 25 30
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 0510 15 20 25 30
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 0510 15 20 25 30
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 Cum. regret ( ↓)0510 15 20 25 30
+> iterations
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+
+(a) Marginal expert 0 5 10 15 20 25 30  
+
+> iterations
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+
+(b) XGBoost expert 0 5 10 15 20 25 30  
+
+> iterations
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+
+(c) Branin, a = 0 0 5 10 15 20 25 30  
+
+> iterations
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+
+(d) Branin, a = 0 .50 5 10 15 20 25 30  
+
+> iterations
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+
+(e) Branin, a = 0 .75 FICBO (Mixture Prior) 
+
+> FICBO (Additive Prior)
+> GP-prior ICBO
+> GP-prior ICBO + feedback feature
+> Random
+> Feedback
+> BO-UCB
+> BO-EI
+> Optimal
+
+Figure 3: Performance across synthetic benchmarks and multi-fidelity Branin tasks. Top row: 
+
+normalized best objective found so far. Bottom row: normalized cumulative regret. (a–b) Results averaged over 13 benchmark functions (Sphere, Ackley, Rastrigin, Rosenbrock, Schwefel, Levy, 2D and 3D versions, and Hartmann 3D) under two feedback regimes: marginal expert (observes only the last input dimension) and XGBoost expert (data-driven but informationally limited). (c–e) Results for multi-fidelity Branin function under three discrepancy levels ( a ∈ { 0, 0.5, 0.75 }), where larger a
+
+increases the mismatch between the feedback and true objective. Mean ± 95% bootstrap confidence intervals. For all functions, the optimizer model has access to the first two feature dimensions. approaches such as πBO incorporate user beliefs about promising regions or the optimizer location directly into the optimization procedure [ 4 ], while other methods use interactive preference elicitation or corrective human feedback during the search [ 9 ]. Closely related, robust multi-fidelity formulations show that a human expert can act as a cheap but imperfect signal alongside expensive ground-truth evaluations [ 5]. In our setting, however, the auxiliary signal is available over the candidate pool; the challenge is to amortize how its reliability is interpreted across tasks. Expert-informed BO has already found concrete applications in scientific discovery, for instance, in drug-design settings where chemist knowledge or domain feedback is incorporated into the optimization loop [ 23 , 2]. Overall, these works illustrate the value of expert guidance, but they remain task-specific: they do not learn, across a distribution of tasks, how to interpret and calibrate a potentially biased feedback channel. 
+
+In-context black-box optimization. A growing line of work amortizes parts of the BO loop using neural in-context models. Several works, for instance, replace the standard GP surrogate with transformer-based models that infer task-specific predictive distributions in a single forward pass [ 20 , 15 , 24 , 16 ]. Other approaches instead amortize the acquisition mechanism itself, learning to propose queries directly from optimization histories rather than optimizing a handcrafted acquisition function at test time [ 17 ]. Beyond such partial amortization, recent work targets fully end-to-end amortized optimization, from early neural acquisition processes [ 12 ], to preferential optimization with pairwise feedback [ 18 ], and multi-objective optimization [ 14 ]. Yet these methods typically assume a single reliable information channel. Here, by contrast, we consider an additional expert-feedback source whose usefulness cannot be taken for granted. 
+
+5 Experiments 
+
+We evaluate whether feedback-aware pretraining lets an in-context optimizer exploit useful auxiliary signals while remaining robust to misleading ones. Our evaluation spans analytic benchmark functions with controlled feedback, and real-world tasks where the auxiliary signal is a cheap but imperfect proxy for the expensive objective. All methods are run in the same pool-based setting. We repeat each experiment over 100 independent seeds, resampling candidate pools, initial observations, and observation noise while keeping them shared across methods within each replica. 
+
+Baselines. We compare the two variants of our method, FICBO ( Additive Prior; Mixture Prior), against three families of in-context baselines. First, a feedback-agnostic baseline uses the same in-context optimization architecture, but does not receive the feedback channel ( GP-prior ICBO). Second, a naive feedback-feature baseline concatenates u(x) to the input features, testing whether standard amortization can exploit feedback without source-aware pretraining ( GP-prior ICBO + feedback feature). Third, πBO-like baselines reweight EI or UCB scores from the in-context surrogate using feedback u(x) ( πBO-UCB; πBO-EI [ 4 ]). Overall, baselines differ only in how the feedback channel is used. We also include a greedy feedback baseline ( Feedback), evaluating candidates in decreasing feedback score, and random search ( Random). 6Best found ( ↑)0 5 10 15 20 25 30                         
+
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 0510 15 20 25 30
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 0510 15 20 25 30
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 0510 15 20 25 30
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 Cum. regret ( ↓)0510 15 20 25 30
+> iterations
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> 14
+
+(a) Airfoil Small 
+
+well-aligned feedback 0 5 10 15 20 25 30 
+
+> iterations
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+
+(b) Airfoil Lift 
+
+structurally biased feedback 0 5 10 15 20 25 30 
+
+> iterations
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+
+(c) ML hyper-parameters 
+
+informative feedback 0 5 10 15 20 25 30 
+
+> iterations
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+
+(d) Reactor 
+
+misleading feedback FICBO (Mixture Prior) 
+
+> FICBO (Additive Prior)
+> GP-prior ICBO
+> GP-prior ICBO + feedback feature
+> Random
+> Feedback
+> BO-UCB
+> BO-EI
+> Optimal
+
+Figure 4: Real-world optimization tasks. Top row: normalized best value found. Bottom row: 
+
+normalized cumulative regret. (a) Airfoil optimization with a cheaper neural surrogate as feedback (Airfoil Small); (b) airfoil optimization with lift-only feedback (Airfoil Lift); (c) ML hyper-parameter optimization with a cheap auxiliary performance signal; and (d) reactor optimization with conversion-based feedback. Mean ± 95% bootstrap confidence intervals. FICBO exploits aligned feedback, but shows prior-dependent robustness to structurally biased proxies in the Reactor example. 5.1 Results 5.1.1 Synthetic benchmarks 
+
+Figure 3 a-b first evaluates out-of-distribution analytic functions under two feedback-generation regimes. In the marginal expert setting, the source observes only the last input dimension and reports the objective marginalized over the remaining dimensions. The produced signal is often directionally useful but incomplete. In the XGBoost expert setting, feedback comes from a regressor trained on a small source-visible dataset, making the signal both data-limited and model-biased (section C.2). The results show a hierarchy in how feedback is used. First, in both regimes, the naive feedback-feature baseline improves over the feedback-agnostic amortized model ( > ), indicating that the auxiliary signal contains exploitable information even when treated as an ordinary input coordinate. Second, the πBO variants ( πBO-UCB; πBO-EI) improve over the generic amortized prior by using feedback u(x) as a factor on the acquisition function, suggesting it is a stronger inductive bias than simple feature concatenation. Finally, FICBO ( Additive; Mixture) achieves the lowest regret in both regimes. Unlike πBO, whose feedback influence follows a fixed schedule, FICBO is pretrained on tasks where feedback can be globally useful, locally useful, or misleading, and can therefore infer from the observed history how much the current source should be trusted. The XGBoost regime is harder because feedback errors include extrapolation and model misspecifi-cation rather than only marginalization, but the same qualitative ordering remains, suggesting that the learned trust calibration transfers beyond the exact synthetic prior. Lastly, Figure 3 c–e shows settings where feedback is a smooth low-fidelity with increasing dis-crepancy a (Appendix C.3). As Figure S3 shows, larger a mainly corrupts the ranking induced by feedback, moving from near-aligned at a = 0 to rank-misaligned at a = 0 .75 . This explains the performance transition: feedback-aware methods benefit strongly at a = 0 , FICBO remains competitive at the weakly informative intermediate setting a = 0 .5, while at a = 0 .75 , methods that rely heavily on feedback, most noticeably the naive feedback baseline, are pulled toward misleading regions. This case suggests an out-of-prior regime with a smooth but globally misaligned proxy. 
+
+5.1.2 Real-world tasks 
+
+The real-world tasks complement the analytical benchmarks with practical optimization objectives and cheap proxies that arise naturally in each setting. The airfoil experiments optimize the lift-to-drag ratio CL/C D of a NACA airfoil over angle of attack, thickness, and camber. We use a higher-accuracy NeuralFoil configuration as the benchmark oracle, standing in for a more expensive aerodynamic evaluation (Appendix C.5). On Airfoil Small (Figure 4 a), feedback comes from a cheaper, lower-accuracy NeuralFoil model that predicts the same objective. It is thus a noisy but well-aligned proxy: its errors reflect approximation quality. The greedy feedback baseline is already strong, as expected, 7and FICBO remains competitive, showing that robustness to unreliable sources does not prevent the model from exploiting genuinely informative feedback. Airfoil Lift (Figure 4 b) represents a structurally biased feedback regime. The proxy uses lift alone: it captures the numerator CL of the objective but ignores the drag penalty CD . This is misleading because the true ratio CL/C D peaks before stall, when lift is high, but drag remains moderate; at larger angles of attack, drag rises sharply and the ratio deteriorates. A source based only on lift can therefore keep recommending high-lift designs past the true optimum. Hence, the feedback-only baseline accumulates large regret, whereas FICBO uses early objective evaluations to detect this mismatch and discount the proxy. This is the setting in which source-aware pretraining is most useful: the signal is a partially correct heuristic whose failure mode must be inferred in context. Next, on the three-dimensional ML architecture task (Figure 4 c), CIFAR-10 accuracy provides a cheaper transfer signal for optimizing ImageNet16-120 accuracy (Appendix C.6). On the two-dimensional reactor task (Figure 4 d), conversion of reactant A is a cheap proxy for intermediate-product yield, but becomes misleading once high conversion favors the final product instead (Appendix C.4). In this harder regime, the additive prior is more robust than the mixture prior, suggesting that the choice of feedback prior matters when the proxy is weakly informative or structurally biased. 
+
+5.1.3 Interpreting feedback use 
+
+We use two post-hoc diagnostics to inspect how FICBO relates to the auxiliary source at test time. The first measures whether the learned policy continues to select candidates favored by the source as BO observations accumulate; the second visualizes how the feedback-error profiles of test tasks compare to the pretraining prior. Neither diagnostic is used during pretraining or deployment. 0 5 10 15      
+
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> top 5 agreement
+> Airfoil Small
+> Airfoil Lift
+> ML hyper-parameters
+> Reactor
+> Mixture Prior
+> Additive Prior 246810 12
+> UMAP 1
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> UMAP 2
+> Additive w=0.3
+> Additive w=0.5
+> Additive w=0.7
+> Additive w=0.9
+> ackley
+> rosenbrock
+> rastrigin
+> schwefel
+> levy
+> sphere
+> branin
+> ML hyper-parameters
+> Airfoil Lift
+> Airfoil Small
+> reactor
+
+Figure 5: Post-hoc diagnostics of feedback use. Left: top-5 policy–feedback agreement over BO iterations for FICBO. Mean ± std computed over 100 seeds. Right: UMAP embedding of feedback-error profiles for synthetic prior samples and test tasks. Synthetic points are generated without additional bias operators; benchmark points use the 3D marginal-expert setting, where the expert observes the last dimension and the remaining dimensions are marginalized out. 
+
+Policy–feedback agreement. The left panel of Figure 5 reports a top-5 policy–feedback agreement diagnostic for both FICBO priors. At each BO step, we record the overlap between the policy’s 5 highest rated query points and the 5 highest auxiliary feedback points. This asks whether the policy’s preferred design is also strongly favored by the source. On Airfoil Small, where feedback is a lower-accuracy evaluator of the same objective, agreement stays close to one for both priors, consistent with sustained use of a reliable proxy. Airfoil Lift shows the opposite pattern: agreement starts non-negligible but collapses within a few BO steps as observations reveal that lift CL alone is misleading for CL/C D . The reactor task has near-zero agreement almost from the start, indicating that the policy largely avoids the conversion proxy. The ML architecture task lies between these extremes: CIFAR-10 accuracy is useful for transfer, but agreement decreases over time and differs between priors because it does not fully determine the ImageNet16-120 ranking. Overall, the curves show task- and prior-dependent source reliance rather than fixed decay. Methods like πBO impose decay through a hand-tuned schedule [ 4, 9]; in FICBO, source reliance is revised by the history-conditioned policy from observed evidence. 
+
+Feedback-profile embedding. The right panel provides a complementary static view of the source itself. Each task is represented by binned signed and absolute feedback errors, sorted by objective value, and then projected with UMAP (Appendix C.7). This is a qualitative coverage diagnostic, 8suggesting which test sources resemble high-alignment samples from the feedback prior and which occupy different regions of feedback–objective disagreement. For example, Airfoil Small lies near highly aligned synthetic sources, whereas biased or less directly useful proxies, such as Airfoil Lift and the reactor feedback, appear away from this regime. Finally, Appendix A.2 provides a qualitative rollout illustrating how FICBO updates its posterior and policy distribution as new observations revise its reliance on the feedback signal. 
+
+5.2 Ablation study                                 
+
+> Method Airfoil Small Airfoil Lift FICBO (Mixture) 0.020 ±0.068 3.617 ±2.401
+> Mixture, no bias operators 0.029 ±0.102 10 .386 ±6.063
+> FICBO (Additive) 0.014 ±0.062 4.295 ±2.841
+> Additive, no bias operators 0.014 ±0.060 4.999 ±2.494
+> Additive-prior signal variants
+> yhidden biases 0.038 ±0.079 5.206 ±2.975
+> yhidden biases, no catastrophic 0.032 ±0.078 5.747 ±3.742
+> yhidden biases, no shift 0.016 ±0.062 5.924 ±3.452
+> yhidden , no biases 0.032 ±0.093 7.026 ±3.542
+> ytrue biases 0.021 ±0.080 24 .649 ±5.341
+> πBO-EI 0.097 ±0.388 7.807 ±2.486
+> πBO-UCB 0.113 ±0.422 8.167 ±2.834
+> Feedback only 0.020 ±0.079 24 .179 ±5.486
+> Random 12 .692 ±7.489 12 .692 ±7.489
+
+Table 2: Final cumulative regret on Airfoil Small and Airfoil Lift. Mean ± std over 100 seeds. Table 2 focuses on the airfoil tasks, which pro-vide a well-aligned feedback setting (Airfoil Small) and a structurally biased one (Airfoil Lift). The 
+
+FICBO priors block shows that bias operators mat-ter mainly in the biased-feedback regime: Remov-ing them barely affects Airfoil Small, but clearly hurts Airfoil Lift, especially for the Mixture prior. This suggests that bias augmentation primarily im-proves robustness to misleading sources. The base-line block is included as a reference point. The clearest ablation comes from the signal-variant rows. Training the source on yhidden treats feed-back as a partial information channel: useful, but not assumed to be a noisy copy of the objective. This transfers well to Airfoil Lift, where the proxy is meaningful but incomplete. In contrast, the ytrue 
+
+variant makes the source overly reliable during pretraining. It remains effective on Airfoil Small, but fails on Airfoil Lift, reaching regret comparable to the feedback-only baseline. This suggests that overly reliable pretraining feedback can induce over-trust under structurally wrong test-time proxies. The bias ablations support the same conclusion. Removing all bias operators worsens performance on Airfoil Lift, indicating that exposure to distorted sources helps the model learn when to discount feedback. The smaller effect of removing individual operators suggests that the benefit comes from diverse feedback–objective relationships rather than any single distortion type. The bias family thus broadens the range of source reliabilities seen offline, so the model learns to calibrate trust in context instead of assuming feedback is a faithful proxy for the objective. 
+
+6 Discussion 
+
+We introduced FICBO, an in-context optimization framework for settings where cheap but unreliable auxiliary feedback is available. The central idea is to treat feedback as a stochastic information source and to pretrain both posterior prediction and query selection under a prior over feedback access, relevance, and distortion. Across synthetic benchmarks and real-world tasks, the resulting optimizer learns to exploit aligned feedback while discounting unreliable proxies from in-context evidence. 
+
+Limitations. A central challenge is coverage of the feedback prior: transfer is strongest when the prior spans the main ways in which deployment feedback can agree or disagree with the objective. The feedback-profile embedding in Figure 5 provides one diagnostic for this coverage, while the Branin stress test illustrates a difficult regime: smooth but globally rank-misaligned feedback. Second, we assume feedback is available over the candidate pool, which is natural for cheap simulators or pretrained proxies, but expensive feedback would require an additional acquisition mechanism. Third, the feedback source is fixed during the BO episode and does not update after new objective evaluations, which could be beneficial when dealing with human feedback. Limiting experiments to low dimensions leaves open the question of whether the approach scales to high-dimensional search spaces, where surrogate modelling and feedback alignment may behave differently. Finally, pretraining requires a horizon distribution, so very different test-time budgets are formally out-of-distribution; in practice, models trained with Tτ ≈ 10 –20 were successfully evaluated for T = 30 .
+
+Perspectives. A natural next step is to combine feedback-aware pretraining with richer objective priors, either problem-specific or broadly diversified in the spirit of tabular foundation models [ 25 ]. For instance, human-in-the-loop simulators or cognitive-agent models could provide partially reliable feedback priors [ 26 ]. The goal would be to cover not only a wide range of objective functions, but also a wide range of feedback–objective relationships. Another direction is to handle multiple test-time feedback sources, learning which cheap but imperfect signals to combine for each task. 97 Acknowledgments 
+
+This work was supported by the Research Council of Finland (Flagship programme: Finnish Center for Artificial Intelligence FCAI). NB and SK were supported by Research Council of Finland (RCF-NSF FinBioFAB, grant agreement 365982). SK was also supported by UKRI Turing AI World-Leading Researcher Fellowship (EP/W002973/1). The authors acknowledge the computational resources provided by the Aalto Science-IT Project from Computer Science IT. 
+
+References 
+
+[1] Di Wu, Natalie Maus, Anupama Jha, Kevin Yang, Benjamin D Wales-McGrath, San Jewell, Anna Tangiyan, Peter Choi, Jacob R Gardner, and Yoseph Barash. Generative modeling for RNA splicing predictions and design. eLife , 2025. [2] Iiris Sundin, Alexey Voronov, Haoping Xiao, Kostas Papadopoulos, Esben Jannik Bjerrum, Markus Heinonen, Atanas Patronov, Samuel Kaski, and Ola Engkvist. Human-in-the-loop assisted de novo molecular design. Journal of cheminformatics , 2022. [3] Qiaohao Liang, Aldair E Gongora, Zekun Ren, Armi Tiihonen, Zhe Liu, Shijing Sun, James R Deneault, Daniil Bash, Flore Mekki-Berrada, Saif A Khan, et al. Benchmarking the perfor-mance of bayesian optimization across multiple experimental materials science domains. npj Computational Materials , 2021. [4] Carl Hvarfner, Danny Stoll, Artur Souza, Luigi Nardi, Marius Lindauer, and Frank Hutter. πBO: Augmenting acquisition functions with user beliefs for bayesian optimization. In International Conference on Learning Representations , 2022. [5] Petrus Mikkola, Julien Martinelli, Louis Filstroff, and Samuel Kaski. Multi-fidelity bayesian optimization with unreliable information sources. In Proceedings of The 26th International Conference on Artificial Intelligence and Statistics , 2023. [6] Mingzhou Fan, Byung-Jun Yoon, Edward Dougherty, Nathan Urban, Francis Alexander, Ray-mundo Arróyave, and Xiaoning Qian. Multi-fidelity bayesian optimization with multiple information sources of input-dependent fidelity. In Proceedings of the Fortieth Conference on Uncertainty in Artificial Intelligence , 2024. [7] Carl Edward Rasmussen and Christopher K. I. Williams. Gaussian processes for machine learning. MIT Press, 2006. [8] Roman Garnett. Bayesian optimization . Cambridge University Press, 2023. [9] Masaki Adachi, Brady Planden, David Howey, Michael A. Osborne, Sebastian Orbell, Natalia Ares, Krikamol Muandet, and Siu Lun Chau. Looping in the human: Collaborative and explainable Bayesian optimization. In Proceedings of The 27th International Conference on Artificial Intelligence and Statistics , 2024. [10] Artur Souza, Luigi Nardi, Leonardo Oliveira, Kunle Olukotun, Marius Lindauer, and Frank Hutter. Prior-guided bayesian optimization. 2020. [11] Adam Foster, Desi R Ivanova, Ilyas Malik, and Tom Rainforth. Deep adaptive design: Amor-tizing sequential bayesian experimental design. In Proceedings of the 38th International Conference on Machine Learning , 2021. [12] Alexandre Maraval, Matthieu Zimmer, Antoine Grosnit, and Haitham Bou Ammar. End-to-end meta-bayesian optimisation with transformer neural processes. Advances in Neural Information Processing Systems , 36:11246–11260, 2023. [13] Daolang Huang, Xinyi Wen, Ayush Bharti, Samuel Kaski, and Luigi Acerbi. ALINE: Joint amortization for bayesian inference and active data acquisition. In Thirty-ninth Conference on Neural Information Processing Systems , 2025. 10 [14] Xinyu Zhang, Conor Hassan, Julien Martinelli, Daolang Huang, and Samuel Kaski. In-context multi-objective optimization. In The Fourteenth International Conference on Learning Repre-sentations , 2026. [15] Samuel Müller, Matthias Feurer, Noah Hollmann, and Frank Hutter. Pfns4bo: In-context learning for bayesian optimization. In International Conference on Machine Learning , 2023. [16] Rosen Ting-Ying Yu, Cyril Picard, and Faez Ahmed. GIT-BO: High-dimensional bayesian optimization with tabular foundation models. In The Fourteenth International Conference on Learning Representations , 2026. [17] Yu-Heng Hung, Kai-Jie Lin, Yu-Heng Lin, Chien-Yi Wang, Cheng Sun, and Ping-Chun Hsieh. Boformer: Learning to solve multi-objective bayesian optimization via non-markovian rl. arXiv preprint arXiv:2505.21974 , 2025. [18] Xinyu Zhang, Daolang Huang, Samuel Kaski, and Julien Martinelli. PABBO: Preferential amortized black-box optimization. In The Thirteenth International Conference on Learning Representations , 2025. [19] Juan Ungredda and Juergen Branke. When to elicit preferences in multi-objective bayesian optimization. In Proceedings of the Companion Conference on Genetic and Evolutionary Computation , 2023. [20] Noah Hollmann, Samuel Müller, Katharina Eggensperger, and Frank Hutter. TabPFN: A transformer that solves small tabular classification problems in a second. In International Conference on Learning Representations , 2023. [21] Kevin Swersky, Yulia Rubanova, David Dohan, and Kevin Murphy. Amortized bayesian optimization over discrete spaces. In Conference on Uncertainty in Artificial Intelligence , 2020. [22] Petrus Mikkola. Humans as information sources in Bayesian optimization. 2024. [23] Yasmine Nahal, Janosch Menke, Julien Martinelli, Markus Heinonen, Mikhail Kabeshov, Jon Paul Janet, Eva Nittinger, Ola Engkvist, and Samuel Kaski. Human-in-the-loop active learning for goal-oriented molecule generation. Journal of Cheminformatics , 2024. [24] Yiming Yao, Fei Liu, Liang Zhao, Xi Lin, Yilu Liu, and Qingfu Zhang. Fomemo: Towards foundation models for expensive multi-objective optimization. arXiv preprint arXiv:2509.03244 ,2025. [25] Jingang Qu, David Holzmüller, Gaël Varoquaux, and Marine Le Morvan. Tabiclv2: A better, faster, scalable, and open tabular foundation model. arXiv preprint arXiv:2602.11139 , 2026. [26] Yifan Zhu, Sammie Katt, and Samuel Kaski. More than irrational: Modeling belief-biased agents. In Proceedings of the AAAI Conference on Artificial Intelligence , 2026. [27] Maximilian Balandat, Brian Karrer, Daniel Jiang, Samuel Daulton, Ben Letham, Andrew G Wil-son, and Eytan Bakshy. BoTorch: A framework for efficient monte-carlo bayesian optimization. In Advances in Neural Information Processing Systems , 2020. [28] Alexander IJ Forrester, András Sóbester, and Andy J Keane. Multi-fidelity optimization via surrogate modelling. Proceedings of the royal society a: mathematical, physical and engineering sciences , 2007. [29] Mauricio A Alvarez, Lorenzo Rosasco, and Neil D Lawrence. Kernels for vector-valued functions: A review. Foundations and Trends® in Machine Learning , 2012. [30] David JJ Toal. Some considerations regarding the use of multi-fidelity kriging in the construction of surrogate models. Structural and Multidisciplinary Optimization , 2015. [31] H Scott Fogler. Elements of chemical reaction engineering . Pearson Educacion, 1999. [32] Octave Levenspiel. Chemical reaction engineering . John wiley & sons, 1998. 11 [33] Benjamin J Shields, Jason Stevens, Jun Li, Marvin Parasram, Farhan Damani, Jesus I Martinez Alvarado, Jacob M Janey, Ryan P Adams, and Abigail G Doyle. Bayesian reaction optimization as a tool for chemical synthesis. Nature , 2021. [34] Peter Sharpe and R John Hansman. Neuralfoil: An airfoil aerodynamics analysis tool using physics-informed machine learning. arXiv preprint arXiv:2503.16323 , 2025. [35] R Priyanka and M Sivapragasam. Multi-fidelity surrogate model-based airfoil optimization at a transitional low reynolds number. S¯ adhan¯ a, 2021. [36] Xuanyi Dong and Yi Yang. Nas-bench-201: Extending the scope of reproducible neural architecture search. arXiv preprint arXiv:2001.00326 , 2020. [37] Kaicheng Yu, Christian Sciuto, Martin Jaggi, Claudiu Musat, and Mathieu Salzmann. Evaluating the search phase of neural architecture search. arXiv preprint arXiv:1902.08142 , 2019. [38] Esteban Real, Alok Aggarwal, Yanping Huang, and Quoc V Le. Regularized evolution for image classifier architecture search. In Proceedings of the aaai conference on artificial intelligence ,2019. [39] Leland McInnes, John Healy, and James Melville. Umap: Uniform manifold approximation and projection for dimension reduction. arXiv preprint arXiv:1802.03426 , 2018. [40] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch: An imperative style, high-performance deep learning library. Advances in neural information processing systems , 32, 2019. 12 The appendix is organized as follows: • Appendix A presents additional experiments, including a comparison with classical-GP 
+
+πBO baselines refit online with BoTorch acquisition functions. • Appendix B describes the synthetic task generator used for pretraining, including GP draws, the additive and mixture feedback priors, source-data generation, and the structured bias operators applied to auxiliary feedback. • Appendix C gives experimental details, including baseline implementations, analytical benchmark functions, the Branin multi-fidelity task, the reactor and airfoil tasks, the neural architecture search task, and the feedback-profile embedding diagnostic. • Appendix D provides the MDP formulation, pretraining objective details, deployment modes, and pseudocode for feedback-aware pretraining. • Appendix E reports model, training, and evaluation hyperparameters. 
+
+A Additional experiments 
+
+A.1 Classical-GP πBO baselines 
+
+The main text compares only amortized in-context baselines, so that differences in performance can be attributed to how the feedback channel is integrated. In particular, our πBO-style baselines use the same in-context surrogate as the other learned methods: the regression head outputs a Gaussian-mixture posterior, from which we extract moments to form EI or UCB scores before applying the feedback reweighting. This isolates the role of feedback integration, but it is not necessarily the strongest possible implementation of πBO. Ultimately, however, black-box optimization is judged by the quality of the designs it finds, regardless of whether the optimizer is amortized or fit online. For completeness, we also evaluate πBO with a classical GP surrogate and BoTorch acquisition functions [ 27 ], refit online at every step. This gives a stronger non-amortized comparison: it is slower, but provides a standard GP posterior that is better matched to EI and UCB. Figure S1 shows that this replacement indeed improves the πBO baselines: the GP-surrogate variants ( πBO-UCB GP; πBO-EI GP) outperform their in-context-surrogate counterparts ( πBO-UCB; πBO-EI). However, FICBO remains the strongest method in both best-so-far value and cumulative regret, although the gap is reduced. This suggests that source-aware pretraining still provides a benefit over classical feedback reweighting. 13 0 5 10 15 20 25 30 
+
+> iterations
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+Best-so-far ( ↑)0 5 10 15 20 25 30  
+
+> iterations
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+
+Cumulative regret rank ( ↓)FICBO (Mixture Prior) 
+
+> FICBO (Additive Prior)
+> GP-prior ICBO
+> GP-prior ICBO + feedback feature
+> Random
+> Feedback
+> BO-UCB
+> BO-EI
+> BO-UCB GP
+> BO-EI GP
+> Optimal
+
+Figure S1: Comparison with classical-GP πBO baselines on marginalized benchmark functions. 
+
+The main-text πBO baselines use the in-context surrogate shared with the amortized methods. Here, 
+
+πBO-UCB GP and πBO-EI GP instead use a classical GP surrogate with BoTorch acquisition functions, refit online at each step. Mean ± 95% bootstrap confidence intervals. GP-based πBO improves over the in-context πBO variants, but FICBO remains best in both best-so-far value and cumulative regret. A.2 Rollout Analysis 
+
+To provide qualitative insight into the behaviour of the learned policy, Figure S2 shows a single rollout on the Forrester function, using FICBO (mixture prior). At each acquisition step, the model observes the current context in blue and a set of candidate query points, and must select the most promising candidate. The expert feedback signal (second column) provides a noisy proxy for the hidden objective, encoding the expert’s preference over the query set. In this case, this is the classic low-fidelity variant of the function [ 28 ]. The model posterior (third column) reflects the model’s current belief about the objective, which sharpens as more points are observed. The policy distribution (fourth column) shows the learned acquisition scores over the query set, which ideally concentrates mass in regions of high objective value. The model initially agrees with the expert to some extent, but as new information arrives, the posterior is updated. 
+
+B Generative process of synthetic pretraining dataset 
+
+B.1 GP draws 
+
+We construct each synthetic BO task based on a procedure first described by [13]: 
+
+Input space and dimensionality. We sample a total input dimension dtotal and an expert input dimension dexpert , along with a number of overlapping dimensions doverlap shared between the main model and the expert. The main model observes inputs x ∈ Rd (the first d coordinates), while the expert operates over a different and potentially partially overlapping slice of the full dtotal -dimensional space; the last dexpert dimensions. A model has a fixed number of dimensions; for our experiments, we trained a variant for 1, 2, and 3-dimensional inputs. This decoupling allows us to model realistic settings where the expert has access to features invisible to the main model, and vice versa. 
+
+GP hyperparameter prior. All GP components, regardless of prior type, share the same hyperpa-rameter prior: Matérn family with ν ∈ { 1/2, 3/2, 5/2, ∞} , length-scales U(0 .1√d, 2.0√d), output scale U(0 .1, 1.0) , and are isotropic with probability 0.5. The expert feedback signal can be further 14 3                     
+
+> 2
+> 1
+> 0
+> 1
+> t=0
+> True function
+> True f(x)
+> Context
+> Selected
+> 1
+> 0
+> 1
+> 2Expert feedback
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Model pred mean ± std
+> Mean
+> ±1 std 0.002000
+> 0.002025
+> 0.002050
+> 0.002075
+> 0.002100
+> 0.002125
+> Policy distribution
+> x=-3.99
+> 3
+> 2
+> 1
+> 0
+> 1
+> t=1
+> True f(x)
+> Context
+> Selected
+> 1
+> 0
+> 1
+> 2
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Mean
+> ±1 std 0.0020
+> 0.0025
+> 0.0030
+> 0.0035
+> 0.0040
+> 0.0045
+> x=-4.99
+> 3
+> 2
+> 1
+> 0
+> 1
+> t=2
+> True f(x)
+> Context
+> Selected
+> 1
+> 0
+> 1
+> 2
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Mean
+> ±1 std
+> 0.00200
+> 0.00205
+> 0.00210
+> 0.00215
+> 0.00220
+> x=2.05
+> 3
+> 2
+> 1
+> 0
+> 1
+> t=3
+> True f(x)
+> Context
+> Selected
+> 1
+> 0
+> 1
+> 2
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Mean
+> ±1 std 0.0020
+> 0.0022
+> 0.0024
+> 0.0026
+> 0.0028
+> 0.0030
+> x=2.57
+> 5.0 2.5 0.0 2.5 5.0
+> 3
+> 2
+> 1
+> 0
+> 1
+> t=4
+> True f(x)
+> Context
+> Selected
+> 5.0 2.5 0.0 2.5 5.0
+> 1
+> 0
+> 1
+> 2
+> 5.0 2.5 0.0 2.5 5.0
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Mean
+> ±1 std
+> 5.0 2.5 0.0 2.5 5.0
+> 0.0020
+> 0.0021
+> 0.0022
+> 0.0023
+> x=2.88
+> policy rollout Forrester
+
+Figure S2: Policy rollout of the AAE acquisition function on the Forrester function over T = 5 steps. Each row corresponds to one acquisition step. From left to right: (1) the true objective function with context points (blue) and the selected candidate (red star), (2) the expert feedback signal over the query set, (3) the model posterior mean (green) with ±1 standard deviation (shaded), and (4) the learned policy distribution over candidate points. The red dashed vertical line indicates the selected point across all panels. distorted by the structured bias model described in section B.4. The query, target, context, and potential additional expert points (see section B.2) are sampled uniformly in the domain [ −5, 5]dtotal .These numbers, as well as sections of the code, are based on [13]. 
+
+B.2 Additive prior Function generation. We draw two independent GPs: a main GP over the main-only dimensions and a hidden GP over the expert dimensions. The observed signal is a combination of both: 
+
+ytotal = (1 − w) fmain + w f hidden 
+
+p(1 − w)2 + w2 , (S1) where w ∼ U (wmin , w max ) controls the relative contribution of the hidden component, and the denominator normalizes the variance. When the main model has no exclusive dimensions ( dmain = 0 ), 
+
+fmain is set to zero and w = 1 (only for the 1D model using our hyper-parameters). The expert’s raw signal is yhidden (or optionally ytotal ); the output of the hidden GP evaluated at all points. This signal is optionally perturbed by the structured bias model described in section B.4, yielding a biased feedback signal ˜yhidden . Depending on the expert model, the biased signal is 15 processed in one of two ways. In the direct mode, feedback is returned directly without further changes. In the model-based mode, a surrogate (in our case, an amortized GP) is trained on a set of additional expert-only observations. These points were sampled either uniformly or in clusters in the expert input space (to create an additional bias). This trained surrogate then predicts on the context, query, and target sets to produce the feedback signal seen by the main model. The output of the expert model is yfeedback . In both cases, the main model only ever observes ytotal as the ground truth signal and x1: d as inputs, as well as the final feedback yfeedback . The expert’s extra observations are never directly available to the main model. 
+
+B.3 Mixture prior 
+
+As an alternative that does not require an explicit visibility split, we also consider a latent-component prior. For each task, we sample a multi-output Gaussian process 
+
+zτ (x) =  zτ, 1(x), . . . , z τ,K (x), (S2) whose components represent latent factors underlying the task. The true objective is defined by averaging a subset of relevant components, 
+
+fτ (x) = 1
+
+p|Sτ
+
+> true
+
+|
+
+X
+
+> k∈Sτ
+> true
+
+zτ,k (x) (S3) where Sτ 
+
+> true
+
+⊆ { 1, . . . , K } indexes the components that actually matter for optimization. Components outside Sτ 
+
+> true
+
+act as decoys. The auxiliary source instead forms its latent signal from a possibly different subset Sτ
+
+> fb
+
+. We sample the number of active feedback components by 
+
+mτ − 1 ∼ Binomial( K − 1, p ), |Sτ
+
+> fb
+
+| = mτ , (S4) and draw source weights from a symmetric Dirichlet prior, 
+
+aτ ∼ Dirichlet( α1) on Sτ
+
+> fb
+
+. (S5) The resulting latent source signal is 
+
+gτ (x) = X
+
+> k∈Sτ
+> fb
+
+aτ,k zτ,k (x), (S6) and the observed feedback again takes the form 
+
+uτ (x) = bτ (gτ (x)) . (S7) This alternative prior treats auxiliary information as a biased combination of latent task factors. Its informativeness depends on the overlap between Sτ 
+
+> fb
+
+and Sτ
+
+> true
+
+, while bτ captures further distortions. This connects naturally to latent-factor and coregionalization views, where different signals share hidden components but weight them differently [29]. 
+
+B.4 Description of Biases 
+
+In our framework, feedback can be perturbed by a set of structured biases. Each bias can be activated independently and is controlled by one or more parameters drawn from predefined priors. Inactive biases are effectively set to zero. Biases are applied sequentially to the feedback, and the order may matter for some spatially-dependent transformations. 
+
+B.4.1 Homoscedastic Noise Description: Experts may make random, unstructured errors in their feedback across the input space. Homoscedastic noise models this uniform uncertainty. 
+
+Implementation: Add Gaussian noise with constant variance to all feedback points. 
+
+Parameters and Priors: 
+
+• σ: Standard deviation of the noise, drawn from a uniform prior over a specified lower and upper bound. 16 B.4.2 Constant Shift Description: Experts may exhibit a systematic over- or under-estimation of the true function across the entire input space. A constant shift models this global bias in feedback. Implementation: Add a constant offset to all feedback points. Parameters and Priors: 
+
+• δ ∼ U (δmin , δ max ): The shift applied to all feedback points. 
+
+B.4.3 Additive GP Bias Description: By adding a sampled GP with a smooth Kernel to the signal, we create correlated noise. It introduces smooth, structured deviations resembling latent functions that the expert might have learned but misrepresented. 
+
+Implementation: Sample a Gaussian process with RBF kernel using lengthscale and scale parameters. Add the GP output to feedback. 
+
+Parameters and Priors: 
+
+• lengthscale: Controls smoothness of the GP, sampled uniformly from prior bounds. • scale: Magnitude of GP deviations, drawn uniformly from prior bounds. (determines the shape of the fluctuations before normalization. A larger scale will give more contrast between points in the GP sample.) • max_std: Maximum standard deviation for normalization, drawn uniformly from prior bounds. (caps the overall magnitude) 
+
+B.4.4 Local Distortion Description: Models localized deviations in expert feedback due to over/underestimations in certain regions. 
+
+Implementation: Randomly select ncenters points, assign a distortion magnitude, and decay this effect with distance from each center. 
+
+Parameters and Priors: 
+
+• ncenters : Number of distortion centers, sampled uniformly from a specified integer range. • mag: Magnitude of local distortion, drawn from a uniform prior. • decay: Spatial decay factor, sampled uniformly from prior bounds. 
+
+B.4.5 Catastrophic Failure Description: Models rare but severe expert failures where the feedback has no meaningful rela-tionship to the true function. For instance, due to a fundamental misunderstanding of the task or a complete breakdown in the expert’s model. 
+
+Implementation: Replace all feedback values with an independently sampled Gaussian process. 
+
+Parameters and Priors: 
+
+• No continuous parameters; the bias is either fully active or inactive, indicated by a binary flag. 
+
+B.4.6 Application order and activation. 
+
+Biases are applied sequentially to the feedback signal, and each bias is activated independently with its own probability at each training episode. The application order is: noise, catastrophic failure, followed by additive GP bias, local distortion, and finally constant shift. When a bias is inactive, it contributes no perturbation. For more details, we refer to table S1. 17 C Experiment Details 
+
+C.1 Baselines 
+
+All baselines are evaluated in the same pool-based setting as our method: at each step t, a candidate is selected from a fixed query pool Qτt (|Qτt | = 300 unless stated otherwise), observed, and added to the context. No gradient-based acquisition optimization is performed; all methods score each pool candidate and select the argmax. For a fair comparison, Qτt is shared between all baselines. 
+
+Surrogate model. Feedback-aware baselines that augment an acquisition function ( πBO-style) can be run with either of two surrogate backends: • GP-prior ICBO : the same pretrained transformer model used by our method, except for the feedback encoder, producing a GMM predictive posterior over each query point. The model has been trained on generic GP data following [ 13 ]. The weighted mean and variance are extracted as μ(x) = P 
+
+> k
+
+wkμk(x) and σ2(x) = P 
+
+> k
+
+wk(σ2
+
+> k
+
+(x) + μ2
+
+> k
+
+(x)) − μ(x)2.Using the amortized surrogate for these baselines ensures a fair comparison that isolates the effect of the feedback integration strategy rather than the surrogate quality. 
+
+Acquisition functions. The following acquisition functions are imported from BoTorch [ 27 ] and can be combined with any surrogate: • UCB : α(x) = μ(x) + κσ (x). κ has been set to 1. • EI : α(x) = ( μ(x) − y+)Φ( z) + σ(x)ϕ(z) where z = ( μ(x) − y+)/σ (x) and select 
+
+xτt+1 ∈ arg max x∈Qτt ˜yt(x).
+
+Incorporating expert feedback. For baselines that augment the acquisition with feedback ( πBO-style), the feedback signal scores are first normalized before combination. Concretely, the feedback is converted to a policy via softmax: ˜u(x) = softmax (u(x1), . . . , u (x|Qt|)) The adjusted score is then: 
+
+αadj (x) = α(x) · ˜u(x)β/ (t+1) (S8) where the decaying exponent β/ (t + 1) follows Hvarfner et al. [4] , ensuring the feedback influence vanishes as more objective observations accumulate and the surrogate becomes more reliable. We set 
+
+β = 2 .0 following the original paper. 
+
+GP-prior ICBO with Feedback Feature. The concatenation baseline appends the feedback value 
+
+u(x) directly to the input features before passing to the amortized model, i.e., the model receives 
+
+(x, u (x)) as input rather than x alone. This tests whether the model can implicitly learn to use feedback when it is treated as just another input feature, without any explicit feedback-aware architecture. 
+
+C.2 Benchmark functions Sampling. We sample n input points x ∈ Rd uniformly in the normalized space [−s, s ]d, where 
+
+s is a fixed design scale (set to 5 to match the training distribution used). Each point is mapped to the natural domain of the chosen function before evaluation, and independent Gaussian noise 
+
+ε ∼ N (0 , σ 2) is added to the output. The dataset is split into context, query, and target sets. 
+
+Expert feedback. For functions with a registered low-fidelity variant, the expert signal yfeedback is the output of that variant evaluated at the same inputs, without further noise. For functions without a low-fidelity variant, yfeedback is the Monte Carlo marginal of f over the dimensions not observed by the expert (we select dexpert number of dimensions, usually set to the last dimension, only), 
+
+yfeedback (xexpert ) ≈ 1
+
+L
+
+> L
+
+X
+
+> l=1
+
+f
+
+
+
+x(l)
+
+> main
+
+, xexpert 
+
+
+
+, x(l) 
+
+> main
+
+∼ U ([ −s, s ]d−dexpert ), (S9) with L = 2000 uniform draws over the non-expert dimensions. This is to synthetically make the feedback independent of the dimensions that the expert has no knowledge of. The main model observes ytotal , yfeedback , and the main features (similar to the training procedure section B) only; the expert’s inputs are never directly available. 18 XGBoost bias To simulate a systematically biased expert, we fit a shallow gradient-boosted tree (XGBoost, 10 estimators, max depth=3, learning rate=0.15) on the available context and expert-only points (50 uniformly sampled points), using only the dexpert dimensions visible to the expert. The model is trained once in the beginning, and its predictions serve as yfeedback at all context, query, and target locations. Because the surrogate is deliberately under-specified (low capacity, partial inputs), it produces a biased but correlated signal, mimicking a domain expert whose knowledge is both limited and biased (via the limited model class). 
+
+C.2.1 Function descriptions 
+
+The following functions are included in the experiments. All functions below are presented in their standard minimisation form. In the implementation, all are negated so that larger values are better. The functions are commonly used for BO, BED, or AL benchmarking [13]. 
+
+Ackley ( d ≥ 1). A multimodal function with a single global optimum surrounded by a nearly flat outer region and many local optima, 
+
+f (x) = 20 exp 
+
+
+
+−0.2
+
+q 1
+
+> d
+
+P 
+
+> i
+
+x2
+
+> i
+
+
+
++ exp   1
+
+> d
+
+P 
+
+> i
+
+cos 2 πx i
+
+ − 20 − e, (S10) defined over [−5, 5] d.
+
+Gramacy ( d = 2 ). A simple non-stationary surface f (x1, x 2) = x1e−x21−x22 over [−2, 6] 2, useful for testing sensitivity to local structure. (Is not negated) 
+
+Rastrigin ( d ≥ 1). A highly multimodal function with a large number of regularly spaced local optima, 
+
+f (x) = 10 d +
+
+> d
+
+X
+
+> i=1
+
+ x2 
+
+> i
+
+− 10 cos 2 πx i
+
+ , (S11) defined over [−5.12 , 5.12] d.
+
+Levy ( d ≥ 1). A multimodal function defined via the transformation wi = 1 + ( xi − 1) /4,
+
+f (x) = sin 2(πw 1) + 
+
+> d−1
+
+X
+
+> i=1
+
+(wi − 1) 21 + 10 sin 2(πw i + 1)  + ( wd − 1) 21 + sin 2(2 πw d), (S12) over [−10 , 10] d.
+
+Sphere ( d ≥ 1). The simplest unimodal baseline f (x) = P 
+
+> i
+
+x2 
+
+> i
+
+, over [−5.12 , 5.12] d.
+
+Schwefel ( d ≥ 1). A deceptive function whose global optimum is geometrically distant from the next-best local optima, 
+
+f (x) = 418 .9829 d −
+
+> d
+
+X
+
+> i=1
+
+xi sin 
+
+p |xi|
+
+
+
+, (S13) over [−500 , 500] d.
+
+C.3 Branin multi-Fidelity function ( d = 2 )
+
+A standard two-dimensional test function with three global minima. 
+
+fh(x) = 
+
+
+
+x′ 
+
+> 2
+
+− 5.14π2 x′21 + 5
+
+π x′ 
+
+> 1
+
+− 6
+
+2
+
++ 10 
+
+
+
+1 − 18π
+
+
+
+cos( x′
+
+> 1
+
+) + 10 (S14) where x′ 
+
+> i
+
+= 15 xi, over [0 , 1] 2. We use the correlation-adjustable low-fidelity variant of [30]: 
+
+fl(x) = fh(x) − (a + 0 .5) 
+
+
+
+x′ 
+
+> 2
+
+− 5.14π2 x′21 + 5
+
+π x′ 
+
+> 1
+
+− 6
+
+2
+
+(S15) 19 where a ∈ [0 , 1] controls the HF–LF correlation; increasing a suppresses the contribution of the squared term, shifting the low-fidelity optimum away from that of fh.0.0 0.2 0.4 0.6 0.8 1.0                              
+
+> x1
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> x2
+> High fidelity fh
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> x1
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> x2
+> Feedback f,a= 0.0
+> rank corr. with HF: 0.98
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> x1
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> x2
+> Feedback f,a= 0.5
+> rank corr. with HF: 0.19
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> x1
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> x2
+> Feedback f,a= 0.75
+> rank corr. with HF: -0.58
+> 0.00
+> 0.12
+> 0.24
+> 0.36
+> 0.48
+> 0.60
+> 0.72
+> 0.84
+> 0.96
+> normalized score (higher is better)
+> high-fidelity optimum feedback optimum
+
+Figure S3: Correlation-adjustable Branin feedback surfaces. We plot normalized maximization scores for the high-fidelity objective −fh and the low-fidelity feedback −fℓ. White stars mark the high-fidelity optimum, and purple circles mark the feedback optimum. As the discrepancy parameter 
+
+a increases, the feedback surface becomes less rank-aligned with the true objective, as measured by Spearman rank correlation. 
+
+C.4 Sequential Reaction with Auxiliary Signal 
+
+We consider a standard sequential reaction system: 
+
+A k1
+
+−→ B k2
+
+−→ C, 
+
+a classical setting in chemical reaction engineering for studying the trade-off between conversion and selectivity (e.g., [ 31 , 32 ]). The objective is the concentration of the intermediate B, which we denote as [B]( τ ), as a function of residence time τ and temperature T . The reaction follows first-order kinetics with Arrhenius temperature dependence: 
+
+k1(T ) = A1 exp 
+
+
+
+− Ea1
+
+RT 
+
+
+
+, (S16) 
+
+k2(T ) = A2 exp 
+
+
+
+− Ea2
+
+RT 
+
+
+
+, (S17) where Ai are pre-exponential factors, Eai activation energies, and R the universal gas constant. The concentration of B can be obtained analytically as: 
+
+[B]( τ ) = [ A]0
+
+k1
+
+k2 − k1
+
+ e−k1τ − e−k2τ  , (S18) which is physically bounded in [0 , 1] when normalized by the initial reactant concentration [A]0.In addition, we use an auxiliary feedback signal corresponding to the conversion of A:Conversion = 1 − e−k1τ , (S19) which is a standard, easily measured quantity in chemical reaction engineering. In sequential reactions, however, maximizing conversion is not aligned with maximizing [B], since higher conversion drives the system toward the final product C. This induces a systematic mismatch between the proxy signal and the true objective. While Bayesian optimization has been applied to reaction yield optimization [ 33 ], the use of conversion as a structured auxiliary signal in this setting and its systematic bias relative to the true objective has not been explicitly studied. 
+
+Objective and auxiliary signal. Let x = ( τ, T ) denote residence time and temperature. The expensive objective is the yield of the intermediate product B,
+
+f (x) = [ B]( τ, T ) = [ A]0
+
+k1(T )
+
+k2(T ) − k1(T )
+
+
+
+e−k1(T )τ − e−k2(T )τ 
+
+, (S20) 20 whereas the auxiliary feedback is the conversion of reactant A,
+
+u(x) = 1 − e−k1(T )τ . (S21) This proxy is cheap to measure and operationally meaningful, but only partially aligned with the objective: consumed A may produce either the desired intermediate B or the undesired by-product C.Consequently, u(x) is monotone in τ for fixed T , while f (x) typically attains an interior optimum because B is eventually depleted into C.
+
+C.5 Aerodynamics 
+
+We consider the problem of maximizing the lift-to-drag ratio CL/C D of a NACA 4-digit airfoil as a function of angle of attack α ∈ [−2, 15] , thickness t ∈ [0 .08 , 0.20] , and camber c ∈ [0 .00 , 0.06] , a standard aerodynamic shape optimization setting [28]. The true objective is evaluated using NeuralFoil [ 34 ], a neural network surrogate trained on ap-proximately one million XFOIL runs that captures viscous boundary-layer effects, including flow separation and stall. At moderate α, CD remains low in a laminar drag bucket; as α increases toward stall, boundary-layer separation causes CD to grow rapidly, so CL/C D peaks at an interior point (α∗ ≈ 5–7) before declining. As auxiliary feedback, we consider two proxy variants. The first is structurally biased: it uses lift alone and therefore ignores the drag penalty that makes the true lift-to-drag ratio peak before stall. The second is a lower-accuracy neural surrogate for the same lift-to-drag objective, and therefore serves as a noisy but well-aligned control. 
+
+Variant A uses CL alone (from NeuralFoil) as the feedback signal. Since CL is the numerator of the true objective and increases monotonically with α until hard stall, an agent relying on it will systematically overshoot toward higher angles of attack, ignoring the drag penalty entirely. 
+
+Variant B replaces the analytical feedback model with a smaller NeuralFoil model (model size 
+
+small instead of large ), computing CL/C D from the same viscous surrogate but at reduced accuracy. Unlike Variants A and B, this proxy shares the same physical structure as the truth, so the optimum location should be approximately the same as the ground truth. This variant therefore represents noisy feedback rather than structurally biased feedback, and serves as a control. The multi-fidelity structure of Variant B directly mirrors established practice in aerodynamic opti-mization, where inviscid panel codes are routinely paired with viscous RANS solvers as the low- and high-fidelity levels [ 28 , 35 ]. Low-fidelity solutions obtained from a panel code are systematically paired with high-fidelity viscous solutions in exactly this way. The key property in both variants is that the proxy is not merely noisy — it is structurally wrong in the regime where the true optimum lives, because it lacks the physics (viscous separation) that causes CL/C D to turn over. 
+
+Objective and auxiliary signal Let x = ( α, t, c ) denote angle of attack, thickness, and camber, with angles converted to radians inside the analytical proxies. The expensive objective is the viscous lift-to-drag ratio 
+
+f (x) = CNF ,large  
+
+> L
+
+(x)
+
+CNF ,large  
+
+> D
+
+(x) , (S22) where (CNF ,large  
+
+> L
+
+, C NF ,large  
+
+> D
+
+) are given by the large NeuralFoil model. The auxiliary feedback is instead provided by a cheaper or structurally simplified proxy, 
+
+u(x) ∈ { uA(x), u B (x)}, (S23) with 
+
+uA(x) = CNF ,large  
+
+> L
+
+(x), (S24) 
+
+uB (x) = CNF ,small  
+
+> L
+
+(x)
+
+CNF ,small  
+
+> D
+
+(x) . (S25) The key mismatch for uA is that f (x) has an interior optimum due to drag growth and stall, whereas lift alone tends to favor larger angles of attack. In contrast, uB shares the same lift-to-drag structure 21 as f but is evaluated with a smaller NeuralFoil model, making it a cheaper, noisier proxy rather than a structurally biased one. We use NeuralFoil [ 34 ], a physics-informed machine learning tool for airfoil aerodynamics analysis, available at https://github.com/peterdsharpe/NeuralFoil under the MIT License. 
+
+C.6 Neural Architecture Search (ML hyper-parameters) 
+
+We work on the problem of selecting the optimal cell architecture in NAS-Bench-201 [ 36 ], a tabular benchmark that enumerates all neural architectures definable on a fixed directed acyclic graph with six edges, each assigned one of five candidate operations: none , skip_connect , nor_conv_1x1 ,
+
+nor_conv_3x3 , and avg_pool_3x3 . We fix three edges to canonical values (edges 0, 3, 5 to 
+
+nor_conv_3x3 , skip_connect , and nor_conv_3x3 , respectively, to reduce the dimensions) and treat the remaining three free edges as the design variables, which results in a discrete search space of 
+
+53 = 125 architectures, resulting in a reduced query set size of 123, as well as 1 target and initial context point. 
+
+Objective and auxiliary signal. Let x = ( e1, e 2, e 4) ∈ { 0, . . . , 4}3 index the operation assigned to each free edge. The expensive objective is the test accuracy on ImageNet16-120 [ 36 ], a downsampled variant of ImageNet that is substantially harder than CIFAR-scale tasks and requires architectures with higher representational capacity: 
+
+f (x) = Acc ImageNet16 -120 (x). (S26) The auxiliary feedback is the test accuracy on CIFAR-10, which is cheaper to interpret and widely used as a transferability signal in NAS [37, 38]: 
+
+u(x) = Acc CIFAR -10 (x). (S27) Both quantities are pre-computed and available via exact lookup in the benchmark table, so no training is performed at evaluation time. The two signals are positively correlated as a strong architecture on CIFAR-10 tends to perform well on ImageNet16-120, but the proxy optimum and the true optimum are different. CIFAR-10 is a low-complexity task on which even lightweight convolutions saturate performance; ImageNet16-120 penalizes architectures that lack sufficient capacity or spatial resolution handling, so the ranking of mid-tier architectures differs non-trivially between the two datasets [37]. We use NAS-Bench-201 [ 36 ], available at https://github.com/D-X-Y/NAS-Bench-201 , under the MIT License. 
+
+C.7 Task Embedding via Feedback Error Profiles 
+
+To explain the relationship between ground-truth labels and feedback signals across different task configurations, we represent each task instance as a vector that summarizes the distribution of feedback errors. 
+
+Task vector construction. Given a batch of query points with ground-truth labels y ∈ RN and corresponding feedback signals f ∈ RN , we define the pointwise error as 
+
+di = fi − yi, i = 1 , . . . , N. (S28) To capture how errors vary across the output space, we sort the points by either yi or fi and partition them into B = 20 equal-sized bins. For each bin b, we calculate both the signed mean error (capturing directional bias) and the mean absolute error (capturing the magnitude of the errors regardless of direction). This results in four statistics per bin: 
+
+μ(y) 
+
+> b
+
+= 1
+
+|b|
+
+X
+
+> i∈b
+
+di, μ(f ) 
+
+> b
+
+= 1
+
+|b|
+
+X
+
+> i∈b
+
+di, (S29) 
+
+¯μ(y) 
+
+> b
+
+= 1
+
+|b|
+
+X
+
+> i∈b
+
+|di|, ¯μ(f ) 
+
+> b
+
+= 1
+
+|b|
+
+X
+
+> i∈b
+
+|di|, (S30) where the superscripts (y) and (f ) denote binning by y and f , respectively. We use the two statistics generated by binning by feedback and concatenate them to generate an embedding of each task that incorporates how feedback corresponds to the value of the objective. 22 Dimensionality Reduction and Visualisation 
+
+All task vectors are projected to two dimensions using UMAP [ 39 ] with nneighbors (set to 5) and 
+
+min dist (set to 0.1) as hyperparameters. Each point in the resulting embedding corresponds to a single task instance, colored and shaped by its label (Figure 5). 
+
+D Pretraining and test-time algorithms 
+
+D.1 Training procedure MDP formulation. We cast policy learning as a finite-horizon MDP (S, A, P, R, γ ). At step t, the state is 
+
+sτt = ( eHτt , U τt , t, T τ ), (S31) the action space is the current candidate pool Aτt = Qτt , and the policy selects xτt ∼ πψ (· | eHτt , U τt ).We assume U τt is time independent and reduces to U τ . The transition appends the new observation to the history and removes the selected candidate from the pool. 
+
+eHτt+1 = eHτt ∪ { (xτt , u τ (xτt ), y τt )}, Qτt+1 = Qτt \ { xτt }, (S32) where u(x) is looking up the corresponding feedback of point x in U τ . The reward is the improvement over the best value observed so far, 
+
+rτt = max( yτt − y∗
+
+> t−1
+
+, 0) , y∗ 
+
+> t
+
+= max  
+
+> i≤t
+
+yτi , (S33) and the discounted return from step t is 
+
+Rτt =
+
+> Tτ
+
+X
+
+> k=t
+
+γk−trτk . (S34) We use γ = 0 .98 in all experiments. The policy is optimized with REINFORCE, 
+
+Lpol (ψ) = −Eτ,π ψ
+
+"Tτ −1X
+
+> t=0
+
+log πψ (xτt | eHτt , U τ ) ˜Rτt
+
+#
+
+, (S35) where ˜Rτt is the normalized return defined below. 
+
+Return normalization. To reduce variance in the REINFORCE gradient estimates, returns are normalized per timestep across the batch, 
+
+˜Rτt = Rτt − μt
+
+σt + ϵ , (S36) where μt and σt are the mean and standard deviation of {Rτt } across the batch at step t, and ϵ = 10 −8.This centers and scales the gradient signal at each step regardless of the absolute magnitude of rewards, which can vary substantially across tasks and feedback conditions. 
+
+Warmup schedule. Training proceeds in two phases. During the warmup phase, lasting η iterations, only the predictive loss Lpred is active. Candidates are selected uniformly at random from a smaller query pool (size of T). After η iterations, the pool reverts to its standard size |Qτ |, the policy head is activated, and joint optimization of (ϕ, ψ ) under L = Lpred + λpol Lpol begins. 
+
+Deployment modes. At test time, the model supports two deployment modes. 
+
+End-to-end amortized. The policy head πψ selects the next candidate directly, 
+
+xτt ∼ πψ (· | eHτt , U τt ). (S37) 
+
+Semi-amortized. The inference head qϕ is used as a feedback-aware surrogate and paired with a standard acquisition function α,
+
+xτt = arg max 
+
+> x∈Qτt
+
+α
+
+
+
+x; qϕ, eHτt , U τ 
+
+. (S38) In our experiments, we use qϕ with expected improvement (EI) and upper confidence bound (UCB) as acquisition functions. Both modes share the same pretrained backbone and differ only in which head is used at deployment. 23 Implementation details. Log-probabilities in the REINFORCE objective are clamped to a min-imum of −10 to prevent numerical instability from near-zero policy probabilities. Gradients are clipped to unit ℓ2 norm at each update step. 
+
+Algorithm. The full pretraining procedure is given in Algorithm 1. 
+
+Algorithm 1 Feedback-aware pretraining 
+
+Require: Task prior p(τ ), warmup iterations η, total iterations N , loss weight λpol  
+
+> 1:
+
+for i = 1 , . . . , N do  
+
+> 2:
+
+Sample task τ ∼ p(τ ) with objective fτ , feedback source uτ , query set Qτ , target set T τ ,horizon T τ 
+
+> 3:
+
+Initialize eHτ 
+
+> 0
+
+from initial context points, compute U τ = {(x, u τ (x)) : x ∈ Qτ } 
+
+> 4:
+
+for t = 0 , . . . , T τ − 1 do  
+
+> 5:
+
+if i ≤ η then  
+
+> 6:
+
+xτt ∼ Uniform( Qτt ) ▷ warmup: random selection  
+
+> 7:
+
+else  
+
+> 8:
+
+xτt ∼ πψ (· | eHτt , U τ ) ▷ policy selection  
+
+> 9:
+
+end if  
+
+> 10:
+
+Observe yτt = fτ (xτt ) + ετt 
+
+> 11:
+
+eHτt+1 ← eHτt ∪ { (xτt , u τ (xτt ), y τt )} 
+
+> 12:
+
+Qτt+1 ← Qτt \ { xτt } 
+
+> 13:
+
+if i > η then  
+
+> 14:
+
+Record rτt ← max( yτt − y∗ 
+
+> t
+
+, 0)  
+
+> 15:
+
+end if  
+
+> 16:
+
+end for  
+
+> 17:
+
+Compute Lpred (ϕ) from { eHτt , U τ , T τ }T τ −1 
+
+> t=0
+
+▷ Eq. (18)  
+
+> 18:
+
+if i ≤ η then  
+
+> 19:
+
+Update ϕ by minimizing Lpred  
+
+> 20:
+
+else  
+
+> 21:
+
+Compute Lpol (ψ) from {rτt , log πψ (xτt | eHτt , U τt )}T τ −1 
+
+> t=0
+
+▷ Eq. (19)  
+
+> 22:
+
+Update (ϕ, ψ ) by minimizing Lpred + λpol Lpol  
+
+> 23:
+
+end if  
+
+> 24:
+
+end for 
+
+E Detailed model architecture 
+
+E.1 Computational Resources 
+
+All experiments were conducted on a high-performance computing cluster using a single NVIDIA V100 GPU with 32GB of memory. Training took approximately 70 hours per run. All models were implemented in PyTorch [40]. 
+
+E.2 Model Architecture 
+
+The model follows an encode-then-decode architecture consisting of three components: an embedder, a Transformer encoder, and an output head. We base our implementation on [13]. 
+
+Embedder. We provide two embedder variants. The standard embedder maps input locations x
+
+through a two-layer MLP with ReLU activations to produce d-dimensional tokens. Observed values 
+
+y are embedded separately and added to the context tokens, so query and target tokens carry only location information. The expert-aware embedder additionally incorporates the expert feedback signal. Input locations and feedback are each embedded by separate two-layer MLPs. In concat mode (used in the experiments), the x and feedback embeddings (each of dimension d/ 2) are concatenated to form a d-dimensional token; in add mode they are summed directly. As before, observed values y are embedded and added to context tokens only. In both variants, query and target tokens therefore carry no y information, only location, and, in the expert-aware case, feedback. 24 Encoder. The embeddings are processed by a Transformer encoder with L layers, H attention heads, embedding dimension d, and feedforward dimension dff . A structured attention mask is applied: all tokens attend freely to context tokens. Optionally, all tokens can also attend to query tokens to find patterns in the feedback (turned on in experiments). 
+
+Output head. The output head splits the encoder output into query and target embeddings. Query embeddings are passed through the acquisition head , a two-layer MLP that produces a scalar logit per query point; these logits are converted to a probability distribution over candidate points via softmax, forming the policy π(x | D t). Target and query embeddings are passed through the GMM target head , which predicts a Gaussian mixture model posterior with K components over the target outputs, parameterising means, standard deviations, and mixture weights via separate linear projections. An optional time token t/T is concatenated to query embeddings before the acquisition head, allowing the policy to adapt its behavior across the optimization horizon (Influence is negligible). 
+
+E.3 Hyperparameters 
+
+Table S1: Hyperparameter settings. 
+
+Hyperparameter Value / search range Synthetic task prior 
+
+Candidate pool size Mτ 200 Budget Tτ 10–20 Input dimension d varies by experiment (1–3) Kernel family Matérn with ν ∈ U ({1/2, 3/2, 5/2, ∞} )
+
+Lengthscale prior U([0 .1√d, 2.0√d]) , isotropic w.p. 0.5 Output scale prior U([0 .1, 1.0]) 
+
+Observation noise στ 0.01 
+
+Design space [−5, 5] d
+
+Number of target data points 100 
+
+Additive Prior 
+
+Expert input dimension U({1, 2})
+
+Expert–task overlap dimensions U({0, 1})
+
+Expert weight U([0 .3, 0.9]) 
+
+Expert extra observations depends on dimensionality: U({10 , 100 }) for 1-D; 
+
+U({30 , 300 }) for 2- and 3-D Uniform fraction 0.25 
+
+Expert cluster std U([0 .5, 1.5]) 
+
+Number of expert centers U({1, . . . , 5})
+
+Reweighted Prior 
+
+Number of real components kreal 3
+
+Number of decoy components U({2, . . . , 8})
+
+Expert weight α (Dirichlet) 0.7
+
+Expert inclusion probability p (Bernoulli) 0.8
+
+Augmentation Bias a
+
+Bias-family activation probabilities (section B.4) additive GP bias: 0.2; local distortion: 0.2; constant shift: 0.2; catastrophic: 0.05 Noise scale U([0 .0, 0.2]) 
+
+Additive GP bias: lengthscale U([0 .5, 3.0]) 
+
+Additive GP bias: max std U([0 .2, 1.0]) 
+
+Additive GP bias: scale U([0 .2, 2.0]) 
+
+Local distortion: number of centers ncenters U({1, 2, 3})
+
+Local distortion: decay U([0 .5, 1.5]) 
+
+Local distortion: magnitude U([0 .2, 0.8]) 
+
+Constant shift: δ U([ −0.3, 0.3]) 
+
+25 Table S1 – continued 
+
+Hyperparameter Value / search range Transformer backbone 
+
+Embedding dimension dmodel 32 Number of transformer layers 3Number of attention heads 4Feed-forward dimension 128 Dropout 0.0 
+
+Heads 
+
+Number of mixture components Kmix 10 Policy head separate per query point 
+
+Training 
+
+Optimizer AdamW Learning rate 10 −3
+
+Weight decay 10 −7
+
+LR schedule Cosine annealing ( T0 = 1000 , Tmult = 2 )Batch size 200 Number of training episodes 200 ,000 
+
+Warm-up epochs 20 ,000 b
+
+Discount γ 0.98 
+
+Evaluation 
+
+Number of initial observations 1Size of query set 300 Optimization budget T 30 Number of evaluation seeds 100   
+
+> aDue to computational constraints, the hyperparameters were not optimized and were set arbitrarily.
+> bFollowing ALINE [13], the warm-up only trains the prediction head with a smaller query size.
+
+26 NeurIPS Paper Checklist 
+
+1. Claims 
+
+Question: Do the main claims made in the abstract and introduction accurately reflect the paper’s contributions and scope? Answer: [Yes] Justification: The claims are supported by experiments in later sections. Guidelines: • The answer [N/A] means that the abstract and introduction do not include the claims made in the paper. • The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A [No] or [N/A] answer to this question will not be perceived well by the reviewers. • The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings. • It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper. 2. Limitations 
+
+Question: Does the paper discuss the limitations of the work performed by the authors? Answer: [Yes] Justification: The discussion section has a paragraph about limitations addressing some core limitations. Guidelines: • The answer [N/A] means that the paper has no limitation while the answer [No] means that the paper has limitations, but those are not discussed in the paper. • The authors are encouraged to create a separate “Limitations” section in their paper. • The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be. • The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated. • The authors should reflect on the factors that influence the performance of the approach. For example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon. • The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size. • If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness. • While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren’t acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations. 3. Theory assumptions and proofs 
+
+Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? Answer: [N/A]. Justification: No theoretical results to prove. Guidelines: • The answer [N/A] means that the paper does not include theoretical results. • All the theorems, formulas, and proofs in the paper should be numbered and cross-referenced. • All assumptions should be clearly stated or referenced in the statement of any theorems. • The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition. • Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material. • Theorems and Lemmas that the proof relies upon should be properly referenced. 
+
+27 4. Experimental result reproducibility 
+
+Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: The appendix contains extensive descriptions of the architecture, hyperparameters (section E), benchmarks (section C) and the prior variants (section B). Guidelines: • The answer [N/A] means that the paper does not include experiments. • If the paper includes experiments, a [No] answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not. • If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable. • Depending on the contribution, reproducibility can be accomplished in various ways. For example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed. • While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility. In the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results. 5. Open access to data and code 
+
+Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [No] Justification: Code will be made publicly available upon acceptance. The paper provides sufficient detail on the methodology, model architecture, and experimental setup to support reproducibility. Guidelines: • The answer [N/A] means that paper does not include experiments requiring code. • Please see the NeurIPS code and data submission guidelines ( https://neurips.cc/public/guides/ CodeSubmissionPolicy ) for more details. • While we encourage the release of code and data, we understand that this might not be possible, so [No] is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark). • The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines ( https://neurips.cc/public/guides/ CodeSubmissionPolicy ) for more details. • The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc. • The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why. • At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable). • Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 6. Experimental setting/details 
+
+Question: Does the paper specify all the training and test details (e.g., data splits, hyperparameters, how they were chosen, type of optimizer) necessary to understand the results? 
+
+28 Answer: [Yes] Justification: The appendix contains extensive descriptions of the atchitecture, hyperparameters (section E), benchmarks (section C) and the prior variants (section B). Guidelines: • The answer [N/A] means that the paper does not include experiments. • The experimental setting should be presented in the core of the paper to a level of detail that is necessary to appreciate the results and make sense of them. • The full details can be provided either with the code, in appendix, or as supplemental material. 7. Experiment statistical significance 
+
+Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments? Answer: [Yes] Justification: Our plots display error bars with explanation, usually the 95% confidence interval is visualized. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The authors should answer [Yes] if the results are accompanied by error bars, confidence intervals, or statistical significance tests, at least for the experiments that support the main claims of the paper. • The factors of variability that the error bars are capturing should be clearly stated (for example, train/test split, initialization, random drawing of some parameter, or overall run with given experimental conditions). • The method for calculating the error bars should be explained (closed form formula, call to a library function, bootstrap, etc.) • The assumptions made should be given (e.g., Normally distributed errors). • It should be clear whether the error bar is the standard deviation or the standard error of the mean. • It is OK to report 1-sigma error bars, but one should state it. The authors should preferably report a 2-sigma error bar than state that they have a 96% CI, if the hypothesis of Normality of errors is not verified. • For asymmetric distributions, the authors should be careful not to show in tables or figures symmetric error bars that would yield results that are out of range (e.g., negative error rates). • If error bars are reported in tables or plots, the authors should explain in the text how they were calculated and reference the corresponding figures or tables in the text. 8. Experiments compute resources 
+
+Question: For each experiment, does the paper provide sufficient information on the computer resources (type of compute workers, memory, time of execution) needed to reproduce the experiments? Answer:[Yes] Justification: we refer to section E.1. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The paper should indicate the type of compute workers CPU or GPU, internal cluster, or cloud provider, including relevant memory and storage. • The paper should provide the amount of compute required for each of the individual experimental runs as well as estimate the total compute. • The paper should disclose whether the full research project required more compute than the experiments reported in the paper (e.g., preliminary or failed experiments that didn’t make it into the paper). 9. Code of ethics 
+
+Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics 
+
+https://neurips.cc/public/EthicsGuidelines ?Answer: [Yes] Justification: the work is methodological. It does not involve human subjects, private data, scraped data, or high-risk deployment. Guidelines: • The answer [N/A] means that the authors have not reviewed the NeurIPS Code of Ethics. • If the authors answer [No], they should explain the special circumstances that require a deviation from the Code of Ethics. • The authors should make sure to preserve anonymity (e.g., if there is a special consideration due to laws or regulations in their jurisdiction). 10. Broader impacts 
+
+29 Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed? Answer: [N/A] Justification: Not relevant. Guidelines: • The answer [N/A] means that there is no societal impact of the work performed. • If the authors answer [N/A] or [No], they should explain why their work has no societal impact or why the paper does not address societal impact. • Examples of negative societal impacts include potential malicious or unintended uses (e.g., disinformation, generating fake profiles, surveillance), fairness considerations (e.g., deployment of technologies that could make decisions that unfairly impact specific groups), privacy considerations, and security considerations. • The conference expects that many papers will be foundational research and not tied to particular applications, let alone deployments. However, if there is a direct path to any negative applications, the authors should point it out. For example, it is legitimate to point out that an improvement in the quality of generative models could be used to generate Deepfakes for disinformation. On the other hand, it is not needed to point out that a generic algorithm for optimizing neural networks could enable people to train models that generate Deepfakes faster. • The authors should consider possible harms that could arise when the technology is being used as intended and functioning correctly, harms that could arise when the technology is being used as intended but gives incorrect results, and harms following from (intentional or unintentional) misuse of the technology. • If there are negative societal impacts, the authors could also discuss possible mitigation strategies (e.g., gated release of models, providing defenses in addition to attacks, mechanisms for monitoring misuse, mechanisms to monitor how a system learns from feedback over time, improving the efficiency and accessibility of ML). 11. Safeguards 
+
+Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pre-trained language models, image generators, or scraped datasets)? Answer: [N/A] Justification: Not relevant. Guidelines: • The answer [N/A] means that the paper poses no such risks. • Released models that have a high risk for misuse or dual-use should be released with necessary safeguards to allow for controlled use of the model, for example by requiring that users adhere to usage guidelines or restrictions to access the model or implementing safety filters. • Datasets that have been scraped from the Internet could pose safety risks. The authors should describe how they avoided releasing unsafe images. • We recognize that providing effective safeguards is challenging, and many papers do not require this, but we encourage authors to take this into account and make a best faith effort. 12. Licenses for existing assets 
+
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected? Answer: [Yes] Justification: We use NeuralFoil [ 34 ] and NAS-Bench-201 [ 36 ]. License information for all assets is provided in the appendix. Guidelines: • The answer [N/A] means that the paper does not use existing assets. • The authors should cite the original paper that produced the code package or dataset. • The authors should state which version of the asset is used and, if possible, include a URL. • The name of the license (e.g., CC-BY 4.0) should be included for each asset. • For scraped data from a particular source (e.g., website), the copyright and terms of service of that source should be provided. • If assets are released, the license, copyright information, and terms of use in the package should be provided. For popular datasets, paperswithcode.com/datasets has curated licenses for some datasets. Their licensing guide can help determine the license of a dataset. • For existing datasets that are re-packaged, both the original license and the license of the derived asset (if it has changed) should be provided. • If this information is not available online, the authors are encouraged to reach out to the asset’s creators. 13. New assets 
+
+30 Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets? Answer: [N/A] Justification: The publication does not introduce new assets. Guidelines: • The answer [N/A] means that the paper does not release new assets. • Researchers should communicate the details of the dataset/code/model as part of their submissions via structured templates. This includes details about training, license, limitations, etc. • The paper should discuss whether and how consent was obtained from people whose asset is used. • At submission time, remember to anonymize your assets (if applicable). You can either create an anonymized URL or include an anonymized zip file. 14. Crowdsourcing and research with human subjects 
+
+Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)? Answer: [N/A] Justification: Not relevant. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Including this information in the supplemental material is fine, but if the main contribution of the paper involves human subjects, then as much detail as possible should be included in the main paper. • According to the NeurIPS Code of Ethics, workers involved in data collection, curation, or other labor should be paid at least the minimum wage in the country of the data collector. 15. Institutional review board (IRB) approvals or equivalent for research with human subjects 
+
+Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained? Answer: [N/A] Justification: Not relevant. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper. • We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution. • For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review. 16. Declaration of LLM usage 
+
+Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigor, or originality of the research, declaration is not required. Answer: [N/A]. Justification: No important, original, or non-standard LLM use. Guidelines: • The answer [N/A] means that the core method development in this research does not involve LLMs as any important, original, or non-standard components. • Please refer to our LLM policy in the NeurIPS handbook for what should or should not be described. 
+
+31

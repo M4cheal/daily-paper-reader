@@ -6,61 +6,50 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-09
-- 运行时间：2026-05-09 20:11:20 UTC
+- 最新运行日期：2026-05-10
+- 运行时间：2026-05-10 19:47:08 UTC
 - 运行状态：成功
-- 本次总论文数：13
-- 精读区：2
-- 速读区：11
+- 本次总论文数：9
+- 精读区：0
+- 速读区：9
 
 ### 今日简报（AI）
-今日聚焦 13 篇前沿进展，深度解析世界动作模型的高效迁移与多模态知识组合框架。
-重点关注 CKT-WAM 实现的参数高效上下文转移，以及 GeoStack 为 VLM 带来的准阿贝尔知识合成新范式。
-建议从具身智能与多模态融合的轻量化适配入手，探索大模型在复杂任务中的泛化潜力。
-- 详情：[/202605/09/README](/202605/09/README)
+今日速览 9 篇前沿论文，深度解析模型压缩与任务适配的协同进化及去中心化联邦学习新范式。
+核心结论显示“压缩与适配同步”优于传统分步走，且 MILE 框架利用增量 LoRA 专家显著提升了跨域持续分割性能。
+建议关注 LoRA 技术如何从单一微调演变为解决复杂持续学习问题的多专家架构。
+- 详情：[/202605/10/README](/202605/10/README)
 
 ### 精读区论文标签
-1. [CKT-WAM: Parameter-Efficient Context Knowledge Transfer Between World Action Models](/202605/09/2605.06247v1-ckt-wam-parameter-efficient-context-knowledge-transfer-between-world-action-models)  
-   标签：评分：8.5/10、query:tta
-   evidence：世界动作模型的高效参数上下文知识迁移
-2. [GeoStack: A Framework for Quasi-Abelian Knowledge Composition in VLMs](/202605/09/2605.06477v1-geostack-a-framework-for-quasi-abelian-knowledge-composition-in-vlms)  
-   标签：评分：8.0/10、query:tta
-   evidence：视觉语言模型中知识组合与自适应的模块化框架
+- 本次无精读推荐。
 
 ### 速读区论文标签
-1. [From Pixels to Tokens: A Systematic Study of Latent Action Supervision for Vision-Language-Action Models](/202605/09/2605.04678v1-from-pixels-to-tokens-a-systematic-study-of-latent-action-supervision-for-vision-language-action-models)  
-   标签：评分：7.5/10、query:tta
-   evidence：VLA模型的潜动作监督系统研究
-2. [EGA: Adapting Frozen Encoders for Vector Search with Bounded Out-of-Distribution Degradation](/202605/09/2605.05674v1-ega-adapting-frozen-encoders-for-vector-search-with-bounded-out-of-distribution-degradation)  
-   标签：评分：7.5/10、query:tta
-   evidence：在有界分布外退化情况下自适应冻结编码器
-3. [CRAFT: Forgetting-Aware Intervention-Based Adaptation for Continual Learning](/202605/09/2605.05732v1-craft-forgetting-aware-intervention-based-adaptation-for-continual-learning)  
-   标签：评分：7.5/10、query:tta
-   evidence：无需权重更新的大语言模型持续自适应
-4. [Autonomous Drift Learning in Data Streams: A Unified Perspective](/202605/09/2605.01295v1-autonomous-drift-learning-in-data-streams-a-unified-perspective)  
+1. [Compress Then Adapt? No, Do It Together via Task-aware Union of Subspaces](/202605/10/2605.02829v1-compress-then-adapt-no-do-it-together-via-task-aware-union-of-subspaces)  
    标签：评分：7.0/10、query:tta
-   evidence：数据流中的自主漂移学习和时间偏移
-5. [MILE: Mixture of Incremental LoRA Experts for Continual Semantic Segmentation across Domains and Modalities](/202605/09/2605.03555v1-mile-mixture-of-incremental-lora-experts-for-continual-semantic-segmentation-across-domains-and-modalities)  
+   evidence：大型预训练模型的联合自适应与压缩框架
+2. [DeFed-GMM-DaDiL: A Decentralized Federated Framework for Domain Adaptation](/202605/10/2605.04324v1-defed-gmm-dadil-a-decentralized-federated-framework-for-domain-adaptation)  
    标签：评分：7.0/10、query:tta
-   evidence：使用LoRA进行跨领域和模态的持续自适应
-6. [EA-WM: Event-Aware Generative World Model with Structured Kinematic-to-Visual Action Fields](/202605/09/2605.06192v1-ea-wm-event-aware-generative-world-model-with-structured-kinematic-to-visual-action-fields)  
-   标签：评分：7.0/10、query:tta
-   evidence：闭合运动控制与视觉感知回路的生成式世界模型
-7. [Toward Structural Multimodal Representations: Specialization, Selection, and Sparsification via Mixture-of-Experts](/202605/09/2605.03348v2-toward-structural-multimodal-representations-specialization-selection-and-sparsification-via-mixture-of-experts)  
-   标签：评分：6.5/10、query:tta
-   evidence：结构化多模态表示与任务特定路由自适应
-8. [MIRL: Mutual Information-Guided Reinforcement Learning for Vision-Language Models](/202605/09/2605.01520v1-mirl-mutual-information-guided-reinforcement-learning-for-vision-language-models)  
+   evidence：用于领域自适应的去中心化联邦框架
+3. [MILE: Mixture of Incremental LoRA Experts for Continual Semantic Segmentation across Domains and Modalities](/202605/10/2605.03555v1-mile-mixture-of-incremental-lora-experts-for-continual-semantic-segmentation-across-domains-and-modalities)  
    标签：评分：6.0/10、query:tta
-   evidence：用于减少视觉语言模型错误的强化学习
-9. [On Adaptivity in Zeroth-Order Optimization](/202605/09/2605.03869v1-on-adaptivity-in-zeroth-order-optimization)  
+   evidence：使用LoRA专家在不同领域和模态间进行持续自适应
+4. [CRAFT: Counterfactual-to-Interactive Reinforcement Fine-Tuning for Driving Policies](/202605/10/2605.04470v1-craft-counterfactual-to-interactive-reinforcement-fine-tuning-for-driving-policies)  
    标签：评分：6.0/10、query:tta
-   evidence：自适应零阶优化的理论收敛保证
-10. [A Benchmark for Interactive World Models with a Unified Action Generation Framework](/202605/09/2605.03941v1-a-benchmark-for-interactive-world-models-with-a-unified-action-generation-framework)  
+   evidence：针对驾驶策略的在线强化微调
+5. [Adaptivity Under Realizability Constraints: Comparing In-Context and Agentic Learning](/202605/10/2605.04995v1-adaptivity-under-realizability-constraints-comparing-in-context-and-agentic-learning)  
    标签：评分：6.0/10、query:tta
-   evidence：测试世界模型交互能力的基准
-11. [iWorld-Bench: A Benchmark for Interactive World Models with a Unified Action Generation Framework](/202605/09/2605.03941v2-iworld-bench-a-benchmark-for-interactive-world-models-with-a-unified-action-generation-framework)  
+   evidence：上下文学习与智能体学习适应性的理论比较
+6. [PRISM: Perception Reasoning Interleaved for Sequential Decision Making](/202605/10/2605.05407v1-prism-perception-reasoning-interleaved-for-sequential-decision-making)  
    标签：评分：6.0/10、query:tta
-   evidence：测试世界模型交互能力的基准
+   evidence：多模态顺序决策的闭环交互
+7. [CITE: Anytime-Valid Statistical Inference in LLM Self-Consistency](/202605/10/2605.05873v1-cite-anytime-valid-statistical-inference-in-llm-self-consistency)  
+   标签：评分：6.0/10、query:tta
+   evidence：LLM推理过程中的统计推断与测试时停止规则
+8. [4DThinker: Thinking with 4D Imagery for Dynamic Spatial Understanding](/202605/10/2605.05997v1-4dthinker-thinking-with-4d-imagery-for-dynamic-spatial-understanding)  
+   标签：评分：6.0/10、query:tta
+   evidence：视觉语言模型中的动态空间理解
+9. [In-Context Black-Box Optimization with Unreliable Feedback](/202605/10/2605.06187v1-in-context-black-box-optimization-with-unreliable-feedback)  
+   标签：评分：6.0/10、query:tta
+   evidence：上下文跨任务自适应
 
 
 <div class="dpr-home-promo-card">
