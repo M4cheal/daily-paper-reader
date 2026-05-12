@@ -1,0 +1,662 @@
+Title: Beyond LoRA vs. Full Fine-Tuning: Gradient-Guided Optimizer Routing for LLM Adaptation
+
+URL Source: https://arxiv.org/pdf/2605.07111v1
+
+Published Time: Mon, 11 May 2026 00:37:02 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Beyond LoRA vs. Full Fine-Tuning: Gradient-Guided Optimizer Routing for LLM Adaptation 
+
+Haozhan Tang 1,2, Xiuqi Zhu 1,∗ Xinyin Zhang 1,∗
+
+Boxun Li 3 Virginia Smith 1 Kevin Kuo 1,
+
+> 1
+
+Carnegie Mellon University 2Tsinghua University 3Infinigence AI 
+
+## Abstract 
+
+Recent literature on fine-tuning Large Language Models highlights a fundamental debate. While Full Fine-Tuning (FFT) provides the representational plasticity required for high-entropy knowledge injection, Low-Rank Adaptation (LoRA) can match or surpass FFT performance because many tasks only require updates in a low-rank space and benefit from LoRA’s additional regularization. Through empirical evaluation across diverse tasks (SQL, Medical QA, and Counterfactual Knowledge) and varying language models (Gemma-3-1B, Qwen2.5-1.5B, and Qwen2.5-3B), we verify both trends and demonstrate that relying solely on either static architecture is structurally limited. To address this challenge, we propose a Mixture of LoRA and Full (MoLF) Fine-Tuning, a unified framework that enables continuous navigation between both training regimes. MoLF dynamically routes updates between FFT and LoRA at the optimizer level to ensure that exact gradient signals are available to both experts throughout training, yielding stable training dynamics. For memory-constrained environments, we also introduce MoLF-Efficient, which freezes base weights and only routes updates among a pair of LoRA experts of potentially varying rank. Our evaluations show that MoLF either improves on or stays within 1.5% of the better of FFT and LoRA across all settings, while MoLF-Efficient outperforms prior adaptive LoRA approaches by up to 20% on Fact and 9% on Med and SQL. 
+
+## 1 Introduction 
+
+Fine-tuning pre-trained Large Language Models (LLMs) is a standard paradigm that yields strong performance on downstream NLP tasks [ 1, 2, 3, 4]. However, effective fine-tuning is challenging due to the parameter capacity of LLMs far exceeding the limited number of examples in fine-tuning datasets. This creates a tension between representational plasticity and generalization, where aggressive optimization can cause overfitting or degrade pretrained representations [ 5, 6]. One natural axis along which such structure can be controlled is the parameterization of the fine-tuning update itself [7, 8]. In this space, a fundamental yet unresolved question is whether Full Fine-Tuning (FFT) or Low-Rank Adaptation (LoRA) [ 9] is more effective. It is commonly assumed that FFT, due to its higher capacity, should achieve superior accuracy over LoRA. Thus, extensions of LoRA typically aim to increase its effective rank by mixing multiple LoRA modules of a common rank [ 10 , 11 ] or adapting the ranks of modules throughout training [ 12 , 13 , 14 ]. However, empirical evidence suggests that raw capacity is not the sole factor of performance and the low-rank constraint can act as a regularizer that enables   
+
+> ∗These authors contributed equally. Corresponding authors: hztang801@gmail.com ,kkuo2@andrew.cmu.edu .Preprint.
+> arXiv:2605.07111v1 [cs.CL] 8 May 2026
+
+Figure 1: Our empirical evaluations reveal a structural trade-off in fine-tuning: FFT excels on high-entropy factual domains while LoRA supplies the regularization needed to preserve pre-trained reasoning during adaptation. The Mixture of LoRA and Full (MoLF) framework dynamically routes updates between full-parameter and low-rank pathways at the optimizer level: shifting sparsity to the optimization step ensures every expert receives full-batch gradient signals throughout training. LoRA to outperform FFT [ 9, 15 ]. Together, these lines of work suggest that relying on a single static architecture is structurally limited, motivating a solution that can leverage the benefits of both. To this end, we propose a Mixture of LoRA and Full fine-tuning (MoLF) which simultaneously trains an FFT and a LoRA expert. Unlike prior mixture-of-PEFT or adaptive LoRA methods [ 10 , 12 ], MoLF leaves the expert parameters intact and sparsifies parameter updates at the expert level; all experts participate in every forward and backward pass. The parameter space and optimizer state thus stay fixed throughout training, avoiding the cold-start AdamW moments that adaptive-rank methods incur when ranks are promoted, and every expert accumulates gradient statistics from the full batch, yielding stable training dynamics as the importance of each expert shifts. For memory-constrained settings, we additionally propose MoLF-Efficient (MoLF-E), which forgoes the FFT expert and routes updates among a pair of LoRA experts. MoLF-E inherits the training consistency benefits of MoLF while trading full-parameter expressiveness for a reduced memory footprint. In summary, our contributions are: 1. We extensively tune FFT and LoRA in 9 settings where we fine-tune 3 LLMs (Gemma-3-1B, Qwen2.5-1.5B, Qwen2.5-3B) on 3 datasets (CounterFact, MedMCQA, and Text-to-SQL). Our results show that the optimal choice of method and rank varies across settings, suggesting that methods should not simply seek to maximize the effective rank of the architecture. 2. We propose MoLF, which unifies FFT and LoRA within a mixture-of-experts framework. MoLF fine-tunes both an FFT and a LoRA expert while systematically constraining updates based on a momentum-based and capacity-aware expert scoring function. Across 3 bench-mark datasets and 3 LLM architectures, MoLF consistently performs better than or within 
+
+1.5% of the best baseline (FFT or LoRA). 3. We propose MoLF-E, a memory-efficient variant which freezes the base model and routes updates among a pair of LoRA experts. At comparable parameter budgets, MoLF-E consistently outperforms existing adaptive-rank methods, with over 20% improvement on Fact over the lowest-performing baseline method. 
+
+## 2 Related Work 
+
+FFT versus LoRA. Prior work has shown that pre-trained LLM fine-tuning occurs in a low-dimensional subspace, serving as an explanation of why LoRA is highly effective [ 9, 16 , 17 ]. Follow-up works have tried to further improve LoRA by mimicking FFT or by increasing the effec-tive rank of LoRA [ 11 , 18 , 19 , 20 ]. Empirical comparisons between the two methods yield mixed conclusions: some work finds that LoRA matches or exceeds FFT, with the low-rank constraint acting as an implicit regularizer that mitigates forgetting and reduces reliance on explicit KL penalties during RLHF [ 9 , 15 , 21 , 22 ]. Conversely, other work finds that FFT outperforms LoRA, particularly in instruction tuning and knowledge-intensive settings [ 23 , 24 ]. Beyond raw accuracy, FFT and LoRA also differ in the structure of their learned solutions and their robustness to distribution shift [ 15 , 25 ]. 2Adaptive LoRA. LoRA is a parameter-efficient fine-tuning (PEFT) method which injects trainable low-rank matrices into a frozen base model [ 9]. Despite its efficiency, LoRA is sensitive to the choice of rank, motivating a line of work on methods that use importance scores (e.g. parameter or gradient norms) to promote or prune rank components dynamically across layers [ 12 , 13 , 14 , 26 ]. A similar family of methods takes a finer-grained approach by decomposing LoRA updates into rank-1 components and selectively gating or routing over them, either via sparse regularization, meta-learning, or importance-based pruning [ 27 , 28 , 29 ]. Finally, a related line of work aims to produce LoRA modules that are robust to rank truncation at inference time [30, 31]. 
+
+Mixture-of-PEFT. Mixture-of-Experts (MoE) models maintain multiple parallel sub-networks (experts) and route each input to a subset of them [ 32 , 33 ]. Several works combine PEFT with MoE-style routing, treating each LoRA adapter as an expert. These works are motivated by two related but distinct goals. First, a single fixed-rank adapter has limited capacity, and routing over a pool of adapters increases this capacity at low additional compute cost [ 10 , 34 , 35 ]. Second, when attempting to specialize to multiple domains, a shared LoRA suffers from gradient conflicts and negative transfer. Therefore, routing allows individual experts to specialize per domain or task [ 36 , 37 , 38 , 39 ]. However, all of these methods take the low-rank constraint as given and focus on how to best allocate or route among equally-constrained experts. In contrast, MoLF assumes a full-rank search space and lets the data determine how updates within this space should be constrained to maximize performance. Overall, prior work stops short of leveraging the FFT/LoRA tension itself. MoLF resolves this by mixing FFT and LoRA experts and sparsifying parameter updates rather than expert parameters; all experts contribute to every forward pass and accumulate gradient statistics continuously, yielding more stable dynamics than methods that truncate or gate experts. 
+
+## 3 Understanding Fine-Tuning Dynamics: An Empirical Analysis 
+
+Recent literature presents two conflicting perspectives on the fine-tuning dynamics of LLMs. One line [ 9, 16 , 17 ] argues that meaningful weight updates reside in a low-rank subspace, making Low-Rank Adaptation (LoRA) not merely an efficient approximation but a theoretically optimal one that avoids over-parameterization. A competing line [ 15 ] argues that unconstrained Full Fine-Tuning (FFT) is strictly more powerful for complex tasks, concluding “LoRA Learns Less and Forgets Less” :LoRA hits capacity bottlenecks when injecting high-entropy knowledge, but the same low-rank constraint also acts as a protective regularizer against the destructive high-rank updates of FFT. To systematically resolve this dispute, we empirically evaluate FFT and LoRA across varying tasks and model scales. Our setup includes Google Gemma-3-1B, Qwen2.5-1.5B, and Qwen2.5-3B, evaluated on datasets chosen for their diverse intrinsic dimensionalities: Factual Knowledge (CounterFact [ 40 ]), Medical QA (MedMCQA [ 41 ]), and Text-to-SQL (Gretel synthetic Text-to-SQL [ 42 ]). Following a rigorous hyperparameter sweep over learning rates, schedulers, and LoRA ranks ( r ∈ { 8, 16 , 32 , 64 , 128 }), we report the optimal result for each setup in Table 1. We include the details of the hyperparameter sweep in Appendix A.2. Table 1: Fine-Tuning Performance Benchmark. Cells are Efficacy Score (%) on Fact and accuracy (%) on Med and SQL, rounded to two decimal places. The best score in each row is in bold, and any score within a 1.5% margin of the best is highlighted in blue.                                                                   
+
+> Benchmark Model FFT LoRA ( r= 8 )LoRA ( r= 16 )LoRA ( r= 32 )LoRA ( r= 64 )LoRA ( r= 128 )Fact
+> Gemma-1B 65.50 60.05 60.77 60.49 54.43 54.63 Qwen-1.5B 74.95 68.39 69.05 65.89 65.34 70.78 Qwen-3B 76.54 70.56 66.88 61.32 65.08 70.85
+> Med
+> Gemma-1B 42.15 40.90 42.10 43.65 46.09 46.19
+> Qwen-1.5B 55.39 54.03 54.48 54.46 55.99 57.66
+> Qwen-3B 59.55 58.95 59.96 60.67 60.84 61.85 SQL
+> Gemma-1B 72.76 71.82 71.93 71.77 71.68 71.26 Qwen-1.5B 74.81 73.95 74.20 74.39 74.02 73.98 Qwen-3B 75.06 75.23 74.97 74.97 74.17 74.42
+
+3Our results isolate three distinct fine-tuning regimes, mathematically rationalizing both perspectives in the literature. Let Wbase ∈ Rd×k be the pre-trained weights and ∆W ∗ = Pmin( d,k ) 
+
+> i=1
+
+σiuivTi be the optimal weight update via Singular Value Decomposition. • Fact (Capacity Bottleneck: “LoRA Learns Less” ): 
+
+FFT strictly dominates LoRA across all models. Factual injection requires memorization of high-entropy, nearly orthogonal entity associations, yielding a heavy-tailed intrinsic dimen-sion for ∆W ∗. By the Eckart-Young-Mirsky Theorem [ 43 , 44 ], any rank-r approximation 
+
+BA incurs an error lower-bounded by the truncated tail energy ∥∆W ∗ −BA ∥2 
+
+> F
+
+≥ P 
+
+> i>r
+
+σ2 
+
+> i
+
+,which is large under a heavy tail, whereas unconstrained FFT can express ∆W ∗ exactly. This bound is purely representational and does not imply monotone improvement in r, since higher rank simultaneously raises the representational ceiling and weakens implicit spectral regularization on a finite training set. Table 1 confirms the qualitative claim: every swept LoRA rank trails FFT by at least 4.17% on Fact across all three models, though the rank that minimizes this gap is non-monotonic. • Med (Spectral Regularization: “LoRA Forgets Less” ): 
+
+High-rank LoRA systematically outperforms FFT. Medical QA requires adapting to complex formats while strictly preserving pre-trained reasoning. We model the empirical gradient as G = Gtask + Gnoise , with Gnoise a high-rank, approximately isotropic fluctuation. FFT applies −ηG directly, aggressively altering orthogonal dimensions and causing catastrophic forgetting. Under vanilla SGD on the LoRA factors, a first-order expansion of Bnew Anew −
+
+BA yields ∆Weff ≈ − η(BB T G + GA T A) + O(η2), a rank-bounded linear map that confines the effective update to col( B) from the left and row( A) from the right (reducing to an orthogonal projection when B and A⊤ have orthonormal columns, otherwise rescaling by their singular values). This subspace confinement preserves signal directions captured by the LoRA factors and attenuates components outside them, supplying implicit spectral regularization that protects pre-trained logic; the same intuition extends approximately to the AdamW-preconditioned update. • SQL (Low Intrinsic Dimension: “LoRA Without Regret” ): 
+
+FFT and LoRA perform similarly, and the performance of LoRA is stable across diverse ranks. With a low rank, LoRA can even potentially outperform FFT. Text-to-SQL primarily requires structural and syntactic alignment rather than novel reasoning. Consequently, the optimal update has a concentrated singular value spectrum ( σi ≈ 0 for i > r ). Apply-ing Eckart-Young-Mirsky in this favorable regime, the truncated tail energy P 
+
+> i>r
+
+σ2 
+
+> i
+
+is negligible, so LoRA captures the optimal update with minimal representation loss. This empirical study demonstrates that static fine-tuning architectures are structurally limited. Relying solely on FFT suffers from catastrophic forgetting on logical reasoning tasks (Med), while relying on LoRA enforces an irreducible capacity bottleneck on high-entropy factual tasks (Fact). Real-world applications require continuous navigation of both regimes. 
+
+## 4 Methodology: Mixture of LoRA and Full Fine-Tuning 
+
+To enable a continuous navigation between the representational plasticity of FFT and the parameter-efficient regularization of LoRA, we propose the Mixture of LoRA and Full (MoLF) Fine-Tuning framework, alongside its memory-constrained variant, MoLF-Efficient. MoLF enables the model to execute each update step within the most gradient-saturated rank, dynamically routing between full-parameter and low-rank updates. 
+
+4.1 Background: LoRA and Mixture-of-Experts 
+
+Parameter-Efficient Fine-Tuning (PEFT), particularly Low-Rank Adaptation (LoRA) [ 9], mitigates the memory cost of full fine-tuning (FFT) by freezing the pre-trained weights Wbase ∈ Rdout ×din and injecting trainable low-rank matrices A ∈ Rr×din , B ∈ Rdout ×r . The fixed bottleneck r rigidly caps global structural capacity, inducing the bottlenecks observed on high-entropy factual learning. Mixture-of-Experts (MoE) architectures [ 32 , 33 ] scale capacity by conditionally routing tokens through a sparse subset of independent “experts”, but this fractures the batch and induces noisy 4gradient statistics, load-balancing collapse, and training instability. MoLF (Figure 2) bridges these paradigms by shifting sparsity from the forward pass to the backward optimization step: every expert unconditionally receives full-batch gradient signals, yielding stable, high-fidelity gradient statistics. 
+
+Figure 2: Overview of MoLF Framework. 
+
+4.2 MoLF Architecture and Inference 
+
+Structurally, MoLF unifies FFT and LoRA by formulating each linear projection as an unconditional superposition of expert pathways. For a given input activation x, the ungated forward pass evaluates: 
+
+y = Wbase x +
+
+> N
+
+X
+
+> i=1
+
+αi
+
+√ri
+
+Bi
+
+ Ai(Dropout (x)) . (1) Here, the dense matrix Wbase serves as the FFT expert, while each pair (Ai, B i) acts as an independent LoRA expert with rank ri. To stabilize learning dynamics across varying capacities, we apply Rank-Stabilized LoRA (RS-LoRA) scaling αi/√ri [ 45 ]. Because conditional token gating is eliminated, all structural pathways evaluate every token. Sparsity is thus strictly deferred to the optimizer, which dynamically allocates updates based on these dense, globally informed gradient signals. 
+
+4.3 Dynamic Gradient Routing via Sparse AdamW 
+
+The mathematical core of the MoLF framework is a custom sparse optimization algorithm built upon the decoupled weight decay principles of the AdamW optimizer [ 46 , 47 ]. Operating independently on each network layer, the routing mechanism executes a split-phase update that strictly decouples information flow (moment tracking) from action (weight modification). 
+
+Phase 1: Universal Momentum Tracking 
+
+Let i ∈ { 0, 1, . . . , N } denote the index of an expert within a specific module, where i = 0 corresponds to the FFT matrix ( Wbase ), and i > 0 denotes the LoRA adapters. For every expert i receiving a batch-averaged gradient g(i) 
+
+> t
+
+at step t, the optimizer updates the Exponential Moving Averages (EMA) for the first moment m(i) 
+
+> t
+
+following Equation 2 and uncentered second moment v(i) 
+
+> t
+
+following Equation 3: 
+
+m(i) 
+
+> t
+
+= β1m(i) 
+
+> t−1
+
++ (1 − β1)g(i) 
+
+> t
+
+(2) 
+
+v(i) 
+
+> t
+
+= β2v(i) 
+
+> t−1
+
++ (1 − β2)
+
+
+
+g(i)
+
+> t
+
+2
+
+(3) The Adam step counter t and moments are updated universally for all experts, regardless of selection for physical updates. Because every expert sees the full batch, the bias correction factors ( 1 − βt
+
+> 1
+
+, 1 −
+
+βt
+
+> 2
+
+) remain synchronized and dormant experts maintain a mature, debiased momentum state, avoiding the cold-start failure mode on later activation. 
+
+Phase 2: Expert Scoring by Expected Preconditioned Descent 
+
+The relevant quantity for deciding which expert should receive an update is not the raw gradient magnitude but the loss reduction expected from the AdamW step the optimizer would actually take. 5Because AdamW does not descend along g(i) 
+
+> t
+
+but along the preconditioned direction m(i) 
+
+> t
+
+/(
+
+q
+
+v(i) 
+
+> t
+
++ϵ),raw gradient norms only loosely track useful descent and discard the per-coordinate adaptive scaling that AdamW relies on. We therefore use the Expected Preconditioned Descent (EPD) score S(i) 
+
+> t
+
+, which estimates the first-order expected loss reduction of expert i’s AdamW step and then normalizes by N (i) 
+
+> params
+
+to obtain a per-parameter quantity comparable across experts of very different sizes: 
+
+S(i) 
+
+> t
+
+= η(i)
+
+> t
+
+N (i)
+
+> params
+
+X
+
+> θ∈Θi
+
+
+
+m(i)
+
+> t
+
+2
+
+q
+
+v(i) 
+
+> t
+
++ ϵ
+
+(4) Here η(i) 
+
+> t
+
+is the per-expert learning rate and m(i) 
+
+> t
+
+, v (i) 
+
+> t
+
+are the AdamW moving averages tracked in Phase 1. A first-order Taylor derivation of this proxy is given in Appendix A.1. Two scaling properties of Equation 4 are worth making explicit, because they deliberately differ from a scale-invariant alternative such as the Preconditioned Frobenius Norm (PFN; Appendix A.3). First, the score is not rank-invariant: under RS-LoRA scaling αi/√ri, the per-element gradient on a LoRA expert scales like 1/√ri, so m2 
+
+> t
+
+/√vt scales like 1/√ri. Summing over N (i) 
+
+> params
+
+∝ ri trainable parameters and dividing by N (i) 
+
+> params
+
+leaves an aggregate score that scales as η(i) 
+
+> t
+
+/√ri. The score thus rewards LoRA experts whose effective step size is large relative to their parameter count, which is the correct economic quantity when the optimizer must commit a Top-K update to a strict subset of experts. Second, the score retains the per-expert learning rate η(i) 
+
+> t
+
+, so two scoring functions with otherwise identical preconditioned magnitudes are correctly differentiated by the actual step the optimizer would take. PFN, by contrast, cancels both of these factors and ranks experts purely on directional gradient consistency; the ablation in Section 5.4.2 shows that the additional information in EPD is what produces the gains observed on Med. 
+
+Phase 3: Top-K Sparse AdamW Update 
+
+The experts within each linear module are sorted by descending EPD score S(i) 
+
+> t
+
+. For the Top-K
+
+winning experts, we apply the standard AdamW update [ 47 ] using the moments m(i) 
+
+> t
+
+, v (i) 
+
+> t
+
+tracked in Phase 1, the per-expert learning rate η(i) 
+
+> t
+
+, and decoupled weight decay λi:
+
+θ(i) 
+
+> t
+
+← θ(i)
+
+> t−1
+
+
+
+1 − η(i) 
+
+> t
+
+λi
+
+
+
+− η(i)
+
+> t
+
+1 − βt
+
+> 1
+
+ m(i)
+
+> t
+
+q
+
+v(i) 
+
+> t
+
+/(1 − βt
+
+> 2
+
+) + ϵ
+
+ for i ∈ Winners . (5) The losing experts strictly retain their previous physical weights ( θ(i) 
+
+> t
+
+= θ(i)
+
+> t−1
+
+). In MoLF, we execute this routing at the local module level, meaning that different projection matrices within the same transformer layer can independently route updates to entirely different representational capacities. 
+
+4.4 MoLF-Efficient: Adaptive LoRA-Only Mixtures 
+
+Standard MoLF incurs high memory costs by tracking dense Adam states for Wbase . For memory-constrained hardware, we introduce the MoLF-Efficient (MoLF-E) variant. Here, Wbase and all non-linear parameters are permanently frozen and excluded from optimizer state tracking. The architecture instead exclusively unifies multiple LoRA experts of varying ranks. Without the FFT path, routing becomes a gradient-aware subspace search. Because parallel adapters are independently initialized, they map to divergent optimization trajectories. The optimizer continu-ously evaluates and directs updates to the specific low-rank subspace offering the steepest expected loss reduction at each step. 
+
+4.5 Post-Training Fusion and Zero-Overhead Inference 
+
+Unlike traditional MoE, MoLF restricts sparsity entirely to the optimizer update pass. Because the forward pass is a superposition of all experts, the multi-expert graph is perfectly collapsible prior to inference. 6After fine-tuning, all trained LoRA experts are mathematically projected directly into their corre-sponding dense base weights: 
+
+Wfinal = Wbase +
+
+> N
+
+X
+
+> i=1
+
+αi
+
+√ri
+
+(BiAi) . (6) This algebraic projection permanently collapses the multi-expert components into the native pathway of Wbase , making the final exported model structurally identical to the base LLM. In addition to providing compatibility with standard downstream inference engines, this eliminates the latency penalty of LoRA as well as architectural drift during downstream fine-tuning. 
+
+## 5 Results 
+
+5.1 Experimental Setup 
+
+We evaluate on the three benchmarks introduced in Section 3 (CounterFact [ 40 ], MedMCQA [ 41 ], Gretel synthetic Text-to-SQL [ 42 ]) across three open-source language models: Gemma-3-1B [ 48 ], Qwen2.5-1.5B, and Qwen2.5-3B [ 49 ]. We compare MoLF and its memory-efficient variant MoLF-Efficient (MoLF-E) against FFT, LoRA [ 9 ] at ranks r ∈ { 8, 16 , 32 , 64 , 128 }, and two adaptive PEFT baselines, AdaLoRA [ 12 ] and AdaMix [ 10 ]. All methods use AdamW [ 47 ] under a matched compute budget. The static FFT and LoRA hyperparameter sweep, the per-expert MoLF and MoLF-E settings ( η(i) 
+
+> t
+
+, λi, ϵ, K), and the configurations used for AdaLoRA and AdaMix are documented in Appendix A.2. We report Efficacy Score (ES, defined in Appendix A.4) on Fact and accuracy on Med and SQL; both quantities are reported as percentages, so all three datasets share a common visual scale in Tables 1 and 2 and Figures 3 and 7. All fine-tuning experiments were conducted on a single NVIDIA H100 Tensor Core or NVIDIA RTX PRO 6000 Blackwell GPU. 
+
+5.2 MoLF vs. Full Fine-Tuning and Tuned LoRA 
+
+Table 2: MoLF vs. Full Fine-Tuning and LoRA (best rank). Cells are Efficacy Score (%) on Fact and accuracy (%) on Med and SQL. The best score in each column is in bold; any score within a 1.5% 
+
+margin of the best baseline (FFT or LoRA) is highlighted in blue. Checkmarks indicate performance recovery within this 1.5% margin.                                                                        
+
+> Method Fact Med SQL Gemma-1B Qwen-1.5B Qwen-3B Gemma-1B Qwen-1.5B Qwen-3B Gemma-1B Qwen-1.5B Qwen-3B Best of FFT/LoRA 65.50 74.95 76.54 46.19 57.66 61.85 72.76 74.81 75.23
+> FFT 65.50 74.95 76.54 42.15 55.39 59.55 72.76 74.81 75.06
+> ,→within 1.5% of best ✓✓✓✓✓✓
+> LoRA (best rank) 60.77 70.78 70.85 46.19 57.66 61.85 71.93 74.39 75.23
+> ,→within 1.5% of best ✓✓✓✓✓✓
+> MoLF 64.88 75.15 76.15 45.40 56.28 60.60 73.09 74.44 75.41
+> ,→within 1.5% of best ✓✓✓✓✓✓✓✓✓
+
+Table 2 extends the static benchmarks from Section 3 by introducing MoLF. Crucially, MoLF consistently matches or exceeds the optimal static fine-tuning strategy, eliminating the need to manually choose between LoRA and full fine-tuning (FFT) or conduct exhaustive rank searches. Across all nine configurations, MoLF recovers the best baseline performance within a 1.5% margin, achieving the outright best score in three. In contrast, single static methods falter across domains: FFT trails the optimal baseline by up to 4.04% on Med (Gemma-1B), while the best-tuned LoRA degrades by 5.69% on Fact (Qwen-3B). MoLF adapts to each domain’s intrinsic dimensionality without manual choice. On Fact , it matches FFT-level capacity, even surpassing FFT on Qwen-1.5B by 0.20% ; on SQL , which favors concen-trated low-rank subspaces, it ties or sets the best score on two of three models; and on Med , it outperforms FFT by up to 3.25% and tracks the optimal static LoRA within 1.38% . MoLF thereby balances parameter capacity with spectral regularization without per-task hyperparameter sweeps. 75.3 MoLF-E vs. Adaptive PEFT Baselines 
+
+We next evaluate MoLF-E, which removes the FFT expert to accommodate memory-constrained hardware, against two widely adopted adaptive PEFT baselines: AdaLoRA [ 12 ] and AdaMix [ 10 ]. We use MoLF-E with a rank-64 LoRA expert and a rank-128 LoRA expert; an ablation of the rank choice for the smaller-rank LoRA expert is reported in Appendix B.2. Figure 3 presents the comparison. MoLF-E outperforms both adaptive baselines in 8 out of 9 (task, model) settings, with margins of up to +11 .70% over AdaLoRA and up to +20 .01% over AdaMix. Gemma-1B Qwen-1.5B Qwen-3B       
+
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> Accuracy
+> Fact
+> Gemma-1B Qwen-1.5B Qwen-3B
+> 30
+> 35
+> 40
+> 45
+> 50
+> 55
+> 60
+> 65
+> Med
+> Gemma-1B Qwen-1.5B Qwen-3B
+> 60.0
+> 62.5
+> 65.0
+> 67.5
+> 70.0
+> 72.5
+> 75.0
+> SQL
+> AdaLoRA AdaMix MoLF-E
+
+Figure 3: MoLF-E vs. adaptive PEFT baselines across three tasks and three models. MoLF-E (blue) outperforms both adaptive baselines on 8 of 9 (task, model) settings. The gap between MoLF-E and the adaptive baselines is most pronounced on Fact , where the heavy-tailed singular spectrum of ∆W ∗ characterized in Section 3 stresses each method’s rank-allocation strategy. AdaLoRA’s importance-based rank pruning and AdaMix’s stochastic routing both restrict the optimizer to a single low-rank subspace at any given step, leaving them unable to absorb the high-rank tail of the optimal update; MoLF-E sidesteps this bottleneck by maintaining multiple LoRA experts of varying rank in parallel and allocating updates via the EPD score, recovering the missing capacity without an FFT pathway. On Med and SQL , where rank sensitivity is mild, MoLF-E still exceeds both adaptive baselines, though by smaller margins. 
+
+5.4 Ablation of MoLF 
+
+We ablate two components of MoLF: the sparse-routing decision (whether selection is needed at all) and the routing heuristic itself (EPD vs. PFN). Table 3 reports SQL and Med, the two regimes that expose the nuanced tradeoffs routing must resolve (low intrinsic dimension and spectral regularization, respectively); Fact, where the FFT pathway is structurally necessary, is examined separately via the router-behavior analysis in Figure 4 and Appendix B.1. Table 3: Ablation measured in accuracy (%)m showing the importance of score-based update routing (PFN, EPD) over uniform updates, and the gain from EPD’s learning-rate term over PFN.                           
+
+> Method Qwen-3B Qwen-1.5B Gemma-1B SQL Med SQL Med SQL Med
+> MoLF w/ no update routing 75.06 31.08 74.90 55.27 72.54 39.73 MoLF w/ PFN-based routing 75.03 59.14 74.92 55.77 73.09 42.31
+> MoLF w/ EPD-based routing 75.41 60.60 74.44 56.28 73.09 45.40
+
+5.4.1 Sparse Update of Expert 
+
+To validate sparse routing, we ablate the selection mechanism by updating all FFT and LoRA experts simultaneously. Table 3 shows that dense updating severely degrades Med accuracy on Qwen2.5-3B (60 .60% → 31 .08% ) and Gemma-3-1B ( 45 .40% → 39 .73% ): the unrestricted FFT pathway and the bottlenecked LoRA adapter compete to represent identical features, inducing optimization oscillations. Sparse updating wins on all setups except Qwen2.5-1.5B SQL, where the intrinsically low-rank task is captured equally well under either regime. 85.4.2 Expert Selection Heuristics 
+
+To demonstrate the necessity of Expected Preconditioned Descent (EPD), we compare it against a Preconditioned Frobenius Norm (PFN) baseline. PFN provides an intuitive, scale-invariant metric by calculating the root-mean-square of the preconditioned Adam update. The full formulation of the Preconditioned Frobenius Norm is presented in Appendix A.3. This naturally eliminates LoRA scaling biases and isolates routing decisions based purely on gradient directional consistency. As Table 3 shows, routing by the EPD score matches or improves over routing by the PFN score on five of six (model, task) cells, with the largest gains on Med (e.g., +2 .58 on Gemma-3-1B and 
+
++1 .46 on Qwen2.5-3B); the two score functions tie on Gemma-3-1B SQL ( 73 .09 ), and EPD trails PFN by 0.48 on Qwen2.5-1.5B SQL. The pattern indicates that scale invariance alone (PFN) suffices on regimes where the task is intrinsically low-rank and any reasonable scoring function works (SQL), but is insufficient on Med, where balancing massive and lightweight experts requires the additional information that the EPD score obtains from incorporating the learning rate ( ηt). By accounting for both the optimizer’s intended step size and the local loss topology, the EPD score yields a stable mixture that varies with task. Furthermore, we find that EPD achieves a highly stable, task-conditional fine-tuning mixture. As shown in Figure 4, the router performs persistent structural assignment: individual modules defini-tively specialize in either FFT or LoRA early in training rather than continuously alternating across optimizer steps. The full router selection behavior of EPD is presented in Appendix B.1. 
+
+Figure 4: MoLF routing dynamics over training. Each heatmap row tracks one module’s structural preference (FFT vs. LoRA) across optimizer steps. The distinct horizontal striping shows routing sta-bilizes rapidly: modules commit early to either dense or low-rank pathways with minimal oscillation. 
+
+## 6 Conclusion 
+
+Fine-tuning pre-trained LLMs requires navigating the tension between FFT’s high capacity and LoRA’s implicit regularization. We have shown that the optimal choice varies across tasks and models and that prior work leaves this insight unexploited. MoLF addresses it by mixing FFT and LoRA experts and sparsifying only their parameter updates: across a broad set of tasks and models, MoLF reliably tracks whichever method is optimal, while MoLF-E matches or outperforms adaptive LoRA methods at comparable parameter budgets. These results suggest that maintaining an expressive trainable architecture while sparsifying only expert-level updates is an effective way to capture the benefits of each component expert. We identify three natural directions for future work. First, MoLF currently uses a single FFT and a single LoRA expert; scaling to multiple LoRA experts may enable finer-grained adaptation. Second, the EPD score is motivated by a first-order Taylor approximation, and higher-order information could improve scoring under highly non-stationary loss landscapes. Finally, MoLF-E reduces memory at the cost of representational capacity, leaving open whether the MoLF optimization framework can be combined with more expressive efficient-LoRA methods. 9References 
+
+[1] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. Advances in neural information processing systems , 33:1877–1901, 2020. [2] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timo-thée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. arXiv preprint arXiv:2302.13971 , 2023. [3] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288 , 2023. [4] Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Yunxuan Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. Scaling instruction-finetuned language models. Journal of Machine Learning Research , 25(70):1–53, 2024. [5] Haoming Jiang, Pengcheng He, Weizhu Chen, Xiaodong Liu, Jianfeng Gao, and Tuo Zhao. Smart: Robust and efficient fine-tuning for pre-trained natural language models through princi-pled regularized optimization. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , pages 2177–2190, 2020. [6] Armen Aghajanyan, Akshat Shrivastava, Anchit Gupta, Naman Goyal, Luke Zettlemoyer, and Sonal Gupta. Better fine-tuning by reducing representational collapse. In International Conference on Learning Representations , 2020. [7] Ning Ding, Yujia Qin, Guang Yang, Fuchao Wei, Zonghan Yang, Yusheng Su, Shengding Hu, Yulin Chen, Chi-Min Chan, Weize Chen, et al. Delta tuning: A comprehensive study of parameter efficient methods for pre-trained language models. arXiv preprint arXiv:2203.06904 ,2022. [8] Lingling Xu, Haoran Xie, S Joe Qin, Xiaohui Tao, and Fu Lee Wang. Parameter-efficient fine-tuning methods for pretrained language models: A critical review and assessment. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2026. [9] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. LoRA: Low-rank adaptation of large language models. ICLR , 1 (2):3, 2022. [10] Yaqing Wang, Sahaj Agarwal, Subhabrata Mukherjee, Xiaodong Liu, Jing Gao, Ahmed Hassan, and Jianfeng Gao. AdaMix: Mixture-of-adaptations for parameter-efficient model tuning. In 
+
+Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing ,pages 5744–5760, 2022. [11] Paul Albert, Frederic Z Zhang, Hemanth Saratchandran, Cristian Rodriguez-Opazo, Anton van den Hengel, and Ehsan Abbasnejad. RandLoRA: Full rank parameter-efficient fine-tuning of large models. In The Thirteenth International Conference on Learning Representations ,2025. [12] Qingru Zhang, Minshuo Chen, Alexander Bukharin, Pengcheng He, Yu Cheng, Weizhu Chen, and Tuo Zhao. Adaptive budget allocation for parameter-efficient fine-tuning. In The Eleventh International Conference on Learning Representations , 2023. [13] Feiyu Zhang, Liangzhi Li, Junhao Chen, Zhouqiang Jiang, Bowen Wang, and Yiming Qian. IncreLoRA: Incremental parameter allocation method for parameter-efficient fine-tuning. arXiv preprint arXiv:2308.12043 , 2023. [14] Zequan Liu, Jiawen Lyn, Wei Zhu, Xing Tian, and Yvette Graham. ALoRA: Allocating low-rank adaptation for fine-tuning large language models. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 622–641, 2024. 10 [15] Dan Biderman, Jacob Portes, Jose Javier Gonzalez Ortiz, Mansheej Paul, Philip Greengard, Connor Jennings, Daniel King, Sam Havens, Vitaliy Chiley, Jonathan Frankle, et al. LoRA learns less and forgets less. arXiv preprint arXiv:2405.09673 , 2024. [16] Armen Aghajanyan, Sonal Gupta, and Luke Zettlemoyer. Intrinsic dimensionality explains the effectiveness of language model fine-tuning. In Proceedings of the 59th annual meeting of the association for computational linguistics and the 11th international joint conference on natural language processing (volume 1: long papers) , pages 7319–7328, 2021. [17] John Schulman and Thinking Machines. Lora without regret, September 2025. URL https: //thinkingmachines.ai/blog/lora/ . Accessed: 2026-05-06. [18] Yongchang Hao, Yanshuai Cao, and Lili Mou. FLoRA: Low-rank adapters are secretly gradient compressors. In International Conference on Machine Learning , pages 17554–17571. PMLR, 2024. [19] Shaowen Wang, Linxi Yu, and Jian Li. LoRA-GA: Low-rank adaptation with gradient approxi-mation. Advances in Neural Information Processing Systems , 37:54905–54931, 2024. [20] Vladislav Lialin, Sherin Muckatira, Namrata Shivagunde, and Anna Rumshisky. ReLoRA: High-rank training through low-rank updates. In The Twelfth International Conference on Learning Representations , 2024. [21] Simeng Sun, Dhawal Gupta, and Mohit Iyyer. Exploring the impact of low-rank adaptation on the performance, efficiency, and regularization of RLHF. arXiv preprint arXiv:2309.09055 ,2023. [22] Yuqing Du, Alexander Havrilla, Sainbayar Sukhbaatar, Pieter Abbeel, and Roberta Raileanu. A study on improving reasoning in language models. In I Can’t Believe It’s Not Better Workshop: Failure Modes in the Age of Foundation Models , 2024. [23] Hamish Ivison, Yizhong Wang, Valentina Pyatkin, Nathan Lambert, Matthew Peters, Pradeep Dasigi, Joel Jang, David Wadden, Noah A Smith, Iz Beltagy, et al. Camels in a changing climate: Enhancing LM adaptation with Tulu 2. arXiv preprint arXiv:2311.10702 , 2023. [24] Sergey Pletenev, Maria Marina, Daniil Moskovskiy, Vasily Konovalov, Pavel Braslavski, Alexan-der Panchenko, and Mikhail Salnikov. How much knowledge can you pack into a LoRA adapter without harming LLM? arXiv preprint arXiv:2502.14502 , 2025. [25] Reece S Shuttleworth, Jacob Andreas, Antonio Torralba, and Pratyusha Sharma. LoRA vs full fine-tuning: An illusion of equivalence. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. [26] Huandong Chang, Zicheng Ma, Mingyuan Ma, Zhenting Qi, Andrew Sabot, Hong Jiang, and HT Kung. ElaLoRA: Elastic & learnable low-rank adaptation for efficient model fine-tuning. 
+
+arXiv preprint arXiv:2504.00254 , 2025. [27] Ning Ding, Xingtai Lv, Qiaosen Wang, Yulin Chen, Bowen Zhou, Zhiyuan Liu, and Maosong Sun. Sparse low-rank adaptation of pre-trained language models. In Proceedings of the 2023 conference on empirical methods in natural language processing , pages 4133–4145, 2023. [28] Ruiyi Zhang, Rushi Qiang, Sai Ashish Somayajula, and Pengtao Xie. AutoLoRA: Automatically tuning matrix ranks in low-rank adaptation based on meta learning. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 5048–5060, 2024. [29] Yulong Mao, Kaiyu Huang, Changhao Guan, Ganglin Bao, Fengran Mo, and Jinan Xu. DoRA: Enhancing parameter-efficient fine-tuning with dynamic rank distribution. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 11662–11675, 2024. [30] Mojtaba Valipour, Mehdi Rezagholizadeh, Ivan Kobyzev, and Ali Ghodsi. DyLoRA: Parameter-efficient tuning of pre-trained models using dynamic search-free low-rank adaptation. In 
+
+Proceedings of the 17th Conference of the European Chapter of the Association for Computa-tional Linguistics , pages 3274–3287, 2023. 11 [31] Hossein Rajabzadeh, Mojtaba Valipour, Tianshu Zhu, Marzieh S Tahaei, Hyock Ju Kwon, Ali Ghodsi, Boxing Chen, and Mehdi Rezagholizadeh. QDyLoRA: Quantized dynamic low-rank adaptation for efficient large language model tuning. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing: Industry Track , pages 712–718, 2024. [32] Robert A Jacobs, Michael I Jordan, Steven J Nowlan, and Geoffrey E Hinton. Adaptive mixtures of local experts. Neural computation , 3(1):79–87, 1991. [33] Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, and Jeff Dean. Outrageously large neural networks: The sparsely-gated mixture-of-experts layer. arXiv preprint arXiv:1701.06538 , 2017. [34] Yun Zhu, Nevan Wichers, Chu-Cheng Lin, Xinyi Wang, Tianlong Chen, Lei Shu, Han Lu, Canoee Liu, Liangchen Luo, Jindong Chen, et al. Sira: Sparse mixture of low rank adaptation. 
+
+arXiv preprint arXiv:2311.09179 , 2023. [35] Zefang Liu and Jiahua Luo. AdaMoLE: Adaptive mixture of LoRA experts. arXiv preprint arXiv:2405.00361 , 2024. URL https://arxiv.org/abs/2405.00361 .[36] Ted Zadouri, Ahmet Üstün, Arash Ahmadian, Beyza Ermis, Acyr Locatelli, and Sara Hooker. Pushing mixture of experts to the limit: Extremely parameter efficient MoE for instruction tuning. In The Twelfth International Conference on Learning Representations , 2024. [37] Xun Wu, Shaohan Huang, and Furu Wei. Mixture of LoRA experts. In The Twelfth International Conference on Learning Representations , 2024. [38] Dengchun Li, Yingzi Ma, Naizheng Wang, Zhengmao Ye, Zhiyuan Cheng, Yinghao Tang, Yan Zhang, Lei Duan, Jie Zuo, Cal Yang, et al. MixLoRA: Enhancing large language models fine-tuning with LoRA-based mixture of experts. arXiv preprint arXiv:2404.15159 , 2024. [39] Shihan Dou, Enyu Zhou, Yan Liu, Songyang Gao, Wei Shen, Limao Xiong, Yuhao Zhou, Xiao Wang, Zhiheng Xi, Xiaoran Fan, et al. LoRAMoE: Alleviating world knowledge forgetting in large language models via MoE-style plugin. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 1932–1945, 2024. [40] Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. Locating and editing factual associations in GPT. In Advances in Neural Information Processing Systems , volume 35, 2022. [41] Ankit Pal, Logesh Kumar Umapathi, and Malaikannan Sankarasubbu. MedMCQA: A large-scale multi-subject multi-choice dataset for medical domain question answering. In Proceedings of the Conference on Health, Inference, and Learning (CHIL) , volume 174 of Proceedings of Machine Learning Research , pages 248–260. PMLR, 2022. [42] Yev Meyer, Marjan Emadi, Dhruv Nathawani, Lipika Ramaswamy, Kendrick Boyd, Maarten Van Segbroeck, Matthew Grossman, Piotr Mlocek, and Drew Newberry. Synthetic-Text-To-SQL: A synthetic dataset for training language models to generate SQL queries from natural language prompts. https://huggingface.co/datasets/gretelai/synthetic_text_to_sql ,April 2024. [43] Carl Eckart and Gale Young. The approximation of one matrix by another of lower rank. 
+
+Psychometrika , 1(3):211–218, 1936. [44] Leon Mirsky. Symmetric gauge functions and unitarily invariant norms. The quarterly journal of mathematics , 11(1):50–59, 1960. [45] Damjan Kalajdzievski. A rank stabilization scaling factor for fine-tuning with LoRA. arXiv preprint arXiv:2312.03732 , 2023. [46] Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980 , 2014. [47] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 , 2017. 12 [48] Aishwarya Kamath, Johan Ferret, Shreya Pathak, Nino Vieillard, Ramona Merhej, Sarah Perrin, Tatiana Matejovicova, Alexandre Ramé, Morgane Rivière, et al. Gemma 3 technical report. 
+
+arXiv preprint arXiv:2503.19786 , 2025. [49] An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, et al. Qwen2.5 technical report. https://arxiv.org/abs/2412 .15115 , 2024. arXiv preprint arXiv:2412.15115. 13 A Experimental Details 
+
+A.1 Derivation of the Expected Preconditioned Descent (EPD) Score 
+
+The Expected Preconditioned Descent (EPD) score ( S(i) 
+
+> t
+
+) introduced in Equation 4 is mathematically derived as a rigorous proxy for the expected loss reduction per parameter. By first-order Taylor expansion, the expected change in the loss function L after an optimization step 
+
+∆θ is approximated by the inner product of the gradient and the step direction: 
+
+∆L ≈ (∇θ L)⊤∆θ. (7) For the AdamW optimizer (omitting decoupled weight decay for the heuristic), the parameter update direction is preconditioned by its moving averages: 
+
+∆θt ≈ − ηt
+
+mt
+
+√vt + ϵ . (8) Assuming the gradient landscape is sufficiently smooth such that the current gradient is well-approximated by its first moment ( gt ≈ mt), substituting the preconditioned AdamW step from Equation 8 into the Taylor expansion in Equation 7 yields the expected loss reduction: 
+
+−∆L ≈ g⊤
+
+> t
+
+
+
+ηt
+
+mt
+
+√vt + ϵ
+
+
+
+≈ ηt
+
+X
+
+> θ
+
+m2
+
+> t
+
+√vt + ϵ (9) To ensure a statistically fair, density-based competition between the massive FFT backbone and the lightweight PEFT pathways, we normalize this expected loss reduction by the total parameter count 
+
+N (i) 
+
+> params
+
+of the respective expert i. This yields the final EPD score used for dynamic routing: 
+
+S(i) 
+
+> t
+
+= η(i)
+
+> t
+
+N (i)
+
+> params
+
+X
+
+> θ∈Θi
+
+
+
+m(i)
+
+> t
+
+2
+
+q
+
+v(i) 
+
+> t
+
++ ϵ
+
+(10) 
+
+A.2 Baseline Hyperparameter Sweep 
+
+To establish rigorous baselines, we conduct a comprehensive hyperparameter sweep for each model architecture (Qwen2.5-1.5B, Qwen2.5-3B, and Gemma-3-1B) across all three benchmark datasets (SQL, Fact, and Med). We optimize the configurations for both Low-Rank Adaptation (LoRA) and Full Fine-Tuning (FFT) to ensure the best possible performance for our baselines. The search spaces for both tuning methods are detailed in Table 4. For all configurations, we maintain a fixed warmup ratio of 0.05 .Table 4: Hyperparameter search space for LoRA and Full Fine-Tuning (FFT) baselines. 
+
+Method Learning Rate Scheduler Warmup Ratio Rank ( r)
+
+LoRA 5 × 10 −4, 5 × 10 −5 Cosine, Linear 0.05 8, 16 , 32 , 64 , 128 , 256 
+
+FFT 1 × 10 −4,
+
+5 × 10 −5, 2 × 10 −5
+
+Cosine, Linear 0.05 –
+
+MoLF and MoLF-E hyperparameters. MoLF and MoLF-E’s per-expert learning rate η(i) 
+
+> t
+
+in Equations 4 and 5 is set to the best learning rate as found in the sweep above. The per-expert decoupled weight decay λi in Equation 5 is λFFT = 0 .1 for the FFT pathway and λLoRA = 0 .01 for every LoRA expert. The stability constant ϵ is set to the HuggingFace AdamW default ( ϵ = 10 −8). For both MoLF and MoLF-E we use K = 1 for the Top-K routing in Phase 3, so exactly one expert per module receives a physical weight update at each step. The cosine scheduler, linear warmup ratio of 0.05 , and AdamW (β1, β 2) = (0 .9, 0.999) are inherited from the baseline sweep. 14 AdaLoRA and AdaMix configuration. For AdaLoRA [ 12 ] we follow the rank-pruning schedule of the original paper and reuse the best LoRA learning rate found in the sweep above ( 5 × 10 −4)across all (model, task) configurations, with a single exception: on Gemma-3-1B Fact the learning rate is increased to 5 × 10 −3 to obtain reasonable performance. We additionally tried a learning rate of 5 × 10 −5 at a higher initial rank ( r = 128 ), but this configuration consistently degraded accuracy and is not reported. For AdaMix [ 10 ] we evaluated both the standard hyperparameters recommended by the original paper and a learning rate of 5 × 10 −5; the latter outperformed the former in our setup and is the configuration reported in Section 5.3. 
+
+A.3 Preconditioned Frobenius Norm (PFN) Formulation 
+
+In Section 5.4.2, we utilize the Preconditioned Frobenius Norm (PFN) as a scale-invariant baseline to evaluate expert selection heuristics. PFN avoids the artificial scaling bias introduced by LoRA by calculating the root-mean-square of the preconditioned Adam update direction: 
+
+S(i) 
+
+> PFN
+
+= 1
+
+q
+
+N (i)
+
+> params
+
+vuuut X
+
+> θ∈Θi
+
+ m(i)
+
+> t
+
+q
+
+v(i) 
+
+> t
+
++ ϵ
+
+
+
+> 2
+
+(11) Because the first moment ( mt) and the square root of the second moment ( √vt) scale identically with the gradient, dividing them naturally cancels out the gradient magnitude and isolates a per-parameter signal-to-noise ratio (close to ±1 when the gradient direction is consistent across mini-batches and close to 0 when it is noisy). Consequently, PFN ranks experts based solely on gradient directional consistency, making it a fair baseline metric for routing between heterogeneous experts without unfairly penalizing modules based on parameter count. 
+
+A.4 Evaluation Metrics 
+
+We report two evaluation metrics across the three benchmarks. On Med (MedMCQA) and SQL (Gretel synthetic Text-to-SQL) we report standard accuracy: 4-way multiple-choice accuracy on the held-out MedMCQA validation split, and exact-match accuracy on the held-out Text-to-SQL queries. On Fact (CounterFact) we report the Efficacy Score (ES) introduced by Meng et al. [40] ,which measures the fraction of edits for which the post-edit model assigns higher probability to the new counterfactual target than to the original true object: ES = 1
+
+|E| 
+
+X
+
+> (π,o ∗,o c)∈E
+
+⊮[ PG′ (o∗ | π) > PG′ (oc | π) ] , (12) where G′ is the fine-tuned (edited) model, π is the counterfactual prompt, o∗ is the counterfactual target object, oc is the original true object, E is the set of edits, and ⊮[·] is the indicator function. We report ES as a percentage so that all three benchmarks share a common [0 , 100] scale in our tables and figures. 
+
+## B Additional Results 
+
+B.1 Behavior of the Router 
+
+For each fine-tuning setup, we examine the behavior of the router. The router acts as the score-based selector inside the MoLF optimizer: for each MoLF-wrapped linear module, it scores candidate experts using the EPD score derived from the module’s Adam moments. Only the fine-tuning expert with a higher EPD score receives a parameter update at each step. In these experiments, the two candidates per module are the original base weight (FFT) and a rank-128 LoRA expert. 
+
+B.2 MoLF-E Rank Configuration 
+
+We also experimented with varying ranks of the LoRA experts in MoLF-E to isolate the effect of rank capacity on the three fine-tuning regimes. All configurations use two parallel LoRA experts with ranks 
+
+r and 128 , Top-K=1 routing, and MoLF-E’s frozen base-weight setting. To match the parameter 15 Figure 5: Aggregate router decisions over training. Bars represent the percentage of modules selecting FFT (lower/dark) versus LoRA (upper/light) at each optimizer step. The y-axis for each panel is scaled to its operational range to highlight boundary fluctuations. The selected mixture varies with both the task and the model. Med is strongly LoRA-dominated across all scales, but the FFT preference on Fact and SQL inverts between architectures: on Gemma-3-1B, Fact leans heavily toward FFT while SQL is roughly balanced; on the Qwen2.5 models, SQL leans heavily toward FFT while Fact is roughly balanced. Despite this heterogeneity, the router converges to a stable global mixture early in training (typically within 500 steps) and maintains it. We also observe that larger models (Qwen2.5-3B) exhibit a tighter, more compressed envelope of task-specific routing compared to smaller models (Gemma-3-1B). scope of standard PEFT baselines, we additionally freeze the non-linear parameters (embeddings, layer norms, and lm_head ), leaving only the LoRA experts trainable. Figure 7 reports the rank sweep. The sweep exhibits a regime-dependent rank sensitivity that reinforces the analysis of Section 3. On Fact, the Efficacy Score grows substantially with the smaller expert’s rank r. Specifically, it increases by 14 .85% on Gemma-3-1B ( r = 16 → 128 ), 7.73% on Qwen2.5-1.5B, and 6.88% on Qwen2.5-3B. We note that two effects are entangled in this sweep, beyond raw representational capacity. First, the configuration with r = 16 underperforms a single static rank-16 LoRA on Gemma-3-1B Fact (Table 1), so the degradation at low r cannot be explained by capacity alone. Second, under the EPD score’s η(i) 
+
+> t
+
+/√ri scaling discussed below Equation 4, a smaller LoRA expert paired with a rank-128 partner at the same learning rate receives a score advantage of p128 /r , so Top-1 routing tends to over-select the smaller expert on capacity-bound domains while the rank-128 partner is rarely updated. The Fact sweep should therefore be read as a joint test of capacity and of the routing’s ability to commit to the larger expert when capacity is the binding constraint; the two factors will likely need to be disentangled in future work via rank-aware learning rates or a routing prior. On Med, accuracy increases mildly with rank and saturates near r=64 (Gemma-3-1B peaks at 45 .04% and then slightly declines), consistent with the spectral-regularization interpretation: once the principal components of the task gradient are captured, additional rank contributes no further benefit. On SQL, the rank sweep is essentially flat on both Qwen2.5 models ( < 1.0% spread) and only mildly increasing on Gemma-3-1B ( 3.28% from r=16 to r=128 ), reflecting the concentrated singular spectrum of text-to-SQL. 16 Figure 6: Per-module router decisions over training. Rows index the modules in parameter order (bottom = earliest, top = latest), columns represent optimizer steps, and pixels encode the winning expert. The pronounced horizontal banding demonstrates that the aggregate mixtures in Figure 5 result from persistent per-module specialization, not from uniform step-wise alternation. The empirical row distribution is strongly bimodal: modules typically commit definitively to either FFT or LoRA early in the run. The minor step-wise fluctuations observed in the aggregate view are driven by a small population of swing modules, confirming that the router performs persistent structural assignments rather than continuous resampling. 16 32 64 128            
+
+> LoRA rank r
+> 40
+> 50
+> 60
+> 70
+> Accuracy
+> Fact
+> 16 32 64 128
+> LoRA rank r
+> 40
+> 45
+> 50
+> 55
+> 60
+> Med
+> 16 32 64 128
+> LoRA rank r
+> 68
+> 70
+> 72
+> 74
+> SQL
+> Gemma-1B Qwen-1.5B Qwen-3B
+
+Figure 7: Rank ablation of MoLF-E: performance versus the first LoRA expert’s rank r, with the second expert fixed at rank 128 and Top-K=1 routing. Each panel plots one task across all three models; the y-axis is Efficacy Score (%) on Fact and accuracy (%) on Med and SQL. 17
