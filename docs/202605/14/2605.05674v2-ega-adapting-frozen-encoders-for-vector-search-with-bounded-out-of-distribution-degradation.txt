@@ -1,0 +1,802 @@
+Title: EGA: Adapting Frozen Encoders for Vector Search with Bounded Out-of-Distribution Degradation
+
+URL Source: https://arxiv.org/pdf/2605.05674v2
+
+Published Time: Mon, 11 May 2026 00:41:32 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# EGA: Adapting Frozen Encoders for Vector Search with Bounded Out-of-Distribution Degradation 
+
+Dongfang Zhao 
+
+Tacoma School of Engineering and Technology University of Washington 
+
+dzhao@uw.edu 
+
+Abstract 
+
+Vector search systems built on frozen vision encoders face queries from unseen classes at deployment, yet existing adapter training collapses under this shift: high-capacity adapters with global contrastive losses silently reassign unseen-class samples to wrong seen-class clusters, dropping worst-case Label Precision by over 40 points below the frozen baseline in our tests. We propose Euclidean Geodesic Alignment (EGA), a residual adapter that couples three principles: zero initialization, local triplet loss, and hypersphere projection. These collectively induce a self-limiting dynamic: triplets that already satisfy a small margin stop producing gradients, so the adapter automatically stops updating where the local geometry is already correct. Our experiments show that at convergence 96 .5% of triplets are gradient-free, leaving unseen-class regions largely untouched while still enabling full-capacity refinement of seen classes. Across five diverse out-of-distribution (OOD) benchmarks, EGA achieves the highest worst-case Label Precision on the four primary splits and a consistent improvement on the fifth. The design also transfers to stronger backbones in addition to CLIP, and we provide an analytical justification linking gradient sparsity to bounded OOD perturbation. 
+
+1 Introduction 
+
+A vector similarity search system [ 16 , 30 , 2, 7] deployed in production rarely operates on a fixed label space: A retailer indexes product images today and adds a new category line next month; a content platform builds an index over existing tags and continually ingests media from emerging topics; a scientific image database is annotated for known phenotypes and queried for ones discovered later. In such scenarios, the index and the query stream together cover a label space strictly larger than what was available when any model was trained or adapted. The deployment of unseen classes sits awkwardly with how adapters over frozen encoders [ 25 , 23 , 39 ]are trained. The dominant paradigm takes a labeled subset, optimizes the embedding geometry to separate classes, and ships the resulting adapter as a drop-in replacement for the frozen encoder’s output. The implicit assumption is that geometry tightened for seen classes will leave unseen-class geometry unchanged. We show this assumption does not always hold: high-capacity adapters trained with global contrastive objectives reshape the entire embedding distribution, pulling unseen-class samples toward whichever seen-class clusters they happen to resemble in the pre-trained metric. The retrieval system then inherits this distortion as the approximate nearest neighbor (ANN) search remains well-behaved geometrically while the neighbors may belong to the wrong semantic class. The downstream retrieval system usually cannot know in advance which out-of-distribution (OOD) will dominate the deployed query stream. The relevant criterion is therefore the worst-case Label Precision across plausible OODs, not optimality on any single one. Two design choices in current adapter training degrade this worst-case quantity. First, the loss function: global contrastive objectives 
+
+> Preprint.
+> arXiv:2605.05674v2 [cs.CV] 8 May 2026
+
+such as ICon [ 1 ] and SRL [ 4 ] compute gradients over the full pairwise similarity matrix in every step, so seen-class supervision exerts pressure across the entire embedding distribution rather than only on labeled regions. Second, the adapter capacity: a sufficiently expressive adapter has the representational room to comply with that pressure, and zero-initialized residual designs do not by themselves prevent the cumulative perturbation from reaching unseen-class regions. Existing alternatives address one factor at a time. Low-rank adapters such as LoRA [ 10 ] cap the second factor, which avoids the worst OOD failures but limits in-distribution (ID) refinement, while keeping the global loss leaves the first factor untouched. We argue that adapters intended to operate under unseen-class queries should be designed against both factors in a coordinated manner. This work presents Euclidean Geodesic Alignment (EGA), a residual adapter designed against both factors of loss function and adapter capacity, simultaneously. EGA pairs a high-capacity zero-initialized residual architecture with a small-margin triplet loss on the class-aware neighborhood graph of pre-trained embeddings, with ℓ2 projection onto the unit hypersphere. Despite the technical intricacies, the underlying idea is straightforward, as follows. On the one hand, the triplet loss induces a self-limiting training dynamic: as the adapter converges on seen classes, the fraction of margin-violating triplets decays rapidly. On the other hand, the capacity to refine seen-class neighborhoods is preserved, but the loss stops applying pressure once seen-class neighborhoods are locally separated. As a result, the global reshaping that destroys unseen-class geometry never accumulates. We evaluate EGA on CIFAR-100 and ImageNet-1K (in-distribution) and five OOD benchmarks (CIFAR-10, FGVC-Aircraft, Food-101, ImageNet-1K held-out classes, and Oxford-IIIT Pet), com-paring against the frozen CLIP baseline [ 25 ], global contrastive adapters (ICon [ 1], SRL [ 4]), and LoRA [ 10 ] variants (InfoNCE [ 32 ] and Triplet, both at r = 128 ). Across the four primary OOD bench-marks, EGA achieves the highest worst-case Label Precision (0.611), 4.2 percentage points above the next-best method (LoRA+Triplet at 0.569), and is the only method whose Label Precision exceeds 0.6
+
+on every one of them; on Oxford-IIIT Pet, where the frozen baseline already reaches 0.9595 , EGA further raises LP@1 to 0.9646 while achieving the highest ANNS Recall among all evaluated methods. ICon and SRL collapse to 0.470 and 0.375 in their worst case (Aircraft); LoRA+InfoNCE to 0.538 
+
+(Aircraft). The benefits transfer to more recent backbones in addition to CLIP, with EGA improving Label Precision@1 by 4.75 and 8.55 percentage points on DINOv2-large [23] and SigLIP [39]. In summary, this work makes the following contributions: • We frame adapter tuning over frozen embedding encoders from a perspective of downstream vector search systems, in which the index and query stream together cover a label space larger than the labeled subset available for adapter training, and we identify worst-case OOD Label Precision as the relevant criterion under deployment uncertainty. • We propose Euclidean Geodesic Alignment (EGA), a residual adapter design that couples zero-initialized residual architecture, local triplet supervision, and hypersphere projection. This combination induces a self-limiting training dynamic: as seen-class neighborhoods become locally separated, the fraction of active triplets decays rapidly, empirically reaching 
+
+96 .5% zero-gradient triplets at steady state. We also provide an analytical justification for this dynamic, showing that the unseen-class perturbation is bounded by the product of the active triplet ratio and the adapter’s Lipschitz constant, and we explicitly state the conditions under which this bound is tighter than for global contrastive methods (Appendix A). • Across five OOD benchmarks and three backbones (CLIP ViT-B/32, DINOv2-large, SigLIP), EGA achieves the highest worst-case OOD Label Precision (0.611) on the four primary splits, exceeding all five baselines by between 4.2 and 23 .6 percentage points. On the fifth benchmark (Oxford-IIIT Pet), EGA further raises the already high frozen baseline from 
+
+0.9595 to 0.9646 while achieving the highest ANNS Recall among all evaluated methods. 
+
+2 Background and Related Work 
+
+Foundation models such as CLIP [ 25 ] produce embedding spaces that encode both seen-class semantics and broader priors over unseen visual concepts. Related work has documented degradation phenomena in adapted representations [ 20 , 37 ], and recent work documents analogous degradation in contrastive representations, including anisotropic collapse [ 43 , 6], modality gap fracturing [ 26 , 5], and loss of compositional structure [ 24 , 28 , 36 ]. Recent strategies counter these issues with geometric 2constraints such as orthogonality regularization [ 27 ]. EGA exploits the gradient sparsity of small-margin triplet losses to keep adapter updates concentrated on seen-class neighborhoods, empirically leaving unseen-class regions of the pretrained geometry largely intact. 
+
+Recent representation learning frequently relies on global contrastive objectives to optimize the latent space [ 31 , 19 ]. A common paradigm jointly enforces alignment for positive pairs and uniformity across the feature distribution [ 34 ], applied in graph encoders [ 33 ] and multimodal recommenda-tion [ 46 ]. While uniformity improves robustness to noise [ 35 ], it treats all latent regions equally. Other structural regularizers include unifying frameworks for multi-view alignment [ 1], geometric constraints for imbalanced regression [ 4], decoupled objectives [ 18 ], information-theoretic density control [ 42 ], and region-based distillation [ 15 ]. EGA replaces dense global optimization with sparse local triplet updates, which empirically reduces unseen-class distortion. 
+
+Parameter-efficient adaptation is an approach for transferring large foundation models without full fine-tuning [ 9, 10 ], which dominates vision-language research [ 21 ]. Lightweight methods, e.g., Visual Prompt Tuning [ 14 ] and Tip Adapter [ 41 ], specialize the model without modifying the frozen backbone and rival full fine-tuning on many tasks [ 29 ], while zero-initialization strategies further constrain the magnitude of pretrained-manifold perturbation [ 40 ]. EGA admits a zero-initialized residual adapter, localized triplet objective, and parameter efficiency with gradient-sparse updates. 
+
+Vector search is the foundational engine for scalable high-dimensional retrieval. The systems commu-nity has developed indexing algorithms for billion-scale datasets, including FAISS [ 16 ], HNSW [ 22 ], DiskANN [ 30 ], and SPANN [ 2 ]. Recent work refines graph topologies [ 38 , 3], optimizes SSD-based search [ 7, 8], and accelerates distance computations [ 13 ], yet popular ANN implementations still suffer worst-case limitations [ 12 ]. EGA recalibrates the metric geometry before index construction, rendering search backends achieve higher semantic recall without algorithmic changes. 
+
+3 Methodology 
+
+3.1 Problem Formulation 
+
+Given a frozen encoder ϕ : X → Sd−1 and labeled images Dtrain = {(xi, y i)}Ni=1 from seen classes 
+
+Yseen , we aim to learn an adapter fθ : Sd−1 → Sd−1 that supports accurate ANN retrieval on both 
+
+seen and unseen classes ( Yunseen ∩ Y seen = ∅), without access to unseen-class labels at training time. We evaluate retrieval quality via Label Precision@ K (LP@K, semantic quality) and ANNS Recall@ K
+
+(AR@K, geometric fidelity): LP @K = 1
+
+|Q| 
+
+X
+
+> q∈Q
+
+1
+
+K
+
+> K
+
+X
+
+> k=1
+
+1yˆnk (q) = yq
+
+ , AR @K = 1
+
+|Q| 
+
+X
+
+> q∈Q
+
+N exact  
+
+> K
+
+(q) ∩ N approx  
+
+> K
+
+(q)
+
+K , (1) where Q is the query set, ˆnk(q) is the k-th approximate neighbor of q, and N exact  
+
+> K
+
+(q), N approx  
+
+> K
+
+(q)
+
+denote the exact and approximate top-K neighbor sets. LP@K and AR@K capture distinct failure modes: tightening within-class clusters (semantic) vs. improving index fidelity (geometric). 
+
+3.2 Manifold-Preserving Adapter Design 
+
+We design EGA to satisfy a single objective: refine seen-class neighborhoods while preserving the pretrained geometry wherever local separation is already sufficient . This translates into three design constraints, each addressed by a specific architectural choice. 
+
+Constraint 1: Training must begin from the pretrained geometry. We enforce this via zero-initialized residual connections . Each EGA block applies a residual update: 
+
+z′ = z + gθ (z), (2) where the final linear layer of gθ is initialized to zero, making fθ an identity map at initialization. The adapter can therefore only refine the frozen representation, never replace it. 
+
+Constraint 2: Gradient pressure must be local and self-limiting. We replace global contrastive losses with a small-margin triplet loss (Section 3.3) whose hinge formulation stops gradient flow once the anchor-positive distance falls below the anchor-negative distance by a margin m, making the training dynamic self-limiting. 3Constraint 3: Transformations must remain within the original metric space. We enforce this via ℓ2 projection back onto the unit hypersphere :
+
+ˆz = fθ (z)
+
+∥fθ (z)∥2
+
+, (3) ensuring Euclidean distance and cosine similarity remain interchangeable. Inside each residual block, a feature gating module selectively amplifies retrieval-relevant dimensions through a bottleneck with ratio 1/4:Gate (h) = h ⊙ σ(W2 GELU (W1h)) , (4) where W1 ∈ R(d/ 4) ×d, W2 ∈ Rd×(d/ 4) , σ is the Sigmoid function, and ⊙ denotes elementwise multiplication, analogous to Squeeze-and-Excitation networks [11]. The complete forward pass chains two gated residual blocks followed by a final linear projection and 
+
+ℓ2 normalization: 
+
+ˆz = ℓ2(Refine (Block 2(Block 1(z)))) . (5) The total trainable parameters ( ∼4.2M for d=512 , hidden dim 2048) are negligible compared to the frozen CLIP backbone ( ∼88 M ). 
+
+3.3 Local Triplet Training 
+
+Given a mini-batch B sampled from Dtrain , we construct triplets (a, p, n ) where a is an anchor image, 
+
+p is a positive sampled uniformly from the same class as a, and n is a negative sampled uniformly from a different class. The adapter is trained with the standard triplet margin loss: 
+
+L = 1
+
+|B| 
+
+X
+
+> (a,p,n )∈B
+
+max(0 , d (ˆ za, ˆzp) − d(ˆ za, ˆzn) + m) , (6) where d(·, ·) denotes distance, m > 0 is the margin, and ˆz = fθ (z) is the transformed embedding. A triplet (a, p, n ) contributes a non-zero gradient to θ if and only if the margin constraint is violated :
+
+d(ˆ za, ˆzp) − d(ˆ za, ˆzn) + m > 0. (7) We refer to such triplets as active . As the adapter converges on seen classes, increasingly many triplets satisfy the margin constraint and become inactive, contributing zero gradient. This sparsity has a direct consequence for out-of-distribution generalization. Because unseen classes are absent from 
+
+Dtrain , no triplet involving an unseen-class embedding is ever constructed. Provided that the adapter’s updates remain effectively local (i.e., the cumulative perturbation induced by seen-class training gradients remains small in unseen-class regions of the embedding space), the manifold structure for unseen classes is largely preserved. The gradient sparsity mechanism enforces this locality: once seen-class neighborhoods satisfy the margin, the corresponding gradients vanish, and only the small fraction of actively-violated local relationships continue to be updated. The triplet loss in Eq. (6) consists of hinge terms whose subgradient with respect to θ is exactly zero whenever the margin constraint is satisfied: 
+
+∇θ ℓapn = 1[d(ˆ za, ˆzp) − d(ˆ za, ˆzn) + m > 0] · ∇ θ δapn , (8) where δapn = d(ˆ za, ˆzp) − d(ˆ za, ˆzn). Define the active triplet ratio at training step t as 
+
+ρ(t) = Pr 
+
+> (a,p,n )∼B
+
+h
+
+d(ˆ z(t) 
+
+> a
+
+, ˆz(t) 
+
+> p
+
+) − d(ˆ z(t) 
+
+> a
+
+, ˆz(t) 
+
+> n
+
+) + m > 0
+
+i
+
+. (9) Under the standard assumption that training converges to a stationary point of L, ρ(t) converges to a steady-state value ρ∗ ∈ [0 , 1] determined by the margin m and the within-class distance distribution of the converged embeddings. We measure ρ∗ ≈ 3.5% at convergence on FGVC-Aircraft (Section 4.3), meaning that 96 .5% of training triplets contribute zero gradient at steady state. Strictly speaking, sparse seen-class gradients do not formally imply that fθ leaves unseen-class regions unchanged: the adapter is a parametric MLP, not a locally supported transformation, so any update to θ propagates globally. The OOD measurements in Section 4.2 will demonstrate the evidence: EGA preserves or improves Label Precision on three unseen-class benchmarks, while ICon and SRL lack the gradient sparsity and fall below the frozen baseline. A Lipschitz-based bound on the unseen-class perturbation is discussed in Appendix A. 41 5 10            
+
+> nprobe
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Label Precision
+> K= 1
+> 1510
+> nprobe
+> K= 3
+> 1510
+> nprobe
+> K= 5
+> 1510
+> nprobe
+> K= 10
+> Latent Manifold EGA-flattened (Ours)
+
+Figure 1: Label Precision@ K on CIFAR-100 across K ∈ { 1, 3, 5, 10 } and nprobe ∈ { 1, 5, 10 }.0.0 0.5 1.0 1.5 2.0                                     
+
+> 0
+> 2
+> 4
+> 6
+> Density
+> Latent Manifold ( K= 1 )
+> Top 1 Neighbors
+> Background
+> 0.0 0.5 1.0 1.5 2.0
+> 0
+> 2
+> 4
+> 6
+> Latent Manifold ( K= 2 )
+> Top 2 Neighbors
+> Background
+> 0.0 0.5 1.0 1.5 2.0
+> 0
+> 2
+> 4
+> 6
+> Latent Manifold ( K= 4 )
+> Top 4 Neighbors
+> Background
+> 0.0 0.5 1.0 1.5 2.0
+> 0
+> 2
+> 4
+> 6
+> Latent Manifold ( K= 8 )
+> Top 8 Neighbors
+> Background
+> 0.0 0.5 1.0 1.5 2.0
+> L2 Distance
+> 0
+> 1
+> 2
+> 3
+> Density
+> EGA Flattened Space ( K= 1 )
+> Top 1 Neighbors
+> Background
+> 0.0 0.5 1.0 1.5 2.0
+> L2 Distance
+> 0
+> 1
+> 2
+> 3
+> EGA Flattened Space ( K= 2 )
+> Top 2 Neighbors
+> Background
+> 0.0 0.5 1.0 1.5 2.0
+> L2 Distance
+> 0
+> 1
+> 2
+> 3
+> EGA Flattened Space ( K= 4 )
+> Top 4 Neighbors
+> Background
+> 0.0 0.5 1.0 1.5 2.0
+> L2 Distance
+> 0
+> 1
+> 2
+> 3
+> EGA Flattened Space ( K= 8 )
+> Top 8 Neighbors
+> Background
+
+Figure 2: Distance distributions for Top-K neighbors vs. random background points on CIFAR-100. 
+
+4 Evaluation 
+
+Experiments were conducted on Chameleon Cloud [ 17 ] with 256 AMD EPYC-7763 CPU cores, 512 GiB RAM, and an NVIDIA A100 GPU of 80 GB HBM2e. Datasets include CIFAR-100 and ImageNet-1K for in-distribution, and CIFAR-10, FGVC-Aircraft, Food-101, ImageNet-1K held-out classes, and Oxford-IIIT Pet for OOD evaluation. All datasets are available via PyTorch or Kaggle. Backbones are CLIP ViT-B/32 [25], DINOv2-large [23], and SigLIP [39]. We compare EGA against four adapter methods: ICon [ 1 ], SRL [ 4], LoRA + InfoNCE [ 10 , 32 ], and LoRA + Triplet [ 10 ], all trained on a fronze backbone (CLIP unless otherwise specified) under identical splits and protocols. ICon and SRL use capacity-matched residual adapters ( ∼4.2Mparameters) differing from EGA only in loss, isolating the training objective. LoRA variants use rank r=128 , matching the parameter budget; we note that parameter count does not equate functional capacity (EGA permits nonlinear transformations while LoRA is low-rank), and our comparison controls the parameter budget rather than claiming architectural equivalence (see Section 4.3). We exclude full fine-tuning (it violates the frozen-backbone constraint required for index preservation and multi-task serving), as well as linear probing, Tip-Adapter [ 41 ], and prompt tuning [ 45 , 44 ](incompatible with our disjoint OOD setting). More training details and extended baseline results are in Appendices B and C, respectively. 
+
+4.1 In-Distribution Validation 
+
+Figure 1 reports Label Precision@ K across four neighborhood sizes and three search budgets on CIFAR-100. EGA raises Label Precision@1 from 0.549 (raw CLIP) to 0.705 at nprobe = 1 , and the gap persists across all K and nprobe values, including nprobe = 10 , indicating that the adapter tightens within-class neighborhoods rather than benefiting from broader index coverage. The Label Precision improvement has a direct geometric correlate. Figure 2 contrasts the L2 distance distributions for true Top-K neighbors against random background points. In the raw CLIP space, the 51 5 10           
+
+> nprobe
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Recall
+> K= 1
+> Latent Manifold
+> EGA-flattened
+> 1510
+> nprobe
+> K= 3
+> Latent Manifold
+> EGA-flattened
+> 1510
+> nprobe
+> K= 5
+> Latent Manifold
+> EGA-flattened
+> 1510
+> nprobe
+> K= 10
+> Latent Manifold
+> EGA-flattened
+
+Figure 3: ANNS Recall@ K versus nprobe on CIFAR-100. two distributions overlap substantially, which is the condition under which IVF-based ANN indexing degrades. After EGA, the two distributions separate cleanly across all K, and this separation drives the recall-efficiency improvement in Figure 3: raw CLIP achieves 0.667 Recall@1 at nprobe = 1 ,whereas EGA reaches 0.825 and saturates above 0.99 by nprobe = 5 .Table 1: In-distribution retrieval performance at 
+
+K = 1 , nprobe = 1 on CIFAR-100 and ImageNet-1K. Standard errors are below 0.01 and omitted. 
+
+Method CIFAR-100 ImageNet-1K LP@1 AR@1 LP@1 AR@1 CLIP (frozen) 0.549 0.667 0.321 0.803 ICon 0.999 0.992 0.386 0.817 
+
+SRL 0.992 0.991 0.421 0.687 LoRA+InfoNCE 0.668 0.879 0.426 0.822 
+
+LoRA+Triplet 0.612 0.908 0.359 0.870 
+
+EGA 0.705 0.825 0.407 0.817 
+
+Table 1 reports all six methods’ in-distribution performance on both CIFAR-100 and ImageNet-1K. On CIFAR-100, ICon and SRL reach near-perfect Label Precision ( 0.999 and 0.992 ) by tightening seen-class clusters under global con-trastive objectives. EGA reaches 0.705 , an im-provement of +16 percentage points over the frozen baseline; the LoRA variants land between EGA and the baseline. On ImageNet-1K (1000 classes), the absolute scale of all methods drops compared to CIFAR-100 because the test set contains approximately seven samples per class for retrieval. The four trained adapters cluster within two percentage points of each other (SRL 0.421, LoRA+InfoNCE 0.426, EGA 0.407, ICon 0.386), indicating that the task is sufficiently challenging for frozen CLIP features that no lightweight adapter can substantially restructure the embedding space under a pure ID objective. We note that ImageNet-1K as an ID task differs fundamentally from the OOD setting that motivates our work: its 1000 classes are all seen during training, and the pretrained CLIP encoder already captures rich semantic structure that adapter training can only marginally refine. Methods that aggressively optimize ID objectives (InfoNCE, SRL) achieve slightly higher ID precision here, consistent with their design, while EGA’s self-limiting triplet loss prioritizes the preservation of geometric structure that proves essential under distribution shift rather than maximizing in-distribution separation. 
+
+4.2 Out-of-Distribution Generalization 
+
+We now examine performance under strict OOD settings where evaluation categories are disjoint from training categories. Table 2 reports headline numbers at K = 1 , nprobe = 1 across four OOD benchmarks: CIFAR-10 (trained on CIFAR-100), FGVC-Aircraft (80 seen / 20 unseen classes), Food-101 (80 seen / 21 unseen classes), and ImageNet-1K held-out classes (800 seen / 200 unseen classes). For a fair comparison, all methods train identical adapters on top of frozen CLIP features and differ only in their loss functions. Robustness across search budgets is reported in Appendix C.1. 
+
+Worst-case OOD Label Precision. The bottom row of Table 2 reports the worst-case Label Precision across the four OOD benchmarks. EGA achieves 0.611 , exceeding LoRA+Triplet ( 0.569 )by 4.2 percentage points, LoRA+InfoNCE ( 0.538 ) by 7.3 percentage points (pp), the frozen CLIP baseline ( 0.512 ) by 9.9 pp, ICon ( 0.470 ) by 14 .1 pp, and SRL ( 0.375 ) by 23 .6 pp. EGA is the only method whose Label Precision exceeds 0.6 on every OOD benchmark we evaluate. The four OOD benchmarks span qualitatively different shifts: CIFAR-10 is a cross-dataset shift; Aircraft and Food-101 are fine-grained intra-domain shifts where seen and unseen classes share sub-stantial visual structure; ImageNet held-out classes is a generic large-scale shift where the pretrained encoder already provides reasonable transfer. The worst-case reflects deployment uncertainty: the system designer commits to one adapter without knowing in advance which shift will dominate the 6Table 2: OOD performance at K = 1 , nprobe = 1 .
+
+Dataset Metric CLIP ICon SRL LoRA+InfoNCE LoRA+Triplet EGA CIFAR-10 AR@1 0.863 0.797 ±.003 0.819 ±.001 0.869 ±.012 0.861 ±.011 0.833 ±.005 
+
+LP@1 0.880 0.560 ±.010 0.536 ±.008 0.885 ±.006 0.875 ±.006 0.810 ±.002 
+
+Aircraft AR@1 0.773 0.853 ±.016 0.879 ±.023 0.891 ±.015 0.893 ±.008 0.905 ±.015 
+
+LP@1 0.512 0.470 ±.034 0.375 ±.032 0.538 ±.020 0.569 ±.011 0.611 ±.020 
+
+Food-101 AR@1 0.842 0.821 ±.001 0.824 ±.015 0.906 ±.003 0.893 ±.008 0.879 ±.011 
+
+LP@1 0.881 0.562 ±.011 0.552 ±.010 0.883 ±.004 0.833 ±.007 0.791 ±.002 
+
+ImageNet-1K AR@1 0.829 0.849 ±.012 0.747 ±.015 0.878 ±.008 0.883 ±.009 0.868 ±.011 
+
+LP@1 0.684 0.620 ±.014 0.665 ±.012 0.753 ±.009 0.714 ±.010 0.711 ±.008 
+
+Worst-case LP@1 0.512 0.470 0.375 0.538 0.569 0.611 0.5 0.6 0.7 0.8 0.9 1.0                  
+
+> ID LP@1 (CIFAR-100)
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> OOD LP@1 (CIFAR-10)
+> CIFAR-10
+> CLIP
+> ICon
+> SRL
+> LoRA+InfoNCE
+> LoRA+Triplet
+> EGA
+> 0.5 0.6 0.7 0.8 0.9 1.0
+> ID LP@1 (CIFAR-100)
+> 0.35
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> OOD LP@1 (Aircraft)
+> Aircraft
+> CLIP ICon
+> SRL
+> LoRA+InfoNCE
+> LoRA+Triplet
+> EGA
+> 0.5 0.6 0.7 0.8 0.9 1.0
+> ID LP@1 (CIFAR-100)
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> OOD LP@1 (Food-101)
+> Food-101
+> CLIP
+> ICon
+> SRL
+> LoRA+InfoNCE
+> LoRA+Triplet
+> EGA
+> Pareto frontier CLIP ICon SRL LoRA+InfoNCE LoRA+Triplet EGA
+
+Figure 4: ID/OOD operating points of adapter training in the (ID, OOD) Label Precision plane. query stream. Methods that excel on some shifts but collapse on others (ICon collapses on Aircraft, SRL collapses on Aircraft, LoRA variants on Aircraft) cannot guarantee a quality floor. While these four benchmarks span the major categories of distribution shift, the worst-case is driven by the fine-grained Aircraft split. This raises the natural question of whether EGA’s advantage is specific to a single dataset. To address this, we evaluate on Oxford-IIIT Pet (37-class pet breed classification), a fine-grained benchmark from an independent visual domain (natural species rather than man-made objects), under the identical OOD protocol. The frozen CLIP baseline already reaches LP@1 = 0.9595 on unseen breeds, yet EGA further raises it to 0.9646 while achieving the highest ANNS Recall (0.9392 vs. LoRA+Triplet’s 0.9342; detailed numbers in Appendix C.5). Taken together, these two fine-grained benchmarks span both hard and easy shifts (frozen LP@1 of 0.512 on Aircraft vs. 0.960 on Pet), and EGA improves over the strongest baseline on both, providing evidence that its advantage is not an artifact of a single dataset or a specific difficulty scheme. 
+
+Per-benchmark behavior. On ANNS Recall, all trained adapters match or exceed the frozen baseline across Aircraft, Food-101, and ImageNet, confirming that adapter training successfully reorganizes the geometry for ANN indexing. On Label Precision, however, the global contrastive methods fall below the frozen baseline on every fine-grained OOD dataset, with degradation exceeding 30 percentage points on Food-101 and CIFAR-10: the retrieved neighbors are geometrically closer but semantically wrong. EGA improves Label Precision over the frozen baseline on Aircraft and ImageNet, and its degradations on CIFAR-10 and Food-101 are contained to single-digit percentage points. The collapse of global contrastive methods is most severe exactly where unseen classes are visually similar to seen classes, consistent with our hypothesis that dense global gradients pull unseen samples into incorrect seen-class clusters. Comparing EGA directly against LoRA+Triplet, which uses the same triplet loss but a low-rank architecture, isolates the effect of model capacity: EGA’s nonlinear residual design outperforms LoRA+Triplet by 4.2 pp on Aircraft while trailing on CIFAR-10 and Food-101 by 6.5–9.1 pp, confirming that gradient sparsity and architectural capacity interact differently across shift types. On ImageNet, where held-out classes are visually distinct from training classes, no method collapses, and all approaches, including the frozen baseline, perform comparably. EGA’s advantage materializes precisely under difficult distribution shifts, which is the scenario where worst-case guarantees are most valuable. 7Table 3: Ablation study of EGA 
+
+Variant Accuracy Full EGA (Ours) 0.705 w/o Residual connection 0.0065 w/o Zero-initialization 0.6840 w/o L2-normalization 0.6590 
+
+Table 4: Sensitivity of different hyperparameters 
+
+Triplet Margin m 0.1 0.2 0.3 0.5 Recall@1 0.8420 0.8180 0.8160 0.7400 Recall@5 0.9782 0.9654 0.9610 0.9125 Hidden Dimension d 512 1024 2048 4096 Recall@1 0.8300 0.8340 0.8200 0.8240 Recall@5 0.9695 0.9712 0.9680 0.9688 
+
+EGA does not dominate every method on every individual benchmark. Methods that restrict adapter capacity rather than the loss function achieve higher Label Precision on CIFAR-10, Food-101, and ImageNet, but suffer catastrophic degradation on the fine-grained Aircraft split, which is what determines their worst-case performance. EGA’s design explicitly prioritizes worst-case robustness; practitioners who can confidently bound the deployed distribution shift may reasonably prefer capacity-restricted alternatives. The trade-off between these two approaches is visualized in Figure 4. 
+
+4.3 Two Routes to OOD Stability: Gradient Sparsity and Capacity Restriction 10 30 50 70 90 110 130 150 
+
+> Training Epoch
+> 0.0
+> 2.5
+> 5.0
+> 7.5
+> 10.0
+> 12.5
+> 15.0
+> 17.5
+> 20.0
+> Active Triplet Ratio (%)  17.4%
+> 3.5%
+> 96.5% of triplets
+> produce zero gradient
+> at convergence
+> Gradient Sparsity During Training
+> CLIP
+> Baseline
+> EGA
+> (Ours)
+> ICon
+> Adapter
+> SRL
+> Adapter
+> 0.30
+> 0.35
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> Label Precision @ K=1, nprobe=1
+> 0.512
+> 0.548
+> 0.423
+> 0.441
+> OOD Retrieval on Unseen Classes
+> CLIP Baseline
+> Below CLIP baseline
+
+Figure 5: Gradient sparsity as OOD protection. 
+
+Route 1: Gradient sparsity (EGA). 
+
+A triplet loss with margin m pro-duces a non-zero gradient only when 
+
+d(a, p ) − d(a, n ) + m > 0. Figure 5 (left) tracks the active triplet ratio from 
+
+17 .4% at epoch 10 to 3.5% at conver-gence, meaning 96 .5% of triplets con-tribute zero gradient at steady state: the loss stops applying pressure once seen-class neighborhoods are locally sepa-rated, yet the adapter retains full capac-ity for refinement. Sparsity neutralizes the loss-side factor while leaving capacity intact, which permits EGA’s high in-distribution Label Precision (Table 1). The self-limiting dynamic is consistent across datasets ( ρ∗ ranges from 0.8% on Food-101 to 3.5% on Aircraft; Appendix C.4), with higher residual ratios on fine-grained classes reflecting greater similarity among seen categories. OOD protection is driven by the sparsity of the gradient field ( 96 .5% inactive triplets) rather than ρ∗.
+
+Route 2: Capacity restriction (LoRA). The LoRA variants take the other route. They retain a global contrastive loss (InfoNCE) or a triplet loss, but constrain the adapter to a low-rank residual update. At rank r = 128 , LoRA’s expressive power is limited to rank-128 perturbations of the identity, so the dense gradient field has substantially less room to reshape unseen-class geometry. This explains why LoRA+InfoNCE, despite using the same loss family as ICon, avoids the same OOD collapse: the loss applies pressure everywhere, but the adapter cannot fully comply. The price is paid in-distribution. At capacity-matched scale ( ∼4.2M parameters), LoRA+InfoNCE reaches 
+
+0.668 Label Precision on CIFAR-100, 3.7 percentage points below EGA, because the same low-rank constraint that bounds OOD damage also bounds in-distribution refinement. The two routes occupy different points in Figure 4. EGA, which neutralizes the loss-side factor while keeping capacity, achieves the highest worst-case OOD Label Precision. Capacity-matched LoRA, which neutralizes the capacity-side factor, excels on three of four benchmarks but collapses on Aircraft (worst-case 0.538–0.569). These routes are complementary: removing gradient sparsity from EGA drops Aircraft LP@1 to 0.458 (Appendix C.3), while scaling LoRA rank from 64 to 512 leaves both ID and OOD nearly unchanged. OOD robustness thus requires the combination of gradient sparsity and sufficient nonlinear capacity. 
+
+4.4 Ablation and Sensitivity Analysis 
+
+Table 3 isolates the contribution of each architectural component. The residual connection is the core element: removing it collapses accuracy from 0.705 to 0.0065 , indicating that the adapter cannot reconstruct semantic relationships from target data alone and must operate as a refinement over the pre-trained features. ℓ2-normalization keeps the transformed embeddings on the unit hypersphere, and removing it lowers accuracy to 0.6590 . Zero-initialization lets the adapter begin as an identity mapping, and removing it lowers accuracy to 0.6840 .8Table 4 evaluates stability across hyperparameter variations. EGA maintains consistent quality for margins m ∈ { 0.1, 0.2, 0.3}, but increasing m to 0.5 degrades Recall@1 to 0.7400 : a larger margin forces the adapter to update embeddings that already satisfy local neighborhood constraints, reducing gradient sparsity. Performance is also stable across hidden dimensions from 512 to 4096, indicating that EGA’s behavior is determined by its structural design rather than by specific parameter choices. While the ablation shows that the residual connection is the single most critical component, the three principles are interdependent: zero-initialization ensures that the residual connection begins as an identity map, and ℓ2-normalization ensures that the triplet loss operates in the same metric space as the pre-trained embeddings. Their individual ablation scores understate their joint necessity. We note that Table 4 reports Recall under the in-distribution protocol of Section 4.1 (CIFAR-100 75/25 split); a corresponding OOD scan would require training separate adapters for each OOD benchmark at each margin value, which we leave for future work. The observed stability of ID Recall across 
+
+m ∈ { 0.1, 0.2, 0.3} indicates that m = 0 .2 lies within a flat region of the loss landscape. 
+
+4.5 Generalization to More Backbones 
+
+Table 5: Retrieval performance on more backbones.                              
+
+> Backbone Label Precision@1 ANNS Recall@1 Raw +EGA Raw +EGA In-Distribution (CIFAR-100) CLIP ViT-B/32 0.549 0.6955 0.667 0.7985 DINOv2-large 0.8530 0.9005 0.8785 0.9310 SigLIP SO400M 0.7740 0.8595 0.8015 0.9155 OOD (Aircraft) CLIP ViT-B/32 0.512 0.611 0.773 0.905 DINOv2-large 0.6437 0.8593 0.9701 0.9671 SigLIP SO400M 0.8892 0.8952 0.9192 0.9760
+
+To verify that EGA’s robustness trans-fers to more backbones, we evaluate DINOv2-large [ 23 ] and SigLIP [ 39 ]. On DINOv2-large, where frozen LP@1 is 
+
+0.644 , EGA reaches 0.859 compared to LoRA+Triplet’s 0.832 , confirming that EGA’s advantage persists on fine-grained shifts. On SigLIP, where frozen LP@1 is already 0.889 , both EGA ( 0.895 ) and LoRA+Triplet ( 0.910 ) improve over the frozen baseline, with LoRA’s low-rank constraint providing a slightly better in-ductive bias when the pretrained geome-try is already strong. The results on both backbones align with the two-routes framework of Section 4.3: gradient sparsity is the dominant protective factor when the frozen representation is insufficient (DINOv2), while capacity restriction can offer a small advantage when the frozen geometry is already well separated (SigLIP). Neither backbone exhibits the catastrophic OOD degradation observed with global contrastive methods on CLIP (Table 2), confirming that EGA’s self-limiting dynamic transfers across backbone architectures and that gradient sparsity remains the active protective mechanism on hard shifts. The consistency across three backbones with substantially different pre-training objectives and embedding geometries also rules out the possibility that EGA’s benefits are specific to CLIP. 
+
+5 Conclusion 
+
+We studied adapter training for vector search under open-category queries, where the proper metric is worst-case OOD Label Precision rather than in-distribution optimality. Global contrastive adapters silently distort unseen-class geometry, which can catastrophically degrade retrieval quality under distribution shift. EGA addresses this through a self-limiting triplet loss: the hinge formulation automatically stops gradient flow once local class structure is satisfied, so the adapter refines only where needed while preserving the pretrained geometry elsewhere. The residual architecture and zero initialization anchor training to the frozen representation. A Lipschitz-based bound on the unseen-class perturbation, controlled by the empirically decaying active triplet ratio, provides analytical support for this mechanism. Across five OOD benchmarks spanning cross-dataset, fine-grained, and large-scale shifts, EGA achieves the highest worst-case retrieval quality, with consistent improvement on two independent fine-grained domains, and transfers to more recent backbones besides CLIP. This entire project is publicly available at https://github.com/hpdic/EGA , including all source code, paper draft, and edit history. 9Acknowledgments and Disclosure of Funding 
+
+Results presented in this paper were obtained using the Chameleon testbed supported by the National Science Foundation. The implementation of EGA and the preparation of this manuscript were assisted by Claude Opus 4.7 and DeepSeek V4. The ideas and analyses presented in this paper are the original work of the author, and any assistance provided by AI tools was limited to code generation and language editing under the author’s supervision. 
+
+References 
+
+[1] Shaden Naif Alshammari, John R Hershey, Axel Feldmann, William T Freeman, and Mark Hamilton. I-con: A unifying framework for representation learning. In The Thirteenth Interna-tional Conference on Learning Representations (ICLR) , 2025. [2] Qi Chen, Bing Zhao, Haidong Wang, Mingqin Li, Chuanjie Liu, Zengzhong Li, Mao Yang, and Jingdong Wang. Spann: highly-efficient billion-scale approximate nearest neighbor search. In 
+
+Proceedings of the 35th International Conference on Neural Information Processing Systems ,NIPS ’21, Red Hook, NY, USA, 2021. Curran Associates Inc. [3] Haya Diwan, Jinrui Gou, Cameron Musco, Christopher Musco, and Torsten Suel. Navigable graphs for high-dimensional nearest neighbor search: Constructions and limits. In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang, editors, Advances in Neural Information Processing Systems , volume 37, pages 59513–59531. Curran Associates, Inc., 2024. [4] Zijian Dong, Yilei Wu, Chongyao Chen, Yingtian Zou, Yichi Zhang, and Juan Helen Zhou. Improve representation for imbalanced regression through geometric constraints. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [5] Sedigheh Eslami and Gerard de Melo. Mitigate the gap: Improving cross-modal alignment in CLIP. In The Thirteenth International Conference on Learning Representations , 2025. [6] Tianyu Gao, Xingcheng Yao, and Danqi Chen. SimCSE: Simple contrastive learning of sentence embeddings. In Marie-Francine Moens, Xuanjing Huang, Lucia Specia, and Scott Wen-tau Yih, editors, Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing , pages 6894–6910, Online and Punta Cana, Dominican Republic, November 2021. Association for Computational Linguistics. [7] Hao Guo and Youyou Lu. Achieving low-latency graph-based vector search via aligning best-first search algorithm with ssd. In 19th USENIX Symposium on Operating Systems Design and Implementation (OSDI) , pages 171–186, Boston, MA, 2025. USENIX Association. [8] Hao Guo and Youyou Lu. Odinann: Direct insert for consistently stable performance in billion-scale graph-based vector search. In 24th USENIX Conference on File and Storage Technologies (FAST) , Santa Clara, CA, 2026. USENIX Association. [9] Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. Parameter-efficient transfer learning for NLP. In Kamalika Chaudhuri and Ruslan Salakhutdinov, editors, Proceedings of the 36th International Conference on Machine Learning , volume 97 of Proceedings of Machine Learning Research , pages 2790–2799. PMLR, 09–15 Jun 2019. [10] Edward J Hu, yelong shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. In 
+
+International Conference on Learning Representations , 2022. [11] Jie Hu, Li Shen, Samuel Albanie, Gang Sun, and Enhua Wu. Squeeze-and-excitation networks. 
+
+IEEE Trans. Pattern Anal. Mach. Intell. , 42(8):2011–2023, August 2020. [12] Piotr Indyk and Haike Xu. Worst-case performance of popular approximate nearest neighbor search implementations: Guarantees and limitations. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural Information Processing Systems , volume 36, pages 66239–66256. Curran Associates, Inc., 2023. 10 [13] Elias Jääsaari, Ville Hyvönen, and Teemu Roos. LoRANN: Low-rank matrix factorization for approximate nearest neighbor search. In The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. [14] Menglin Jia, Luming Tang, Bor-Chun Chen, Claire Cardie, Serge Belongie, Bharath Hariharan, and Ser-Nam Lim. Visual prompt tuning. In Computer Vision – ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part XXXIII , page 709–727, Berlin, Heidelberg, 2022. Springer-Verlag. [15] Dong Jing, Xiaolong He, Yutian Luo, Nanyi Fei, Guoxing Yang, Wei Wei, Huiwen Zhao, and Zhiwu Lu. FineCLIP: Self-distilled region-based CLIP for better fine-grained understanding. In 
+
+The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. [16] Jeff Johnson, Matthijs Douze, and Hervé Jégou. Billion-scale similarity search with gpus. IEEE Transactions on Big Data , 7(3):535–547, 2021. [17] Kate Keahey, Jason Anderson, Zhuo Zhen, Pierre Riteau, Paul Ruth, Dan Stanzione, Mert Cevik, Jacob Colleran, Haryadi S. Gunawi, Cody Hammock, Joe Mambretti, Alexander Barnes, François Halbach, Alex Rocha, and Joe Stubbs. Lessons learned from the chameleon testbed. In 
+
+Proceedings of the 2020 USENIX Annual Technical Conference (USENIX ATC ’20) . USENIX Association, July 2020. [18] Hyungbin Kim, Incheol Baek, and Yon Dohn Chung. Decoupled contrastive learning for federated learning, 2025. [19] Panagiotis Koromilas, Efthymios Georgiou, Giorgos Bouritsas, Theodoros Giannakopoulos, Mihalis A. Nicolaou, and Yannis Panagakis. A principled framework for multi-view contrastive learning, 2025. [20] Chiara Lanza, Roberto Pereira, Marco Miozzo, Eduard Angelats, and Paolo Dini. Degradation of feature space in continual learning, 2026. [21] Fengming Lin. Vision language models: A survey of 26k papers, 2025. [22] Yu A. Malkov and D. A. Yashunin. Efficient and robust approximate nearest neighbor search using hierarchical navigable small world graphs. IEEE Trans. Pattern Anal. Mach. Intell. ,42(4):824–836, April 2020. [23] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy V. Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel HAZIZA, Francisco Massa, Alaaeldin El-Nouby, Mido Assran, Nicolas Ballas, Wojciech Galuba, Russell Howes, Po-Yao Huang, Shang-Wen Li, Ishan Misra, Michael Rabbat, Vasu Sharma, Gabriel Synnaeve, Hu Xu, Herve Jegou, Julien Mairal, Patrick Labatut, Armand Joulin, and Piotr Bojanowski. DINOv2: Learning robust visual features without supervision. Transactions on Machine Learning Research , 2024. Featured Certification. [24] Avik Pal, Max van Spengler, Guido Maria D’Amely di Melendugno, Alessandro Flaborea, Fabio Galasso, and Pascal Mettes. Compositional entailment learning for hyperbolic vision-language models. In The Thirteenth International Conference on Learning Representations , 2025. [25] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agar-wal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In Marina Meila and Tong Zhang, editors, Proceedings of the 38th International Conference on Machine Learning, ICML 2021, 18-24 July 2021, Virtual Event , Proceedings of Machine Learning Research, pages 8748–8763. PMLR, 2021. [26] Sameera Ramasinghe, Violetta Shevchenko, Gil Avraham, and Ajanthan Thalaiyasingam. Accept the modality gap: An exploration in the hyperbolic space. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 27253–27262, 2024. [27] Simone Ricci, Niccolò Biondi, Federico Pernici, Ioannis Patras, and Alberto Del Bimbo. $\boldsymbol{\lambda}$-orthogonality regularization for compatible representation learning. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2026. 11 [28] Daniele Savietto, Declan Campbell, André Panisson, Marco Nurisso, Giovanni Petri, Jonathan D. Cohen, and Alan Perotti. The geometry of representational failures in vision language models, 2026. [29] Shivam Rajendra Rai Sharma, Xiaoguang Zhu, Luca Cerny Oliveira, Kartik Patwari, La Rissa Vasquez, David Garcia, Louise Nicole C. Sevilla, Brittany N Dugger, and Chen-Nee Chuah. Benchmarking parameter efficient adaptation of vision language models on pathology. In 
+
+NeurIPS 2025 Workshop for Imageomics: Discovering Biological Knowledge from Images Using AI , 2025. [30] Suhas Jayaram Subramanya, Devvrit, Rohan Kadekodi, Ravishankar Krishaswamy, and Har-sha Vardhan Simhadri. Diskann: fast accurate billion-point nearest neighbor search on a single node. In Proceedings of the 33rd International Conference on Neural Information Processing Systems , 2019. [31] Hangke Sui, Yuqing Wang, and Minh N. Do. Unicon: Unified framework for efficient contrastive alignment via kernels. In The Fourteenth International Conference on Learning Representations ,2026. [32] Aaron van den Oord, Yazhe Li, and Oriol Vinyals. Representation learning with contrastive predictive coding. arXiv preprint arXiv:1807.03748 , 2018. [33] Liang Wang, Xiang Tao, Qiang Liu, Shu Wu, and Liang Wang. Rethinking graph masked autoencoders through alignment and uniformity. In Proceedings of the Thirty-Eighth AAAI Conference on Artificial Intelligence and Thirty-Sixth Conference on Innovative Applications of Artificial Intelligence and Fourteenth Symposium on Educational Advances in Artificial Intelligence , AAAI’24/IAAI’24/EAAI’24. AAAI Press, 2024. [34] Tongzhou Wang and Phillip Isola. Understanding contrastive representation learning through alignment and uniformity on the hypersphere. In Proceedings of the 37th International Confer-ence on Machine Learning , ICML’20. JMLR.org, 2020. [35] Mingqi Wu, Qiang Sun, and Archer Y. Yang. PCA++: How uniformity induces robustness to background noise in contrastive learning. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2026. [36] Baili Xiao, Zhibin Dong, Ke Liang, Suyuan Liu, Siwei Wang, Tianrui Liu, Xingchen Hu, En Zhu, and Xinwang Liu. Easemvc: Efficient dual selection mechanism for deep multi-view clustering. In 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pages 20716–20726, 2025. [37] Xuqian Xue, Yiming Lei, Qi Cai, Hongming Shan, and Junping Zhang. PROTOCOL: Partial optimal transport-enhanced contrastive learning for imbalanced multi-view clustering. In 
+
+Forty-second International Conference on Machine Learning , 2025. [38] Ming Yang, Yuzheng Cai, and Weiguo Zheng. Cspg: Crossing sparse proximity graphs for approximate nearest neighbor search. In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang, editors, Advances in Neural Information Processing Systems , volume 37, pages 103076–103100. Curran Associates, Inc., 2024. [39] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer. Sigmoid loss for language image pre-training. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 11941–11952, 2023. [40] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding conditional control to text-to-image diffusion models. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) ,pages 3813–3824, 2023. [41] Renrui Zhang, Wei Zhang, Rongyao Fang, Peng Gao, Kunchang Li, Jifeng Dai, Yu Qiao, and Hongsheng Li. Tip-adapter: Training-free adaption of clip for few-shot classification. In 
+
+Computer Vision – ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part XXXV , page 493–510, Berlin, Heidelberg, 2022. Springer-Verlag. 12 [42] Yingwen Zhang, Meng Wang, Xihua Sheng, Peilin Chen, Junru Li, Li Zhang, and Shiqi Wang. An information-theoretic regularizer for lossy neural image compression. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 15573–15582, October 2025. [43] Qingyan Zhao, Ruifang He, Jinpeng Zhang, Chang Liu, and Bo Wang. Representation de-generation problem in prompt-based models for natural language understanding. In Nicoletta Calzolari, Min-Yen Kan, Veronique Hoste, Alessandro Lenci, Sakriani Sakti, and Nianwen Xue, editors, Proceedings of the 2024 Joint International Conference on Computational Linguistics, Language Resources and Evaluation (LREC-COLING 2024) , pages 13946–13957, Torino, Italia, May 2024. ELRA and ICCL. [44] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Conditional prompt learning for vision-language models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16816–16825, 2022. [45] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Learning to prompt for vision-language models. Int. J. Comput. Vision , 130(9):2337–2348, September 2022. [46] Xin Zhou, Yongjie Wang, and Zhiqi Shen. Cm 3: Calibrating multimodal recommendation, 2025. 13 A Theoretical Analysis of EGA’s OOD Stability 
+
+We provide a theoretical analysis to explain why the proposed EGA adapter limits the perturbation of unseen-class geometry, in contrast to global contrastive methods. The analysis is structured in five steps, proceeding from the geometric properties of our architecture to a bound on unseen-class perturbation, and concluding with an illustrative demonstration of why sparse seen-class gradients are directionally safe for unseen categories. 
+
+A.1 Manifold Projection and Identity Initialization 
+
+Let the pre-trained feature space be defined as a unit hypersphere manifold M = Sd−1 ⊂ Rd. For any input feature x ∈ M , the residual adapter learns a continuous perturbation vector field hθ : M → Rd.The forward pass of our architecture, which combines a residual connection with L2 normalization, is geometrically equivalent to a retraction mapping ΠM that projects the perturbed point back onto the manifold: 
+
+fθ (x) = Π M(x + hθ (x)) = x + hθ (x)
+
+∥x + hθ (x)∥2
+
+. (10) Under our zero initialization strategy, the initial perturbation field is strictly zero everywhere, meaning 
+
+hθ0 (x) ≡ 0. Consequently, the initial adapter state represents a strict identity mapping on the manifold, fθ0 (x) = x. This forms the theoretical baseline for computing cumulative structural distortions: any change to an embedding is measured as a deviation from its pre-trained location. 
+
+A.2 Path Integral of Unseen Class Distortion 
+
+We model the training process as continuous gradient descent where parameters evolve according to dθ t 
+
+> dt
+
+= −η∇θ L(θt), with learning rate η. For any given unseen class sample xu ∈ X unseen , its total geometric drift accumulated over the training period T can be formulated using the fundamental theorem of calculus as a path integral along the parameter trajectory: 
+
+∆( xu) = ∥fθT (xu) − fθ0 (xu)∥2 =
+
+Z T
+
+> 0
+
+Jθt (xu) dθ t
+
+dt dt 
+
+> 2
+
+, (11) where Jθt (xu) = ∇θ fθt (xu) denotes the Jacobian matrix of the network evaluated at xu. Applying the triangle inequality for vector norms to the integral yields the fundamental upper bound for geometric distortion: 
+
+∆( xu) ≤
+
+Z T
+
+> 0
+
+Jθt (xu) dθ t
+
+dt 2
+
+dt. (12) 
+
+A.3 Sparsity Modulated Deformation Bound 
+
+We now connect the geometric distortion to the gradient sparsity of our triplet loss. In our formulation, the parameter derivative dθ t 
+
+> dt
+
+is driven by the mean gradient over the mini-batch B of size N . We assume that for any individual triplet, the gradient norm is bounded by a constant G, i.e., ∥∇ θ ℓi∥2 ≤
+
+G. Therefore, the batch gradient norm satisfies: 
+
+∥∇ θ L(θt)∥2 = 1
+
+N
+
+X
+
+> i∈active
+
+∇θ ℓi
+
+> 2
+
+≤ 1
+
+N
+
+X
+
+> i∈active
+
+∥∇ θ ℓi∥2 ≤ ρtNN G = ρtG, (13) where ρt is the active triplet ratio defined in Eq. (9) . This directly bounds the parameter update rate: 
+
+dθ t
+
+dt 2
+
+= η ∥∇ θ L(θt)∥2 ≤ ηρ tG. (14) To bound the integrand in Step 2, we apply the sub-multiplicativity of the spectral norm. Assuming the network satisfies L-Lipschitz continuity such that the spectral norm of its Jacobian is bounded by 
+
+∥Jθt (·)∥2 ≤ L, we obtain: 
+
+Jθt (xu) dθ t
+
+dt 2
+
+≤ ∥ Jθt (xu)∥2
+
+dθ t
+
+dt 2
+
+≤ L(ηρ tG). (15) 14 Substituting this back into the path integral bound yields the global perturbation upper bound for any unseen sample: 
+
+∆EGA (xu) ≤ ηLG 
+
+Z T
+
+> 0
+
+ρtdt. (16) For methods like ICon or SRL, the loss is computed over the full pairwise similarity matrix of the batch. In our framework, this implies that a non-zero gradient is produced for nearly all pairs in every step, corresponding to an active ratio ρ(global)  
+
+> t
+
+≈ 1. Inserting this into Eq. (16) yields 
+
+∆global (xu) ≤ ηLGT , a perturbation bound that grows linearly with training time T .The critical difference is that our triplet loss with a small margin m allows the optimization to reach a state where the vast majority of triplets satisfy the margin constraint. This forces ρt to decay to a small steady-state value ρ∗, as empirically observed in Section 4.3 and Appendix C.4. Consequently, the integral R T 
+
+> 0
+
+ρtdt in EGA’s bound is substantially smaller than T , keeping the cumulative perturbation limited even after prolonged training. This analysis logically grounds the observed OOD robustness of EGA in the self-limiting nature of its training objective. 
+
+A.4 Conjecture: Uncorrelated Residual Subspace 
+
+The bound in Step 3 explains why the magnitude of parameter updates is small at convergence. However, it does not guarantee that the direction of these residual updates is harmless to unseen classes. We present a conjecture to address this: the small number of residual active triplets at convergence produce gradient updates whose direction is approximately uncorrelated with the Jacobian of unseen-class embeddings. Formally, let S(t) 
+
+> active
+
+⊂ R|θ| be the tangent subspace spanned by the gradients of the active triplets at time t, and let PS(t) be the orthogonal projection onto it. The parameter update dθ t 
+
+> dt
+
+resides entirely in S(t)
+
+> active
+
+, so we can write dθ t 
+
+> dt
+
+= PS(t) 
+
+> active
+> dθ t
+> dt
+
+. The instantaneous perturbation on an unseen sample 
+
+xu is thus ∥Jθt (xu)PS(t) 
+
+> active
+> dθ t
+> dt
+
+∥2.We can bound this using the sub-multiplicativity of the spectral norm: 
+
+Jθt (xu) dθ t
+
+dt 2
+
+≤ Jθt (xu)PS(t) 
+
+> active 2
+
+dθ t
+
+dt 2
+
+. (17) We conjecture that under the following conditions: (1) The distribution of unseen-class data is sufficiently diverse such that the rows of their Jacobians Jθt (xu) are approximately isotropic in parameter space; (2) The residual active triplet subspace S(t) 
+
+> active
+
+at convergence is low-dimensional and its principal directions are aligned with features that discriminate between seen classes rather than unseen classes; Then, the projection of the unseen-class Jacobian onto the active subspace, 
+
+∥Jθt (xu)PS(t)
+
+> active
+
+∥2, is small with high probability over the unseen data distribution. This conjecture is consistent with our empirical evidence: EGA preserves unseen-class geometry better than global contrastive methods (Section 4.2). However, formalizing this geometric picture would require modeling the evolution of the active subspace during training and characterizing its alignment with unseen data, a significant theoretical challenge that we leave for future work. 
+
+A.5 Illustrative Setting: Directional Safety under Sparse Gradients. 
+
+We illustrate the directional safety of sparse triplet gradients in a simplified setting. Consider a frozen embedding space Sd−1 with two seen classes C1, C2 and one unseen class Cu. Let z1, z2, zu ∈ Sd−1
+
+denote the embeddings of a query from each class after convergence of the adapter. By construction, the adapter is trained only on triplets from C1 and C2.A global objective (e.g., InfoNCE) encourages all pairs from the same class to be closer than pairs from different classes. In our two-class setting, this exerts a force that pushes zu toward whichever seen-class prototype c1 or c2 it happens to be nearer to in the pretrained geometry. If 
+
+∥zu − c1∥ < ∥zu − c2∥ initially, the global gradient will pull zu further toward C1, collapsing the unseen class into the wrong seen cluster. This is the mechanism behind the OOD degradation observed for ICon and SRL in Table 2. 15 Under the triplet loss, a gradient step is taken only for active triplets violating the margin. After convergence, active triplets are sparse (Section 4.3) and correspond almost entirely to pairs of seen classes that remain close to the decision boundary. For an unseen sample zu, the instantaneous perturbation is ∆zu ∝ P 
+
+> (a,p,n )∈A
+
+∇zu ℓ(a, p, n ), where A is the set of active triplets. Since no triplet involves zu, the gradient ∇zu ℓ is determined entirely by the indirect effect of parameter updates on the adapter’s forward pass. We now show that this indirect effect is small in the direction that would pull zu toward a seen-class prototype. Assume the adapter is a linear residual layer z 7 → ℓ2(z + Wz ) with W ∈ Rd×d initialized to zero. The update to W from an active triplet (a, p, n ) is a rank-1 matrix whose row space is spanned by the embeddings of a, p, and n. At convergence, the active triplets are concentrated around the decision boundary between C1 and C2, so the row space of the cumulative update ∆W
+
+is approximately the 2-dimensional subspace spanned by the prototypes c1 and c2. An unseen embedding zu is perturbed by ∆W z u, whose magnitude is controlled by the projection of zu onto this 2-dimensional subspace. If the unseen class is not collinear with the seen-class prototypes (i.e., 
+
+zu lies largely outside the span of c1 and c2), the perturbation ∥∆W z u∥ is small. Moreover, the 
+
+direction of the perturbation is predominantly within the seen-class subspace, moving zu parallel to the decision boundary rather than across it. This illustrative analysis shows that under a linear residual adapter, sparse triplet gradients from seen classes produce parameter updates whose row space is low-dimensional and aligned with seen-class discrimination directions. An unseen embedding whose pretrained geometry places it outside this subspace experiences only a small perturbation, and the perturbation direction is unlikely to pull it across a seen-class decision boundary. This is in contrast to global contrastive objectives, which exert dense, radially directed forces on all embeddings regardless of whether local class structure is already satisfied. 
+
+B Experimental Setup Details 
+
+Backbones models. All experiments in the main paper use frozen CLIP ViT-B/32 [ 25 ] image embeddings as the base representation. To verify that EGA’s benefits are not specific to this backbone, we further evaluate EGA on two stronger vision encoders: DINOv2-large [ 23 ] and SigLIP [ 39 ]. DINOv2-large is a self-supervised vision transformer trained on 142M images, while SigLIP is a supervised vision transformer trained on 400M image-text pairs. Both models produce higher-quality embeddings than CLIP ViT-B/32, as reflected in their stronger raw retrieval performance, and EGA continues to provide meaningful improvements on top of these stronger backbones, as shown in Table 5 in Section 4.4. 
+
+Adapter models. We compare EGA against the frozen CLIP baseline and four trained adapters, all sharing the same training data, evaluation protocol, and 75/25 retrieval split: • ICon [1]: a global contrastive objective minimizing the KL divergence between the empirical similarity distribution and the class-membership distribution. • SRL [4]: a structural regularization objective jointly optimizing batch-wide uniformity and within-class homogeneity, also instantiated on the EGAMLP architecture. • LoRA + InfoNCE [10 , 32 ]: a capacity-matched low-rank adapter (rank r = 128 , ∼4.2M parameters) with zero-initialized residual structure, trained with supervised InfoNCE. • LoRA + Triplet [10 ]: identical capacity-matched low-rank architecture as above (rank 
+
+r = 128 ), but trained with the same small-margin ( m = 0 .2) triplet loss as EGA. 
+
+Datasets. We evaluate on six datasets covering both in-distribution and OOD retrieval scenarios. 
+
+CIFAR-100 (100 classes, 60K images) serves as a primary in-distribution benchmark with a 75/25 split between database and query sets. ImageNet-1K (1000 classes, 35K embedded samples) serves as a larger-scale in-distribution benchmark and additionally provides an unseen-class OOD setting via an 80/20 class split (800 seen / 200 unseen). CIFAR-10 (10 classes, 60K images) provides a cross-dataset OOD setting: the adapter is trained on CIFAR-100 and evaluated on the disjoint CIFAR-10 classes. FGVC-Aircraft (100 fine-grained aircraft variants, 10K images) and Food-101 (101 food categories, 25K images for the test split we use) provide unseen-class OOD settings: classes 16 1 5 10        
+
+> nprobe
+> 0.76
+> 0.78
+> 0.80
+> 0.82
+> 0.84
+> 0.86
+> 0.88
+> 0.90
+> 0.92
+> Label Precision@1
+> CIFAR-10
+> 1510
+> nprobe
+> 0.40
+> 0.42
+> 0.44
+> 0.46
+> 0.48
+> 0.50
+> 0.52
+> 0.54
+> 0.56
+> 0.58
+> FGVC-Aircraft
+> 1510
+> nprobe
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> Food-101
+> CLIP (frozen) ICon SRL EGA (Ours)
+
+Figure 6: Label Precision@1 across three OOD benchmarks and three search budgets ( nprobe ∈{1, 5, 10 }). are randomly partitioned into 80% seen / 20% unseen with a fixed seed, the adapter is trained on the seen split, and retrieval is evaluated strictly on the unseen split. Oxford-IIIT Pet (37 pet breeds, 
+
+∼7K images) provides an additional fine-grained OOD setting under the same 80/20 class-disjoint protocol. 
+
+Indexing and metrics. For all retrieval evaluations we use FAISS [ 16 ] IndexIVFFlat with nlist =10 centroids and report results at nprobe ∈ {1, 5, 10 }. We measure both Label Preci-sion (LP@ K, Eq. (1)) and ANNS Recall (AR@ K, Eq. (1)) at K ∈ { 1, 3, 5, 10 }.
+
+Training. All adapters are trained with AdamW (weight decay 10 −4), cosine-annealed learning rate, and batch size 256 (CIFAR-100) or 512 (ImageNet-1K). EGAMLP-based methods (EGA, ICon, SRL) use learning rate 10 −4; LoRA variants use 10 −3 to compensate for their smaller per-parameter scale. Triplet-based methods sample one positive and one negative per anchor uniformly within each mini-batch; global contrastive methods (ICon, SRL, LoRA + InfoNCE) operate on the full pairwise similarity matrix. All experiments use three fixed random seed (42, 123, 456) for reproducibility. For ICon and SRL, we tuned the temperature and regularization weight, respectively, on CIFAR-100 ID performance, following the protocol in their original papers; all other hyperparameters are shared across methods. 
+
+Compute platform. All experiments were conducted on the Chameleon Cloud [ 17 ] platform using a compute node equipped with 256 AMD EPYC-7763 CPU cores, 512 GiB of RAM, and an NVIDIA A100 GPU of 80 GB HBM2e. The operating system is Ubuntu 24.04 LTS. 
+
+C Additional Experimental Results 
+
+C.1 Robustness across search budgets. 
+
+Figure 6 traces Label Precision@1 across three OOD benchmarks and three search budgets ( nprobe ∈{1, 5, 10 }). The collapse pattern of ICon and SRL persists across all 18 measurement points ( 3
+
+datasets × 3 budgets × 2 methods), ruling out the possibility that the degradation is an artifact of any particular benchmark or indexing configuration. EGA’s relative ordering against other methods is also stable across budgets. 
+
+C.2 Linear Probing Baseline Analysis 
+
+To address potential concerns about additional baselines, we also evaluated Linear Probing as an example. As shown in Table 6 and Table 7, Linear Probing achieves reasonable in-distribution perfor-mance (0.5112 LP@1 on CIFAR-100) but completely collapses on out-of-distribution benchmarks (0.0065–0.0133 LP@1). This confirms that Linear Probing is not a meaningful comparison in our cross-dataset OOD setting due to class semantic mismatch. 17 Table 6: Linear Probing in-distribution performance on CIFAR-100 (75/25 split, mean ± std over 3 seeds).         
+
+> Method LP@1 AR@1 Linear Probing 0.5112 ±0.0020 0.7533 ±0.0025
+
+Table 7: Linear Probing OOD performance (mean ± std over 3 seeds).                     
+
+> Dataset LP@1 AR@1 Aircraft 0.0133 ±0.0038 0.4401 ±0.0254 Food-101 0.0077 ±0.0019 0.5162 ±0.0228 CIFAR-10 0.0065 ±0.0005 0.6454 ±0.0096
+
+C.3 Disentangling Loss and Architecture 
+
+We conduct two controlled analyses to isolate the contributions of gradient sparsity and architecture capacity to EGA’s OOD robustness. 
+
+Architecture without gradient sparsity. We train EGAMLP (the same residual architecture as EGA, ∼4.2M parameters) with the global contrastive InfoNCE loss under the same protocols. Table 8 reports OOD Label Precision@1. Under the global objective, the architecture degrades substantially across all shifts: Aircraft drops to 0.458, below even the frozen baseline (0.512), and Food-101 and CIFAR-10 lose 21.4 and 10 points relative to EGA. This confirms that the residual design alone does not prevent unseen-class distortion; gradient sparsity from the triplet loss is essential. Table 8: EGAMLP trained with InfoNCE on OOD benchmarks ( K=1 , nprobe =1 ).             
+
+> OOD Benchmark EGAMLP+InfoNCE EGA (Triplet) Frozen CLIP FGVC-Aircraft 0.458 0.611 0.512 Food-101 0.667 0.791 0.881 CIFAR-10 0.710 0.810 0.880
+
+Gradient sparsity with restricted capacity. We next examine whether increasing the capacity of a low-rank adapter can recover EGA’s OOD robustness when using the triplet loss. We train LoRA+Triplet at ranks r ∈ { 64 , 128 , 256 , 512 } and measure both in-distribution (CIFAR-100) and OOD (Aircraft) Label Precision@1. As shown in Table 9, ID performance barely improves with rank (0.6456 at r=64 to 0.6480 at r=512 ), remaining far below EGA’s 0.705, while Aircraft LP@1 never exceeds 0.566 and even deteriorates at higher ranks. Thus, the low-rank structure intrinsically caps both ID refinement and OOD protection, regardless of parameter budget. Table 9: LoRA+Triplet at different ranks ( K=1 , nprobe =1 ).             
+
+> LoRA Rank CIFAR-100 LP@1 Aircraft LP@1 64 0.6456 0.5655 128 0.6460 0.5595 256 0.6472 0.5655 512 0.6480 0.5298 EGA (full) 0.7050 0.6110
+
+Together, these results establish that the combination of gradient-sparse triplet updates and a high-capacity nonlinear residual architecture is necessary for the OOD robustness observed in EGA, and that neither component alone suffices. 
+
+C.4 Consistency of gradient sparsity across datasets. 
+
+Table 10 reports the steady-state active triplet ratio ρ∗ for EGA trained on three datasets. The fraction of zero-gradient triplets exceeds 96% in all cases, confirming that the self-limiting dynamic is not 18 specific to Aircraft. The variation in ρ∗ aligns with dataset difficulty: fine-grained Aircraft leaves the largest residual active fraction, while Food-101, whose classes are more visually distinct, converges to near-complete sparsity. Table 10: Steady-state active triplet ratio ρ∗ across datasets. Dataset ρ∗ Zero-gradient fraction FGVC-Aircraft 3.5% 96.5% CIFAR-100 2.1% 97.9% Food-101 0.8% 99.2% 
+
+C.5 Additional Fine-Grained Benchmark: Oxford-IIIT Pet 
+
+We further evaluate EGA and LoRA+Triplet on Oxford-IIIT Pet under the same 80/20 class-disjoint OOD protocol. Table 11 reports LP@1 and AR@1 at K=1 , nprobe =1 . The frozen CLIP baseline achieves LP@1 = 0.96 on unseen breeds, indicating that the pretrained encoder already separates these categories well; EGA further raises LP@1 to 0.9646 while achieving the highest ANNS Recall (0.9392 ). This demonstrates that even on easier shifts where the pretrained geometry already performs well, EGA provides a small but consistent improvement without any degradation, consistent with our finding that its advantage is most pronounced on hard fine-grained shifts. Table 11: Oxford-IIIT Pet OOD performance ( K=1 , nprobe =1 , 80/20 class split).         
+
+> Method LP@1 AR@1 Frozen CLIP 0.9595 0.8785 LoRA+Triplet 0.9519 0.9342 EGA 0.9646 0.9392
+
+19

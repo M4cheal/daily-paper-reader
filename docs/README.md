@@ -6,82 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-13
-- 运行时间：2026-05-13 21:37:26 UTC
+- 最新运行日期：2026-05-14
+- 运行时间：2026-05-14 20:44:40 UTC
 - 运行状态：成功
-- 本次总论文数：20
-- 精读区：9
+- 本次总论文数：17
+- 精读区：6
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度解析 20 篇 AI 论文，重点攻克生成式 VLA 模型的在线适配与长程机器人规划难题。
-核心突破在于利用“成功记忆”引导 VLA 实时进化，并提出信噪比感知分布以消除规划中的采样误差。
-推荐关注视觉带宽优化与多智能体拓扑演进，这是提升具身智能决策效率与鲁棒性的关键路径。
-- 详情：[/202605/13/README](/202605/13/README)
+今日精选17篇前沿论文，重点聚焦测试时（Test-time）推理加速与扩散模型稀疏化技术。
+两大高分研究展示了通过投机采样与稀疏化策略，能显著提升动作扩散模型的生成速度与推理效率。
+建议关注大模型在推理阶段的性能优化方案，这是实现实时交互与端侧部署的关键路径。
+- 详情：[/202605/14/README](/202605/14/README)
 
 ### 精读区论文标签
-1. [Retrieve-then-Steer: Online Success Memory for Test-Time Adaptation of Generative VLAs](/202605/13/2605.10094v2-retrieve-then-steer-online-success-memory-for-test-time-adaptation-of-generative-vlas)  
-   标签：评分：10.0/10、query:tta
-   evidence：针对生成式VLA的在线成功记忆引导测试时间自适应
-2. [Drift is a Sampling Error: SNR-Aware Power Distributions for Long-Horizon Robotic Planning](/202605/13/2605.09537v1-drift-is-a-sampling-error-snr-aware-power-distributions-for-long-horizon-robotic-planning)  
-   标签：评分：9.5/10、query:tta
-   evidence：视觉-语言-动作（VLA）模型的免训练推理时间计算框架
-3. [Overcoming Dynamics-Blindness: Training-Free Pace-and-Path Correction for VLA Models](/202605/13/2605.11459v1-overcoming-dynamics-blindness-training-free-pace-and-path-correction-for-vla-models)  
-   标签：评分：9.5/10、query:tta
-   evidence：VLA模型的免训练推理阶段算子
-4. [Failing Forward: Adaptive Failure-Informed Learning for Vision-Language-Action Models](/202605/13/2605.08434v1-failing-forward-adaptive-failure-informed-learning-for-vision-language-action-models)  
+1. [Test-Time Speculation](/202605/14/2605.09329v1-test-time-speculation)  
    标签：评分：9.0/10、query:tta
-   evidence：利用在线展开对视觉-语言-动作（VLA）模型进行自适应失败告知学习
-5. [Preserving Foundational Capabilities in Flow-Matching VLAs through Conservative SFT](/202605/13/2605.08879v1-preserving-foundational-capabilities-in-flow-matching-vlas-through-conservative-sft)  
+   evidence：投机采样器的测试时间自适应以匹配长输出目标模型
+2. [Test-time Sparsity for Extreme Fast Action Diffusion](/202605/14/2605.13316v1-test-time-sparsity-for-extreme-fast-action-diffusion)  
    标签：评分：9.0/10、query:tta
-   evidence：一种使视觉-语言-动作（VLA）模型适应目标分布的优化目标
-6. [Continual Harness: Online Adaptation for Self-Improving Foundation Agents](/202605/13/2605.09998v1-continual-harness-online-adaptation-for-self-improving-foundation-agents)  
+   evidence：测试时间稀疏性以加速开放环境中的动作扩散
+3. [Query-Conditioned Test-Time Self-Training for Large Language Models](/202605/14/2605.13369v1-query-conditioned-test-time-self-training-for-large-language-models)  
    标签：评分：9.0/10、query:tta
-   evidence：自我改进具身智能体的在线自适应
-7. [Test-Time Personalization: A Diagnostic Framework and Probabilistic Fix for Scaling Failures](/202605/13/2605.10991v1-test-time-personalization-a-diagnostic-framework-and-probabilistic-fix-for-scaling-failures)  
-   标签：评分：9.0/10、query:tta
-   evidence：测试时间缩放的理论上限与统一缩放定律
-8. [OLIVIA: Online Learning via Inference-time Action Adaptation for Decision Making in LLM ReAct Agents](/202605/13/2605.11169v1-olivia-online-learning-via-inference-time-action-adaptation-for-decision-making-in-llm-react-agents)  
-   标签：评分：9.0/10、query:tta
-   evidence：通过推理时间动作自适应实现LLM智能体的在线学习
-9. [Reinforcing VLAs in Task-Agnostic World Models](/202605/13/2605.12334v1-reinforcing-vlas-in-task-agnostic-world-models)  
-   标签：评分：9.0/10、query:tta
-   evidence：在任务无关世界模型中强化VLA以实现零样本自适应
+   evidence：查询条件下的测试时自训练框架，用于在推理期间调整模型参数
+4. [Test-Time Compute for Dense Retrieval: Agentic Program Generation with Frozen Embedding Models](/202605/14/2605.11374v1-test-time-compute-for-dense-retrieval-agentic-program-generation-with-frozen-embedding-models)  
+   标签：评分：8.5/10、query:tta
+   evidence：冻结模型的测试时计算与推理程序
+5. [A$^2$RD: Agentic Autoregressive Diffusion for Long Video Consistency](/202605/14/2605.06924v1-a2rd-agentic-autoregressive-diffusion-for-long-video-consistency)  
+   标签：评分：8.0/10、query:tta
+   evidence：用于长视频一致性的分层测试时间自我改进
+6. [Gate-and-Merge: Zero-shot Compositional Personalization of Vision Language Models](/202605/14/2605.08702v1-gate-and-merge-zero-shot-compositional-personalization-of-vision-language-models)  
+   标签：评分：8.0/10、query:tta
+   evidence：视觉语言模型在测试时的零样本组合个性化
 
 ### 速读区论文标签
-1. [One Token Per Frame: Reconsidering Visual Bandwidth in World Models for VLA Policy](/202605/13/2605.07931v1-one-token-per-frame-reconsidering-visual-bandwidth-in-world-models-for-vla-policy)  
-   标签：评分：8.5/10、query:tta
-   evidence：利用自适应注意力对VLA策略的世界模型进行调整
-2. [Failing Forward: Adaptive Failure-Informed Learning for Vision-Language-Action Models](/202605/13/2605.08434v2-failing-forward-adaptive-failure-informed-learning-for-vision-language-action-models)  
-   标签：评分：8.5/10、query:tta
-   evidence：针对VLA模型的自适应故障感知学习，在线处理分布外故障。
-3. [TacoMAS: Test-Time Co-Evolution of Topology and Capability in LLM-based Multi-Agent Systems](/202605/13/2605.09539v1-tacomas-test-time-co-evolution-of-topology-and-capability-in-llm-based-multi-agent-systems)  
-   标签：评分：8.5/10、query:tta
-   evidence：LLM系统中拓扑与能力的测试时间协同演化
-4. [Dynamic Cross-Modal Prompt Generation for Multimodal Continual Instruction Tuning](/202605/13/2605.10765v1-dynamic-cross-modal-prompt-generation-for-multimodal-continual-instruction-tuning)  
-   标签：评分：8.5/10、query:tta
-   evidence：多模态大语言模型的实例级自适应
-5. [CRAFT: Forgetting-Aware Intervention-Based Adaptation for Continual Learning](/202605/13/2605.05732v2-craft-forgetting-aware-intervention-based-adaptation-for-continual-learning)  
+1. [ASACK : Adaptive Safe Active Continual Koopman Learning for Uncertain Systems with Contractive Guarantees](/202605/14/2605.09659v1-asack--adaptive-safe-active-continual-koopman-learning-for-uncertain-systems-with-contractive-guarantees)  
+   标签：评分：8.0/10、query:tta
+   evidence：机器人应用中不确定系统的在线自适应
+2. [Evolving-RL: End-to-End Optimization of Experience-Driven Self-Evolving Capability within Agents](/202605/14/2605.10663v1-evolving-rl-end-to-end-optimization-of-experience-driven-self-evolving-capability-within-agents)  
+   标签：评分：8.0/10、query:tta
+   evidence：在部署时适应新任务的自我进化能力
+3. [Task-Adaptive Embedding Refinement via Test-time LLM Guidance](/202605/14/2605.12487v1-task-adaptive-embedding-refinement-via-test-time-llm-guidance)  
+   标签：评分：8.0/10、query:tta
+   evidence：实时任务自适应嵌入精炼
+4. [Instance-Adaptive Online Multicalibration](/202605/14/2605.09273v1-instance-adaptive-online-multicalibration)  
    标签：评分：7.5/10、query:tta
-   evidence：使用低秩干预的LLM持续自适应框架
-6. [Semantic-Aware Adaptive Visual Memory for Streaming Video Understanding](/202605/13/2605.07897v1-semantic-aware-adaptive-visual-memory-for-streaming-video-understanding)  
+   evidence：针对流式序列的实例自适应在线多校准
+5. [Evading Visual Aphasia: Contrastive Adaptive Semantic Token Pruning for Vision-Language Models](/202605/14/2605.09429v1-evading-visual-aphasia-contrastive-adaptive-semantic-token-pruning-for-vision-language-models)  
    标签：评分：7.5/10、query:tta
-   evidence：流式视频理解的自适应视觉记忆
-7. [When Adaptation Fails: A Gradient-Based Diagnosis of Collapsed Gating in Vision-Language Prompt Learning](/202605/13/2605.09549v1-when-adaptation-fails-a-gradient-based-diagnosis-of-collapsed-gating-in-vision-language-prompt-learning)  
+   evidence：用于VLM自适应推理的免训练剪枝框架
+6. [Personal Visual Context Learning in Large Multimodal Models](/202605/14/2605.10936v1-personal-visual-context-learning-in-large-multimodal-models)  
    标签：评分：7.5/10、query:tta
-   evidence：视觉语言提示学习中自适应失败的诊断分析
-8. [Hystar: Hypernetwork-driven Style-adaptive Retrieval via Dynamic SVD Modulation](/202605/13/2605.10009v1-hystar-hypernetwork-driven-style-adaptive-retrieval-via-dynamic-svd-modulation)  
-   标签：评分：7.5/10、query:tta
-   evidence：针对查询风格的逐输入自适应轻量级框架
-9. [PRIMED: Adaptive Modality Suppression for Referring Audio-Visual Segmentation via Biased Competition](/202605/13/2605.07154v1-primed-adaptive-modality-suppression-for-referring-audio-visual-segmentation-via-biased-competition)  
+   evidence：在多模态大模型中使用用户特定视觉上下文的提示时能力
+7. [Online Localized Conformal Prediction](/202605/14/2605.05497v2-online-localized-conformal-prediction)  
+   标签：评分：7.0/10、query:tta
+   evidence：时间序列不确定性量化的在线自适应
+8. [EGA: Adapting Frozen Encoders for Vector Search with Bounded Out-of-Distribution Degradation](/202605/14/2605.05674v2-ega-adapting-frozen-encoders-for-vector-search-with-bounded-out-of-distribution-degradation)  
+   标签：评分：7.0/10、query:tta
+   evidence：在部署时针对分布外查询调整冻结的编码器
+9. [Rethinking Adapter Placement: A Dominant Adaptation Module Perspective](/202605/14/2605.06183v1-rethinking-adapter-placement-a-dominant-adaptation-module-perspective)  
    标签：评分：6.5/10、query:tta
-   evidence：多模态线索的自适应模态抑制
-10. [CoLVR: Enhancing Exploratory Latent Visual Reasoning via Contrastive Optimization](/202605/13/2605.08802v1-colvr-enhancing-exploratory-latent-visual-reasoning-via-contrastive-optimization)  
+   evidence：模型自适应中最佳适配器放置的敏感性探测
+10. [GazeVLM: Active Vision via Internal Attention Control for Multimodal Reasoning](/202605/14/2605.07817v1-gazevlm-active-vision-via-internal-attention-control-for-multimodal-reasoning)  
    标签：评分：6.5/10、query:tta
-   evidence：增强多模态大模型中的探索性潜视觉推理
-11. [CrossVL: Complexity-Aware Feature Routing and Paired Curriculum for Cross-View Vision-Language Detection](/202605/13/2605.09802v1-crossvl-complexity-aware-feature-routing-and-paired-curriculum-for-cross-view-vision-language-detection)  
+   evidence：多模态推理的主动视觉与内部注意力控制
+11. [See What Matters: Differentiable Grid Sample Pruning for Generalizable Vision-Language-Action Model](/202605/14/2605.11817v1-see-what-matters-differentiable-grid-sample-pruning-for-generalizable-vision-language-action-model)  
    标签：评分：6.5/10、query:tta
-   evidence：视觉语言模型的复杂度感知特征路由
+   evidence：VLA模型的任务感知连续令牌重采样
 
 
 <div class="dpr-home-promo-card">

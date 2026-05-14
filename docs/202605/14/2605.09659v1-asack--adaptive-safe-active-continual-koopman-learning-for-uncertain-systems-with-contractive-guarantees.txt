@@ -1,0 +1,2315 @@
+Title: ASACK : Adaptive Safe Active Continual Koopman Learning for Uncertain Systems with Contractive Guarantees
+
+URL Source: https://arxiv.org/pdf/2605.09659v1
+
+Published Time: Tue, 12 May 2026 02:11:27 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+> 1
+
+# ASACK : Adaptive Safe Active Continual Koopman Learning for Uncertain Systems with Contractive Guarantees 
+
+Chandan Kumar Sah*, Rajpal Singh*, and Jishnu Keshavan 
+
+Abstract —Koopman operator theory provides a powerful framework for representing nonlinear dynamics through a linear operator acting on lifted observables, enabling the use of linear control techniques for nonlinear systems. However, Koopman models are typically learned from data and often degrade in performance under model uncertainty and distributional shifts between training and deployment. Although several works have explored online adaptation to address this issue, many rely on neural network-based updates that introduce significant computational overhead and lack formal safety guarantees, limiting their suitability for real-time and safety-critical robotic applications. In this work, we propose a unified framework for continual adaptive Koopman learning that enables safe and effi-cient online refinement of learned models during task execution. An autoencoder-based Koopman model is first learned offline and subsequently refined online through a contractive adap-tation law, which provides theoretical convergence guarantees under distributional shifts and model uncertainty. To improve data efficiency and accelerate model refinement, the adaptation mechanism is integrated with an active learning strategy that drives the system to collect informative data while accomplishing task objectives. The resulting control problem is formulated as a nonconvex optimization problem incorporating both active learning objectives and safety constraints. We further derive theoretical bounds on model approximation error and show how these bounds can be incorporated within a robust Model Predictive Control (MPC) framework to provide formal safety guarantees. The proposed approach unifies learning, excitation, and safety within a single control framework without sacrific-ing real-time feasibility. Extensive simulation and experimental studies across various robotic platforms demonstrate superior performance compared to state-of-the-art baselines in safety-critical environments. 
+
+I. I NTRODUCTION 
+
+Control of nonlinear dynamical systems is a central chal-lenge in engineering, arising across robotic manipulation, aerial vehicles, legged locomotion, and a wide range of phys-ical and biological systems [1]–[4]. Although model-based control techniques for nonlinear systems are well developed, they tend to be system-specific and computationally demand-ing, particularly when optimality or hard constraints must be enforced [5]. Linear control theory, in contrast, provides a well-established and extensive set of tools that are both computationally efficient and scalable, supported by strong theoretical guarantees [6]. This disparity has long motivated 
+
+* These authors have contributed equally to the present work. The authors are with the Department of Mechanical Engineering, Indian Institute of Science, Bangalore, Karnataka 560012, India (email: chandanks@iisc.ac.in, rajpalsingh@iisc.ac.in, kjishnu@iisc.ac.in ). 
+
+efforts to construct globally valid linear representations of non-linear systems, enabling linear analysis and control synthesis beyond the narrow operating regimes afforded by the first-order Taylor linearization. Koopman operator theory provides a principled framework for addressing this challenge by representing the evolution of a nonlinear system through a linear operator acting on an infinite-dimensional space of observable functions [7]. This yields a linear, albeit generally infinite-dimensional, representation of the underlying nonlinear dynamics [8]. In practice, finite-dimensional approximations of the Koopman operator are obtained from data through methods such as Dy-namic Mode Decomposition (DMD) [9], Extended Dynamic Mode Decomposition (EDMD) [10], and neural network-based approaches [11]. Extensions of these methods have been developed for controlled and non-autonomous systems [12]. Within robotics, Koopman representations have been applied to industrial manipulators [13], [14], soft robots [15], [16], aerial vehicles [17]–[19], and legged systems [20], [21], demonstrating that linear control and optimization techniques can be applied to complex nonlinear platforms with strong empirical performance. Despite these successes, a fundamental limitation arises in closed-loop deployment, as learned Koopman models are trained on data distributions that rarely reflect the true operat-ing environment. Consider a robotic manipulator whose Koop-man model is identified under nominal payload conditions and then operated with an uncharacterized end-effector load, a routine occurrence in flexible manufacturing. The inertial coupling terms change, the true Koopman operator shifts, and the offline-learned model matrices no longer represent the actual lifted dynamics. In closed-loop model predictive control (MPC), this mismatch accumulates over the predic-tion horizon, degrading tracking performance and, critically, invalidating any safety guarantees derived under the nominal model. The same failure mode arises when aerial vehicles encounter wind gusts, when soft robots deform under contact, or when any system operates outside the envelope of its training data. The core difficulty is not that distributional shift is unforeseeable; it is that existing Koopman learning pipelines provide no principled mechanism to detect and correct it dur-ing deployment, and the existing online adaptation approaches either lack convergence guarantees or impose computational costs incompatible with real-time robotic control. Several recent works have addressed online adaptation within the Koopman framework. [22] augments an offline 
+
+> arXiv:2605.09659v1 [cs.RO] 10 May 2026 2
+
+Koopman model with an auxiliary neural network that learns the residual mismatch in real time, compensating for para-metric uncertainties and unmodeled perturbations. [23] ex-tends this by jointly optimizing both the lifting map and operator matrices online via a unified loss function with soft target-network stabilization. [24] incrementally expands the lifted state dimension to provably reduce approximation error, enabling scalable MPC for high-dimensional legged robots. [25] takes a Bayesian meta-learning perspective, imposing a conjugate prior over Koopman operators meta-learned across multiple environments to support closed-form, optimization-free online adaptation under distributional shift. These ap-proaches collectively demonstrate that the online adaptation of Koopman models is feasible and beneficial. However, each approach has limitations that become con-sequential in safety-critical robotic deployment. The neural network-based adaptation of [22] and [23] requires iterative gradient updates at every control step, creating a fundamental tension: the number of gradient steps must be small enough to meet latency requirements, yet sufficient to meaningfully reduce model error. Under rapid distributional shift, precisely the very conditions that motivate adaptation, this trade-off typically favors speed over accuracy, and neither approach provides a formal guarantee that the adapted parameters con-verge to their true values. The incremental approach of [24] sidesteps the convergence question by growing the model dimension, but introduces its own real-time burden as the lifted-state MPC problem scales. [25] achieves closed-form updates but requires that the deployment distribution lie within the support of the meta-training distribution, an assumption that is difficult to verify and may fail when robots encounter genuinely novel operating conditions. In contrast, [26] presents a pseudo-inverse-based online adaptation algorithm that is computationally lightweight but lacks any convergence anal-ysis, offering no assurance that the adapted model improves over the nominal one in a measurable sense. A subtler but equally important limitation shared by these works concerns data quality during online adaptation. Closed-loop controllers are designed to minimize tracking error and control effort, which drives the system toward smooth, repeti-tive trajectories. As a result, the regressor accumulated online becomes highly correlated over time, rendering the regression problem ill-conditioned and stalling parameter convergence, even when a formally valid adaptation law is in place. This phenomenon is well understood in adaptive control as the persistent excitation requirement, but it is rarely addressed ex-plicitly in Koopman-based learning. The EDMD-based active learning approach of [27] is a notable exception, generating informative trajectories through mode insertion, but it does not enforce state or input constraints, making it unsuitable for safety-critical systems where exploratory excitation could lead to constraint violation or collision. Moreover, the absence of an offline training phase means the Koopman operator is effectively initialized without a reliable prior, potentially leading to unstable behavior during the initial stages of closed-loop operation. To address these limitations, we propose a unified frame-work in which learning, excitation, and safety are jointly optimized within a single constrained formulation. First, rather than relying on neural network-based updates without formal convergence guarantees, we derive an explicit contractive adaptation law for the Koopman operator parameters. By formulating the parameter error dynamics as a contracting system governed by the windowed data Gramian, we obtain provable exponential convergence of the estimates under per-sistent excitation and an explicit ultimate bound proportional to the operator drift rate under time-varying dynamics, a closed-form guarantee absent from existing Koopman adap-tation approaches that rely on gradient-based or purely data-driven updates. Second, because the convergence rate depends directly on the conditioning of the data Gramian, we couple the adaptation law with a D-optimal active learning objec-tive , the log-determinant of the predicted regressor Gramian, that promotes excitation simultaneously across all regressor directions, targeting those least excited by the current closed-loop trajectory. Unlike [27], this objective is embedded within a constrained receding-horizon optimization that enforces actuator limits, state feasibility, and collision avoidance at every step, ensuring that information-driven excitation never compromises operational safety. Third, we derive a composite disturbance bound that accounts for both the model-mismatch error and the perturbation introduced by the online model update, and embed this bound as a tightening scalar within a CBF-constrained MPC. This yields two complementary formal safety certificates: a deterministic forward invariance guarantee and a distribution-free probabilistic guarantee via conformal prediction that remains tight even when the analytical bound is conservative near the contraction boundary. The main contributions of this work are: 1) Contractive adaptation law. We derive a closed-form update rule for the Koopman operator parameters whose error dynamics are governed by a linear contraction in the windowed data Gramian, guaranteeing exponential convergence of parameter estimates under persistent excitation and ultimate boundedness under time-varying dynamics (Theorem 1). 2) D-optimal active learning. We formulate an information-seeking objective, the log-determinant of the predicted Gramian, that maximizes excitation across all regressors directions simultaneously, directly accelerating the contraction established in Contribution 1, with a formal lower bound on Gramian conditioning along optimal trajectories (Theorem 2). 3) Constrained active-learning MPC. We embed the ac-tive learning objective in a nonconvex MPC program with explicit enforcement of actuator limits, state con-straints, and discrete-time control barrier function (CBF) conditions, ensuring that information-driven excitation remains safe at every time step (Section III). 4) Formal safety guarantees. We jointly prove recursive feasibility of the MPC at every step, forward invariance of the safe set S, and ultimate boundedness of zk
+
+(Theorem 4, Section IV). The key technical component is a composite disturbance bound δ+ 
+
+> k
+
+= vmax ¯Ek(1 + 
+
+ηv max 
+
+√w) that captures both model-mismatch error and 3
+
+the perturbation introduced by updating ˆW k online, a term absent from existing Koopman safety analyzes and essential for recursive feasibility. When ρ ≈ 1
+
+renders δ+ 
+
+> k
+
+conservative, a complementary distribution-free probabilistic certificate is provided via conformal prediction (Theorem 5), with a data-driven tightening scalar δconf  
+
+> k
+
+calibrated from observed residuals that guar-antees per-step safety coverage 1 − χ and finite-horizon coverage 1 − T χ .5) Experimental validation. We validate the proposed framework, termed ASACK, in simulation on a 3R serial manipulator and a planar quadrotor under wind disturbances, on a 7-DoF Franka Research 3 arm in a high-fidelity Gazebo environment and on Turtlebot3 in real-world experiments. ASACK completes tasks where existing active learning approaches [27] fail entirely, maintains zero safety violations in constrained environ-ments, and achieves a lower RMSE tracking error than the neural network-based adaptive baselines [22] across all tested trajectories. (Section V). The remainder of this paper is organized as follows. Sec-tion II reviews the Koopman operator framework, introduces the adaptive Koopman model, and derives the contractive adaptation law with its convergence analysis. Section III presents the active learning formulation and the constrained MPC problem. Section IV establishes deterministic and prob-abilistic safety guarantees. Section V presents simulation and experimental results. Section VI concludes. II. M ETHODOLOGY 
+
+A. Koopman Operator Theory Preliminaries 
+
+Consider a nonlinear autonomous system 
+
+˙x = f (x), (1) where x ∈ X ⊂ Rn and f : X → X is Lipschitz continuous on X . The corresponding discrete-time flow map is xk+1 = S(xk), where S : X → X . Rather than tracking the evolution of the state x directly, Koopman operator the-ory shifts attention to the evolution of observable functions 
+
+σ : X → C defined on the state space [7]. The Koopman operator K is an infinite-dimensional linear operator acting on the space of observables via composition with the flow: 
+
+K ◦ σ(xk) = σ ◦ S(xk) = σ(xk+1 ). (2) The linearity of K is the key property: regardless of how nonlinear the underlying dynamics f are, the induced evolution of any observable is governed by a linear operator. An exact finite-dimensional Koopman representation exists only for re-stricted classes of systems for which a finite invariant subspace of observables can be identified analytically [8], [28]. For general nonlinear systems, a finite-dimensional approximation must be sought from data, which introduces a truncation error that the adaptive framework developed in this paper is designed to track and correct online. The Koopman framework is also extended to controlled systems. Consider a control-affine system of the form 
+
+˙x = f0(x) + 
+
+> m
+
+X
+
+> i=1
+
+fi(x) ui, (3) where u = [ u1, . . . , u m]⊤ ∈ Rm is the control input, f0 :
+
+X → Rn is the drift vector field, and fi : X → Rn are the control vector fields, all assumed Lipschitz continuous on 
+
+X . The evolution of a time-varying observable ψ(t, x) along trajectories of (3) is governed by 
+
+∂ψ ∂t = Lf0 ψ +
+
+> m
+
+X
+
+> i=1
+
+ui Lfi ψ, ψ(0 , x) = ϑ(x0), (4) where Lfi = fi · ∇ denotes the Lie derivative along fi [22], [29]. Koopman eigenfunctions (KEFs) {ϕj } are the preferred basis for the observable space, as they diagonalize the action of 
+
+K and admit the state , x = Ppi=1 ϕi(x) vxi as p → ∞ , where 
+
+vxi ∈ Cp are the corresponding Koopman eigenmodes [8]. Defining the lifting map z = T (x) = [ ϕ1(x), . . . , ϕ p(x)] ⊤,system (3) takes the form 
+
+˙z = Lf0 z +
+
+> m
+
+X
+
+> i=1
+
+Lfi T (x) ui, x = Cz , (5) where C = [ vx 
+
+> 1
+
+| · · · | vxn]. The dynamics in (5) remain nonlinear in the control input through the terms Lfi T (x).The following assumptions, standard in the Koopman control literature [22], [29], are imposed to obtain a tractable finite-dimensional linear or bilinear representation. 
+
+Assumption 1 (Drift invariance) . There exists a finite set of KEFs {ϕj : j = 1, . . . , p }, p ∈ N, p < ∞, such that Lf0 T (x) ∈ span {ϕ1, . . . , ϕ p}, i.e., the span of the chosen KEFs forms an invariant subspace under the drift Lie derivative. 
+
+Assumption 2 (Control invariance) . The span {ϕ1, . . . , ϕ p}
+
+forms an invariant subspace of Lfi for all i = 1 , . . . , m .
+
+Assumption 3 (Linear control coupling) . Lfi T (x) u ∈
+
+span {u1, . . . , u m} for all i = 1 , . . . , m .Assumptions 1-2 require closure of the chosen observable subspace under both drift and control Lie derivatives, a con-dition that holds exactly only for special system classes but is routinely approximated with high fidelity for a broad range of nonlinear robotic systems [15], [18], [22]. Assumption 3 further decouples state-dependent control gains from the lifted dynamics, yielding a representation that is linear in u. When only Assumptions 1 and 2 hold, the resulting lifted model is bilinear in the state-input pair; when Assumption 3 ad-ditionally holds; it reduces to a fully linear model. While bilinear representations offer greater modeling fidelity by capturing state-input coupling, they render the MPC sub-problem weakly nonlinear and substantially increase online computational cost [22]. Under Assumptions 1–3, the continuous-time finite-dimensional Koopman dynamics of (3) are 
+
+˙z = Acz + Bcu, x = Cz , (6) 4
+
+where Ac ∈ Rp×p, Bc ∈ Rp×m, and C ∈ Rn×p are the Koopman model matrices and p is the dimension of the invariant subspace. A proof of this transformation is given in [29]. The corresponding discrete-time representation, used throughout the remainder of this paper, is 
+
+zk+1 = Az k + Bu k, xk+1 = Cz k+1 , (7) where A ∈ Rp×p and B ∈ Rp×m are obtained by zero-order-hold discretisation of (Ac, Bc) or identified directly from data. For reference, the bilinear discrete-time form, retained here for completeness but not used in the adaptive controller, is 
+
+zk+1 = Az k + B(zk ⊗ uk), xk+1 = Cz k+1 , (8) where ⊗ denotes the Kronecker product and B ∈ Rp×mp .Truncating the infinite-dimensional Koopman operator to the p-dimensional subspace spanned by T (x) introduces an approximation error ϵk such that the true lifted dynamics satisfy 
+
+zk+1 = Az k + Bu k + ϵk, (9) where ϵk encapsulates both the truncation error of the finite-dimensional projection and any mismatch between the nominal model matrices (A, B) and the true system dynamics. When the system operates under a distributional shift, the central scenario considered in this paper, the dominant contribution to 
+
+ϵk arises from changes in the true Koopman operator rather than from truncation alone. The adaptive module developed in Section II-B explicitly estimates and compensates for this mismatch online, and the safety framework in Section IV provides formal guarantees by treating the residual error as a bounded disturbance within a robust MPC formulation. 
+
+B. Adaptive Koopman Module 
+
+The nominal Koopman model (7) is identified offline under a specific operating condition. When the system is subse-quently deployed under different conditions, a manipulator car-rying an uncharacterized payload, a quadrotor subject to wind gusts, or any system operating outside its training envelope, the true dynamics deviate from the nominal model, and the offline-learned matrices (A, B) no longer accurately represent the lifted dynamics. This section formalizes the perturbation model that captures such deviations and introduces the adap-tive estimation problem that the online learning framework is designed to solve. To model distributional shift, we augment the nominal control-affine system (3) with unknown perturbation terms: 
+
+˙x = f0(x) + ˜f0(x) + 
+
+> m
+
+X
+
+> i=1
+
+ fi(x) + ˜fi(x)ui, (10) where ˜f0 : X → Rn and ˜fi : X → Rn are unknown perturba-tions arising from parameter variations, unmodeled dynamics, or environmental disturbances. The known quantities available from offline training are the lifting map ψ(·) = T (·), and the model matrices (A, B, C). The perturbation terms ˜f0 and { ˜fi}
+
+are unknown and their effect on the nominal Koopman model must be inferred indirectly from closed-loop measurements. Under Assumptions 1-3, the perturbed physical dynam-ics (10) induce additive corrections to the nominal Koopman matrices in the lifted space. We formalize this as follows. 
+
+Definition 1 (Perturbed Koopman matrices) . Let ∆Ak ∈
+
+Rp×p and ∆Bk ∈ Rp×m denote the time-varying corrections to the nominal Koopman matrices induced by the perturbations 
+
+˜f0 and { ˜fi} at time step k. The true perturbed Koopman matrices are defined as 
+
+˜Ak := A + ∆ Ak, ˜Bk := B + ∆ Bk, (11) and the stacked true operator is W ∗ 
+
+> k
+
+:= [ ˜Ak, ˜Bk] ∈
+
+Rp×(p+m).The time index k on ˜Ak and ˜Bk reflects the assumption that the perturbation may itself be time-varying; for instance, a wind gust whose intensity changes during flight. The rate of temporal variation is assumed to be bounded, as formalized below. 
+
+Assumption 4 (Bounded operator drift) . There exists a con-stant ν ≥ 0 such that 
+
+W ∗ 
+
+> k+1
+
+− W ∗  
+
+> kF
+
+≤ ν, ∀ k ≥ 0. (12) Assumption 4 is a standard bounded-variation condition in time-varying adaptive estimation [22]. It does not require the perturbation to be small or slowly varying in an absolute sense, only that its rate of change is bounded. When ν = 0 ,the true operator is time-invariant, and the adaptation law reduces to a standard recursive least-squares estimator. When 
+
+ν > 0, the adaptation law tracks a drifting target, and the achievable estimation accuracy is fundamentally limited by ν,as established in Theorem 1. The non-stationarity introduced by ˜f0 and { ˜fi} could in principle affect both the lifting map ψ(·) and the linear opera-tor matrices (A, B). Adapting ψ(·) online would require non-linear function approximation and iterative backpropagation at every control step, imposing a computational cost incom-patible with real-time deployment. The following assumption restricts online adaptation to the linear operator parameters, preserving convexity and computational tractability of the update law. 
+
+Assumption 5 (Fixed lifting map) . The perturbed dynam-ics (10) remain representable within the span of the observ-able functions {ϕ1, . . . , ϕ p} learned during offline training. Consequently, the lifting map ψ(·) is held fixed during online deployment, and adaptation is performed exclusively over the Koopman operator matrices (A, B).The first claim of Assumption 5, that the perturbed dynam-ics remain within the offline-learned observable subspace, is supported by the theoretical analysis of [22], which establishes sufficient conditions under which perturbations of the form in (10) admit a consistent Koopman representation within a fixed finite-dimensional subspace. The second claim, that adaptation is restricted to the linear operator parameters, is an algorithmic consequence: by confining updates to (A, B), the adaptation problem remains a linear least-squares problem in the operator parameters, which admits efficient closed-form 5
+
+update rules with provable convergence guarantees, as derived in Section II-D. Assumption 5 may be violated when the distri-butional shift is so severe that the perturbed dynamics require observable directions outside the offline-learned subspace. In such cases, the residual approximation error ϵk in (9) will not decay to zero even after full adaptation, and the safety margins in Section IV must absorb this irreducible component. Under Assumptions 1-5, the perturbed physical system (10) admits the following discrete-time linear Koopman represen-tation in the lifted space: 
+
+zk+1 = ˜Akzk + ˜Bkuk, xk = Cz k, (13) which can be written compactly using the stacked regressor 
+
+vk := [ z⊤ 
+
+> k
+
+, u⊤ 
+
+> k
+
+]⊤ ∈ Rp+m as 
+
+zk+1 = W ∗
+
+> k
+
+vk. (14) Since W ∗ 
+
+> k
+
+is unknown, we maintain an adaptive estimate 
+
+ˆW k = [ ˆAk, ˆBk], where ˆAk ∈ Rp×p and ˆBk ∈ Rp×m are the estimated Koopman matrices at step k. The estimation error is 
+
+Ek := W ∗ 
+
+> k
+
+− ˆW k ∈ Rp×(p+m), (15) and the one-step prediction error in the lifted space is 
+
+ek+1 := zk+1 − ˆW kvk = Ekvk. (16) The objective of the online adaptation law, derived in Section II-D, is to drive Ek → 0 as rapidly as possible. As will be shown in Theorem 1, the convergence rate depends directly on the conditioning of the windowed data Gramian 
+
+Gk = V kΓV ⊤ 
+
+> k
+
+, where V k is the matrix of stacked regressors over a sliding window. This dependence motivates the active learning framework of Section III, which explicitly shapes the closed-loop trajectory to maintain a well-conditioned Gramian and thereby maximize the rate of parameter convergence. 
+
+C. Neural Network-Based Offline Learning 
+
+The offline training phase produces the three quantities that the online adaptive module requires: the lifting map ψ(·), the nominal Koopman matrices (A, B), and the reconstruction matrix C. These are learned jointly from a nominal input-output dataset 
+
+Dnom = (Xi, Y i, U i) Mi=1 , (17) where Xi and Y i are matrices of consecutive state obser-vations and U i the corresponding inputs, collected under nominal operating conditions. Once training is complete, ψ(·),
+
+A, B, and C are held fixed for the remainder of deployment, in accordance with Assumption 5. The quality of the offline-learned ψ(·) determines the validity of that assumption: if the nominal training data provides adequate coverage of the observable subspace, the perturbed dynamics will remain representable within the span of {ϕ1, . . . , ϕ p}, and online adaptation over (A, B) alone will be sufficient to compensate for distributional shift. We adopt the autoencoder-based Koopman architecture of [22], illustrated in Fig. 1. In this architecture, the encoder network realizes the lifting map zk = ψ(xk) ∈ Rp, a linear layer learns the Koopman operator matrices A and B
+
+governing the lifted dynamics zk+1 = Az k + Bu k, and a linear decoder realizes the reconstruction ˆxk = Cz k. The autoencoder structure is natural for this problem because it enforces the Koopman requirement that the lifted state be both dynamically consistent, evolving linearly under (A, B), and physically interpretable, decodable back to the original state space via C.The network is trained end-to-end by minimizing a com-posite loss that encodes the three structural requirements of a valid Koopman representation: 
+
+Lnom = α1Lrec + α2Lpred + α3Llift + γ1∥Θ∥1 + γ2∥Θ∥2,
+
+(18) where Θ denotes all trainable network parameters and 
+
+α1, α 2, α 3, γ 1, γ 2 > 0 are weighting hyperparameters. The three loss terms are 
+
+Lrec = xk − Cz k
+
+> 2
+
+, (19) 
+
+Lpred = xk+1 − C ˆzk+1 
+
+> 2
+
+, (20) 
+
+Llift = zk+1 − ˆzk+1 
+
+> 2
+
+, (21) where ˆzk+1 := Az k + Bu k is the one-step linear prediction in the lifted space. Lrec enforces that C is a valid decoder, i.e., that Cψ(x) ≈ x for all x in the training distribution. 
+
+Lpred enforces that the linear lifted dynamics predict the next physical state accurately. Llift enforces the Koopman invari-ance condition directly in the lifted space; it is the loss term most tightly coupled to the requirement that span {ϕ1, . . . , ϕ p}
+
+be approximately invariant under the system flow. The L1 and 
+
+L2 regularization terms penalize all trainable parameters Θ to reduce overfitting; specific values of all hyperparameters are tabulated in Section V. Upon convergence, offline training yields the tuple 
+
+{ψ(·), A, B, C}. The matrices (A, B) initialize the adaptive estimates: ˆA0 = A and ˆB0 = B, so that the initial parameter estimation error is E0 = W ∗ 
+
+> 0
+
+− ˆW 0 = [∆ A0, ∆B0]. The magnitude ∥E0∥F quantifies the initial mismatch between the nominal and true Koopman operators at deployment time and appears explicitly in the finite-time convergence bound of Theorem 1: a higher-quality offline model, one trained on data that better covers the deployment distribution, yields a smaller ∥E0∥F and therefore faster convergence of the online adaptation law. 
+
+D. Online Adaptation Law 
+
+The offline-trained model, {ψ(·), A, B, C} accurately rep-resents the nominal dynamics but exhibits a non-zero estima-tion error E0 = W ∗ 
+
+> 0
+
+− ˆW 0 upon deployment under distribu-tional shift (Section II-B). The objective of the online adap-tation law is to drive the adaptive estimate ˆW k = [ ˆAk, ˆBk]
+
+toward the true time-varying operator W ∗ 
+
+> k
+
+= [ ˜Ak, ˜Bk] by incorporating closed-loop measurements sequentially as they become available. The approach of [22], which augments the offline model with an auxiliary neural network trained online to approximate 6uk
+
+> *
+
+xk,obs 
+
+xk,ref 
+
+System with uncertainties/perturbations Nominal system 
+
+zk,obs 
+
+ek=zk,obs -zk
+
+xk,uk
+
+zk zk+1 
+
+xk+1 
+
+## A,B C'(∙)
+
+Model matrices (A, B, C)
+
+Lifting function ('(∙)) 
+
+Input-output dataset Online adaptation block Offline training block Sensor noise Input disturbances 
+
+# -+
+
+Nominal Koopman-based learning algorithm 
+
+ˆˆ
+
+Wk=[ Ak Bk]ˆ ˆˆˆˆ
+
+Lifting 
+
+xk,obs zk,obs 
+
+## '(∙)
+
+> yμzmg T1
+> T2
+> larm
+> wind gust
+
+Active Learning MPC 
+
+z i+1 =Akz i+Bkui+di
+
+ˆ ˆ
+
+uiϵU, xiϵ X
+
+h(x i+1 )≥(1-®)h(x i)+ L h ±k
+
+> {u}i=kk+Np -1
+
+min ∑(|| xi - xref ,i|| 2
+
+> Q
+
+)+ || ui|| 2
+
+> R
+
+-¯ logdet (Gk+"I)^
+
+## Objective: subject to :
+
+## Tube tightening, ±k±kana := vmax (½ k|| E0|| F+(1-½ k)º/(1-½)) 
+
+±kconf := Q1-°({|| s j-sj|| 2 }j² Wk)+ "EMA 
+
+±k=( ±kana OR ±kconf )
+
+± k
+
+# +
+
+zk
+
+Adaptive Module 
+
+ˆ ˆWk=Wk-1 +´E k-1 
+
+> pred
+
+¡ Vk-1 ⸆
+
+Ek-1 
+
+> pred
+
+:=[ ek-w,ek-w+1 ,..., ek-1 ]
+
+Vk-1 :=[ Zk,obs ⸆,Uk⸆]⸆
+
+¡:=diag( °w-1 ,°w-2 ,..., °,1) 
+
+## where, ½
+
+Fig. 1. Adaptive Safe Active Koopman Control (ASACK) architecture . An offline block learns nominal Koopman model matrices (A, B, C) from input-output data via a lifting function φ(·). Online, noisy state measurements are lifted and used to adapt the Koopman operator ˆW k = [ ˆAk ˆBk] using recent prediction errors. A tube-tightening module computes uncertainty bounds δk from analytical and data-driven estimates. These are incorporated into an active learning MPC that balances tracking and exploration while enforcing safety through tightened constraints and control barrier conditions. The resulting control inputs are applied to the disturbed system, enabling safe, adaptive, and data-efficient control. the residual Ekvk, is subject to two limitations in safety-critical deployment. First, the iterative gradient updates re-quired at each control step impose a computational burden that scales with network dimension and may violate real-time latency requirements. Second, gradient-based online updates provide no formal guarantee that the adapted parameters converge to W ∗
+
+> k
+
+; parameter estimates may reduce prediction error on the observed data without converging to their true values, leaving the closed-loop stability and safety analysis without a rigorous foundation. To resolve both limitations, this section derives a contractive adaptation law for ˆW k whose update is computable in closed form via a single matrix multiplication per control step, and whose parameter error dynamics are provably contracting under the windowed data Gramian. A multi-step windowed up-date, constructed from the w most recent regressor-observation 7
+
+pairs, is employed in preference to a rank-one update because the windowed Gramian Gk (defined in (26)) accumulates exci-tation across multiple directions in regressor space, providing superior conditioning and greater robustness to measurement noise relative to a single outer-product update. The formal convergence statement is deferred to Theorem 1, which is presented after all requisite quantities have been introduced; it requires Gk to be positive definite, the persistent excitation condition that the active learning framework of Section III is formulated specifically to preserve throughout closed-loop operation. 
+
+1) Windowed Contractive Update: For a prescribed win-dow length w ≥ 1, define the stacked regressor matrix, observation matrix, and input matrix over the w most recent time steps as 
+
+V k := vk−w+1 , vk−w+2 , . . . , vk
+
+ ∈ R(p+m)×w, (22) 
+
+Zk := zk−w+2 ,obs , zk−w+3 ,obs , . . . , zk+1 ,obs 
+
+ ∈ Rp×w,
+
+(23) 
+
+U k := uk−w+1 , uk−w+2 , . . . , uk
+
+ ∈ Rm×w, (24) where vk := [ z⊤
+
+> k, obs
+
+, u⊤ 
+
+> k
+
+]⊤ ∈ Rp+m denotes the stacked regressor and zk, obs := φ(xk, obs ) denotes the observed lifted state obtained by applying the fixed encoder to the measured physical state. By construction, the j-th column of Zk is 
+
+zk−w+j+1 ,obs for j = 1, . . . , w , so that each column of 
+
+Zk is the one-step-ahead observation corresponding to the respective column of V k, consistent with the lifted dynamics 
+
+zk+1 = W ∗
+
+> k
+
+vk. An exponential weighting matrix is intro-duced to discount the contribution of observations further from the current time: 
+
+Γ := diag  γw−1, γ w−2, . . . , γ, 1 ∈ Rw×w, 0 < γ ≤ 1,
+
+(25) where forgetting factor, γ = 1 recovers the uniform window. The weighted regressor Gramian is defined as 
+
+Gk := V kΓV ⊤ 
+
+> k
+
+∈ R(p+m)×(p+m). (26) By construction, Gk is symmetric positive semidefinite, and becomes positive definite whenever the columns of V k span 
+
+Rp+m, i.e., whenever the persistent excitation condition is satisfied over the current window. The windowed prediction error matrix is defined as 
+
+Epred  
+
+> k
+
+:= Zk − ˆW kV k ∈ Rp×w, (27) whose j-th column is the one-step prediction residual 
+
+zk−w+j+1 ,obs − ˆW kvk−w+j for j = 1 , . . . , w . The adaptive Koopman update rule is given by 
+
+ˆW k+1 = ˆW k + η Epred  
+
+> k
+
+ΓV ⊤ 
+
+> k
+
+, η > 0, (28) where η is a constant step size. Invoking the identity Epred  
+
+> k
+
+=
+
+EkV k, where Ek := W ∗ 
+
+> k
+
+− ˆW k denotes the estimation error (15), the update (28) is equivalently expressed as 
+
+ˆW k+1 = ˆW k + η EkGk,
+
+which demonstrates that each update step projects the estima-tion error onto the directions spanned by the current regressor window V k, weighted by Γ.
+
+Proposition 1. Under the update law (28) , the parameter estimation error satisfies the recursion 
+
+Ek+1 = Ek(I − ηGk) + ∆k, ∆k := W ∗ 
+
+> k+1
+
+− W ∗
+
+> k
+
+.
+
+(29) 
+
+Proof. Substituting the update law (28) and the identity 
+
+Epred  
+
+> k
+
+= EkV k into the definition Ek+1 = W ∗ 
+
+> k+1
+
+− ˆW k+1 
+
+yields 
+
+Ek+1 = W ∗ 
+
+> k+1
+
+− ˆW k − ηEkV kΓV ⊤
+
+> k
+
+=  W ∗ 
+
+> k
+
+− ˆW k
+
+| {z }
+
+Ek
+
+−ηEkGk +  W ∗ 
+
+> k+1
+
+− W ∗
+
+> k
+
+| {z }
+
+∆k
+
+= Ek(I − ηGk) + ∆k.
+
+The recursion (29) decomposes the error evolution into a linear contraction term governed by the windowed Gramian 
+
+Gk and an additive perturbation ∆k attributable exclusively to temporal variation of the true operator. When Gk ≻ 0 and the step size satisfies ρk := ∥I − ηGk∥2 < 1, the linear map 
+
+Ek 7 → Ek(I − ηGk) is strictly contractive. The precise step-size condition ensuring uniform contraction and the resulting exponential convergence bound are established in Lemma 1 and Theorem 1 in the following subsection. 
+
+Lemma 1. Consider the error recursion 
+
+Ek+1 = Ek(I − ηGk) + ∆k,
+
+where Gk ⪰ 0 and η satisfies 
+
+0 < η < 2
+
+λmax (Gk) .
+
+Then the following statements hold. (i) For any Gk ⪰ 0, the update is non-expansive and 
+
+∥Ek+1 ∥F ≤ ∥ Ek∥F + ∥∆k∥F .
+
+(ii) If Gk ≻ 0, then the update is strictly contractive and 
+
+∥Ek+1 ∥F ≤ ρk∥Ek∥F +∥∆k∥F , ρk := ∥I−ηGk∥2 < 1.
+
+(iii) If in addition there exists a constant λmin > 0 such that 
+
+λmin (Gk) ≥ λmin ∀k, 
+
+then the contraction is uniform, i.e., there exists ρ ∈
+
+(0 , 1) such that 
+
+∥Ek+1 ∥F ≤ ρ∥Ek∥F + ∥∆k∥F ∀k. 
+
+Proof. By submultiplicativity of the Frobenius norm, 
+
+∥Ek+1 ∥F ≤ ∥ I − ηGk∥2 ∥Ek∥F + ∥∆k∥F . (1) Since Gk is symmetric positive semidefinite, its eigenvalues 
+
+λi(Gk) satisfy λi(Gk) ≥ 0, and 
+
+∥I − ηGk∥2 = max  
+
+> i
+
+|1 − ηλ i(Gk)|.
+
+Under the step-size condition 0 < η < 2/λ max (Gk), we have |1 − ηλ i(Gk)| ≤ 1 for all i, which proves (i). If Gk ≻ 0, then λi(Gk) > 0 for all i, and hence |1 −
+
+ηλ i(Gk)| < 1 for all i, implying ρk := ∥I − ηGk∥2 < 1 and establishing (ii). 8
+
+Finally, if λmin (Gk) ≥ λmin > 0 uniformly, then 
+
+∥I − ηGk∥2 ≤ max |1 − ηλ min |, |1 − ηλ max | =: ρ < 1,
+
+which is independent of k, yielding (iii). This contraction condition motivates the use of active learn-ing objectives that shape the closed-loop trajectory to maintain sufficient excitation, thereby preserving the contraction margin required for robust tracking of time-varying dynamics. 
+
+Theorem 1. Suppose that a) The step size satisfies ∥I −
+
+ηGk∥2 ≤ ρ < 1; b) The true Koopman operator satisfies the bounded drift assumption. Then the adaptive update satisfies, 
+
+∥Ek+1 ∥F ≤ ρ∥Ek∥F + ν, and hence, 
+
+∥Ek∥F ≤ ρk∥E0∥F + 1 − ρk
+
+1 − ρ ν. (30) 
+
+In particular, 
+
+lim sup 
+
+> k→∞
+
+∥Ek∥F ≤ ν
+
+1 − ρ . (31) 
+
+Proof. By Lemma 1 and the bounded drift assumption, 
+
+∥Ek+1 ∥F ≤ ρ∥Ek∥F + ν. Unrolling the recursion yields, 
+
+∥Ek∥F ≤ ρk∥E0∥F +
+
+> k−1
+
+X
+
+> i=0
+
+ρiν = ρk∥E0∥F + 1 − ρk
+
+1 − ρ ν. 
+
+(32) Taking the limit superior completes the proof. This result shows that estimator performance is fundamen-tally limited by the available excitation, motivating the incor-poration of active learning objectives that maintain contraction and enable robust closed-loop operation. Theorem 1 provides an explicit bound on the learning-induced model mismatch, which can be interpreted as a bounded additive disturbance and subsequently absorbed by a tube-based MPC controller to ensure robust closed-loop stability. III. A CTIVE LEARNING ALGORITHM 
+
+From Theorem 1, the parameter error dynamics satisfy 
+
+Ek+1 = Ek(I − ηGk) + ∆k, where Gk := V kΓV ⊤
+
+> k
+
+is the windowed data Gramian. This expression makes it explicit that the adaptation law can only contract the parameter error in directions that are sufficiently excited within the sliding window. In closed-loop deployment, however, tracking controllers minimize error and control effort, which drives the system toward smooth, repetitive trajectories. As a result, the regressors vk become highly correlated over time, yielding an ill-conditioned or low-rank Gk and consequently stalling or reversing online Koopman learning. This section addresses the data-quality problem by cou-pling the adaptation law with an active learning strategy that explicitly optimizes the informativeness of the closed-loop trajectory. Section III-A formulates the D-optimal information-seeking objective and embeds it within a constrained MPC problem that simultaneously achieves task performance, pro-motes Gramian conditioning, and enforces hard safety con-straints via control barrier functions. Section III-B derives the composite disturbance bound δ+ 
+
+> k
+
+, which accounts for both the model-mismatch disturbance and the perturbation introduced by the online model update; this quantity is required for recursive feasibility and is used throughout the safety analysis of Section IV. Section III-C defines the combined tightening scalar used in the implemented CBF constraint. The formal closed-loop guarantees, recursive feasibility, safety, and ulti-mate boundedness, are established jointly in Section IV as Theorem 4. 
+
+A. D-Optimal Active Learning Objective 
+
+The convergence rate established in Theorem 1 is governed directly by the spectral properties of Gk. Specifically, the contraction factor ρ = ∥I − ηGk∥2 satisfies ρ < 1 if and only if λmin (Gk) > 0, and the convergence rate improves monotonically as λmin (Gk) increases. This motivates aug-menting the task objective with an information-seeking term that directly targets the conditioning of Gk along the closed-loop trajectory. We adopt the D-optimal experimental design criterion and augment the task cost with the log-determinant of the predicted Gramian ˆGk. Concretely, define the stacked predicted regressor matrix 
+
+ˆV k = ˆvk, ˆvk+1 , . . . , ˆvk+Np−1
+
+ ∈ R(p+m)×Np , (33) where ˆvi = [ˆ z⊤ 
+
+> i
+
+, ˆu⊤ 
+
+> i
+
+]⊤ is the predicted regressor at step i
+
+along the MPC rollout, and define the predicted Gramian 
+
+ˆGk = ˆV k ˆV ⊤ 
+
+> k
+
+∈ R(p+m)×(p+m). (34) Note that ˆGk is constructed from future predicted regressors 
+
+along the MPC rollout and is therefore strictly distinct from the past-window Gramian Gk = V kΓV ⊤ 
+
+> k
+
+used in the adap-tation law. Conflating these two objects would corrupt both the adaptation update and the active learning gradient. The information metric is 
+
+Jinfo := log det( ˆGk + εI), ε > 0. (35) The regularization εI ensures the argument is positive definite even when ˆGk is rank-deficient early in adaptation. The combined objective is 
+
+J = Jtask − β J info , (36) where β > 0 controls the exploration-exploitation trade-off and 
+
+Jtask := 
+
+> k+Np−1
+
+X
+
+> i=k
+
+ ∥xi − xref ∥2 
+
+> Q
+
++ ∥ui∥2
+
+> R
+
+ . (37) The choice of log-det is motivated by the identity log det( ˆGk+
+
+εI) = P 
+
+> i
+
+log( λi( ˆGk) + ε), which simultaneously promotes excitation across all eigendirections of ˆGk, discouraging rank deficiency in any single direction. This is preferable to simpler heuristics such as maximizing input energy, which may over-excite already-excited directions while leaving others unim-proved. 9
+
+B. Composite Disturbance Bound 
+
+The adaptive update law (28) modifies the model estimate 
+
+ˆW k at every control step. Consequently, the prediction model used by the MPC at step k + 1 is ˆW k+1 ̸ = ˆW k, and the deviation between the true state and the shifted nominal prediction depend on both the model-mismatch disturbance 
+
+dk = Ekvk and the model-update perturbation ∥ ˆW k+1 −
+
+ˆW k∥F . Accounting for both is essential for establishing the recursive feasibility of the MPC in Section IV. From the adaptation update law (28) and the identity 
+
+Epred  
+
+> k
+
+= EkV k,
+
+∥ ˆW k+1 − ˆW k∥F = η∥Epred  
+
+> k
+
+ΓV ⊤ 
+
+> k
+
+∥F ≤ η ¯Ek vmax 
+
+√w =: μk,
+
+(38) where w is the window length, vmax := sup k≥0 ∥vk∥2 < ∞,and ¯Ek = ρk∥E0∥F + (1 − ρk)ν/ (1 − ρ) is the bound from Theorem 1. The disturbance seen by the MPC at step k + 1 
+
+under the updated model ˆW k+1 is ˜dk := ( W ∗ 
+
+> k
+
+− ˆW k+1 )vk,and by the triangle inequality, 
+
+∥ ˜dk∥2 ≤ ∥ dk∥2 + ∥ ˆW k+1 − ˆW k∥F vmax ≤ δana  
+
+> k
+
++ μk vmax ,
+
+(39) where the analytical tightening scalar is 
+
+δana  
+
+> k
+
+:= vmax ¯Ek = vmax 
+
+
+
+ρk∥E0∥F + 1 − ρk
+
+1 − ρ ν
+
+
+
+. (40) The composite disturbance bound is therefore 
+
+δ+ 
+
+> k
+
+:= δana  
+
+> k
+
++ μk vmax = vmax ¯Ek
+
+ 1 + η v max 
+
+√w . (41) The scalar δ+ 
+
+> k
+
+is computable online at every step since ¯Ek,
+
+η, vmax , and w are all known. It plays two roles: as the constraint-tightening scalar in the CBF condition for recursive feasibility (Theorem 4), and as the analytical component of the safety tightening scalar combined with the conformal bound in Section III-C. 
+
+C. Safety Tightening 
+
+Define the safe set S := {x ∈ X : h(x) ≥ 0} for a continuously differentiable function h : Rnx → R. At each step k the true physical state satisfies xtrue  
+
+> k+1
+
+= xnom  
+
+> k+1
+
++ Cd k,where xnom  
+
+> k+1
+
+= C( ˆAkzk + ˆBkuk) is the nominally predicted state. The gap between nominal and true states is governed by ∥Cd k∥2 ≤ δ+ 
+
+> k
+
+. Two complementary tightening scalars are maintained in parallel. 
+
+Analytical tightening. The scalar 
+
+δana  
+
+> k
+
+:= vmax ¯Ek = vmax 
+
+
+
+ρk∥E0∥F + 1 − ρk
+
+1 − ρ ν
+
+
+
+(42) provides a deterministic bound on ∥Cd k∥2 derived directly from the contraction result of Theorem 1. Although δana  
+
+> k
+
+is computable from the known adaptation parameters ρ, ν, and 
+
+∥E0∥F , it depends on the contraction rate ρ in the denominator of the steady-state term. When ρ ≈ 1, a common condition un-der the correlated regressors generated by tracking controllers, 
+
+δana  
+
+> k
+
+is large during the transient phase and has been observed experimentally to render the tightened CBF constraint (47e) infeasible in geometrically constrained environments. For this reason, δana  
+
+> k
+
+is not used in the implemented constraint; it is retained exclusively as a theoretical tool in the proof of Theorem 4, where it establishes that the true disturbance dk
+
+is bounded, the condition required for Theorem 5 to hold. 
+
+Conformal tightening. Define the physical-space disturbance 
+
+sk := Cd k and its exponential moving average (EMA) 
+
+ˆsk = αEMA ˆsk−1 + (1 − αEMA ) sk, αEMA ∈ (0 , 1) . (43) The EMA tracks the slowly varying systematic component of sk absorbed by the adaptive update; the nonconformity score rk := ∥sk − ˆsk∥2 represents the unmodelled residual component. Given a sliding window Wk of size nconf ≥ 1
+
+and risk level χ ∈ (0 , 1) , the conformal tightening scalar is 
+
+δconf  
+
+> k
+
+:= ˆQ1−χ({rj : j ∈ W k}) + εEMA , (44) where ˆQ1−χ denotes the empirical (1 − χ)-quantile over the window and εEMA ≥ 0 bounds the residual EMA bias after convergence. 
+
+Warmup phase. During k < k warm , before the EMA has con-verged, the nonconformity scores rk reflect both the systematic and unmodelled disturbance components, and Assumption 14 does not yet hold. In this phase, the tightening scalar is replaced by 
+
+δwarmup  
+
+> k
+
+:= ˆQ1−χ({∥ sj ∥2 : j ∈ W k}) , (45) the (1 − χ)-quantile of the raw disturbance norms rather than the EMA residuals. Since ∥Cd k∥2 = ∥sk∥2, the bound holds with εEMA = 0 and Theorem 5 applies unchanged during warmup. 
+
+Implemented tightening scalar. The tightening scalar used in the CBF constraint (47e) at every time step k is 
+
+δk =
+
+(δwarmup  
+
+> k
+
+k < k warm ,δconf  
+
+> k
+
+k ≥ kwarm . (46) This scalar is calibrated entirely from observed disturbance residuals and avoids any dependence on the adaptation pa-rameters ρ, ν, and ∥E0∥F . As established in Theorem 5, it provides per-step coverage 1 − χ and finite-horizon coverage 
+
+1−T χ over any horizon of length T , under the exchangeability condition of Assumption 15. 
+
+Remark 1. The analytical bound δana  
+
+> k
+
+and the conformal scalar δk serve distinct roles and are not combined via a maximum or minimum. δana  
+
+> k
+
+is a theoretical instrument: it appears in the proof of Theorem 4 to establish that dk
+
+is bounded, which is the condition (Assumption 14) under which the conformal coverage of Theorem 5 holds. δk is the implemented instrument: it enters the CBF constraint (47e) and governs closed-loop safety in practice. The two safety theo-rems, therefore, form a theoretical chain rather than competing alternatives: Theorem 4 validates the conditions of Theorem 5, and Theorem 5 governs the implementation. 10 
+
+D. Constrained Active-Learning MPC 
+
+The complete constrained optimization problem solved at each time step k is 
+
+min  
+
+> {ˆui}k+Np −1
+> i=k
+> k+Np−1
+
+X
+
+> i=k
+
+
+
+C ˆzi − xref ,i  
+
+> 2
+> Q
+
++ ˆui
+
+> 2
+> R
+
+
+
+−β log det   ˆV k(U ) ˆV k(U )⊤ + εI (47a) s.t. ˆzi+1 = ˆAk ˆzi + ˆBk ˆui, i = k, . . . , k + Np − 1,
+
+(47b) 
+
+ˆzk = zk, obs , (47c) 
+
+ui ∈ U , C ˆzi ∈ X , i = k, . . . , k + Np − 1,
+
+(47d) 
+
+h(C ˆzi+1 ) ≥ (1 − α) h(C ˆzi) + Lh δk,i = k, . . . , k + Np − 1, (47e) where the stacked decision vector is U := {ˆui}k+Np−1 
+
+> i=k
+
+, Q ⪰
+
+0 and R ≻ 0 are symmetric weighting matrices, β > 0 is the exploration–exploitation trade-off parameter, ε > 0 is a regularization constant, α ∈ (0 , 1] is the CBF decay rate, Lh >
+
+0 is the Lipschitz constant of h (or its local bound from (66)), and δk is the tightening scalar. The predicted regressor matrix appearing in the objective is 
+
+ˆV k(U ) := ˆvk, ˆvk+1 , . . . , ˆvk+Np−1
+
+ ∈ R(p+m)×Np (48) 
+
+ˆvi := ˆz⊤ 
+
+> i
+
+ˆu⊤
+
+> i
+
+⊤ (49) and the predicted Gramian is 
+
+ˆGk(U ) := ˆV k(U ) ˆV k(U )⊤ ∈ R(p+m)×(p+m). (50) Both ˆV k(U ) and ˆGk(U ) are functions of the decision vari-ables U through the rolled-out lifted states {ˆzi} generated by the nominal dynamics (47b). This dependence is the source of the nonconvexity in (47a) and is handled via sequential quadratic programming (SQP), as described later. 
+
+Remark 2 (Separation of nominal and disturbance dynamics) .
+
+The dynamics constraint (47b) involves the nominal pre-dicted model ˆAk, ˆBk only; the model-mismatch disturbance 
+
+dk = Ekvk is not included. The disturbance enters the formulation exclusively through the tightening scalar δk in the CBF constraint (47e), which absorbs the combined effect of dk and the model-update perturbation μk (Section III-B). This separation between nominal prediction and disturbance handling is the defining feature of robust CBF-tightened MPC and underpins the safety guarantees of Theorem 4. 
+
+Remark 3 (Distinction between Gk and ˆGk(U )). The pre-dicted Gramian ˆGk(U ) in (50) is constructed from future 
+
+predicted regressors along the MPC rollout and is strictly distinct from the past-window Gramian Gk = V kΓV ⊤ 
+
+> k
+
+used in the adaptation law (28). The former is an optimization variable that the MPC shapes to promote future information gain; the latter summarizes historical excitation and governs the contraction rate in Theorem 1. Conflating these two objects would corrupt both the adaptation update and the exploration gradient. 
+
+Remark 4 (Initial condition and state reconstruction) . Con-straint (47c) initializes the predicted rollout at the current observed lifted state zk, obs = φ(xk, obs ), ensuring that the MPC plan is anchored to the true system state at each receding-horizon solve. The physical state at each prediction step is recovered via ˆxi = C ˆzi, which is written explicitly in the objective (47a) and the feasibility constraint (47d) to make the reconstruction transparent. To solve the constrained active-learning MPC efficiently in real time, we employ a sequential quadratic programming (SQP) scheme in a receding-horizon fashion. At time step 
+
+k, we optimize the composite objective (47), subject to the learned Koopman prediction dynamics and CBF constraints. Starting from a warm-started nominal input sequence {ˆu(0)  
+
+> t
+
+},SQP iteratively linearizes the CBF inequalities around the cur-rent rollout, yielding affine constraints. The log-det exploration term is handled through its first-order expansion. Specifically, the gradient of the information term admits a closed form, 
+
+∂∂ ˆV log det ( ˆV ˆV ⊤ + εI) = 2( ˆV ˆV ⊤ + εI)−1 ˆV , (51) The resulting SQP subproblem at each iteration takes the form of a constrained quadratic program(QP), which can be solved efficiently using standard QP solvers. 
+
+Theorem 2. Consider the MPC problem (47) with information metric 
+
+Ik := log det( ˆGk + εI), ˆGk := ˆV k ˆV ⊤ 
+
+> k
+
+⪰ 0, ε > 0.
+
+Assume that there exists an admissible control sequence sat-isfying all constraints of (47e) such that 
+
+λmin ( ˆGk) ≥ λ0 > 0,
+
+and that the tracking and control cost in (47) is uniformly bounded over the feasible set. Then there exists a constant 
+
+λ > 0 such that any optimizer of (47) satisfies 
+
+λmin ( ˆG⋆k) ≥ λ. 
+
+Proof. The MPC objective can be written as 
+
+J =
+
+> k+Np−1
+
+X
+
+> i=k
+
+
+
+∥ˆxi − xref ,i∥2 
+
+> Q
+
++ ∥ˆui∥2
+
+> R
+
+
+
+− βI k = Jtask − βI k,
+
+where 
+
+Ik = log det( ˆGk + εI), ˆGk = ˆV k ˆV ⊤ 
+
+> k
+
+⪰ 0.
+
+By assumption, the tracking and control cost is uniformly bounded over the feasible set, and hence there exists a constant 
+
+¯J < ∞ such that 0 ≤ Jtask ≤ ¯J for all admissible control sequences. Let λi( ˆGk), i = 1 , . . . , p , denote the eigenvalues of 
+
+ˆGk. Since ˆGk ⪰ 0, we have λi( ˆGk) ≥ 0, and the information metric admits the representation 
+
+Ik =
+
+> p
+
+X
+
+> i=1
+
+log  λi( ˆGk) + ε.
+
+Fix an arbitrary constant δ > 0 and consider any admissible control sequence satisfying 
+
+λmin ( ˆGk) ≤ δ. 11 
+
+Since the regressors are bounded over a finite horizon, all eigenvalues of ˆGk are bounded above, and therefore there exists a finite constant CI (δ) such that 
+
+Ik ≤ CI (δ) for all such trajectories .
+
+It follows that the corresponding objective value satisfies 
+
+J = Jtask − βI k ≥ 0 − βC I (δ) = −βC I (δ).
+
+By hypothesis, there exists an admissible control sequence, denoted {ugood  
+
+> i
+
+}, such that 
+
+λmin ( ˆGgood  
+
+> k
+
+) ≥ λ0 > 0.
+
+Choose δ ∈ (0 , λ 0). Since log( λ + ε) is strictly increasing in 
+
+λ, it follows that 
+
+Igood  
+
+> k
+
+= log det( ˆGgood  
+
+> k
+
++ εI) > C I (δ).
+
+Using the bound on the task cost, the corresponding objec-tive value satisfies 
+
+Jgood = Jgood task − βI good  
+
+> k
+
+≤ ¯J − βI good  
+
+> k
+
+< ¯J − βC I (δ).
+
+Therefore, any admissible control sequence satisfying 
+
+λmin ( ˆGk) ≤ δ yields a strictly larger objective value than 
+
+Jgood , and hence cannot be optimal. Defining 
+
+λ := δ, 
+
+it follows that any optimizer satisfies 
+
+λmin ( ˆG⋆k) ≥ λ. 
+
+Hence, the optimizer cannot select trajectories for which the Gramian becomes arbitrarily ill-conditioned, as such trajecto-ries are strictly suboptimal whenever a sufficiently informative admissible trajectory exists. Theorem 2 formalizes the role of information regularization in the proposed learning-based MPC framework. The key observation is that, since the tracking and control cost is uni-formly bounded over the feasible set, the optimizer cannot in-definitely reduce the objective by improving task performance alone. In contrast, the information term depends critically on the conditioning of the regressor Gramian and saturates as the smallest eigenvalue approaches zero, corresponding to a loss of excitation. The theorem shows that, whenever the feasible set contains at least one trajectory that is sufficiently informative for parameter learning, the information-regularized MPC will not select trajectories that render the learning problem ill-conditioned. This result is essential for the present work, as it provides a principled justification for active learning in closed-loop Koopman-based control: it guarantees that informative data is preserved whenever possible, while maintaining com-patibility with performance, safety, and feasibility constraints, and without imposing hard persistent-excitation conditions. 
+
+Remark 5. Although Theorem 2 establishes a lower bound on the Gramian along the optimal trajectory, this result should not be interpreted as a classical persistent-excitation (PE) assumption, excitation is neither imposed as a hard constraint nor required to hold for all admissible trajectories or all times; instead, the theorem shows that whenever a sufficiently infor-mative trajectory exists within the feasible set, the information-regularized MPC selects such trajectories through objective optimization, and excitation may still vanish if enforced by feasibility, safety, or performance constraints. 
+
+Theorem 3. Consider the nominal MPC 
+
+(P0) : U nom ∈ arg min   
+
+> U∈F
+
+Jtask (U ),
+
+and the active-learning MPC 
+
+(Pβ ) : U AL (β) ∈ arg min  
+
+> U∈F
+
+ Jtask (U )−β J info (U ), β ≥ 0,
+
+where F ⊂ RmN p is a nonempty feasible set encoding dynamics, input and state constraints, and (if applicable) CBF inequalities, and Jinfo (U ) := log det   ˆGk(U ) + εI with 
+
+ˆGk(U ) = ˆV k(U ) ˆV k(U )⊤ and ε > 0. Suppose that the following conditions hold at U nom : (i) 
+
+1) (Interior feasibility) U nom is a strict local minimiser of 
+
+(P0) and lies in the interior of F, i.e., there exists a neighbourhood N of U nom such that N ⊂ F .
+
+2) (Smoothness) Both Jtask and Jinfo are twice continu-ously differentiable on N .
+
+3) (Positive-definite Hessian) Htask := ∇2Jtask (U nom ) ≻
+
+0.Then there exist ¯β > 0 and a differentiable map β 7 → U AL (β)
+
+for β ∈ [0 , ¯β], with U AL (0) = U nom , such that: (i) 
+
+1) First-order expansion. 
+
+U AL (β) = U nom + β H−1task ∇Jinfo (U nom ) + O(β2).
+
+(52) 2) Information improvement. 
+
+Jinfo 
+
+
+
+U AL (β)
+
+
+
+≥ Jinfo (U nom )
+
+for all sufficiently small β > 0. (53) 
+
+Proof. Since U nom lies in the interior of F by condition (i), both (P0) and (Pβ ) reduce locally to unconstrained optimisa-tion over N . First-order optimality for (Pβ ) requires 
+
+∇Jtask 
+
+
+
+U AL (β)
+
+
+
+− β ∇Jinfo 
+
+
+
+U AL (β)
+
+
+
+= 0. (54) At β = 0 , condition (54) yields ∇Jtask (U nom ) = 0, which is satisfied since U nom is a strict local minimiser of (P0). Define the residual map 
+
+F (U , β ) := ∇Jtask (U ) − β ∇Jinfo (U ),
+
+so that (54) is equivalent to F (U AL (β), β ) = 0. By condi-tion (ii), F is continuously differentiable on N × [0 , ¯β], and by condition (iii), 
+
+∂F
+
+∂U (U nom , 0) 
+
+= ∇2Jtask (U nom ) = Htask ≻ 0
+
+is invertible. By the Implicit Function Theorem, there exist 
+
+¯β > 0 and a differentiable map β 7 → U AL (β) satisfying 
+
+F (U AL (β), β ) = 0 for all β ∈ [0 , ¯β], with U AL (0) = U nom .12 
+
+Proof of (52) . Differentiating F (U AL (β), β ) = 0 with respect to β and evaluating at (U nom , 0) gives 
+
+Htask 
+
+dU AL 
+
+dβ β=0 
+
+− ∇ Jinfo (U nom ) = 0,
+
+which yields 
+
+dU AL 
+
+dβ β=0 
+
+= H−1task ∇Jinfo (U nom ). (55) A first-order Taylor expansion of U AL (β) around β = 0 then gives (52). 
+
+Proof of (53) . A first-order Taylor expansion of Jinfo around 
+
+U nom gives 
+
+Jinfo 
+
+
+
+U AL (β)
+
+
+
+= Jinfo (U nom ) + ∇Jinfo (U nom )⊤
+
+ U AL (β) − U nom  + O(β2). (56) Substituting (52): 
+
+Jinfo 
+
+
+
+U AL (β)
+
+
+
+= Jinfo (U nom )+ 
+
+β ∇Jinfo (U nom )⊤H−1task ∇Jinfo (U nom ) + O(β2).
+
+(57) Since H−1task ≻ 0, the quadratic form 
+
+∇Jinfo (U nom )⊤H−1task ∇Jinfo (U nom ) ≥ 0, with equality only when ∇Jinfo (U nom ) = 0, i.e., when the nominal solution already maximises information gain. In the non-trivial case ∇Jinfo (U nom )̸ = 0, the quadratic term is strictly positive, and Jinfo (U AL (β)) > J info (U nom ) for all sufficiently small β > 0, establishing (53). Theorem 3 is a local result that relies on condition (i): U nom 
+
+must lie in the interior of F, i.e., no constraints may be active at the nominal solution. When state, input, or CBF constraints are active, the first-order optimality condition acquires active-constraint multipliers, and a sensitivity analysis via the para-metric KKT system is required. IV. S AFETY GUARANTEES FOR ADAPTIVE 
+
+ACTIVE -L EARNING MPC This section establishes formal closed-loop guarantees for the framework introduced in Sections II and III. Three prop-erties are proved jointly: (i) recursive feasibility of the MPC problem (47) at every time step; (ii) forward invariance of the safe set S; and (iii) ultimate boundedness of the lifted state. Theorem 5 provides a complementary probabilistic safety guarantee via conformal prediction for the practically important case ρ ≈ 1. The true closed-loop dynamics satisfy 
+
+zk+1 = W ∗
+
+> k
+
+vk = ˆW kvk + dk, dk := Ekvk, (58) where ˆW k = [ ˆAk, ˆBk] is the current Koopman estimate, 
+
+Ek := W ∗ 
+
+> k
+
+− ˆW k is the estimation error, and vk = [ z⊤ 
+
+> k
+
+, u⊤ 
+
+> k
+
+]⊤
+
+is the regressor. The nominally predicted and true next physical states are, respectively, 
+
+xnom  
+
+> k+1
+
+= C
+
+ ˆAkzk + ˆBkuk
+
+
+
+, xtrue  
+
+> k+1
+
+= xnom  
+
+> k+1
+
++ Cd k.
+
+(59) The gap between them is governed by the projected distur-bance Cd k, whose magnitude is controlled by the composite bound δ+ 
+
+> k
+
+derived in (41). 
+
+Assumption 6 (Contraction of adaptation) . The step size η and windowed Gramian Gk := V kΓV ⊤ 
+
+> k
+
+satisfy ∥I − ηGk∥2 ≤
+
+ρ < 1 uniformly in k, and the true operator satisfies the bounded-drift condition ∥W ∗ 
+
+> k+1
+
+− W ∗
+
+> k
+
+∥F ≤ ν for all k ≥ 0
+
+(Assumption 4 of Section II). By Theorem 1 the estimation error satisfies 
+
+∥Ek∥F ≤ ρk∥E0∥F + 1 − ρk
+
+1 − ρ ν =: ¯Ek, (60) and consequently ∥dk∥2 ≤ vmax ¯Ek =: δana  
+
+> k
+
+, where vmax := sup k≥0 ∥vk∥2 < ∞.
+
+Assumption 7 (Bounded model update) . From the update law (28) and the bound (38), 
+
+∥ ˆW k+1 − ˆW k∥F ≤ η ¯Ek vmax 
+
+√w =: μk. (61) The composite disturbance bound (41) satisfies 
+
+δ+ 
+
+> k
+
+:= δana  
+
+> k
+
++ μkvmax = vmax ¯Ek
+
+ 1 + η v max 
+
+√w , (62) so that ∥(W ∗ 
+
+> k
+
+− ˆW k+1 )vk∥2 ≤ δ+ 
+
+> k
+
+for all k ≥ 0. The scalar 
+
+δ+ 
+
+> k
+
+is computable online since ¯Ek, η, vmax , and w are all known. 
+
+Assumption 8. The nominal MPC problem (47) is equipped with a terminal cost Vf (z) = z⊤P z , P ≻ 0, and a terminal set Zf ⊂ Rp satisfying the standard exponential stability con-ditions for the nominal closed-loop system ˆzk+1 = ˆW kvnom  
+
+> k
+
+.Specifically, there exist αf ∈ (0 , 1) and cf > 0 such that for all z ∈ Z f , Vf (ˆ zk+1 ) ≤ αf Vf (z), and Zf is robustly forward invariant under disturbances of magnitude δ+ 
+
+> k
+
+from (41). 
+
+Assumption 9 (Closed-loop stabilizability) . There exists a feedback gain Kctrl ∈ Rm×p such that the closed-loop matrix Acl ,k := ˆAk + ˆBkKctrl is uniformly Schur, i.e., there exist α ∈ (0 , 1) and c > 0, independent of k, such that 
+
+∥Aj
+
+> cl ,k
+
+∥2 ≤ cα j for all j ≥ 0.
+
+Remark 6. Assumption 9 is a stabilizability condition on the nominal lifted system and is invoked exclusively in the proof of Theorem 4 to establish ultimate boundedness via the tube-error decomposition ek := zk − ˆzk. It does not 
+
+require a separate feedback correction to be implemented in the closed-loop controller; the MPC optimal input u∗ 
+
+> k
+
+obtained by solving (47) is the sole control signal applied to the physical system. Existence of Kctrl satisfying Assumption 9 follows from stabilisability of the pair ( ˆAk, ˆBk), which holds whenever the offline-learned lifted system is stabilizable, a standard condition in Koopman-based MPC [8], [22]. 
+
+Assumption 10 (Robustly tightened constraints) . The input set U ⊂ Rm and state set X ⊂ Rnx are compact and convex. At each step k the MPC enforces the tightened state set 
+
+Xk := {x ∈ X : dist( x, ∂ X ) ≥ δ+ 
+
+> k
+
+}, so that any state within Euclidean distance δ+ 
+
+> k
+
+of a tightened-feasible state remains in 
+
+X . The terminal set Zf is robustly forward invariant under disturbances of magnitude δ+ 
+
+> k
+
+.13 
+
+Assumption 11 (Barrier function regularity) . There exists 
+
+Lh > 0 such that h(x + e) ≥ h(x) − Lh∥e∥2 for all 
+
+x, e ∈ Rnx .
+
+Assumption 12 (Tightened CBF constraint) . At each step k ≥
+
+0 the MPC problem (47) enforces 
+
+h xnom 
+
+> k+1
+
+ ≥ (1 − αcbf ) h(xk) + Lh δk, (A6) for some αcbf ∈ (0 , 1] , where δk is the implemented tightening scalar from (46). 
+
+Remark 7. The assumption above uses the implemented scalar δk, which equals the conformal tightening scalar δconf 
+
+> k
+
+for k ≥ kwarm and the warmup scalar δwarmup  
+
+> k
+
+for k <kwarm , as defined in (46). The composite analytical bound 
+
+δ+ 
+
+> k
+
+from (41) appears only in the proof of Theorem 4, where it establishes that the true disturbance dk is bounded; it is not enforced in the implemented constraint (A6). The safety guarantee governing the implementation is therefore provided by Theorem 5, which uses δk from (46) directly. 
+
+Assumption 13 (Initial feasibility) . The MPC problem (47) admits a feasible solution at k = 0 , and x0 ∈ S := {x ∈ X :
+
+h(x) ≥ 0}.Assumption 6 and 7 follow directly from the contraction analysis of Section II-D and the update-step bound (38). As-sumption 8 requires the MPC to be designed with standard sta-bilizing terminal ingredients; this is a necessary condition for any MPC-based stability analysis and imposes no additional constraint on the controller structure beyond what is already required for nominal closed-loop stability. Assumption 9 is a stabilizability condition on the time-varying nominal lifted system; existence of Kctrl follows from stabilizability of the pair ( ˆAk, ˆBk) and is used only as an analytical device in the proof of Theorem 4 (see Remark 6). Assumption 10 is standard in robust MPC: the tightened sets shrink as adaptation converges ( δ+ 
+
+> k
+
+→ vmax ν/ (1 − ρ) as k → ∞ ), recovering the full constraint set asymptotically when ν = 0 . Assumption 11 holds globally for smooth h with bounded gradient, and locally for the circular barrier h(x) = ∥x−c∥22 −d2safe using the local Lipschitz constant (66). 
+
+A. Joint Guarantee: Feasibility, Safety, and Stability 
+
+Theorem 4. Suppose Assumptions 6–13 hold. Then, for all 
+
+k ≥ 0: (i) 
+
+1) Recursive feasibility. The MPC problem (47) is feasible at every time step k ≥ 0.
+
+2) Safety. The safe set S is robustly forward invariant: 
+
+xk ∈ S for all k ≥ 0.
+
+3) Ultimate boundedness. The lifted state satisfies 
+
+∥zk∥2 ≤ c α k∥z0∥2 + c v max (1 + η v max 
+
+√w)1 − α ¯Ek,
+
+(63) 
+
+and consequently 
+
+lim sup 
+
+> k→∞
+
+∥zk∥2 ≤ c v max (1 + η v max 
+
+√w)(1 − α)(1 − ρ) ν. (64) 
+
+Proof. The proof proceeds in four steps. 
+
+Step 1: Composite disturbance bound. From Assumption 6, 
+
+∥Ek∥F ≤ ¯Ek. Since dk = Ekvk and ∥vk∥2 ≤ vmax ,
+
+∥dk∥2 ≤ vmax ¯Ek = δana  
+
+> k
+
+.
+
+From Assumption 7 and the update law (28), ∥ ˆW k+1 −
+
+ˆW k∥F ≤ μk. The disturbance as seen under the updated model ˆW k+1 is ˜dk := ( W ∗ 
+
+> k
+
+− ˆW k+1 )vk, and by the triangle inequality 
+
+∥˜dk∥2 ≤ ∥ dk∥2+∥ ˆW k+1 − ˆW k∥F vmax ≤ δana  
+
+> k
+
++μk vmax = δ+ 
+
+> k
+
+.
+
+Hence the true system, viewed under the updated model, is subject to a bounded additive disturbance of magnitude at most 
+
+δ+ 
+
+> k
+
+.
+
+Step 2: Recursive feasibility. Suppose (47) is feasible at step k with optimal sequence U∗ 
+
+> k
+
+= {u∗
+
+> k
+
+, . . . , u∗
+
+> k+Np−1
+
+}
+
+generating nominal state trajectory {ˆz∗
+
+> k+1
+
+, . . . , ˆz∗ 
+
+> k+Np
+
+} under model ˆW k. Construct the candidate sequence at step k + 1 :
+
+˜Uk+1 = u∗
+
+> k+1
+
+, . . . , u∗
+
+> k+Np−1
+
+, Kctrl ˆz∗ 
+
+> k+Np
+
+.
+
+The true state after applying u∗ 
+
+> k
+
+satisfies zk+1 = ˆW k+1 vk +˜dk, so the deviation from the shifted nominal trajectory under 
+
+ˆW k+1 is 
+
+∥zk+1 − ˆz∗
+
+> k+1
+
+∥2 ≤ ∥ ˆW k+1 − ˆW k∥F vmax + ∥dk∥2
+
+≤ μk vmax + δana  
+
+> k
+
+= δ+ 
+
+> k
+
+. (65) By Assumption 10, all tightened state constraints are satisfied along ˜Uk+1 since any state within δ+ 
+
+> k
+
+of a tightened-feasible state remains in X . Input constraints hold since ˜Uk+1 ⊆
+
+U∗ 
+
+> k
+
+∪ { Kctrl ˆz∗ 
+
+> k+Np
+
+} ⊆ U . The terminal state ˆz∗ 
+
+> k+Np
+
+lies in Zf by the terminal conditions of Assumption 8, and by robust forward invariance of Zf (Assumption 10), the terminal feedback step remains feasible. The CBF constraint (A6) is satisfied along ˜Uk+1 because the tightening δ+ 
+
+> k
+
+in (A6) accounts for the full composite disturbance established in Step 1. Therefore ˜Uk+1 is feasible at step k + 1 . By induction from Assumption 13, feasibility holds for all k ≥ 0.
+
+Step 3: Safety. From Assumption 11 and ∥Cd k∥2 ≤∥C∥2 vmax ¯Ek ≤ δ+ 
+
+> k
+
+(absorbing ∥C∥2 ≤ 1 into Lh without loss of generality), 
+
+h xtrue 
+
+> k+1
+
+ ≥ h xnom 
+
+> k+1
+
+ − Lh∥Cd k∥2 ≥ h xnom 
+
+> k+1
+
+ − Lh δ+ 
+
+> k
+
+.
+
+Substituting the tightened CBF constraint (A6): 
+
+h xtrue 
+
+> k+1
+
+ ≥ (1 −αcbf ) h(xk)+ Lh δ+ 
+
+> k
+
+−Lh δ+ 
+
+> k
+
+= (1 −αcbf ) h(xk).
+
+By induction: h(x0) ≥ 0 implies h(xk) ≥ (1 −αcbf )kh(x0) ≥
+
+0 for all k ≥ 0, so xk ∈ S .
+
+Step 4: Ultimate boundedness. Decompose zk = ˆ zk + ek,where ˆzk is the nominal MPC trajectory initialized at ˆz0 = z0
+
+and ek := zk − ˆzk is the tube error. By Assumption 9, there exists a gain Kctrl such that Acl ,k is uniformly Schur. Con-sider the hypothetical tube control law uk = unom  
+
+> k
+
++ Kctrl ek;under this law, the error dynamics satisfy 
+
+ek+1 = Acl ,k ek + dk.
+
+Note that this decomposition is used as an analytical device 
+
+to establish the bound (63); the gain Kctrl is not applied in 14 
+
+the implemented controller, for which u∗ 
+
+> k
+
+is the sole output of solving (47). Since e0 = 0 and ∥Aj
+
+> cl ,k
+
+∥2 ≤ cα j by Assumption 9, unrolling gives 
+
+∥ek∥2 ≤
+
+> k−1
+
+X
+
+> i=0
+
+cα k−1−i∥di∥2 ≤ c
+
+1 − α max  
+
+> 0≤i≤k
+
+δ+ 
+
+> i
+
+≤ c δ +
+
+> k
+
+1 − α .
+
+By the exponential stability of the nominal MPC closed loop (Assumption 8), ∥ˆzk∥2 ≤ cα k∥z0∥2. Therefore 
+
+∥zk∥2 ≤ ∥ ˆzk∥2 + ∥ek∥2 ≤ cα k∥z0∥2 + c δ +
+
+> k
+
+1 − α .
+
+Substituting δ+ 
+
+> k
+
+= vmax (1+ η v max 
+
+√w) ¯Ek yields (63). Taking 
+
+lim sup k→∞ and using αk → 0, ρk → 0 in ¯Ek yields (64). 
+
+Remark 8. Step 4 uses e0 = 0, i.e., the nominal trajectory is initialised at the true observed state z0. If observation noise yields e0̸ = 0, an additive term cα k∥e0∥2 appears in (63) and vanishes as k → ∞ , leaving the ultimate bound (64) unchanged. 
+
+Remark 9 (Computability of δ+ 
+
+> k
+
+). The composite bound 
+
+δ+ 
+
+> k
+
+= vmax (1 + η v max 
+
+√w) ¯Ek is computable online since ¯Ek
+
+depends only on the known constants ρ, ν, ∥E0∥F , and k.When ρ ≈ 1, δ+ 
+
+> k
+
+is large during the transient phase; Theorem 5 provides a tighter data-driven alternative in this regime. 
+
+Remark 10 (Local Lipschitz constant) . The global constant 
+
+Lh in Assumption 11 may be replaced by the local bound (66) evaluated at xnom  
+
+> k+1
+
+. For the circular barrier h(x) = ∥x − c∥22 −
+
+d2safe the exact local Lipschitz constant bounding ∥∇ h∥2 over the uncertainty ball of radius δ+ 
+
+> k
+
+around xnom  
+
+> k+1
+
+is 
+
+Llocal  
+
+> h
+
+= 2  ∥xnom  
+
+> k+1
+
+− c∥2 + δ+
+
+> k
+
+ , (66) which substantially reduces conservatism near obstacles where 
+
+∥xnom  
+
+> k+1
+
+− c∥2 is small. Substituting Llocal  
+
+> h
+
+for Lh in (A6) preserves all conclusions of Theorem 4. 
+
+B. Probabilistic Safety Guarantee via Conformal Prediction 
+
+When ρ ≈ 1 or the parameters are uncertain, we replace 
+
+δana k with a data-driven scalar calibrated from observed resid-uals. Define the physical-space disturbance sk := Cd k ∈ Rnx
+
+and its Exponential Moving Average (EMA): 
+
+ˆsk = αEM A ˆsk−1 + (1 − αEM A ) sk, αEM A ∈ (0 , 1) . (67) The EMA tracks the systematic, slowly varying component of 
+
+sk that the adaptive update has not yet fully absorbed. The conformal nonconformity score is the norm of the residual between the raw disturbance and its EMA estimate: 
+
+rk := ∥sk − ˆsk∥2. (68) Given a sliding window Wk := {rk−W , . . . , r k−1} of size 
+
+nconf ≥ 1 and risk level χ ∈ (0 , 1) , the conformal tightening scalar is 
+
+δk := bQ1−χ(Wk) = inf 
+
+
+
+τ ≥ 0 : |{ r ∈ W k : r ≤ τ }| 
+
+W ≥ 1 − χ
+
+
+
+.
+
+(69) 
+
+Assumption 14. There exists εEM A ≥ 0 such that ∥ˆsk∥2 ≤
+
+εEM A for all k ≥ kwarm .
+
+Assumption 15. The scores {rk−W , . . . , r k−1, r k} are ex-changeable, i.e., their joint distribution is invariant under permutation. 
+
+Theorem 5. Let Assumptions 11, 14, and 15 hold for 
+
+k ≥ kwarm . Suppose that at each step k ≥ kwarm , the MPC enforces 
+
+h xnom k+1 
+
+ ≥ (1 − α) h(xk) + Lh (δk + εEM A ), (70) 
+
+with δk given by (69) . Then: i) 
+
+1) Per-step guarantee: For each k ≥ kwarm ,
+
+P  h xtrue k+1 
+
+ ≥ (1 − α) h(xk) ≥ 1 − χ. (71) 2) Finite-horizon guarantee: If h(xkwarm ) ≥ 0, then over any horizon of length T ,
+
+P (h(xk) ≥ 0, ∀ k ∈ { kwarm +1 , . . . , k warm +T })
+
+≥ 1 − T χ. 
+
+(72) 
+
+Proof. (i) Under Assumption 15, the rank of rk among 
+
+{rk−W , . . . , r k−1, r k} is uniformly distributed over 
+
+{1, . . . , W +1 }. By the standard conformal prediction coverage theorem [30], 
+
+P (rk ≤ δk) ≥ 1 − χ. (73) On the event Ek := {rk ≤ δk}, the triangle inequality and Assumption 14 give 
+
+∥Cd k∥2 = ∥sk∥2 ≤ ∥ sk − ˆsk∥2 + ∥ˆsk∥2
+
+≤ rk + εEM A ≤ δk + εEM A . (74) Applying Assumption 11 with e = Cd k and substituting (74): 
+
+h xtrue k+1 
+
+ ≥ h xnom k+1 
+
+ − Lh∥Cd k∥2 ≥ h xnom k+1 
+
+
+
+−Lh(δk + εEM A ). (75) Substituting (70) into (75) on Ek:
+
+h xtrue k+1 
+
+ ≥ (1 − α) h(xk) + Lh(δk + εEM A ) − Lh(δk + εEM A )= (1 − α) h(xk). (76) Since this holds on Ek and P (Ek) ≥ 1 − χ by (73), (71) follows. 
+
+(ii) Define the failure event at each step as Fk := h(xtrue k+1 ) < (1 − α) h(xk) . From (i), P (Fk) ≤ χ for each 
+
+k ≥ kwarm . By the union bound, 
+
+P 
+
+> kwarm +T−1
+
+[
+
+> k=kwarm
+
+Fk
+
+!
+
+≤ 
+
+> kwarm +T−1
+
+X
+
+> k=kwarm
+
+P (Fk) ≤ T χ. (77) On the complement event, the CBF evolution condition holds at every step, so h(xk) ≥ (1 − α)k−kwarm h(xkwarm ) ≥ 0 for all k ∈ { kwarm +1 , . . . , k warm +T }, establishing (72). 
+
+Remark 11. (Warmup Phase) Assumption 2 holds approxi-mately for k ≥ kwarm once the adaptive update has absorbed the systematic disturbance component. During the warmup phase k < k warm , εEM A may be large and (70) becomes conservative. In this regime, δk is replaced by 
+
+δf ull k := bQ1−χ
+
+∥sj ∥2 j∈W k
+
+
+
+, (78) 15 
+
+the (1 − χ)-quantile of the full disturbance norms rather than the EMA residuals. Since ∥Cd k∥2 = ∥sk∥2, the bound in (74) holds with εEM A = 0 and δf ull k in place of δk, and Theorem 5 applies unchanged during warmup. 
+
+Remark 12. (Complementary Bounds) : Theorems 4 and 5 provide complementary guarantees. The analytical bound δana k
+
+in (42) is deterministic but requires knowledge of ρ, ν, and 
+
+∥E0∥F , and becomes impractical when ρ ≈ 1. The conformal bound δk in (69) is data-driven and tight by construction, providing coverage 1 − χ without distributional assumptions beyond exchangeability. The two may be combined as δk =max( δana k , δ conf k ) to obtain the stronger guarantee, defaulting to the conformal bound when the analytical one is too conser-vative. 
+
+Remark 13. (Local Lipschitz Constant) : The global constant 
+
+Lh in Assumption 12 can be replaced by a tighter local bound evaluated at the nominal next state. For the circular barrier 
+
+h(x) = ∥x − c∥22 − d2safe , the gradient satisfies ∥∇ h(x)∥2 =2∥x − c∥2, and the exact local Lipschitz constant bounding 
+
+∥∇ h∥ over the uncertainty ball of radius δk + εEM A around 
+
+xnom k+1 is 
+
+Llocal h = 2  ∥xnom k+1 − c∥2 + δk + εEM A 
+
+ . (79) Substituting Llocal h for Lh in (70) preserves the guarantee of Theorem 5 while substantially reducing conservatism near obstacles, where ∥xnom k+1 − c∥2 is small. 
+
+Remark 14. The guarantee of Theorem 5 requires con-straint (70) to hold at each step. In practice, the CBF evolution rows are implemented as soft constraints with penalty weight 
+
+Wcbf to preserve solver feasibility in narrow passages. When the soft constraint is violated, the per-step guarantee fails for that step. The pointwise constraint h(xk) ≥ 0, enforced as a hard constraint for static obstacles, provides the primary collision-avoidance certificate independently of the evolution condition. V. R ESULTS 
+
+This section evaluates the proposed framework in simulation and experimental environments. Comprehensive performance analysis is undertaken with different robotic system under a variety of uncertianities to demonstate the efficacy of the proposed scheme. The hyperparmeters for the simulation studies are shown in Table I. In Table I, the architecture of 3R manipulator is written as [10 , 40 , 40 , 17] , which basically means that the encoder has an input layer of dimension 10 corresponding to each state, there are two hidden layers, each of width 40 and the output dimension is 17 , which basically is the dimension of the lifted states. The same nomenclature holds for the other systems. 
+
+A. Simulation Results 
+
+This section validates the proposed ASACK framework through simulation studies on multiple robotic platforms: a 3R serial manipulator with a 3D workspace, a planar quadrotor, and a Franka Research 3 manipulator, chosen to Table I: Hyperparameters of the Koopman network                                   
+
+> 3R ma-nipulator Planar Quadro-tor Franka Re-search 3 Turtlebot 3Nominal Koopman Autoencoder (linear) Architec -ture [6, 30, 30, 17] [6, 20, 20, 17] [14, 30, 30, 73] [3, 30, 30, 14] # lifted state 17 17 73 14
+> α1,α2,
+> α3
+> 1, 0.3, 1 1, 0.3, 1 1, 0.5, 1 1, 0.3, 1
+> γ1,γ20,00, 0 0,00,0
+> Batch Size 256 256 256 256 Contractive Adaptive law and CBF window size 10 10 10 10
+> χ0.01 0.01 0.01 0.01
+> α0.1 0.1 0.1 0.1
+
+represent systems with qualitatively different dynamics and disturbance profiles. In the simulation studies, we evaluate performance under two complementary tasks: trajectory track-ing under parametric uncertainty, which tests the adapta-tion law’s ability to recover accurate dynamics online, and information-maximizing exploration within constrained envi-ronments, which tests whether the active learning objective meaningfully accelerates model convergence without compro-mising safety. Distributional shift is induced in a controlled manner by modifying system parameters and injecting external disturbances at deployment time, after offline training under nominal conditions. Performance is quantified using RMSE tracking error and prediction errors. Safety is assessed via con-straint satisfaction over all trajectories. Comparisons are made againist the state-of-the-art baselines. We further present simu-lation results to isolate the effects of the contractive adaptation and active learning components. These simulations validate the theoretical properties established in Sections II- IV, including contraction of the estimation error, improved excitation via the log-determinant objective, and forward invariance of the safe set under online adaptation. All simulations assume full state feedback and use the ACADOS [31] solver for real-time MPC execution on an Intel ® Core ™ i5-1140H processor with 16GB RAM and a 4GB Nvidia ® Geforce ™ RTX 3050 Ti graphics card. We benchmark ASACK against three baselines, selected to isolate the individual contributions of adaptation, active learning, and safety enforcement: 1) Nominal Koopman (NK) scheme without adaptation, 2) Neural network-based adaptive Koopman (NAK) [22], 3) EDMD-based active learning (AcK) [27]. 
+
+1) Serial Manipulator: The system dynamics for a 3R serial manipulator [6] is given as: 
+
+M (θ) ¨θ + C(θ, ˙θ) ˙θ + G(θ) = τ , (80) where θ ∈ R3 and τ ∈ R3 represent the joint angles and torque inputs, respectively, and M (·) ∈ R3×3, C(·, ·) ∈ R3×3,and G(·) ∈ R3×1 are the mass, Coriolis, and gravity ma-trices, respectively. The nominal Koopman model is trained using link parameters mi = 0.6 kg, li = 1 m, Ii =16 Reference ASACK Corridor Obstacle 
+
+Safety Boundry Distance to obstacle 1( ), 2( ), and 3( )
+
+## a) b) c)     
+
+> 0.4 0.8 1.2 1.6 2.0
+
+x(m)    
+
+> y(m)
+> 0.6 1.0 1.4 1.8 123010 20 30
+
+t(s)  
+
+> edyn
+> 00.5 1.0 1.5 00210.2 0.4
+
+t(s) distance (m)    
+
+> 0.0 0.6 1.2 010 20 30
+
+Fig. 2. Constrained tracking performance for ASACK (proposed) scheme for 3R manipulator within narrow corridors with obstacles. Red implies breach of the corridor bounds. a) Traced path. b) Distance to obstacles. c) Evolution of the dynamic prediction error ( edyn ). t(s) 0 10 20 30 024x10 -3 
+
+> ±
+
+Fig. 3. Evolution of uncertainty envelope for ASACK (pro-posed) scheme. diag [0 , mil2 
+
+> i
+> 12
+
+, mil2 
+
+> i
+> 12
+
+] kgm 2 for i = 1 , 2, 3, where mi, Ii, and li
+
+denote the mass, inertia, and length of the ith link, respectively. We primarily evaluate two tasks: an information-maximizing exploration task in a narrow corridor with obstacles, and a trajectory-tracking task under varying levels of parametric mismatch. In both cases, we introduce a distributional shift by changing the link masses at deployment time, creating a mismatch between the nominal model and the true system dynamics. Adaptation performance is quantified using the dynamic prediction error at the ith timestep: 
+
+edyn =
+
+vuut 1
+
+NdNdX
+
+> j=1
+
+∥ˆxi+j − xi+j ∥2, (81) where Nd = 15 is the prediction horizon. The 10% settling time ts is also reported, defined as the time required for edyn 
+
+to enter and remain within 10% of its steady-state value. 
+
+a) Task 1: Information-Maximizing Exploration in aConstrained Corridor: The system must traverse a narrow corridor populated with obstacles while simultaneously acquir-ing informative data to accelerate online adaptation. The link mass is reduced by 40% to induce a moderate distributional shift. The exploration weight is fixed at β = 10 3 throughout the task to encourage exploration, and conformal prediction-based constraint tightening (Section IV) is employed to handle transient model uncertainty during the adaptation warmup phase. As shown in Fig. 2, ASACK achieves safe corridor-constrained traversal (Fig. 2a) with zero obstacle collisions (Fig. 2b). Notably, the executed trajectory deviates from the reference to actively explore informative regions of the state space, reflecting the influence of the active learning objec-tive. The contractive adaptation law, aided by this structured exploration, achieves rapid convergence with ts = 0.1 s(Fig. 2c). This is further corroborated by the rapid decay of the conformal tightening scalar δ in Fig. 3, which directly reflects the reduction in model error as adaptation progresses. These results confirm that safe corridor traversal, information-driven exploration, and online adaptation can be achieved simultaneously within the proposed framework. To directly compare the proposed ASACK scheme with the baselines under a challenging unified scenario, we evaluate corridor-constrained tracking with a 60% mass reduction and 
+
+β = 10 4. The higher exploration weight is warranted here because the increased model mismatch demands more aggres-sive excitation to drive parameter convergence; in the absence of obstacle constraints, this more aggressive weighting does not risk safety violations. Note that the reference trajectory is collision free, so if the applied controller is able to adapt in time and follow the path, the end effector can stay within the corridor even in absence of a safety mechanism, as is the case for NK, NAK [22], and AcK [27]. As shown in Fig. 4, the proposed framework successfully achieves safe corridor con-strained tracking, whereas NK, NAK [22], and AcK [27] fail to do so. This improved performance arises from the integration of contractive adaptation with active learning, which promotes exploration of informative trajectories while ensuring stable model updates. In addition, CBF-based constraints enforce safety, ensuring that the system remains within the admissible region. This behavior is reflected in edyn (Fig. 4c), which 17 Reference ASACK Corridor Corridor Violation NK NAK [22] xAcK [27] 
+
+## a) b) c) 
+
+0.4 0.8 1.2 1.6 2.0 
+
+x(m) 
+
+> y(m)
+
+0.6 1.0 1.4 1.8 
+
+0 10 20 30 
+
+t(s) 
+
+> edyn
+
+00.5 1.0 1.5 001.5 0.4 
+
+Method 
+
+> No. of collisions
+
+0123x10 3NK Proposed AcK[27] NAK[22] 
+
+266 2683 2942 0
+
+Fig. 4. Comparison for constrained tracking performance for 3R manipulator within corridor for ASACK (proposed), NK, AcK [27], and NAK [22]. Red implies breach of the corridor bounds. a) Tracking within the corridor. b) Number of collisons. f) Comparison of edyn .Reference ASACK NK NAK [22] AcK [27] 
+
+## a) b) c) 0.8 2.0 y(m) 
+
+> z(m)
+
+0.8 1.0 
+
+> x(m)
+
+1.2 2.0 y(m) 
+
+0.8 
+
+> x(m)
+
+1.0 1.6 
+
+0.8 2.0 y(m) 
+
+> z(m)
+
+0.8 1.0 
+
+> x(m)
+
+0.8 1.8 
+
+Fig. 5. Comparison of trajectory tracking performance of the for ASACK (proposed), NK, AcK [27], and NAK [22] for 3R manipulator across different shapes. a) Hypotrochoid. b) Petal. c) Helix. mass change (%)     
+
+> 0-50 50 023
+> ASACK NK NAK [22] AcK [27]
+> || e|| (m)
+> 1
+
+Fig. 6. Comparison of RMSE errors for tracking control of a 3R serial manipulator for changes in mass (-90% to 90%) for the proposed schemes, NK, AcK [27] and NAK [22]. decays rapidly with a settling time of ts = 0.12 s. In contrast, NK, which lacks adaptation, fails to accommodate the change in dynamics, resulting in a continual increase in time/iteration (s)    
+
+> 10 -3 10 -2 Method NK ASACK AcK[27] NAK[22] ASACK (No AL)
+> *AL - Active Learning
+
+Fig. 7. Box plot for computation time per iteration for the proposed schemes, NK, AcK [27] and NAK [22]. The box plot is genrated using data over 20 trials. 
+
+edyn and eventual violation of corridor constraints. NAK [22] achieves partial adaptation but with an initial settling time of 
+
+ts = 1 .17 s, nearly ten times slower than ASACK, and exhibits 18 mass change (%)   
+
+> 0-50 50 013ASACK ASACK (No Active Learning) || e|| (m) 2
+
+Fig. 8. Comparison of RMSE errors for tracking control of a 3R serial manipulator for changes in mass (-90% to 90%) for the ASACK (proposed) schemes with and without active learning. a secondary increase in edyn at t = 18 .49 s, attributable to insufficient excitation during adaptation. While NAK improves over initially explored trajectory segments, it fails to generalize across the full workspace, leading to renewed prediction error growth. AcK [27], despite incorporating active learning, is unable to maintain safe operation for two reasons: it does not explicitly enforce safety during exploration, permitting constraint-violating trajectories, and its purely data-driven EDMD updates lack structural guarantees such as contraction or robustness, resulting in inconsistent adaptation under large distributional shifts. Together, these results demonstrate that the combination of contractive adaptation, information-driven excitation, and CBF-based safety enforcement, rather than any single component in isolation, is responsible for ASACK’s superior performance. 
+
+b) Task 2: Trajectory Tracking Under Parametric Mis-match: The system must accurately track a prescribed refer-ence trajectory while adapting to a distributional shift induced by reducing the link mass. Corridors and obstacles are re-moved from this evaluation to isolate adaptation performance from safety conservatism. The mass change range is taken to be −90% − +90% to induce a more severe mismatch than in Task 1. The exploration weight is initialized at β = 10 3
+
+and decayed progressively as the model converges, shifting emphasis from information-driven exploration toward tracking precision. This scheduling is intentional: a high initial β drives the system to collect maximally informative data during the transient phase when model error is largest, while the decay prevents unnecessary excitation once the model has converged. ASACK is evaluated on three reference trajectories, hy-potrochoid, petal, and helix, to assess generalization across diverse regions of the workspace. A nominative case, where the mass reduction is −60% is shown in (Fig. 5). ASACK is able to accurately trace the desired paths under distribution shifts, achieving steady-state tracking errors of 0.0151 m, 
+
+0.0159 m, and 0.0324 m, respectively. Comparatively, the baselines, NK, AcK [27] and NAK [22] show a severely degraded tracking performance under the changed conditions. The complete ablation study, comparing the Cartesian RMSE of ASACK, NK, and NAK, across mass changes ranging from −90% to 90% is shown in Fig. 6. ASACK consistently maintains RMSE on the order of 10 −2 m across the full range. In contrast, NK exhibits errors exceeding 3 m under moderate to large shifts due to the absence of any adaptation mechanism. NAK [22], despite employing neural network-based adaptation, shows inconsistent performance with large error spikes at specific mass values, reflecting its sensitivity to the quality of online gradient updates and the absence of a formal convergence guarantee. Meanwhile, AcK [27] shows poor performance throughout the ablation range. Al-though AcK [27] incorporates information-driven exploration, its EDMD-based adaptation repeatedly recomputes the Koop-man operator from local trajectory windows rather unlike ASACK and NAK [22] which incrementally refine previously learned model. Consequently, the adapted operator becomes highly sensitive to the conditioning and representativeness of the locally collected data. Moreover, unlike ASACK, the re-estimation process does not explicitly enforce contraction or robustness of the adapted Koopman model, resulting in inaccurate operator updates and degraded closed-loop tracking performance. The computational cost of each method is reported in Fig. 7, measured as wall-clock time per control iteration. NK incurs the lowest median solve time of approximately, as expected given the absence of any adaptation or information-seeking overhead. The full ASACK framework, incorporating the log-det active learning objective solved via SQP, requires approxi-mately incurs a compuation time an order of magnitude higher than the nominal MPC. However, it still incurs a computational cost comparable to NAK [22] and AcK [27], while providing substantially improved robustness and safety performance un-der distribution shifts. It can be seen that removing the active learning objective from ASACK (ASACK No AL) results in computation time of the same order as NK, confirming that the contractive adaptation law itself introduces negligible compu-tational overhead relative to the nominal MPC solve. In any case across all adaptive methods, the per-iteration solve times remain compatible with real-time deployment, demonstrating that the ASACK framework achieves its theoretical guarantees without sacrificing computational feasibility. To isolate the role of information-driven exploration, we perform an ablation study in which the active learning ob-jective is removed by setting β = 0, while retaining the contractive adaptation law and safety constraints. The re-sulting performance is compared against the full proposed method across varying levels of mass-induced distribution shift (Fig. 8). As observed, the proposed method consistently maintains low Cartesian tracking error across the entire range of mass variations. In contrast, the ablated variant exhibits signifi-cantly degraded performance, with the tracking error increas-ing rapidly under moderate to large distribution shifts. This behavior indicates that, in the absence of explicit information-seeking excitation, the closed-loop trajectories fail to suffi-ciently condition the Koopman regression problem, resulting in slower or ineffective adaptation. These results highlight that, although the contractive update 19 
+
+law provides theoretical guarantees under sufficient excitation, active learning plays a critical role in practice by ensuring informative data collection. Consequently, it enables rapid reduction in model error and preserves tracking performance under distribution shift. 
+
+2) Planar Quadrotor: The planar quadrotor serves as a complementary evaluation platform to the serial manipulator, testing the proposed framework on a system with fundamen-tally different dynamic characteristics: underactuation, coupled translational and rotational degrees of freedom, and sensitivity to time-varying aerodynamic disturbances. Unlike the manipu-lator, where distributional shift arises from payload variations that modify inertial parameters quasi-statically, the quadrotor, in addition to payload variation, is subject to continuously varying wind disturbances that induce a drifting perturbation to the true Koopman operator throughout flight. This setting therefore provides a more demanding test of the adaptation law’s ability to track a time-varying operator, as characterized by Assumption 4 with ν > 0 and the ultimate bound of Theorem 1. The system dynamics for a planar quadrotor under wind disturbances are given by [22]: 
+
+
+
+¨y
+
+¨z
+
+¨θ
+
+ =
+
+
+
+0
+
+−g
+
+0
+
+ +
+
+
+
+− 1 
+
+> m
+
+sin θ − 1 
+
+> m
+
+sin θ 
+
+> 1
+> m
+
+cos θ 1 
+
+> m
+
+cos θ
+
+− larm 
+
+> Ilarm
+> I
+
+T1
+
+T2
+
+
+
++ F w
+
+m ,
+
+F w =
+
+Kv 2 
+
+> w
+
+cos( αw)
+
+Kv 2 
+
+> w
+
+sin( αw)0
+
+ , (82) where y, z, and θ denote the Cartesian position and orienta-tion in the y–z plane, T1 and T2 are the thrust inputs, and m,
+
+larm , I, and g denote the mass, arm length, rotational inertia, and gravitational acceleration, respectively. The wind distur-bance F w enters as an additive force whose magnitude scales quadratically with wind speed vw through drag coefficient K,and whose direction is determined by αw. Because vw and αw
+
+vary continuously during flight, the wind disturbance induces a continuously drifting perturbation to the true Koopman op-erator, precisely the scenario governed by Assumption 4 with 
+
+ν > 0. The nominal model is trained under calm conditions (vw = 0 , αw = 0 ) using parameters m = 2 kg, I = 1 kg · m2,
+
+g = 9.81 m/s 2, larm = 0.2 m, and K = 0.1 kg/m, so that any wind introduced at deployment constitutes a genuine distributional shift absent from the training data. Two tasks are evaluated: a navigation task that tests safe adaptation under obstacle avoidance, and a trajectory tracking task that evaluates robustness across a range of wind velocities. The same metrics used for the manipulator, edyn (Eq. 81) and settling time ts,are reported for consistency. 
+
+a) Task 1: Cooperative Navigation Under Wind and Dynamic Obstacles: Two planar quadrotors navigate a shared obstacle field while avoiding both static obstacles and inter-agent collisions, with the mass of each agent increased by 20% 
+
+and a wind disturbance of 3 m/s introduced at deployment. The simultaneous presence of mass mismatch and aerodynamic disturbance means the true Koopman operator deviates from the nominal model through two independent channels, pro-viding a stringent test of the adaptation law under composite distributional shifts. The exploration weight is set to β = 10 ,which is lower than in the manipulator experiments because the quadrotor’s agile dynamics and tighter obstacle clearances limit the degree of safe excursion from the reference trajectory; the coupled translational-rotational dynamics of the quadrotor produce a naturally better-conditioned regressor Gramian Gk
+
+even at moderate values of β, reducing the need for aggressive active excitation. As shown in Fig. 9, both agents successfully complete the task without any collisions, maintaining inter-agent clearance above the safety threshold throughout (Figs. 9b and 9c). The dynamic prediction error edyn for both agents decays rapidly, with a settling time of ts = 0 .05 s, which is faster than the manipulator result of ts = 0.1 s under a comparable composite shift. This faster convergence is consistent with the richer natural excitation of the quadrotor’s coupled dynamics, which supplements the active learning objective in maintaining a well-conditioned Gramian. These results demonstrate that the framework scales naturally to multi-agent settings, and that the CBF constraints generalize to inter-agent safety requirements without modification. Again, we compare the proposed scheme with NK, NAK [22], and AcK [27]. For comparison, we consider a single planar quadrotor within an obstacle field. Furthermore, the mass of the quadrotor is increased by 60% and the wind velocity is increased to 5m/s to induce a more severe distribution shift. For this setting, we increase β to 10 2 to emphasize information acquisition. As shown in Fig. 10, the proposed framework successfully achieves safe obstacle-constrained tracking, whereas NK, NAK, and AcK fail to do so. Again, the proposed scheme shows a rapid convergence in edyn whereas other studies show a comparatively slower convergence or no convergence at all, demonstrating their inability to adapt to such large distribution shifts. 
+
+b) Task 2: Trajectory Tracking Under Wind Distur-bances: To enable direct comparison with baselines and isolate single-agent tracking performance, the multi-agent setting is reduced to a single quadrotor navigating a static obstacle field. The mass is increased by 60% , and the wind velocity is increased to 5 m/s to induce a severe composite distributional shift. The exploration weight is initialized at β = 10 2, higher than in the multi-agent task because the single-agent setting permits more aggressive excitation without inter-agent colli-sion risk, and decayed progressively as the model converges, following the same scheduling rationale as the manipulator tracking task. In addition, we evaluate ASACK on three reference trajecto-ries, hypotrochoid, S-curve, and lemniscate, under a represen-tative wind velocity of 4 m/s, achieving steady-state tracking errors of 0.01 m, 0.009 m, and 0.036 m, respectively (Fig. 11). The full ablation study across wind velocities from 0 to 6 m/s is shown in Fig. 6, where ASACK consistently maintains lower RMSE than NK and NAK [22] across all tested conditions. 
+
+3) Franka Emika Research 3: This simulation validates the proposed framework on a 7−DoF Franka Research 3 (FR3) manipulator in a high-fidelity Gazebo simulation environ-ment (Fig. 13), demonstrating transferability to a significantly higher-dimensional system than the 3R manipulator of Sec-20 Reference Agent 1 Obstacle Safety Boundry Agent 2 Start End Wind Gust 
+
+## a) b) c) 
+
+0.0 1.0 2.0 3.0 4.0 
+
+y(m) 
+
+> z(m)
+
+0.5 1.0 2.0 
+
+0 0.1 04
+
+> distance (m)
+
+0.0 1.5 3.0 
+
+t(s) 
+
+0 5 10 02.0 4.0 
+
+> edyn
+
+0 5 10 
+
+t(s) 
+
+Fig. 9. Analysis of learning performance of the planar quadrotor for the proposed scheme for dynamic obstacles. a) Trajectory Tracking b) Interagent Distance c) Dynamic prediction error ( edyn ).Reference ASACK Violation NK NAK [22] xAcK [27] Wind Gust Obstacle 
+
+## a) b) c) 
+
+0.0 1.0 2.0 3.0 4.0 
+
+y(m) 
+
+> z(m)
+
+0.5 1.0 2.0 1.5 
+
+0 10 2 4 6 8
+
+t(s) 
+
+> edyn
+
+10 -3 10 -1 10 010 -2 10 -4 
+
+Method 
+
+> No. of collisions
+
+30 60 0 NK Proposed AcK[27] NAK[22] 
+
+51 046 66 
+
+Fig. 10. Comparison for constrained trajectory tracking performance for planar quadrotor within an obstacle field for ASACK (proposed), NK, AcK [27], and NAK [22]. Red implies breach of the corridor bounds. a) Traced Path b) Number of collisons f) Comparison of dynamic prediction error ( edyn ). Reference ASACK NK NAK [22] Wind Gust 
+
+## a) b) c) 
+
+-1.0 1.5 y(m) 
+
+> z(m)
+
+-2.5 0.0 
+
+-2.0 2.0 y(m) 
+
+> z(m)
+
+0.0 2.0 
+
+-2.0 2.0 y(m) 
+
+> z(m)
+
+-2.0 1.0 
+
+Fig. 11. Trajectory tracking performance of the proposed scheme for planar quadrotor for ASACK (proposed), NK, and NAK [22] across different shapes. a) Hypotrochoid. b) S. c) Lemniscate. tion V-A1. The increased joint count raises the dimension of the lifted Koopman state space and the corresponding regressor Gramian Gk, providing a more demanding test of the active learning objective’s ability to maintain Gramian conditioning 21 vw (m/s)    
+
+> 064200.2 0.4 ASACK NK NAK [22]
+> || e||
+
+Fig. 12. Comparison of RMSE errors for tracking control of a planar quadrotor for wind velocity ranging from 0-6 m/s for the proposed schemes, NK and NAK [22]. 
+
+Fig. 13. Experimental Setup. across a larger parameter space. The task requires the end effector to track a reference trajectory within a narrow corridor while accounting for the finite spatial footprint of the end-effector region, illustrated as the shaded region in Fig. 14. This imposes a stricter geometric constraint than in the previous experiments: rather than requir-ing a single point to remain within the corridor, the entire end-effector region must remain within the admissible bounds at all times. The CBF constraint of Section III is applied directly to enforce this requirement, with the conformal tightening scalar 
+
+δk active throughout to handle transient model uncertainty during the adaptation warmup phase. We assess robustness under two conditions: nominal operation with no disturbance, and a disturbed condition in which a resistive torque equal to 40% of the applied joint torque magnitude is uniformly introduced across all joints at deployment. This uniform re-sistive disturbance modifies the effective inertial and damping properties of all links simultaneously, inducing a structured distributional shift in the lifted dynamics that is absent from the offline training data and must be compensated entirely by the online adaptation law. The end-effector trajectories for both conditions are shown in Fig. 14. Under nominal conditions (Fig. 14a), ASACK tracks the reference trajectory accurately within the corridor bounds, confirming that the offline-learned Koopman model provides an adequate nominal representation of the FR3 dy-namics and that the active learning objective does not intro-duce unnecessary deviation from the reference when the model mismatch is small. Under the disturbed condition (Fig. 14d), ASACK maintains safe corridor-constrained tracking despite the uniform resistive torque disturbance. The executed trajecto-ries remain entirely within the corridor bounds in both cases, and deviate from the reference where necessary to explore informative regions of the state space, consistent with the active learning objective. Notably, tracking performance is preserved despite the substantial actuation disturbance, with the contractive adaptation law compensating for the resulting model mismatch online and the conformal tightening scalar adapting to the residual disturbance magnitude as adaptation progresses. On the otherhand, NAK [22] is able to track the desired path in absence of any disturbance (Fig. 14b). However, in presence of the disturbance, it is unable to remain within the corridor(Fig. 14e). Meanwhile, NK is unable to remain in the corridor or track the desired path in both the scenarios (Fig. 14c and Fig. 14f). These results make three contributions to the overall evalu-ation. First, they confirm that the framework scales to higher-dimensional systems without architectural modification: the same offline training procedure, adaptation law, and robust MPC formulation used for the 3R manipulator transfer directly to the 7-DoF FR3. Second, the stricter geometric corridor constraint, requiring the entire end-effector footprint rather than a single point to remain within bounds, demonstrates that the CBF safety formulation generalizes naturally to set-valued safety requirements without modification. Third, the comparison between the disturbed and undisturbed trajectories provides a qualitative illustration of the adaptation law’s effect consistent with the finite-time bound of Theorem 1: the undisturbed trajectory tracks the reference closely from the outset, while the disturbed trajectory exhibits a brief transient deviation during the adaptation warmup phase before converg-ing to accurate corridor-constrained tracking, reflecting the initial estimation error ∥E0∥F decaying at the rate guaranteed by the contraction parameter ρ.
+
+B. Experimental Results 
+
+This section presents hardware experiments validating the proposed framework on a TurtleBot3 Burger mobile robot (Fig. 15). The nominal Koopman model is learned offline from data collected in a high-fidelity Gazebo simulation en-vironment. Consequently, the controller must adapt online to the distribution shift introduced by the sim-to-real gap, sensor noise, and unmodeled hardware effects during deployment. To systematically evaluate robustness under increasingly se-vere deployment mismatch, three experimental configurations are considered: (i) the nominal TurtleBot3 platform with no modifications (Fig. 15a), (ii) a symmetric ring attachment 22 Reference Corridor End Effector Footprint Path Violation x
+
+## b) 
+
+0.1 0.3 0.5 
+
+x(m) 
+
+> y(m)
+
+-0.4 -0.2 0.0 
+
+0.1 0.3 0.5 
+
+> y(m)
+
+-0.4 -0.2 0.0 
+
+## a) 
+
+0.1 0.3 0.5 -0.4 -0.2 0.0 xxxxxxxxxxxxx x xxxxxxxxxxxxxxxxxxxxxxx xxxxx xx
+
+0.1 0.3 0.5 -0.4 -0.2 0.0 
+
+> xxxx xxxxxx xx xxxxxxxxxxxxx x x xxx xxxxxxxxx
+
+x(m) 
+
+> ¿ d = 0 Nm ¿d = -0.4 ¿ Nm
+
+## c) 
+
+ASACK NK NAK[22] 
+
+-0.4 -0.2 0.0 
+
+> xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxx xxxx xx
+
+-0.4 -0.2 0.0 0.1 0.3 0.5 
+
+x(m) e) f) d) 
+
+Fig. 14. Tracking performance for the Franka Emika 3 for the ASACK (proposed scheme) (a,d), NK (b,e), and NAK [22] within a a corridor (a) in presence (b) and absence (c) of input disturbance. The end effector blueprint is highlighted in blue. a,b) Simulation setup. b,c) End effector path. 
+
+Fig. 15. Experimental TurtleBot3 platform. (a) Nominal TurtleBot3 configuration. (b) Symmetric wheel attachment. (c) Eccentric wheel attachment. (d) TurtleBot3 with the wheel attachment mounted on one of the wheels. (Fig. 15b) mounted on one wheel, which alters the effective wheel radius and introduces an asymmetric kinematic mis-match , and (iii) an eccentric ring (Fig. 15c) mounted on one wheel, generating asymmetric and time-varying wheel motion that induces nonstationary disturbances arising from periodic slip and uneven rolling behavior. These configurations emulate extreme versions of deployment effects encountered in practice. The symmetric ring captures the effect of pay-load asymmetry and uneven wheel wear, while the eccentric ring approximates the nonstationary dynamics introduced by actuator imbalance, irregular terrain, and non-ideal contact. The corresponding tracking results are shown in Fig. 16. Even under nominal conditions, the NK and NAK [22] fail to maintain safe trajectory tracking, with both methods exhibiting obstacle constraint violations and significant tracking error arising from the sim-to-real distribution shift alone. The pro-posed framework, in contrast, successfully tracks the reference trajectory and avoids all obstacles under nominal deployment. As the severity of deployment mismatch increases through the symmetric and eccentric wheel configurations, the degradation of the baseline methods becomes more pronounced, while the proposed framework consistently maintains accurate and safe trajectory tracking across all experimental conditions. These results demonstrate that the combination of contractive Koopman adaptation, information-driven active excitation, and conformal safety-constrained control enables reliable deploy-ment under significant real-world model mismatch. VI. C ONCLUSION 
+
+This paper presented ASACK, a continual adaptive Koop-man learning framework that unifies contractive online adap-tation, D-optimal active learning, and MPC-based safety en-forcement for real-time control of nonlinear systems under 23 a) x(m)     
+
+> 1.2 0.8 0.4 0
+> x(m)
+> 1.2 0.8 0.4 0-3 -2 -1 01
+> x(m)
+> 1.2 0.8 0.4 0
+
+Reference ASACK NK NAK [22] Obstacle Start 
+
+Fig. 16. Experimental comparison for constrained trajectory tracking performance for Turtlebot3 robot within an obstacle field for ASACK (proposed), NK, AcK [27], and NAK [22]. (a) Nominal robot configration. (b) Robot with a symmetric circular ring mounted on left wheel. (c) robot with an eccentric ring mounted on left wheel. distributional shift. The central insight is that these three components are mutually reinforcing rather than competing: the contraction rate of the adaptation law depends directly on the Gramian conditioning that the active learning objective is maintained, while the safety guarantees are made non-conservative because the adaptation law provides a quantifiable bound on model mismatch that enters the robust MPC as a bounded disturbance. On the theoretical side, Theorem 1 provides the first formal exponential convergence guarantee for online Koopman oper-ator adaptation under persistent excitation, with an ultimate bound proportional to the operator drift rate ν. Theorem 2 establishes that the information-regularized MPC preserves Gramian conditioning whenever a sufficiently informative ad-missible trajectory exists, without imposing hard persistent excitation conditions, and Theorem 3 shows that the log-det objective induces a strictly positive improvement in infor-mation gain for any sufficiently small β > 0. Theorem 4 jointly proves recursive feasibility, forward invariance of S,and ultimate boundedness of zk via a composite disturbance bound δ+ 
+
+> k
+
+that accounts for both model-mismatch error and the model-update perturbation, a term absent from existing Koopman safety analyses. Since δ+ 
+
+> k
+
+renders the CBF constraint infeasible in geometrically tight environments when ρ ≈ 1,Theorem 5 governs the implemented safety constraint via a data-driven conformal tightening scalar δconf  
+
+> k
+
+calibrated from observed residuals, providing per-step coverage 1 − χ
+
+and finite-horizon coverage 1 − T χ without dependence on the adaptation parameters. The two safety theorems form a theoretical chain: Theorem 4 establishes the disturbance boundedness condition required for Theorem 5 to hold, while Theorem 5 provides the tighter, implementable guarantee that governs closed-loop safety in practice. Experimentally, ASACK achieves zero safety violations across all evaluated scenarios, a 3R serial manipulator under mass variations from −90% to 90% , a planar quadrotor under composite mass and wind disturbances of up to 6 m/s, a 7-DoF Franka Research 3 under torque disturbances in a high-fidelity Gazebo environment, and and a TurtleBot3 Burger mobile robot navigating obstacle-cluttered environments under sim-24 
+
+to-real transfer and increasingly severe physical disturbances induced by symmetric and eccentric wheel attachments. While as, all baselines incur constraint violations in at least one scenario. The ablation results confirm that each of the three framework components is individually necessary for reliable performance under large distributional shifts. Several directions remain open for future work. Extend-ing online adaptation to jointly update the lifting map ψ(·)
+
+alongside the operator matrices would relax Assumption 5 and handle more severe distributional shifts. Characterizing coverage degradation of the conformal safety certificate under the correlated residuals of a closed-loop adaptive controller would strengthen Theorem 5. Scaling the SQP-based solver to higher-dimensional platforms such as full 3D quadrotors or humanoid robots may require structure-exploiting solver strategies beyond those employed here. Finally, extending the framework to multi-agent settings with communication-aware active learning objectives, where agents jointly optimize the shared information value of their collected data, represents a practically significant direction that the cooperative quadrotor results of this work motivate. REFERENCES [1] M. Feinberg, “Foundations of chemical reaction network theory,” 2019. [2] P. Mendes and D. Kell, “Non-linear optimization of biochemical path-ways: applications to metabolic engineering and parameter estimation.,” 
+
+Bioinformatics (Oxford, England) , vol. 14, no. 10, pp. 869–883, 1998. [3] D. A. Rasmussen, O. Ratmann, and K. Koelle, “Inference for nonlin-ear epidemiological models using genealogies and time series,” PLoS computational biology , vol. 7, no. 8, p. e1002136, 2011. [4] Z. Wang, J. Lam, G. Wei, K. Fraser, and X. Liu, “Filtering for nonlinear genetic regulatory networks with stochastic disturbances,” 
+
+IEEE Transactions on Automatic Control , vol. 53, no. 10, pp. 2448– 2457, 2008. [5] S. H. Strogatz, Nonlinear dynamics and chaos: with applications to physics, biology, chemistry, and engineering . CRC press, 2018. [6] K. Ogata et al. , Modern control engineering , vol. 5. Prentice hall Upper Saddle River, NJ, 2010. [7] B. O. Koopman, “Hamiltonian systems and transformation in hilbert space,” Proceedings of the National Academy of Sciences , vol. 17, no. 5, pp. 315–318, 1931. [8] M. Korda and I. Mezi´ c, “Linear predictors for nonlinear dynamical sys-tems: Koopman operator meets model predictive control,” Automatica ,vol. 93, pp. 149–160, 2018. [9] K. Champion, B. Lusch, J. N. Kutz, and S. L. Brunton, “Data-driven discovery of coordinates and governing equations,” Proceedings of the National Academy of Sciences , vol. 116, no. 45, pp. 22445–22451, 2019. [10] Q. Li, F. Dietrich, E. M. Bollt, and I. G. Kevrekidis, “Extended dynamic mode decomposition with dictionary learning: A data-driven adaptive spectral decomposition of the koopman operator,” Chaos: An Interdisci-plinary Journal of Nonlinear Science , vol. 27, no. 10, p. 103111, 2017. [11] B. Lusch, J. N. Kutz, and S. L. Brunton, “Deep learning for universal linear embeddings of nonlinear dynamics,” Nature communications ,vol. 9, no. 1, p. 4950, 2018. [12] S. L. Brunton, M. Budiˇ si´ c, E. Kaiser, and J. N. Kutz, “Modern koopman theory for dynamical systems,” arXiv preprint arXiv:2102.12086 , 2021. [13] C. K. Sah, R. Singh, and J. Keshavan, “Real-time constrained tracking control of redundant manipulators using a koopman-zeroing neural network framework,” IEEE Robotics and Automation Letters , vol. 9, no. 2, pp. 1732–1739, 2024. [14] R. Singh, A. Singh, C. S. Kashyap, and J. Keshavan, “General-ized momenta-based koopman formalism for robust control of euler-lagrangian systems,” arXiv preprint arXiv:2509.17010 , 2025. [15] D. Bruder, X. Fu, R. B. Gillespie, C. D. Remy, and R. Vasudevan, “Data-driven control of soft robots using koopman operator theory,” 
+
+IEEE transactions on robotics , vol. 37, no. 3, pp. 948–961, 2020. [16] D. Bruder, D. Bombara, and R. J. Wood, “A koopman-based residual modeling approach for the control of a soft robot arm,” The International journal of robotics research , vol. 44, no. 3, pp. 388–406, 2025. [17] V. Zinage and E. Bakolas, “Koopman operator based modeling for quadrotor control on se (3),” IEEE Control Systems Letters , vol. 6, pp. 752–757, 2021. [18] C. Folkestad, S. X. Wei, and J. W. Burdick, “Koopnet: Joint learning of koopman bilinear models and function dictionaries with application to quadrotor trajectory tracking,” in 2022 International Conference on Robotics and Automation (ICRA) , pp. 1344–1350, IEEE, 2022. [19] Z. M. Manaa, A. M. Abdallah, M. A. Abido, and S. S. A. Ali, “Koopman-lqr controller for quadrotor uavs from data,” in 2024 IEEE International Conference on Smart Mobility (SM) , pp. 153–158, IEEE, 2024. [20] A. Krolicki, D. Rufino, A. Zheng, S. S. Narayanan, J. Erb, and U. Vaidya, “Modeling quadruped leg dynamics on deformable terrains using data-driven koopman operators,” IFAC-PapersOnLine , vol. 55, no. 37, pp. 420–425, 2022. [21] C.-M. Yang and P. A. Bhounsule, “Koopman operator based linear model predictive control for quadruped trotting,” in 2025 IEEE International Conference on Robotics and Automation (ICRA) , pp. 12359–12364, IEEE, 2025. [22] R. Singh, C. K. Sah, and J. Keshavan, “Adaptive koopman embedding for robust control of nonlinear dynamical systems,” The International Journal of Robotics Research , vol. 44, no. 13, pp. 2235–2261, 2025. [23] D. Uchida and K. Duraisamy, “Model predictive control of nonlinear dynamics using online adaptive koopman operators,” arXiv preprint arXiv:2412.02972 , 2024. [24] F. Li, A. Abuduweili, Y. Sun, R. Chen, W. Zhao, and C. Liu, “Continual learning and lifting of koopman dynamics for linear control of legged robots,” arXiv preprint arXiv:2411.14321 , 2024. [25] M. Selim, S. Bhat, and K. H. Johansson, “Metakoopman: Bayesian meta-learning of koopman operators for modeling structured dynamics under distribution shifts,” in The Thirty-ninth Annual Conference on Neural Information Processing Systems .[26] B. Banday, C. K. Sah, and J. Keshavan, “Event-based adaptive koopman framework for optic flow-guided landing on moving platforms,” arXiv preprint arXiv:2501.16868 , 2025. [27] I. Abraham and T. D. Murphey, “Active learning of dynamics for data-driven control using koopman operators,” IEEE Transactions on Robotics , vol. 35, no. 5, pp. 1071–1083, 2019. [28] A. Mauroy, Y. Susuki, and I. Mezic, Koopman operator in systems and control , vol. 484. Springer, 2020. [29] D. Goswami and D. A. Paley, “Gcontrol-aware learning of koopman embedding models a koopman spectral approach,” in 2017 IEEE 56th Annual Conference on Decision and Control (CDC) , pp. 6107–6112, IEEE, 2017. [30] V. Vovk, A. Gammerman, and G. Shafer, Algorithmic Learning in a Random World . New York, NY: Springer, 2005. [31] R. Verschueren, G. Frison, D. Kouzoupis, J. Frey, N. van Duijkeren, A. Zanelli, B. Novoselnik, T. Albin, R. Quirynen, and M. Diehl, “acados – a modular open-source framework for fast embedded optimal control,” 
+
+Mathematical Programming Computation , 2021.

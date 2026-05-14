@@ -1,0 +1,2189 @@
+Title: Rethinking Adapter Placement: A Dominant Adaptation Module Perspective
+
+URL Source: https://arxiv.org/pdf/2605.06183v1
+
+Published Time: Fri, 08 May 2026 01:29:58 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+# Rethinking Adapter Placement: A Dominant Adaptation Module Perspective 
+
+Suoxin Zhang 1 Run He 1 Di Fang 1 Xiang Tan 1 Kaixuan Chen 2 Huiping Zhuang 1∗
+
+> 1
+
+South China University of Technology, China 2Zhejiang University, China 
+
+Abstract 
+
+Low-rank adaptation (LoRA) is a widely used parameter-efficient fine-tuning method that places trainable low-rank adapters into frozen pre-trained models. Recent studies show that using fewer LoRA adapters may still maintain or even improve performance, but existing methods still distribute adapters broadly, leaving 
+
+where to place a limited number of adapters to maximize performance largely open. To investigate this, we introduce PAGE (Projected Adapter Gradient Energy), a gradient-based sensitivity probe that estimates the initial trainable gradient energy available to each candidate LoRA adapter. Surprisingly, we find that PAGE is highly concentrated on a single shallow FFN down-projection across two model families and four downstream tasks. We term this module the dominant adaptation module and show that its layer index is architecture-dependent but task-stable. Motivated by this finding, we propose DomLoRA , a placement method that places a single adapter at the dominant adaptation module. With only ∼0.7% of vanilla LoRA’s trainable parameters, DomLoRA outperforms it on average across various downstream tasks, including instruction following, mathematical reasoning, code generation, and multi-turn conversation. This method also improves other LoRA variants, supporting the dominant adaptation module perspective as a practical placement guideline. 
+
+1 Introduction 
+
+Large language models (LLMs) have achieved strong general-purpose performance across a wide range of language tasks. However, off-the-shelf LLMs are not always optimal for a specific target domain or instruction format. Fine-tuning LLMs on task-specific datasets has therefore become a common practice. The most direct strategy is full fine-tuning, which updates all model parameters and often provides strong adaptation performance. However, as model sizes grow, full fine-tuning becomes increasingly expensive in computation, memory, and storage. Parameter-efficient fine-tuning (PEFT) mitigates these costs by updating only a small subset of parameters while approaching full fine-tuning performance [1]. Among PEFT methods, low-rank adaptation (LoRA) [ 2] is the most widely adopted technique, which places trainable low-rank adapters into frozen pre-trained models. In common practice, these adapters are placed at attention and feed-forward network (FFN) projections in most or all Transformer blocks [ 3 , 4]. However, recent studies show that using fewer adapters may still maintain or even improve performance. Some methods reduce the number of adapted layers [ 5, 6 , 7] while keeping all module types within the selected layers (Figure 1(a)). Others reduce the adapted module types [8, 9, 10 ], such as selecting only FFN or only attention projections, while applying the selected adapters across all layers (Figure 1(b)). Nevertheless, these methods still keep adapters across multiple modules, raising an open question: where should a limited number of LoRA adapters be placed to maximize adaptation performance?                
+
+> ∗Corresponding author: Huiping Zhuang (hpzhuang@scut.edu.cn).
+> arXiv:2605.06183v1 [cs.AI] 7 May 2026 Input … … …
+> FFN Attention
+> FFN Attention
+> FFN Attention
+> FFN Attention …
+> FFN Attention
+> ×N (b) Module - type Reduction
+> Where should adapters be placed? Vanilla LoRA
+> Layer n Layer 0 Layer m
+> …
+> Layer m+1
+> …
+> Layer n-1 Layer n-2
+> 1.0 0.8 0.6 0.4 0.2 0.0
+> WQWKWVWOWDown WGate WUp
+> (c) Reduction to a Single Dominant Module Projected Adapter Gradient Energy
+> ×NFFN Attention
+> FFN Attention
+> FFN Attention
+> FFN Attention
+> FFN Attention
+> FFN Attention
+> FFN Attention
+> FFN Attention
+> FFN Attention
+> (a) Layer- wise Reduction
+
+Figure 1: From broad to dominant placement. Vanilla LoRA places adapters across many layers and module types. (a) Layer-wise Reduction: fewer layers, all module types retained. (b) Module-type Reduction: fewer module types, all layers retained. (c) Reduction to a Single Dominant Module: PAGE is highly concentrated at one shallow FFN down-projection (magnified), suggesting that a single adapter placed there suffices. To explore this question, we introduce PAGE (Projected Adapter Gradient Energy), a gradient-based sensitivity probe for LoRA placement. PAGE uses the empirical Fisher sensitivity of pretrained projection weights to estimate the initial trainable gradient energy available to each candidate LoRA adapter. By evaluating PAGE for every attention and FFN projection, we find that the PAGE values are markedly concentrated at a single shallow FFN down-projection (Figure 1(c)). We term this module the dominant adaptation module , whose layer index varies across model families but remains stable across diverse downstream tasks on the same backbone, suggesting that it reflects an intrinsic structural property rather than a task-specific effect. Guided by this finding, we propose DomLoRA (Dom inant adaptation Module LoRA ), a LoRA place-ment method that applies LoRA only to this module while freezing all other parameters. We evaluate DomLoRA on Qwen3-8B [ 11 ] and LLaMA-3.1-8B-Instruct [ 12 ] across various downstream tasks, including instruction following, mathematical reasoning, code generation, and multi-turn conversation. With only ∼0.7% of vanilla LoRA’s trainable parameters, DomLoRA remains competitive with vanilla LoRA and outperforms it on average. Moreover, DomLoRA can be applied as a plug-and-play method to other LoRA variants, improving their average performance as well (e.g., AdaLoRA [ 13 ]and DoRA [ 14 ]). These results show that DomLoRA is effective across different backbones, task domains, and LoRA variants, supporting the dominant adaptation module perspective as a practical guideline for adapter placement. Key contributions of this paper are summarized as follows: • We introduce PAGE , a gradient-based sensitivity probe that estimates each candidate LoRA adapter’s initial trainable gradient energy from empirical Fisher sensitivity. Using PAGE, we identify the dominant adaptation module , a single shallow FFN down-projection where PAGE is highly concentrated. • We show that this module is architecture-dependent but task-stable : its layer index varies across model families but remains stable across downstream tasks within the same backbone. • We propose DomLoRA , a LoRA placement method that applies one low-rank adapter only to the dominant adaptation module while freezing all other parameters. • We validate DomLoRA across two model families and four task domains, showing that it outperforms vanilla LoRA on average using only ∼0.7% of its trainable parameters. We further show that the same method improves other LoRA variants. 
+
+2 Related Work 
+
+Parameter-efficient fine-tuning (PEFT). PEFT adapts pre-trained models by updating a small parameter subset while keeping the backbone frozen. Representative methods include adapter tun-2ing [ 1], prefix tuning [ 15 ], prompt tuning [ 16 ], and LoRA [ 2]. Later LoRA variants improve adaptive rank allocation [ 13 ], weight decomposition [ 14 ], optimization with asymmetric learning rates [ 17 ], and structured low-dimensional parameterization [ 18 ]. These methods mainly improve how adapters are parameterized or optimized, whereas we focus on where adapters should be placed. 
+
+Reducing LoRA adapter placement. Vanilla LoRA commonly places adapters into attention and FFN projections in most or all Transformer blocks, but recent work shows that fewer adapters may still preserve or even improve performance. One line reduces the number of adapted layers. IST [ 5] scores layer importance and updates only top-ranked layers. Depth-aware strategies distinguish shallow from deep layers [ 6 ]. Similarity-based analyses identify task-critical layers [ 7]. These methods place insert adapters into multiple module types within the selected layers. Another line reduces the adapted module types. Ablations on reasoning LLMs show that MLP-only LoRA can match broader adaptation performance, with the up projection particularly effective [ 8]. Language adaptation experiments further show that restricting LoRA to feed-forward layers can outperform attention-only placement and even match or slightly exceed joint attention-plus-FFN adaptation [ 9 ]. PLoP [ 10 ] scores module types by neural-feature-norm alignment and adapts only selected projections. These methods still apply the selected module types across many or all layers. The above shows that broad adapter placement is often unnecessary. However, they still keep multiple adapters in the model. DomLoRA further reduces LoRA placement to a single adapter at the dominant adaptation module, achieving strong performance with far fewer trainable parameters. 
+
+FFN layers and knowledge localization. Prior work suggests that FFN layers play a distinctive role in Transformer representations. Feed-forward layers have been characterized as key-value mem-ories [ 19 ], and knowledge-neuron [ 20 ] analyses localize factual associations to specific FFN neurons. GPS [ 21 ] further shows that task-relevant parameters are sparse and unevenly distributed across the network. These findings support the view that adaptation demand is non-uniform across modules or depths. However, they do not identify which FFN projection and depth position dominate PEFT adaptation. DomLoRA addresses this gap by showing that empirical Fisher sensitivity concentrates at a single shallow FFN down-projection. 
+
+3 Discovering and Exploiting the Dominant Adaptation Module 
+
+In this section, we develop DomLoRA by identifying where to place LoRA. We first define module sensitivity as the average squared sample-wise gradient of each pretrained projection weight in Section 3.1. We then use this sensitivity to derive PAGE, which estimates the initial gradient energy received by each candidate LoRA adapter. Following this, we show that PAGE is highly concentrated at one shallow FFN down-projection across models and tasks in Section 3.2. Finally, in Section 3.3, we introduce DomLoRA, a placement method that places a single adapter at the dominant adaptation module while freezing all remaining parameters. 
+
+3.1 From Module Sensitivity to PAGE 
+
+We use sample-wise gradients of pretrained projection weights as the starting point for LoRA placement. A large gradient norm indicates that the probe loss is sensitive to perturbations of that projection weight. Since a LoRA adapter modifies the same effective weight through a low-rank update, the gradient of the pretrained weight determines how much gradient can be passed to the LoRA factors at initialization. We therefore formalize the placement signal as the initial gradient energy received by the trainable LoRA parameters. 
+
+Measuring Module Sensitivity. Let D = {(xi, yi)}Ni=1 be a probe set of N samples. For sample 
+
+i, let si = ( xi, yi) denote the full prompt-response sequence, indexed as si, 1, . . . , s i,T i , and let 
+
+Ri ⊆ { 1, . . . , T i} denote the supervised target-response positions. We write pθ (si,t | si,<t ) for the next-token probability assigned by the model with parameters θ. The sample-level probe loss is the 3mean cross-entropy over these positions: 
+
+¯ℓi(θ) = 1
+
+|R i|
+
+X
+
+> t∈R i
+
+− log pθ (si,t | si,<t ) . (1) For module type k in layer l, let Wl,k ∈ Rdout ,k ×din ,k denote the pretrained projection weight. We compute the sample-wise gradient with respect to this weight: 
+
+Gi,l,k = ∇Wl,k 
+
+¯ℓi(θ). (2) This gradient is computed on the original pretrained model before LoRA optimization begins, and is used only to measure the sensitivity of module (l, k ). Following the empirical Fisher perspective, we summarize the sample-wise gradients by their average squared norm, which corresponds to the trace of the empirical Fisher block for this projection weight. 
+
+Definition 1 (Module Sensitivity) . We use the sample-wise gradients in Eq. (2) to define the sensitivity of module (l, k ) as 
+
+Semp  
+
+> l,k
+
+= 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥Gi,l,k ∥2F . (3) A larger Semp  
+
+> l,k
+
+means that small changes to the pretrained projection weight Wl,k have a larger first-order effect on the probe loss. Thus, it measures the sensitivity of the module’s effective weight. However, LoRA does not train Wl,k directly; it trains the low-rank factors Al,k and Bl,k . We next show how this full-weight sensitivity is transferred to the initial gradients of the LoRA factors. 
+
+Bridging Module Sensitivity and Initial LoRA Gradients. A LoRA adapter parameterizes the effective weight of module (l, k ) as 
+
+Wl,k = W 0 
+
+> l,k
+
++ s Bl,k Al,k , s = α/r, (4) where Bl,k ∈ Rdout ,k ×r , Al,k ∈ Rr×din ,k , and only Al,k , Bl,k are trainable. Since the effective weight depends on the LoRA factors through the low-rank term sBl,k Al,k , the full-weight gradient 
+
+Gi,l,k induces gradients on the LoRA factors through the chain rule. 
+
+Lemma 1. Under the standard LoRA setup [ 2 ] ( Bl,k = 0, with Al,k set by Kaiming-uniform [ 22 ]), the trainable gradients at initialization are 
+
+∇Al,k 
+
+¯ℓi = 0, ∇Bl,k 
+
+¯ℓi = s Gi,l,k A⊤
+
+> l,k
+
+, (5) 
+
+where Gi,l,k is the sample-wise gradient defined in Eq. (2) .Proof. See Appendix B.2. Lemma 1 shows that the initial LoRA gradient is not the full-weight gradient itself, but its projection through the randomly initialized factor Al,k . Therefore, to compare candidate modules, we measure the energy of this projected trainable gradient. Because Al,k is randomly initialized, we average over its initialization distribution to obtain a module-level quantity. This motivates PAGE. 
+
+Definition 2 (Projected Adapter Gradient Energy) . For a candidate LoRA adapter at module (l, k ),initialized as in Lemma 1, we define the Projected Adapter Gradient Energy (PAGE) as the expected squared norm of the nonzero trainable gradient received at initialization: 
+
+PAGE l,k = EAl,k 
+
+"
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∇Bl,k 
+
+¯ℓi
+
+> 2F
+
+#
+
+= EAl,k 
+
+"
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+
+s Gi,l,k A⊤
+
+> l,k
+> 2F
+
+#
+
+. (6) The expectation in Eq. (6) is taken over the random initialization of Al,k . Expanding the squared Frobenius norm via the trace, PAGE can be rewritten as 
+
+PAGE l,k = s2
+
+N
+
+> N
+
+X
+
+> i=1
+
+EAl,k 
+
+tr  G⊤
+
+> i,l,k
+
+Gi,l,k A⊤
+
+> l,k
+
+Al,k 
+
+ . (7) Since Gi,l,k is computed on the pretrained model before LoRA optimization begins, it is fixed with respect to this expectation. Therefore, evaluating PAGE reduces to computing EAl,k [A⊤
+
+> l,k
+
+Al,k ] under the LoRA initialization. The following theorem gives this expectation and the resulting expression for PAGE. 4Theorem 1. Let the entries of Al,k ∈ Rr×din ,k be drawn i.i.d. from U −1/pdin ,k , 1/pdin ,k 
+
+.Then 
+
+EAl,k 
+
+A⊤
+
+> l,k
+
+Al,k 
+
+ = r
+
+3 din ,k 
+
+Idin ,k , (8) 
+
+where Idin ,k is a din ,k × din ,k identity matrix. Consequently, PAGE can be written as: 
+
+PAGE l,k = s2 r
+
+3 din ,k 
+
+Semp  
+
+> l,k
+
+. (9) 
+
+Proof. See Appendix B.3. Eq. (9) makes PAGE a LoRA placement probe: it estimates how much trainable gradient signal a candidate adapter receives at initialization. With shared r and s, PAGE is determined only by two module-dependent quantities: the empirical sensitivity Semp  
+
+> l,k
+
+and the input dimension din ,k .
+
+3.2 Observation: PAGE Reveals a Dominant Adaptation Module 
+
+We evaluate PAGE (Eq. (9) ) for every attention and FFN projection in Qwen3-8B [ 11 ] and LLaMA-3.1-8B-Instruct [ 12 ] across four fine-tuning datasets: WizardLM-Evol-Instruct [ 23 ], Tülu V2 [ 24 ], MetaMathQA [ 25 ], and Magicoder-Evol-Instruct [ 26 ]. We show WizardLM-Evol-Instruct in the main text and the full results in Appendix A. For each run, we compute PAGE at six full fine-tuning checkpoints: Steps 0, 1, 50, 100, 200, and 390, where Step 390 is the final checkpoint. 0 10 20 30                                           
+
+> Layer Index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+> (a) Qwen3-8B, WQ
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+> (b) Qwen3-8B, WK
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+> (c) Qwen3-8B, WV
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+> (d) Qwen3-8B, WO
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+> (e) Qwen3-8B, WUp
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+> (f) Qwen3-8B, WGate
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+> (g) Qwen3-8B, WDown
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+> (h) LLaMA-3.1-8B, WDown
+> Step 0 Step 1 Step 50 Step 100 Step 200 Step 390
+
+Figure 2: PAGE across projection modules. (a)–(g) show all attention and FFN projections of Qwen3-8B, and (h) shows the FFN down-projection of LLaMA-3.1-8B-Instruct. Dashed vertical lines indicate the dominant adaptation module. 
+
+PAGE is highly concentrated at one shallow FFN down-projection. As shown in Figure 2, the PAGE values vary substantially across module types and layers. Attention projections and FFN up/gate projections (a)–(f) exhibit relatively small PAGE values that change smoothly across layers. In contrast, FFN down-projections (g) for Qwen3-8B, (h) for LLaMA-3.1-8B exhibit a localized PAGE peak at a shallow layer: Layer 6 in Qwen3-8B and Layer 1 in LLaMA-3.1-8B. We identify this shallow FFN down-projection as the dominant adaptation module .
+
+The PAGE peak is a pre-trained structural property. The PAGE peak is already present at Step 0, before any fine-tuning update. It remains at the same layer after fine-tuning begins and persists across all later checkpoints (Steps 1–390), indicating that the dominant adaptation module is a stable structural feature of the backbone. 5Quantitatively, in Qwen3-8B on WizardLM-Evol-Instruct, the Layer 6 FFN down-projection is only one of 252 candidate projection modules, yet it accounts for 16.5–18.2% of the aggregate PAGE over all projection modules. Among FFN down-projections alone, this single module accounts for 74.7–79.0% of the aggregate PAGE. These proportions remain stable from Step 0 to Step 390. This observation suggests that the dominant adaptation module is already encoded in the pre-trained model and is preserved during fine-tuning rather than created by the fine-tuning process. 
+
+3.3 From PAGE to DomLoRA 
+
+The PAGE concentration observed in Section 3.2 remains stable across checkpoints and downstream tasks (Appendix A). In both Qwen3-8B and LLaMA-3.1-8B, the dominant PAGE peak consistently appears at an FFN down-projection. DomLoRA turns this finding into a placement method: place one LoRA adapter at the dominant FFN down-projection and freeze all remaining parameters. We identify this module using Step-0 PAGE on the pretrained backbone, requiring only sample-wise gradients from 32 supervised samples and no preliminary fine-tuning or optimizer states. Once identified, the same module is reused across downstream tasks: 
+
+l⋆ = arg max 
+
+> 0≤l<L
+
+PAGE l, down , Wdom = W (l⋆)down . (10) For the FFN down-projection W (l)down ∈ Rd×dff , DomLoRA parameterizes the effective weight as 
+
+fW (l)down = W (l)down + I(l = l⋆) αr B⋆A⋆, (11) where B⋆ ∈ Rd×r and A⋆ ∈ Rr×dff . Only A⋆ and B⋆ are trainable; all pretrained weights and all other projection modules remain frozen. 
+
+4 Experiments 
+
+We evaluate DomLoRA along three main axes: comparison with adapter-placement baselines, gener-alization to LoRA variants, and the necessity of the dominant adaptation module. Specifically, our main experiments are organized around the following research questions: • RQ1: How does DomLoRA compare with adapter-placement baselines? (Section 4.2) • RQ2: Does DomLoRA generalize to LoRA variants? (Section 4.3) • RQ3: Is the dominant adaptation module necessary? (Section 4.4) Additional analyses in the appendix cover training-time and memory efficiency, LoRA rank sensitivity, and full-parameter updates: • A1: How much training time and memory does DomLoRA save? (Appendix E) • A2: Is DomLoRA sensitive to the LoRA rank? (Appendix F) • A3: Does the dominant module effect persist under full-parameter updates? (Ap-pendix G) 
+
+4.1 Experimental Setup Tasks, datasets, and evaluation. We evaluate DomLoRA on two LLMs: LLaMA-3.1-8B-Instruct [12] and Qwen3-8B [11]. We consider four supervised fine-tuning settings: • For general instruction tuning , we fine-tune each backbone on the 100K subset of Tülu V2 [ 24 ] and evaluate them on MMLU [ 27 ], TyDiQA [ 28 ], CommonsenseQA [ 29 ], Truth-fulQA [ 30 ], GSM8K [ 31 ], and LogiQA [ 32 ]. We report Acc for MMLU, CommonsenseQA, TruthfulQA, and LogiQA, and EM for TyDiQA and GSM8K. 6• For multi-turn conversational tuning , we fine-tune each backbone on 143K examples from WizardLM-Evol-Instruct-V2 [ 23 ] and evaluate the resulting models on MT-Bench [ 33 ]. GPT-5 serves as the judge under the score-based single-answer grading protocol, and we use the average score over both conversation turns as the evaluation metric. • For mathematical reasoning , we fine-tune each backbone on MetaMathQA-395K [ 25 ] and evaluate the resulting models on GSM8K [ 31 ] and MATH [ 34 ], using EM as the evaluation metric. • For code generation , we fine-tune each backbone on Magicoder-Evol-Instruct-110K [ 26 ]and evaluate the resulting models on HumanEval [ 35 ] and HumanEval+ [ 36 ], using pass@1 as the evaluation metric. For reproducibility, we use greedy decoding with a temperature of 0 for all benchmarks. Since MT-Bench is scored on a 1–10 scale, we multiply the MT-Bench score by 10 only when computing cross-benchmark averages. 
+
+Training details. We set the LoRA rank to 64 and the learning rate to 2e-5. The learning rate is linearly warmed up during the first 3% of training steps and then decayed with a cosine scheduler. Additional details are provided in Appendix C. 
+
+4.2 Comparing DomLoRA with Adapter-Placement Baselines (RQ1) 
+
+We compare DomLoRA with three adapter-placement baselines: vanilla LoRA [ 2] that inserts adapters broadly across layers and projections, IST [ 5] that reduces adapted layers, and PLoP [ 10 ] that reduces adapted module types. 
+
+4.2.1 General Instruction Tuning 
+
+Table 1 compares DomLoRA with adapter-placement baselines on general instruction tuning. Despite using only 2.1–2.3M trainable parameters (about ∼0.7% of vanilla LoRA), DomLoRA achieves the best average score on both backbones. On Qwen3-8B, it improves the average from 72.9 to 74.5 over vanilla LoRA, with clear gains on TyDiQA, CQA, and GSM8K. The gain is larger on LLaMA-3.1-8B, where the average increases from 60.8 to 64.8, mainly driven by TruthfulQA, GSM8K, and LogiQA. Although DomLoRA is not the best on every metric, its strongest average performance suggests that broad adapter placement is not necessary for general instruction tuning. Table 1: General instruction tuning against adapter-placement baselines. Shaded rows indicate DomLoRA, and bold marks the best result within each model group.                                                                          
+
+> Model Method Params MMLU TyDiQA CQA TruthfulQA GSM8K LogiQA Avg. Qwen3-8B
+> LoRA [2] 334M 71.0 68.8 81.3 73.3 87.0 56.2 72.9 PLoP [10] 131M 70.9 70.8 82.1 71.9 89.8 57.3 73.8 IST [5] 334M 70.3 69.0 80.8 74.5 91.3 56.8 73.8 DomLoRA 2.1M 71.4 71.4 82.6 72.6 92.6 56.5 74.5 LLaMA-3.1-8B
+> LoRA [2] 321M 63.5 67.2 69.8 45.2 81.4 37.6 60.8 PLoP [10] 125M 61.8 69.6 70.9 44.7 81.3 35.3 60.6 IST [5] 321M 62.5 69.1 73.7 38.8 82.5 36.9 60.6 DomLoRA 2.3M 64.1 69.9 73.5 54.4 85.5 41.2 64.8
+
+4.2.2 Mathematical Reasoning, Code Generation, and Multi-Turn Conversation 
+
+Table 2 summarizes mathematical reasoning, code generation, and multi-turn conversation results. The advantage of DomLoRA becomes more pronounced in these settings: it improves the average over vanilla LoRA from 63.5 to 71.7 on Qwen3-8B and from 54.1 to 60.0 on LLaMA-3.1-8B. The Qwen3-8B gains come mainly from MATH and MT-Bench, while on LLaMA-3.1-8B, DomLoRA outperforms all baselines on every reported metric. These results show that dominant-module placement extends beyond general instruction tuning. 7Table 2: Reasoning, coding, and conversation results on Qwen3-8B and LLaMA-3.1-8B-Instruct. Shaded rows indicate DomLoRA, and bold marks the best result.                                                                 
+
+> Model Method Params GSM8K MATH HumanEval HumanEval+ MT-Bench Avg. Qwen3-8B
+> LoRA [2] 334M 86.66 51.30 61.0 56.1 62.50 63.5 PLoP [10] 131M 87.6 54.3 62.8 58.5 69.1 66.5 IST [5] 334M 87.2 51.2 65.9 61.0 63.2 65.7 DomLoRA 2.1M 92.7 65.6 64.6 59.8 75.9 71.7 LLaMA-3.1-8B
+> LoRA [2] 321M 83.2 38.6 45.1 42.1 61.6 54.1 PLoP [10] 125M 82.3 41.0 43.3 40.2 60.8 53.5 IST [5] 321M 83.3 41.6 45.1 42.1 62.1 54.9 DomLoRA 2.3M 85.1 45.0 53.0 50.0 67.0 60.0
+
+4.3 Generalizing Dominant-Module Placement to LoRA Variants (RQ2) 
+
+We further evaluate how dominant module placement affects representative LoRA variants. These variants modify different aspects of the LoRA update, including rank allocation (AdaLoRA [ 13 ]), magnitude-direction decomposition (DoRA [ 14 ]), factor-wise learning rates (LoRA+ [ 17 ]), low-rank update denoising (NoRM [37]), and block-wise update expressiveness (GraLoRA [38]). 
+
+4.3.1 General Instruction Tuning 
+
+Table 3 reports results for LoRA variants on LLaMA-3.1-8B-Instruct, with full two-backbone results in Appendix 8. When broad placement is replaced by dominant-module placement, every variant improves its average score while reducing trainable parameters to 2.3M . The largest gains appear for LoRA+ and AdaLoRA, whose averages increase from 60.9 to 65.0 and from 62.0 to 64.7, respectively. NoRM, DoRA, and GraLoRA also improve on average despite some metric-level drops, suggesting that DomLoRA is complementary to these LoRA update designs and can be used as a plug-and-play method. Table 3: LoRA variant results on general instruction tuning (LLaMA-3.1-8B-Instruct). Shaded rows correspond to ✓ in Dom , where adapters are inserted only into the dominant adaptation module.                                                                                               
+
+> Method Dom Params MMLU TyDiQA CQA TruthfulQA GSM8K LogiQA Avg.
+> NoRM [37] ✗269M 66.0 68.4 76.7 54.6 83.1 37.8 64.4
+> ✓2.3M 65.7 67.8 75.1 55.0 87.3 41.9 65.5
+> DoRA [14] ✗323M 60.1 67.1 76.7 48.1 76.0 34.7 60.4
+> ✓2.3M 60.0 68.8 74.3 45.3 78.4 37.8 60.8
+> LoRA+ [17] ✗321M 62.6 68.4 70.1 45.7 81.7 37.0 60.9
+> ✓2.3M 64.7 68.2 74.3 52.8 87.3 42.7 65.0
+> AdaLoRA [13] ✗321M 61.2 68.5 74.2 46.5 84.7 37.2 62.0
+> ✓2.3M 65.0 67.4 75.5 52.1 87.0 40.9 64.7
+> GraLoRA [38] ✗321M 63.9 67.7 74.8 45.3 76.4 39.2 61.2
+> ✓2.3M 60.8 69.0 73.7 46.1 81.3 37.2 61.3
+
+4.3.2 Mathematical Reasoning, Code Generation, and Multi-Turn Conversation 
+
+Table 4 reports reasoning, coding, and conversation results for LoRA variants on LLaMA-3.1-8B-Instruct, with full two-backbone results in Appendix 9. DomLoRA again improves the average score for all variants. The most significant improvements come from LoRA+ and AdaLoRA, whose averages increase by 5.5 and 5.6 points. Across variants, the Dom setting often improves MATH, HumanEval+, and MT-Bench. The main exception is GraLoRA on GSM8K, where the score drops from 83.4 to 75.7, but its overall average still improves from 57.3 to 58.6. 8Table 4: LoRA variant results on reasoning, coding, and conversation tasks (LLaMA-3.1-8B-Instruct). Shaded rows correspond to ✓ in Dom , where adapters are inserted only into the dominant adaptation module.                                                                                    
+
+> Method Dom Params GSM8K MATH HumanEval HumanEval+ MT-Bench Avg.
+> NoRM [37] ✗268M 86.4 45.9 53.7 50.0 62.4 59.7
+> ✓2.3M 87.3 47.1 54.9 51.2 67.1 61.5
+> DoRA [14] ✗323M 83.2 39.4 54.3 50.0 61.7 57.7
+> ✓2.3M 85.9 44.5 55.5 51.8 66.4 60.8
+> LoRA+ [17] ✗321M 81.7 40.0 43.9 40.9 63.5 54.0
+> ✓2.3M 85.9 45.7 50.0 48.8 67.3 59.5
+> AdaLoRA [13] ✗321M 82.0 42.1 47.0 43.9 67.1 56.4
+> ✓2.3M 88.6 46.6 54.9 51.2 68.4 62.0
+> GraLoRA [38] ✗321M 83.4 40.2 52.4 48.2 62.1 57.3
+> ✓2.3M 75.7 44.4 54.9 53.0 64.9 58.6
+
+4.4 Ablation Study (RQ3) 
+
+Table 5 compares different layer and module choices. The dominant module achieves the best average score of 63.6 with only 2.3M trainable parameters. Moving the Wdown adapter to Layer 31 or Layer 10 reduces the average to 59.4 and 55.9. At Layer 1, replacing Wdown with Wup or Wgate lowers the average to 60.5 and 61.1, indicating that module type matters. FFN-all uses more parameters (6.8M) but still underperforms DomLoRA on average, suggesting that the gain mainly comes from selecting the dominant module rather than adding more projections at the same layer. Table 5: Ablation on dominant adaptation module selection (LLaMA-3.1-8B-Instruct). Wdown at Layer 1 is the dominant adaptation module used by DomLoRA. FFN-all adapts all three FFN projec-tions (Wup , Wgate , Wdown ), and Attn-all adapts all four attention projections (Wq, Wk, Wv, Wo).                                                                                       
+
+> Module Layer Params MMLU TyDiQA CQA TruthfulQA GSM8K MATH HumanEval+ MT-Bench Avg.
+> Wdown 12.3M 64.1 69.9 73.5 54.4 85.1 45.0 50.0 67.0 63.6
+> Wdown 31 2.3M 64.1 60.8 58.0 50.2 83.5 45.8 48.2 64.5 59.4
+> Wdown 10 2.3M 59.9 66.9 47.7 36.4 81.4 42.8 47.6 65.0 55.9
+> Wup 12.3M 61.1 69.8 73.6 41.4 85.3 42.9 43.9 66.2 60.5
+> Wgate 12.3M 64.0 69.2 75.3 47.3 84.8 43.7 47.4 65.3 61.1 FFN-all 16.8M 64.8 68.6 75.3 49.6 86.0 45.2 51.2 64.3 63.1 Attn-all 13.3M 59.2 66.7 66.3 46.5 84.8 43.2 43.9 67.8 59.8
+
+5 Conclusion 
+
+We introduced PAGE, a gradient-based sensitivity probe for LoRA placement, and used it to reveal that adaptation sensitivity is highly concentrated at a single shallow FFN down-projection, which we call the dominant adaptation module. DomLoRA places one LoRA adapter at this module and freezes other parameters. Across two model families and four task domains, it outperforms vanilla LoRA on average with only ∼0.7% of its trainable parameters. It also improves representative LoRA variants, supporting DomLoRA as a plug-and-play placement method. 
+
+Limitations. DomLoRA requires an additional PAGE probe before training to identify the dominant adaptation module. In our experiments, this probe uses 32 supervised samples and computes sample-wise gradients for candidate projection weights, which introduces extra preprocessing cost and additional GPU memory usage. Our experiments focus on dense Transformers; extending DomLoRA to MoE models, VLM models or other architectures is left for future work. 9References 
+
+[1] Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. Parameter-efficient transfer learning for NLP. In Kamalika Chaudhuri and Ruslan Salakhutdinov, editors, Proceedings of the 36th International Conference on Machine Learning , volume 97 of Proceedings of Machine Learning Research , pages 2790–2799. PMLR, June 2019. [2] Edward J Hu, yelong shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. In International Conference on Learning Representations , 2022. [3] Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and Luke Zettlemoyer. QLoRA: Efficient finetuning of quantized LLMs. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural Information Processing Systems , volume 36, pages 10088–10115. Curran Associates, Inc., 2023. [4] Junxian He, Chunting Zhou, Xuezhe Ma, Taylor Berg-Kirkpatrick, and Graham Neubig. Towards a unified view of parameter-efficient transfer learning. In International Conference on Learning Representations , 2022. [5] Kai Yao, Penglei Gao, Lichun Li, Yuan Zhao, Xiaofeng Wang, Wei Wang, and Jianke Zhu. Layer-wise importance matters: Less memory for better performance in parameter-efficient fine-tuning of large language models. In Yaser Al-Onaizan, Mohit Bansal, and Yun-Nung Chen, editors, Findings of the Association for Computational Linguistics: EMNLP 2024 , pages 1977–1992, Miami, Florida, USA, November 2024. Association for Computational Linguistics. [6] Jihao Gu, Zelin Wang, Yibo Zhang, Ziji Zhang, and Ping Gong. From bottom to top: Extending the potential of parameter efficient fine-tuning. In Yaser Al-Onaizan, Mohit Bansal, and Yun-Nung Chen, editors, Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 3488–3500, Miami, Florida, USA, November 2024. Association for Computational Linguistics. [7] Keith Ando Ogawa, Bruno Lopes Yamamoto, Lucas Lauton de Alcantara, Lucas Pellicer, Rosimeire Pereira Costa, Edson Bollis, Anna Helena Reali Costa, and Artur Jordao. Layer-wise LoRA fine-tuning: A similarity metric approach, 2026. [8] Yihao Xue and Baharan Mirzasoleiman. LoRA is all you need for safety alignment of reasoning LLMs, 2026. [9] Jenny Kunz. Train more parameters but mind their placement: Insights into language adaptation with PEFT. In Richard Johansson and Sara Stymne, editors, Proceedings of the Joint 25th Nordic Conference on Computational Linguistics and 11th Baltic Conference on Human Language Technologies (NoDaLiDa/Baltic-HLT 2025) , pages 323–330, Tallinn, Estonia, March 2025. University of Tartu Library. [10] Soufiane Hayou, Nikhil Ghosh, and Bin Yu. PLoP: Precise LoRA placement for efficient finetun-ing of large models. In The Fourteenth International Conference on Learning Representations ,2026. [11] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayiheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jingren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, Ruize Gao, Shixuan Liu, Shuang Luo, Tianhao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zihan Qiu. Qwen3 technical report, 2025. [12] Aaron Grattafiori et al. The Llama 3 herd of models, 2024. 10 [13] Qingru Zhang, Minshuo Chen, Alexander Bukharin, Pengcheng He, Yu Cheng, Weizhu Chen, and Tuo Zhao. Adaptive budget allocation for parameter-efficient fine-tuning. In The Eleventh International Conference on Learning Representations , 2023. [14] Shih-Yang Liu, Chien-Yi Wang, Hongxu Yin, Pavlo Molchanov, Yu-Chiang Frank Wang, Kwang-Ting Cheng, and Min-Hung Chen. DoRA: Weight-decomposed low-rank adaptation. In Ruslan Salakhutdinov, Zico Kolter, Katherine Heller, Adrian Weller, Nuria Oliver, Jonathan Scarlett, and Felix Berkenkamp, editors, Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 32100–32121. PMLR, July 2024. [15] Xiang Lisa Li and Percy Liang. Prefix-tuning: Optimizing continuous prompts for generation. In Chengqing Zong, Fei Xia, Wenjie Li, and Roberto Navigli, editors, Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers) , pages 4582–4597, Online, August 2021. Association for Computational Linguistics. [16] Brian Lester, Rami Al-Rfou, and Noah Constant. The power of scale for parameter-efficient prompt tuning. In Marie-Francine Moens, Xuanjing Huang, Lucia Specia, and Scott Wen-tau Yih, editors, Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing , pages 3045–3059, Online and Punta Cana, Dominican Republic, November 2021. Association for Computational Linguistics. [17] Soufiane Hayou, Nikhil Ghosh, and Bin Yu. LoRA+: Efficient low rank adaptation of large models. In Ruslan Salakhutdinov, Zico Kolter, Katherine Heller, Adrian Weller, Nuria Oliver, Jonathan Scarlett, and Felix Berkenkamp, editors, Proceedings of the 41st International Confer-ence on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 17783–17806. PMLR, 21–27 Jul 2024. [18] Dawid J. Kopiczko, Tijmen Blankevoort, and Yuki M. Asano. VeRA: Vector -based random matrix adaptation. In Proceedings of the 2024 International Conference on Learning Represen-tations (ICLR) , 2024. [19] Mor Geva, Roei Schuster, Jonathan Berant, and Omer Levy. Transformer feed-forward layers are key-value memories. In Marie-Francine Moens, Xuanjing Huang, Lucia Specia, and Scott Wen-tau Yih, editors, Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing , pages 5484–5495, Online and Punta Cana, Dominican Republic, November 2021. Association for Computational Linguistics. [20] Damai Dai, Li Dong, Yaru Hao, Zhifang Sui, Baobao Chang, and Furu Wei. Knowledge neurons in pretrained transformers. In Smaranda Muresan, Preslav Nakov, and Aline Villavicencio, editors, Proceedings of the 60th Annual Meeting of the Association for Computational Linguis-tics (Volume 1: Long Papers) , pages 8493–8502, Dublin, Ireland, May 2022. Association for Computational Linguistics. [21] Zhi Zhang, Qizhe Zhang, Zijun Gao, Renrui Zhang, Ekaterina Shutova, Shiji Zhou, and Shang-hang Zhang. Gradient-based parameter selection for efficient fine-tuning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 28566–28577, June 2024. [22] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Delving deep into rectifiers: Surpassing human-level performance on imagenet classification. In Proceedings of the IEEE International Conference on Computer Vision (ICCV) , December 2015. [23] Can Xu, Qingfeng Sun, Kai Zheng, Xiubo Geng, Pu Zhao, Jiazhan Feng, Chongyang Tao, Qing-wei Lin, and Daxin Jiang. WizardLM: Empowering large pre-trained language models to follow complex instructions. In The Twelfth International Conference on Learning Representations ,2024. [24] Hamish Ivison, Yizhong Wang, Valentina Pyatkin, Nathan Lambert, Matthew Peters, Pradeep Dasigi, Joel Jang, David Wadden, Noah A. Smith, Iz Beltagy, and Hannaneh Hajishirzi. Camels in a changing climate: Enhancing lm adaptation with Tulu 2, 2023. 11 [25] Longhui Yu, Weisen Jiang, Han Shi, Jincheng YU, Zhengying Liu, Yu Zhang, James Kwok, Zhenguo Li, Adrian Weller, and Weiyang Liu. MetaMath: Bootstrap your own mathematical questions for large language models. In The Twelfth International Conference on Learning Representations , 2024. [26] Yuxiang Wei, Zhe Wang, Jiawei Liu, Yifeng Ding, and Lingming Zhang. Magicoder: Empower-ing code generation with OSS-instruct. In Ruslan Salakhutdinov, Zico Kolter, Katherine Heller, Adrian Weller, Nuria Oliver, Jonathan Scarlett, and Felix Berkenkamp, editors, Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 52632–52657. PMLR, July 2024. [27] Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding. In International Conference on Learning Representations , 2021. [28] Jonathan H. Clark, Eunsol Choi, Michael Collins, Dan Garrette, Tom Kwiatkowski, Vitaly Nikolaev, and Jennimaria Palomaki. TyDi QA: A benchmark for information-seeking question answering in typologically diverse languages. Transactions of the Association for Computational Linguistics , 8:454–470, 2020. [29] Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. CommonsenseQA: A question answering challenge targeting commonsense knowledge. In Jill Burstein, Christy Doran, and Thamar Solorio, editors, Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , pages 4149–4158, Minneapolis, Minnesota, June 2019. Association for Computational Linguistics. [30] Stephanie Lin, Jacob Hilton, and Owain Evans. TruthfulQA: Measuring how models mimic human falsehoods. In Smaranda Muresan, Preslav Nakov, and Aline Villavicencio, editors, Pro-ceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 3214–3252, Dublin, Ireland, May 2022. Association for Computational Linguistics. [31] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems, 2021. [32] Jian Liu, Leyang Cui, Hanmeng Liu, Dandan Huang, Yile Wang, and Yue Zhang. LogiQA: A challenge dataset for machine reading comprehension with logical reasoning, 7 2020. Main track. [33] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, Hao Zhang, Joseph Gonzalez, and Ion Stoica. Judging LLM-as-a-judge with MT-bench and chatbot Arena. In A. Oh, T. Naumann, A. Glober-son, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural Information Processing Systems , volume 36, pages 46595–46623. Curran Associates, Inc., 2023. [34] Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. Measuring mathematical problem solving with the math dataset. In J. Vanschoren and S. Yeung, editors, Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks , volume 1, 2021. [35] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mohammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saunders, Christopher Hesse, Andrew N. Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code, 2021. 12 [36] Jiawei Liu, Chunqiu Steven Xia, Yuyao Wang, and Lingming Zhang. Is your code generated by ChatGPT really correct? Rigorous evaluation of large language models for code generation. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural Information Processing Systems , volume 36, pages 21558–21572. Curran Associates, Inc., 2023. [37] Shuyang Jiang, Yusheng Liao, Ya Zhang, Yanfeng Wang, and Yu Wang. Fine-tuning with reserved majority for noise reduction. In The Thirteenth International Conference on Learning Representations , 2025. [38] Yeonjoon Jung, Daehyun Ahn, Hyungjun Kim, Taesu Kim, and Eunhyeok Park. GraLoRA: Granular low-rank adaptation for parameter-efficient fine-tuning. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. 13 Appendix Overview 
+
+The appendix provides additional theoretical details, empirical evidence, and experimental results. • Appendix A reports additional empirical Fisher sensitivity maps across datasets and back-bone models. • Appendix B provides detailed derivations for PAGE and its connection to full-weight empir-ical Fisher. • Appendix C lists training hyperparameters, variant-specific settings, and evaluation prompts. • Appendix D provides the full benchmark results for all LoRA variants under standard placement and dominant module placement. • Appendix E reports training-time and memory-efficiency results for DomLoRA and LoRA variants. • Appendix F reports the sensitivity analysis of DomLoRA under different LoRA rank settings. • Appendix G reports the results of applying full-parameter updates to the dominant adaptation module. 
+
+A Additional PAGE Evidence 
+
+This section provides the complete PAGE sensitivity maps across datasets and backbone models. 0 10 20 30                          
+
+> Layer Index
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> PAGE (log-scaled)
+> (a) WQ
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> PAGE (log-scaled)
+> (b) WK
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> PAGE (log-scaled)
+> (c) WV
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> PAGE (log-scaled)
+> (d) WO
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> PAGE (log-scaled)
+> (e) WUp
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> PAGE (log-scaled)
+> (f) WGate
+> 010 20 30
+> Layer Index
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> PAGE (log-scaled)
+> (g) WDown
+> Step 0 Step 1 Step 50 Step 100 Step 200 Step 390
+
+Figure 3: PAGE of all projection modules in Qwen3-8B on Tulu. Figure 3 shows that, for Qwen3-8B on Tulu, PAGE is sharply concentrated at the Layer 6 FFN down-projection. In particular, the WDown panel in Figure 3(g) exhibits a localized peak aligned with the dashed vertical line, while the attention projections and FFN up/gate projections in Figure 3(a)–(f) remain substantially lower or more diffuse. The peak is already visible at Step 0 and remains aligned across later checkpoints, suggesting that the selected module is exposed by the pretrained backbone rather than created during fine-tuning. Figure 4 reveals a different dominant layer for LLaMA-3.1-8B-Instruct: the strongest PAGE peak appears at the Layer 1 FFN down-projection. As shown in Figure 4(g), this peak is highly localized, whereas several attention projections in Figure 4(c)–(d) show broader elevated values over shallow layers. These attention elevations are less localized and less stable than the down-projection peak, supporting the use of the FFN down-projection as the dominant placement target. Figure 5 demonstrates that the dominant PAGE peak for Qwen3-8B on MetaMathQA again occurs at the Layer 6 FFN down-projection. The WDown panel in Figure 5(g) matches the dominant layer observed on Tulu, while the other projections in Figure 5(a)–(f) have much smaller PAGE values. 14 0 10 20 30 
+
+Layer Index 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> PAGE (log-scaled)
+
+(a) WQ   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> PAGE (log-scaled)
+
+(b) WK   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> PAGE (log-scaled)
+
+(c) WV   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> PAGE (log-scaled)
+
+(d) WO   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> PAGE (log-scaled)
+
+(e) WUp    
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> PAGE (log-scaled)
+
+(f) WGate    
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> PAGE (log-scaled)
+
+(g) WDown 
+
+> Step 0 Step 1 Step 50 Step 100 Step 200 Step 390
+
+Figure 4: PAGE of all projection modules in LLaMA-3.1-8B-Instruct on Tulu. 0 10 20 30 
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> PAGE (log-scaled)
+
+(a) WQ   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> PAGE (log-scaled)
+
+(b) WK   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> PAGE (log-scaled)
+
+(c) WV   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> PAGE (log-scaled)
+
+(d) WO   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> PAGE (log-scaled)
+
+(e) WUp    
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> PAGE (log-scaled)
+
+(f) WGate    
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> PAGE (log-scaled)
+
+(g) WDown 
+
+> Step 0 Step 1 Step 50 Step 100 Step 200 Step 390
+
+Figure 5: PAGE of all projection modules in Qwen3-8B on MetaMathQA. This indicates that the same Qwen3-8B module is selected even when the probe data shifts from instruction-following to mathematical reasoning. Figure 6 reports that LLaMA-3.1-8B-Instruct again selects the Layer 1 FFN down-projection on MetaMathQA. Compared with the Tulu setting, the non-FFN projections in Figure 6(a)–(f) are weaker and smoother, making the down-projection peak in Figure 6(g) more isolated. The repeated selection of Layer 1 suggests that the dominant module is stable for this backbone rather than tied to a particular data distribution. Figure 7 shows that Qwen3-8B on Magicoder still has its largest PAGE peak at the Layer 6 FFN down-projection. In Figure 7(g), the peak is narrow and clearly separated from the rest of the layer-wise curve. By contrast, the attention projections and FFN up/gate projections in Figure 7(a)–(f) do not form a comparable localized maximum. Thus, the same dominant module is recovered on code-generation data. Figure 8 reveals that LLaMA-3.1-8B-Instruct on Magicoder again concentrates PAGE at the Layer 1 FFN down-projection. Although shallow attention projections in Figure 8(c)–(d) exhibit elevated values at early checkpoints, these signals are broader and decay over training. In contrast, the WDown 
+
+peak in Figure 8(g) remains the most localized and stable signal, making it the consistent placement target for this backbone. 15 0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+> PAGE (log-scaled)
+
+(a) WQ
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+> PAGE (log-scaled)
+
+(b) WK
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+> PAGE (log-scaled)
+
+(c) WV
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+> PAGE (log-scaled)
+
+(d) WO
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+> PAGE (log-scaled)
+
+(e) WUp 
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+> PAGE (log-scaled)
+
+(f) WGate 
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+> PAGE (log-scaled)
+
+(g) WDown 
+
+Step 0 Step 1 Step 50 Step 100 Step 200 Step 390 Figure 6: PAGE of all projection modules in LLaMA-3.1-8B-Instruct on MetaMathQA. 0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+> PAGE (log-scaled)
+
+(a) WQ
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+> PAGE (log-scaled)
+
+(b) WK
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+> PAGE (log-scaled)
+
+(c) WV
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+> PAGE (log-scaled)
+
+(d) WO
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+> PAGE (log-scaled)
+
+(e) WUp 
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+> PAGE (log-scaled)
+
+(f) WGate 
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+> PAGE (log-scaled)
+
+(g) WDown 
+
+Step 0 Step 1 Step 50 Step 100 Step 200 Step 390 
+
+Figure 7: PAGE of all projection modules in Qwen3-8B on Magicoder. 0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+> PAGE (log-scaled)
+
+(a) WQ
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+> PAGE (log-scaled)
+
+(b) WK
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+> PAGE (log-scaled)
+
+(c) WV
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+> PAGE (log-scaled)
+
+(d) WO
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+> PAGE (log-scaled)
+
+(e) WUp 
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+> PAGE (log-scaled)
+
+(f) WGate 
+
+0 10 20 30 
+
+Layer Index 
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+> PAGE (log-scaled)
+
+(g) WDown 
+
+Step 0 Step 1 Step 50 Step 100 Step 200 Step 390 
+
+Figure 8: PAGE of all projection modules in LLaMA-3.1-8B-Instruct on Magicoder. 16 0 10 20 30 
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(a) WQ   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(b) WK   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(c) WV   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(d) WO   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(e) WUp    
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(f) WGate    
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(g) WDown 
+
+> Step 0 Step 1 Step 50 Step 100 Step 200 Step 390
+
+Figure 9: PAGE of all projection modules in Qwen3-8B on WizardLM. Figure 9 demonstrates that the strongest PAGE peak for Qwen3-8B on WizardLM again appears at the Layer 6 FFN down-projection. The WDown panel in Figure 9(g) contains a clear localized peak, while the remaining projections in Figure 9(a)–(f) show only moderate and smooth layer-wise variations. This confirms that Qwen3-8B consistently selects the same dominant module across the evaluated datasets. 0 10 20 30 
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(a) WQ   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(b) WK   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(c) WV   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(d) WO   
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(e) WUp    
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(f) WGate    
+
+> 010 20 30
+
+Layer Index 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> PAGE (log-scaled)
+
+(g) WDown 
+
+> Step 0 Step 1 Step 50 Step 100 Step 200 Step 390
+
+Figure 10: PAGE of all projection modules in LLaMA-3.1-8B-Instruct on WizardLM. Figure 10 reports that PAGE for LLaMA-3.1-8B-Instruct on WizardLM is again concentrated at the Layer 1 FFN down-projection. The attention and FFN up/gate projections in Figure 10(a)–(f) show only small secondary variations and do not approach the peak in Figure 10(g). Together with the other LLaMA figures, this indicates that the dominant module depends on the backbone but remains stable across downstream datasets. 
+
+B Detailed Derivations for PAGE 
+
+This appendix provides the supporting derivations for Section 3.1. We first give an empirical Fisher interpretation of the module sensitivity. We then prove Lemma 1. Finally, we derive the PAGE expression in Theorem 1, including the moment identity in Eq. (8) and the relationship between PAGE and module sensitivity. 17 Throughout this appendix, for matrices X, Y ∈ Rm×n, we use the Frobenius inner product 
+
+⟨X, Y ⟩F = tr  X⊤Y  ,
+
+and for a matrix M ∈ Rm×n, we use the Frobenius norm 
+
+∥M ∥2F = tr  M ⊤M  =
+
+> m
+
+X
+
+> a=1
+> n
+
+X
+
+> b=1
+
+M 2
+
+> ab
+
+.
+
+All gradients are evaluated at the pretrained model before LoRA optimization begins. Unless otherwise specified, expectations over Al,k are taken with respect to its random initialization. 
+
+B.1 Empirical Fisher Interpretation of Module Sensitivity 
+
+In Definition 1, the module sensitivity Semp  
+
+> l,k
+
+is defined in Eq. (3) as the average squared Frobenius norm of the sample-wise gradients in Eq. (2). We now show that this quantity is exactly the trace of the empirical Fisher block for the pretrained projection weight Wl,k .Recall from Eq. (2) that, for sample i and module (l, k ), the sample-wise gradient with respect to the pretrained projection weight is 
+
+Gi,l,k = ∇Wl,k 
+
+¯ℓi(θ), Wl,k ∈ Rdout ,k ×din ,k . (12) Here, l indexes the Transformer layer, k indexes the projection type, and Gi,l,k has the same shape as Wl,k . Eq. (12) gives the first-order response of the sample loss ¯ℓi(θ) to perturbations of this projection weight. To write the empirical Fisher block, we need a parameter vector rather than a matrix-shaped gradient. We therefore vectorize the matrix gradient in Eq. (12) . Let vec( ·) denote column-wise vectorization. We define 
+
+gi,l,k = vec( Gi,l,k ) ∈ Rdout ,k din ,k . (13) This vector contains all entries of Gi,l,k and represents the sample-wise gradient in the parameter space of Wl,k .Using the vectorized gradients in Eq. (13) , we define the empirical Fisher block for module (l, k ) as 
+
+F emp  
+
+> l,k
+
+= 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+gi,l,k g⊤
+
+> i,l,k
+
+. (14) Eq. (14) is the empirical Fisher block associated with the pretrained projection weight Wl,k . It is the average outer product of sample-wise gradients and records the gradient energy along directions in the parameter space of this projection weight. To compare different modules with a scalar quantity, we take the trace of Eq. (14). This gives 
+
+tr 
+
+
+
+F emp 
+
+> l,k
+
+
+
+= tr 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+gi,l,k g⊤
+
+> i,l,k
+
+!
+
+= 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+tr  gi,l,k g⊤
+
+> i,l,k
+
+ .
+
+(15) The second equality in Eq. (15) uses the linearity of the trace. For each sample-wise gradient vector, we simplify the remaining trace term. Using tr( aa ⊤) = a⊤a,we obtain 
+
+tr  gi,l,k g⊤
+
+> i,l,k
+
+ = g⊤
+
+> i,l,k
+
+gi,l,k = ∥gi,l,k ∥22 . (16) Eq. (16) turns the trace of each outer product into the squared Euclidean norm of the corresponding sample-wise gradient vector. Substituting Eq. (16) into Eq. (15), we get 
+
+tr 
+
+
+
+F emp 
+
+> l,k
+
+
+
+= 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥gi,l,k ∥22 . (17) 18 Eq. (17) shows that the Fisher trace is the average squared Euclidean norm of the vectorized sample-wise gradients. Finally, we substitute gi,l,k = vec( Gi,l,k ) from Eq. (13) . Since vectorization preserves the squared norm of a matrix, we obtain 
+
+∥gi,l,k ∥22 = ∥vec( Gi,l,k )∥22 = ∥Gi,l,k ∥2F . (18) Applying Eq. (18) to every term in Eq. (17), we obtain 
+
+tr 
+
+
+
+F emp 
+
+> l,k
+
+
+
+= 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥Gi,l,k ∥2F
+
+= Semp  
+
+> l,k
+
+.
+
+(19) The last equality follows from Eq. (3) in Definition 1. Thus, the module sensitivity Semp  
+
+> l,k
+
+is exactly the trace of the empirical Fisher block for Wl,k . This explains why the average squared sample-wise gradient norm in Definition 1 can be interpreted as empirical Fisher sensitivity. 
+
+B.2 Proof of Lemma 1 (Initial LoRA Gradients) Lemma. Under the standard LoRA initialization Bl,k = 0, with Al,k initialized by the Kaiming-uniform rule, the initial trainable gradients of the LoRA factors are 
+
+∇Al,k 
+
+¯ℓi = 0, ∇Bl,k 
+
+¯ℓi = s Gi,l,k A⊤
+
+> l,k
+
+, (20) 
+
+where Gi,l,k is the sample-wise full-weight gradient defined in Eq. (2) .Proof. We prove the lemma in two steps. First, we derive the gradients with respect to the LoRA factors for arbitrary Al,k and Bl,k . Second, we substitute the standard LoRA initialization Bl,k = 0.
+
+Step 1: Derive the general LoRA-factor gradients. Recall from Eq. (4) that, for module (l, k ),the LoRA-augmented effective weight is 
+
+Wl,k = W 0 
+
+> l,k
+
++ s Bl,k Al,k , s = α/r. (21) Here, W 0 
+
+> l,k
+
+∈ Rdout ,k ×din ,k is the frozen pretrained projection weight, Bl,k ∈ Rdout ,k ×r and Al,k ∈
+
+Rr×din ,k are trainable LoRA factors, r is the LoRA rank, and s = α/r is the LoRA scaling coefficient. This equation shows that the loss depends on Al,k and Bl,k only through the low-rank update 
+
+sBl,k Al,k .To compute the gradients of the LoRA factors, we track how a small change in Al,k or Bl,k changes the effective weight Wl,k , and then how this change affects the loss. We first take the differential of Eq. (21). Since W 0 
+
+> l,k
+
+is frozen, its differential is zero. Therefore, we obtain 
+
+dWl,k = s dBl,k Al,k + s Bl,k dAl,k . (22) Eq. (22) separates the change in effective weight into the part caused by dBl,k and the part caused by 
+
+dAl,k .We next relate this change to the sample loss. By the definition of Gi,l,k in Eq. (2) , the first-order loss differential for sample i is 
+
+d¯ℓi = ⟨Gi,l,k , dWl,k ⟩F . (23) Eq. (23) states that, to first order, the loss change is the Frobenius inner product between the full-weight gradient and the change in effective weight. Substituting Eq. (22) into Eq. (23), we get 
+
+d¯ℓi = s ⟨Gi,l,k , dBl,k Al,k ⟩F + s ⟨Gi,l,k , Bl,k dAl,k ⟩F . (24) Eq. (24) expresses the same loss differential as the sum of a dBl,k term and a dAl,k term. We next rewrite these two terms so that dBl,k and dAl,k appear as the second arguments of Frobenius inner products. 19 For the dBl,k term, we expand the Frobenius inner product using its trace form and move factors by cyclic invariance of the trace: 
+
+⟨Gi,l,k , dBl,k Al,k ⟩F = tr  G⊤
+
+> i,l,k
+
+dBl,k Al,k 
+
+
+
+= tr  Al,k G⊤
+
+> i,l,k
+
+dBl,k 
+
+
+
+= tr 
+
+ Gi,l,k A⊤
+
+> l,k
+
+⊤ dBl,k 
+
+
+
+= Gi,l,k A⊤
+
+> l,k
+
+, dBl,k F .
+
+(25) Eq. (25) identifies the coefficient of dBl,k as Gi,l,k A⊤
+
+> l,k
+
+.Similarly, for the dAl,k term, we again use the trace form of the Frobenius inner product: 
+
+⟨Gi,l,k , Bl,k dAl,k ⟩F = tr  G⊤
+
+> i,l,k
+
+Bl,k dAl,k 
+
+
+
+= tr 
+
+ B⊤
+
+> l,k
+
+Gi,l,k 
+
+⊤ dAl,k 
+
+
+
+= B⊤
+
+> l,k
+
+Gi,l,k , dAl,k F .
+
+(26) Eq. (26) identifies the coefficient of dAl,k as B⊤
+
+> l,k
+
+Gi,l,k .Substituting Eq. (25) and Eq. (26) into Eq. (24), we obtain 
+
+d¯ℓi = s Gi,l,k A⊤
+
+> l,k
+
+, dBl,k F + s B⊤
+
+> l,k
+
+Gi,l,k , dAl,k F . (27) This equation expresses the loss differential directly in terms of the perturbations of the two LoRA factors. By the definition of gradients with respect to Bl,k and Al,k , the same differential can also be written as 
+
+d¯ℓi = ∇Bl,k 
+
+¯ℓi, dBl,k F + ∇Al,k 
+
+¯ℓi, dAl,k F . (28) Comparing Eq. (27) with Eq. (28), we obtain the general LoRA factor gradients: 
+
+∇Bl,k 
+
+¯ℓi = s Gi,l,k A⊤
+
+> l,k
+
+, ∇Al,k 
+
+¯ℓi = s B⊤
+
+> l,k
+
+Gi,l,k . (29) Eq. (29) gives the gradients for arbitrary values of the LoRA factors. 
+
+Step 2: Apply the standard LoRA initialization. We now specialize Eq. (29) to the standard LoRA initialization. At initialization, Bl,k = 0, while Al,k is a Kaiming-uniform initialized matrix. Substituting Bl,k = 0 into Eq. (29) gives 
+
+∇Al,k 
+
+¯ℓi = s 0⊤Gi,l,k = 0, ∇Bl,k 
+
+¯ℓi = s Gi,l,k A⊤
+
+> l,k
+
+. (30) Thus, only Bl,k receives a nonzero gradient at initialization, and this gradient is the full-weight gradient Gi,l,k projected through the initialized factor Al,k . This recovers Eq. (5) and proves Lemma 1. 
+
+B.3 Derivation of the PAGE Expression Theorem. Let the entries of Al,k ∈ Rr×din ,k be drawn i.i.d. from U −1/pdin ,k , 1/pdin ,k 
+
+. Then 
+
+EAl,k 
+
+A⊤
+
+> l,k
+
+Al,k 
+
+ = r
+
+3 din ,k 
+
+Idin ,k , (31) 
+
+where Idin ,k is a din ,k × din ,k identity matrix. Consequently, PAGE can be written as: 
+
+PAGE l,k = s2 r
+
+3 din ,k 
+
+Semp  
+
+> l,k
+
+. (32) 
+
+Proof. We prove Theorem 1 in two steps. First, we compute the initialization moment 
+
+EAl,k [A⊤
+
+> l,k
+
+Al,k ], which proves Eq. (31) . Second, we substitute this moment into the trace form of PAGE in Eq. (7) to derive Eq. (32). 20 Step 1: Compute the initialization moment. We first prove Eq. (31) . Let Al,k ∈ Rr×din ,k be the LoRA factor in Theorem 1. For clarity, let 
+
+Aqj = ( Al,k )qj , 1 ≤ q ≤ r, 1 ≤ j ≤ din ,k .
+
+Here, q indexes the rank dimension of the LoRA factor, and j indexes the input dimension of the projection weight. Under the initialization assumption in Theorem 1, the entries Aqj are independent and identically distributed as 
+
+Aqj ∼ U − 1
+
+pdin ,k 
+
+, 1
+
+pdin ,k 
+
+!
+
+. (33) From the uniform distribution in Eq. (33) , we compute the mean and second moment of each entry as 
+
+EAl,k [Aqj ] = 0 , EAl,k [A2 
+
+> qj
+
+] = 13 din ,k 
+
+. (34) Eq. (34) provides the entry-wise moments needed for the matrix expectation. We compute this expectation by evaluating the (j, j ′)-th entry of A⊤
+
+> l,k
+
+Al,k :
+
+ A⊤
+
+> l,k
+
+Al,k 
+
+ 
+
+> jj ′
+
+=
+
+> r
+
+X
+
+> q=1
+
+Aqj Aqj ′ , 1 ≤ j, j ′ ≤ din ,k . (35) The expectation in Eq. (35) depends on whether the two column indices j and j′ are equal. When 
+
+j̸ = j′, the product Aqj Aqj ′ contains two independent zero-mean entries. When j = j′, it becomes the squared entry A2 
+
+> qj
+
+. We therefore treat the off-diagonal and diagonal cases separately. For the off-diagonal case j̸ = j′, taking expectation on both sides of Eq. (35) gives 
+
+EAl,k 
+
+h A⊤
+
+> l,k
+
+Al,k 
+
+
+
+> jj ′
+
+i
+
+=
+
+> r
+
+X
+
+> q=1
+
+EAl,k [Aqj Aqj ′ ]=
+
+> r
+
+X
+
+> q=1
+
+EAl,k [Aqj ]EAl,k [Aqj ′ ]= 0 .
+
+(36) The second equality uses the independence of Aqj and Aqj ′ , and the last equality uses the zero mean in Eq. (34). Thus, every off-diagonal entry of the expected matrix is zero. For the diagonal case j = j′, Eq. (35) becomes 
+
+ A⊤
+
+> l,k
+
+Al,k 
+
+ 
+
+> jj
+
+=
+
+> r
+
+X
+
+> q=1
+
+A2 
+
+> qj
+
+. (37) Taking expectation on both sides of Eq. (37) and using the second moment in Eq. (34), we obtain 
+
+EAl,k 
+
+h A⊤
+
+> l,k
+
+Al,k 
+
+
+
+> jj
+
+i
+
+=
+
+> r
+
+X
+
+> q=1
+
+EAl,k [A2 
+
+> qj
+
+]=
+
+> r
+
+X
+
+> q=1
+
+13 din ,k 
+
+= r
+
+3 din ,k 
+
+.
+
+(38) Thus, every diagonal entry of the expected matrix equals r/ (3 din ,k ).The off-diagonal result in Eq. (36) shows that all off-diagonal entries are zero, while the diagonal entries result in Eq. (38) shows that every diagonal entry equals r/ (3 din ,k ). Therefore, the expected matrix is a scalar multiple of the identity matrix: 
+
+EAl,k 
+
+A⊤
+
+> l,k
+
+Al,k 
+
+ = r
+
+3 din ,k 
+
+Idin ,k . (39) Eq. (39) proves Eq. (8) in Theorem 1. 21 Step 2: Substitute the initialization moment into PAGE. We now derive Eq. (9) . Recall from Eq. (7) that PAGE can be written as 
+
+PAGE l,k = s2
+
+N
+
+> N
+
+X
+
+> i=1
+
+EAl,k 
+
+tr  G⊤
+
+> i,l,k
+
+Gi,l,k A⊤
+
+> l,k
+
+Al,k 
+
+ . (40) Here, Gi,l,k is the sample-wise full-weight gradient from Eq. (2) , and the expectation is taken over the random initialization of Al,k .Since Gi,l,k is computed on the pretrained model before LoRA optimization begins, it is fixed with respect to the random initialization of Al,k . Therefore, the expectation in Eq. (40) acts only on 
+
+A⊤
+
+> l,k
+
+Al,k . Moving this expectation inside the trace gives 
+
+EAl,k 
+
+tr  G⊤
+
+> i,l,k
+
+Gi,l,k A⊤
+
+> l,k
+
+Al,k 
+
+ = tr  G⊤
+
+> i,l,k
+
+Gi,l,k EAl,k 
+
+A⊤
+
+> l,k
+
+Al,k 
+
+ . (41) Eq. (41) isolates the only random term A⊤
+
+> l,k
+
+Al,k 
+
+Substituting Eq. (39) into Eq. (41), we get 
+
+tr  G⊤
+
+> i,l,k
+
+Gi,l,k EAl,k 
+
+A⊤
+
+> l,k
+
+Al,k 
+
+ = tr 
+
+
+
+G⊤
+
+> i,l,k
+
+Gi,l,k 
+
+r
+
+3 din ,k 
+
+Idin ,k 
+
+
+
+. (42) Eq. (42) replaces the random projection term with a deterministic scalar multiple of the identity matrix. Because r/ (3 din ,k ) is a scalar and Idin ,k is the identity matrix, the right-hand side of Eq. (42) becomes 
+
+tr 
+
+
+
+G⊤
+
+> i,l,k
+
+Gi,l,k 
+
+r
+
+3 din ,k 
+
+Idin ,k 
+
+
+
+= r
+
+3 din ,k 
+
+tr  G⊤
+
+> i,l,k
+
+Gi,l,k 
+
+ = r
+
+3 din ,k 
+
+∥Gi,l,k ∥2F . (43) The last equality in Eq. (43) uses the Frobenius norm identity ∥Gi,l,k ∥2F = tr( G⊤
+
+> i,l,k
+
+Gi,l,k ).Substituting Eq. (43) into Eq. (40), we obtain 
+
+PAGE l,k = s2
+
+N
+
+> N
+
+X
+
+> i=1
+
+r
+
+3 din ,k 
+
+∥Gi,l,k ∥2F . (44) Eq. (44) shows that PAGE is proportional to the average squared Frobenius norm of the sample-wise full-weight gradients. Factoring out the constants s2, r, and 3din ,k from Eq. (44), we obtain 
+
+PAGE l,k = s2r
+
+3 din ,k 
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥Gi,l,k ∥2F
+
+!
+
+. (45) The term in parentheses is exactly the module sensitivity Semp  
+
+> l,k
+
+defined in Eq. (3) . Substituting Eq. (3) into Eq. (45), we get 
+
+PAGE l,k = s2r
+
+3 din ,k 
+
+Semp  
+
+> l,k
+
+. (46) This completes the proof. 
+
+C Experimental Details 
+
+Hardware and default setup. All experiments are run on 8 NVIDIA H100 GPUs using distributed PyTorch. Unless otherwise specified, we use the default training configuration in Table 6. 
+
+Variant-specific hyperparameters. Table 7 lists the additional hyperparameters used by each LoRA variant. All other settings follow Table 6. 22 Table 6: Default training configuration.                       
+
+> Setting Value
+> Precision bfloat16 , TF32 enabled DeepSpeed stage ZeRO-2 Epochs 1Per-device batch size 4Gradient accumulation steps 8Effective batch size 256 Maximum sequence length 3,072 Learning-rate schedule Linear warmup, then cosine decay Peak learning rate 2×10 −5
+> Warmup ratio 0.03 of total training steps Warmup initial learning rate 0Weight decay 0LoRA rank r64 LoRA α128 LoRA dropout 0Trainable bias None Gradient checkpointing Enabled
+
+Table 7: Variant-specific hyperparameters. 
+
+Variant Additional hyperparameters 
+
+LoRA+ lr_ratio = 8 .0 (matrix B learns 8× faster than A)AdaLoRA rinit = 32 , rtarget = 8 , tinit = 80 , tfinal = 234 , ∆T = 10 , β1 = β2 = 0 .85 , λorth = 0 .1
+
+GraLoRA k = 4 
+
+Evaluation prompts. We use the following task-specific prompts: • MATH [34]: “Please solve this problem step by step. Put your final answer in \boxed{}.” • CommonsenseQA [ 29 ] and GSM8K [ 31 ]: “Let’s think step by step. Please format the final answer at the end of the response as: The answer is {answer}.” • MMLU [27], LogiQA [32], and TruthfulQA [30]: output only the option letter. • TyDiQA [28]: extract the exact shortest answer span from the context without translation. • HumanEval+ [ 35 ]: output only Python code, without explanations, examples, markdown code blocks, or comments. 
+
+D Full LoRA-Variant Results Across Backbones 
+
+For each variant, we compare its original broad-placement setting. For compactness, we abbreviate Qwen3-8B as Qwen and LLaMA-3.1-8B-Instruct as LLaMA in the Model column of Tables 8 and 9. Table 8 reports general instruction-tuning results, and Table 9 reports reasoning, coding, and multi-turn conversation results. Overall, dominant-module placement consistently improves the average score while substantially reducing the number of trainable parameters. 
+
+E Measuring the Training Efficiency of DomLoRA (A1) 
+
+Table 10 shows that dominant-module placement reduces training time across both backbones and all LoRA variants, with larger gains for heavier updates such as DoRA, whose average time drops from 2h 18m to 1h 04m. Peak memory changes little because the backbones and activations dominate memory usage. Thus, DomLoRA mainly improves efficiency by reducing adapter-update overhead. 23 Table 8: Applying the dominant module placement method to LoRA variants on general instruction-tuning benchmarks. Dom indicates whether adapters are inserted into the dominant adaptation module. 
+
+bold marks the better result between the standard and Dom settings for each method and backbone. 
+
+Model Method Dom Params MMLU TyDiQA CQA TruthfulQA GSM8K LogiQA Avg. Qwen 
+
+LoRA [2] ✗ 334M 71.01 68.83 81.33 73.32 86.96 56.22 72.94 
+
+✓ 2.1M 71.39 71.40 82.63 72.58 92.57 56.53 74.52 
+
+NoRM [37] ✗ 302M 72.81 71.15 78.05 75.15 92.49 57.76 74.57 
+
+✓ 0.81M 71.17 71.15 81.00 73.32 93.71 57.45 74.63 
+
+DoRA [14] ✗ 336M 70.79 69.04 81.00 73.14 87.95 56.68 73.10 
+
+✓ 2.1M 70.13 71.30 81.98 75.03 92.95 57.45 74.81 
+
+LoRA+ [17] ✗ 334M 70.60 70.67 79.03 77.11 92.49 55.15 74.18 
+
+✓ 2.1M 70.70 69.86 80.92 74.30 94.31 57.60 74.62 
+
+AdaLoRA [13] ✗ 334M 70.98 71.33 81.74 74.91 92.49 54.53 74.33 
+
+✓ 2.1M 70.10 71.31 82.15 75.15 93.18 57.14 74.84 
+
+GraLoRA [38] ✗ 334M 70.45 68.04 80.84 75.64 91.43 56.07 73.75 
+
+✓ 2.1M 70.05 71.39 82.31 75.15 93.03 57.45 74.90 LLaMA 
+
+LoRA [2] ✗ 321M 63.53 67.19 69.78 45.17 81.35 37.63 60.78 
+
+✓ 2.3M 64.14 69.91 73.46 54.35 85.52 41.17 64.76 
+
+NoRM [37] ✗ 269M 66.04 68.39 76.74 54.59 83.09 37.79 64.44 
+
+✓ 2.3M 65.73 67.79 75.10 54.96 87.26 41.94 65.46 
+
+DoRA [14] ✗ 323M 60.12 67.07 76.66 48.10 75.97 34.72 60.44 
+
+✓ 2.3M 60.02 68.75 74.28 45.29 78.39 37.79 60.75 
+
+LoRA+ [17] ✗ 321M 62.58 68.38 70.11 45.65 81.73 37.02 60.91 
+
+✓ 2.3M 64.71 68.18 74.28 52.75 87.26 42.70 64.98 
+
+AdaLoRA [13] ✗ 321M 61.15 68.51 74.20 46.51 84.69 37.17 62.04 
+
+✓ 2.3M 65.03 67.41 75.51 52.14 86.96 40.86 64.65 
+
+GraLoRA [38] ✗ 321M 63.87 67.69 74.77 45.29 76.42 39.17 61.20 
+
+✓ 2.3M 60.77 68.98 73.71 46.14 81.27 37.17 61.34 
+
+F Sensitivity to the LoRA Rank (A2) 
+
+Table 11 shows that DomLoRA is robust to the choice of LoRA rank on LLaMA-3.1-8B. Across 
+
+r ∈ { 16 , 32 , 64 }, the average score remains nearly unchanged, ranging from 63.6 to 63.8. This indicates that the performance gain of dominant-module placement does not rely on using a large LoRA rank. 
+
+G Full-Parameter Updates on the Dominant Module (A6) 
+
+Table 12 shows that restricting full fine-tuning to the dominant module achieves better performance than updating all modules on Qwen3-8B and LLaMA-3.1-8B. This suggests that the benefit of dominant-module placement is not specific to LoRA-style low-rank updates, but also holds when the selected module is directly fine-tuned. 24 Table 9: LoRA variant results on reasoning, coding, and conversation tasks. Dom indicates whether adapters are inserted only into the dominant adaptation module. For each method and backbone, bold 
+
+marks the better result between the standard and Dom settings. 
+
+Model Method Dom Params GSM8K MATH HumanEval HumanEval+ MT-Bench Avg. Qwen 
+
+NoRM [37] ✗ 302M 93.40 66.48 75.6 72.0 61.31 73.8 
+
+✓ 0.81M 93.63 67.98 73.8 69.5 74.13 75.8 
+
+DoRA [14] ✗ 336M 86.73 53.34 63.4 57.9 62.38 64.8 
+
+✓ 2.1M 92.12 65.06 63.4 59.8 74.84 71.0 
+
+LoRA+ [17] ✗ 334M 92.80 65.60 64.6 59.8 74.13 71.4 
+
+✓ 2.1M 94.01 66.54 75.0 68.3 76.00 76.0 
+
+AdaLoRA [13] ✗ 334M 92.27 64.10 67.1 61.6 74.58 71.9 
+
+✓ 2.1M 91.28 64.32 75.0 70.7 74.72 75.2 
+
+GraLoRA [38] ✗ 334M 90.22 59.06 63.4 59.1 66.10 67.6 
+
+✓ 2.1M 92.04 66.82 64.0 59.1 73.47 71.1 LLaMA 
+
+NoRM [37] ✗ 268M 86.4 45.9 53.7 50.0 62.4 59.7 
+
+✓ 2.3M 87.3 47.1 54.9 51.2 67.1 61.5 
+
+DoRA [14] ✗ 323M 83.2 39.4 54.3 50.0 61.7 57.7 
+
+✓ 2.3M 85.9 44.5 55.5 51.8 66.4 60.8 
+
+LoRA+ [17] ✗ 321M 81.7 40.0 43.9 40.9 63.5 54.0 
+
+✓ 2.3M 85.9 45.7 50.0 48.8 67.3 59.5 
+
+AdaLoRA [13] ✗ 321M 82.0 42.1 47.0 43.9 67.1 56.4 
+
+✓ 2.3M 88.6 46.6 54.9 51.2 68.4 62.0 
+
+GraLoRA [38] ✗ 321M 83.4 40.2 52.4 48.2 62.1 57.3 
+
+✓ 2.3M 75.7 44.4 54.9 53.0 64.9 58.6 
+
+Table 10: Training efficiency on general instruction tuning. Shaded rows correspond to ✓ in Dom ,where adapters are inserted only into the dominant adaptation module. 
+
+Method Dom Qwen3-8B LLaMA-3.1-8B Avg. Time Mem. (G) Time Mem. (G) Time Mem. (G) 
+
+LoRA [2] ✗ 1h 30m 40.50 1h 15m 36.54 1h 23m 38.52 
+
+✓ 1h 05m 39.89 53m 35.96 59m 37.93 
+
+DoRA [14] ✗ 2h 26m 40.50 2h 09m 36.55 2h 18m 38.53 
+
+✓ 1h 05m 39.89 1h 02m 35.96 1h 04m 37.93 
+
+LoRA+ [17] ✗ 1h 30m 40.50 1h 15m 36.54 1h 23m 38.52 
+
+✓ 1h 05m 39.89 53m 35.96 59m 37.93 
+
+AdaLoRA [13] ✗ 1h 44m 40.50 1h 24m 36.55 1h 34m 38.53 
+
+✓ 1h 05m 39.89 53m 35.96 59m 37.93 
+
+GraLoRA [38] ✗ 1h 39m 40.50 1h 24m 36.54 1h 32m 38.52 
+
+✓ 1h 05m 39.89 53m 35.96 59m 37.93 
+
+Table 11: Sensitivity of DomLoRA to the LoRA rank on LLaMA-3.1-8B. α is set to 2r in all cases. 
+
+(r, α) MMLU TyDiQA CQA Truthful QA GSM8K MATH Human Eval+ MT-Bench Avg. 
+
+(64, 128) 64.1 69.9 73.5 54.4 85.1 45.0 50.0 67.0 63.6 (32, 64) 64.9 70.0 74.3 54.1 85.2 44.6 49.4 67.7 63.8 
+
+(16, 32) 64.6 68.2 75.2 52.9 86.4 44.9 49.4 67.1 63.6 
+
+25 Table 12: Full fine-tuning on Qwen3-8B and LLaMA-3.1-8B. Dom indicates whether full-parameter updates are restricted to the dominant adaptation module. For each method and backbone, bold marks the better result between the standard and Dom settings.                                                
+
+> Model Dom MMLU TyDiQA CQA Truthful QA GSM8K MATH Human Eval+ MT-Bench Avg. Qwen ✗71.3 70.9 81.8 73.4 92.6 66.6 69.5 65.2 73.9
+> ✓69.9 70.4 81.6 74.9 92.7 68.0 70.7 63.8 74.0 LLaMA ✗64.6 64.8 69.3 45.8 84.0 41.3 43.9 60.6 59.3
+> ✓65.2 66.8 75.6 52.5 86.4 47.6 52.4 67.0 64.2
+
+26
