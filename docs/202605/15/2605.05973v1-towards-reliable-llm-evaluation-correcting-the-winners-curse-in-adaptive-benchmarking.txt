@@ -1,0 +1,2593 @@
+Title: Towards Reliable LLM Evaluation: Correcting the Winner's Curse in Adaptive Benchmarking
+
+URL Source: https://arxiv.org/pdf/2605.05973v1
+
+Published Time: Fri, 08 May 2026 00:56:02 GMT
+
+Number of Pages: 34
+
+Markdown Content:
+# Towards Reliable LLM Evaluation: Correcting the Winner’s Curse in Adaptive Benchmarking 
+
+Yang Xu ∗
+
+Purdue University 
+
+xu1720@purdue.edu 
+
+Jiefu Zhang ∗
+
+Purdue University 
+
+zhan4018@purdue.edu 
+
+Haixiang Sun 
+
+Purdue University 
+
+sun1321@purdue.edu 
+
+Zihan Zhou 
+
+Johns Hopkins University 
+
+zzhou150@jh.edu 
+
+Tianyu Cao 
+
+Purdue University 
+
+cao357@purdue.edu 
+
+Vaneet Aggarwal 
+
+Purdue University, USA 
+
+vaneet@purdue.edu 
+
+Abstract 
+
+Adaptive prompt and program search makes LLM evaluation selection-sensitive. Once benchmark items are reused inside tuning, the observed winner’s score need not estimate the fresh-data performance of the full tune-then-deploy procedure. We study inference for this procedure-level target under explicit tuning budgets. We propose SIREN, a selection-aware repeated-split reporting protocol that freezes the post-search shortlist, separates splitwise selection from held-out evaluation, and uses an item-level Gaussian multiplier bootstrap for uncertainty quantification. In a fixed-shortlist regime with smooth stabilized selection, the estimator admits a first-order item-level representation, and the bootstrap yields valid simultaneous inference on a finite budget grid. This supports confidence intervals for procedure-performance curves and pre-specified equal-budget and cross-budget comparisons. Controlled simulations and MMLU-Pro tuning experiments show that winner-based reporting can be optimistic and can change deployment conclusions, while SIREN remains close to the finite-sample reporting target. Codes are available at 
+
+https://github.com/jznmsl/siren .
+
+1 Introduction 
+
+Large language models (LLMs) have become a central tool for reasoning, coding, question answering, and related language-based tasks [ 22 , 3, 15 ]. As their capabilities have improved, the question of how to evaluate them has become correspondingly more important. More concretely, for a given task and a collection of models, we would like an evaluation scheme whose reported scores remain informative about how those systems actually perform on that task. Even the simplest setting, where each model is evaluated using one fixed configuration chosen in advance, can be fragile and prone to bias. Recent work shows that changing this template can change both absolute performance and relative rankings across models [ 21 , 24 ]. A growing line of LLM systems goes beyond this fixed system setting. Instead of fixing one prompt or one program configuration in advance, these methods use benchmark examples to search for a stronger way of using the same base model. Concretely, they may generate several candidate instructions or program variants, evaluate them on development examples, and then refine or select among them under an iterative optimization loop or an explicit budget constraint [31 , 17 , 25 , 23 , 4]. Once evaluation is used in this way, the concrete benchmark example, which is a task instance together with the scoring criteria, no longer serves only as a measuring device. It also becomes part of the search process that determines which configuration is ultimately reported. 
+
+> ∗Equal contribution. Preprint.
+> arXiv:2605.05973v1 [stat.ML] 7 May 2026
+
+This reuse of benchmark examples creates an immediate ambiguity about what the final reported number is meant to represent. One possibility is to report the artifact that happened to score highest on the observed development examples, where an artifact refers to a concrete configuration of the system, such as an instruction, a set of demonstrations, or a larger language model program configuration. The alternative is to study the full tune-then-deploy procedure: start from a base system, run a tuner with budget B to search over artifacts, and deploy the returned artifact on future task instances. After searching ends, the chosen artifact is the one actually used at test time. Evaluation must therefore distinguish two questions. A retrospective question asks which candidate happened to look best on the finite sample used during searching. An operational question asks something different: if we rerun the same tuning rule with budget B and then use its returned artifact on fresh data, what performance should we expect on average. These questions coincide when no search is performed, because then the reported system is fixed before any benchmark examples are observed. They diverge once benchmark examples are reused inside the tuning loop, because the final reported artifact is itself data dependent. We refer to this gap between the ex-post winning artifact and the fresh-data performance of the budget-B tune-then-deploy procedure as the winner’s curse in adaptive benchmarking. This distinction leads us to treat the full tune-then-deploy procedure as the object of evaluation. The corresponding target is a budget-indexed procedure-performance curve: for each budget B, the expected fresh-data performance of the artifact returned by the budget-B tuner. The target is therefore not the artifact that happened to win on one observed sample, but the fresh-data performance of the rule that produced it. Recent work makes this problem concrete, but does not yet fully solve it. Adaptive prompt and pro-gram optimization methods study how to search for stronger prompts or program configurations under iterative optimization loops or limited evaluation budgets [ 31 , 17 , 25 , 23 , 4]. A separate line studies prompt variation and statistically principled evaluation [ 21 , 24 , 19 , 36 ]. These papers are closely related, but they target different statistical objects: robustness to prompt choice, efficient evaluation over a pre-specified prompt pool, stochastic evaluation under meaning-preserving perturbations, or prompt choice under controlled risk guarantees. We ask a different question. Specifically, after budgeted adaptive search has produced the reported artifact, what can be said about the fresh-data performance of the resulting tune-then-deploy procedure? In particular, [ 24 ] assumes a specified prompt pool, whereas we study inference after the final reported artifact is itself the output of a budgeted adaptive search pipeline. Motivated by the above questions, we propose SIREN: Selection-aware Inference for Repeated-split 
+
+Evaluatio N. SIREN is a post-search reporting protocol for a tune-then-deploy procedure. It begins after the upstream tuning stage has ended, treats the retained candidate artifacts as a frozen shortlist, and uses a separate evaluation pool for reporting. The formal guarantees are therefore conditional on the completed search and the fixed shortlist, rather than on resampling an unrestricted search process. SIREN repeatedly partitions the evaluation pool into a scoring part and a held-out part. In each split, the scoring part determines stabilized weights over retained artifacts, while the held-out part evaluates the selected output on fresh items. Aggregating across splits preserves the selection step while separating selection evidence from final performance evaluation. This is the reporting layer analyzed in Section 3. We validate SIREN both theoretically and empirically. In the fixed-shortlist, smooth stabilized-selection regime, we prove that the selected repeated-split estimator has a first-order item-level expansion and that a Gaussian multiplier bootstrap yields confidence intervals, simultaneous bands over tuning budgets, and pre-specified pairwise comparisons, without rerunning the tuner inside every resample. Controlled studies verify calibration and expose same-data winner optimism, while MMLU-Pro experiments across random search, DSPy, and eleven open-weight models show that selection-aware reporting can change tuned-versus-default conclusions and the interpretation of budget-aware prompt evaluation. 
+
+Key contributions. 
+
+• We formulate adaptive LLM benchmarking as inference for budget-indexed tune-then-deploy procedures, and identify the fresh-data performance of the resulting procedure, rather than the ex post winning artifact, as the main target of evaluation. • We propose SIREN, a selection-aware repeated-split evaluation protocol based on a frozen shortlist, splitwise scoring and held-out evaluation, and stabilized selection. 2• We prove that the selected repeated-split estimator admits a per-item asymptotic represen-tation and that a Gaussian multiplier bootstrap yields valid simultaneous inference on a finite grid of tuning budgets, including equal-budget and cross-budget comparisons fixed in advance. • We validate SIREN in controlled studies and real LLM tuning experiments, showing that selection-aware procedure-level evaluation can change conclusions about system choice and the reliability of budget-aware reporting after adaptive tuning. 
+
+2 Problem formulation 
+
+We first define the target of interest. The setup covers prompt search, demonstration selection, and language-model program optimization. Let P denote the distribution of a task instance together with the reference information for scoring. A system j ∈ { 1, . . . , N } is a base model plus fixed pipeline components, with Aj denoting its artifact space; an artifact a ∈ A j is a deployable configuration such as instructions, demonstration sets, decoding choices, or larger language-model programs. For a generic item W ∼ P , artifact a ∈ A j , and execution randomness ξ, let Zj (W, a, ξ ) ∈ [0 , 1] 
+
+denote the per-item score, and define         
+
+> μj(w, a ) = Eξ
+> Zj(W, a, ξ )|W=w(1)
+
+as the item-conditional mean score. Any deterministic evaluation is the special case with no ξ. For system j and tuning budget B, let D = ( fW1, . . . , fWn) be the development sample of task instances used by the tuner, and let Uj collect the tuner’s internal randomness. We model the budget-B tuner as a map from the development sample to a deployable artifact:         
+
+> baj(B;D) = Tj,B (D, U j)∈ A j,(2)
+
+where B records the cost of the tuner. A fixed baseline is the special case in which the returned artifact is constant in D. We further define the procedure-level target as         
+
+> θj(B) = Eμj(Wnew ,baj(B;D)) ,(3)
+
+where W new ∼ P is independent of the development sample D; the expectation is over D, Uj ,and W new . Thus θj (B) is the fresh-data performance of the rule “use D to run the budget-B tuner, then deploy its returned artifact,” not the score of one ex post winner on the sample used to choose it. Our goal is to estimate these procedure-level performances on a finite, pre-specified budget grid B = {b1, . . . , b L}, where B ∈ B denotes a generic tuning budget. In practice, the quantities 
+
+{θj (B) : j ≤ N, B ∈ B} must be estimated from a finite benchmark. Section 3 therefore defines the repeated-split procedure used to report these estimates with associated confidence intervals. 
+
+3 SIREN 
+
+SIREN, short for Selection-aware Inference for Repeated-split EvaluatioN, is our approach for reliably evaluating a system together with its tuner. The task instances used by SIREN are separate from those used by the tuner. During tuning, a series of searches are performed to produce a finite set of candidate artifacts. SIREN then takes this frozen candidate set and an independent finite collection of benchmark items. For example, the benchmark items pool may consist of question-answer pairs with reference answers, summarization inputs with reference summaries or judging criteria, or coding problems with unit tests. This pool is the finite benchmark used to approximate the fresh deployment tasks represented by W new in (3) . SIREN repeatedly splits this benchmark pool into a score subset and a held-out subset. In each split, the score subset is used only to set selection weights over the frozen candidates, while the held-out subset is used to evaluate the selected or weighted output after that choice has been made. SIREN then aggregates the resulting scores across splits and uses a Gaussian multiplier bootstrap to form confidence intervals. 
+
+3.1 Protocol 
+
+We first fix the retained artifacts that are allowed to participate in the reporting layer. For each system 
+
+j and tuning budget B, let Aj (B) = {aj,B, 1, . . . , a j,B,K j,B } denote the retained shortlist after search stops. These are the candidate artifacts carried from the tuning stage into the reporting stage, which 3are fixed throughout the evaluation process. SIREN only scores and reweights these retained artifacts rather than generating new ones. For any task instance w in the support of P and any weight vector q ∈ ∆Kj,B , define the weighted mean score of the shortlist as μj (w, q ; B) = PKj,B  
+
+> k=1
+
+qk μj (w, a j,B,k ). SIREN evaluates the retained shortlist on the separate evaluation pool W1, . . . , W M
+
+> i.i.d.
+
+∼ P via a repeated-split procedure. Con-cretely, denote R as the fixed number of repeated splits, for each r ≤ R, let Dscore  
+
+> r
+
+and Er be disjoint subsets of {1, . . . , M }, where the scoring subset Dscore  
+
+> r
+
+is used only to score the retained artifacts for selection and the held-out subset Er is used only for held-out evaluation after the splitting has been made in each round. We denote the sigma-field generated by the repeated-split procedure as 
+
+GM = σ {Dscore  
+
+> r
+
+, E r }Rr=1 
+
+. After the subsets are partitioned, for artifact aj,B,k , we compute its selection scores bSr,j,k and held-out scores bTr,j,k on split r as 
+
+bSr,j,k (B) = 1
+
+|Dscore  
+
+> r
+
+|
+
+X
+
+> i∈Dscore
+> r
+
+Zj
+
+ Wi, a j,B,k , ξ Sirjk 
+
+, (4) 
+
+bTr,j,k (B) = 1
+
+|Er |
+
+X
+
+> i∈Er
+
+Zj
+
+ Wi, a j,B,k , ξ Tirjk 
+
+, (5) 
+
+and write bSr,j (B) and bTr,j (B) as the corresponding stacked vectors in RKj,B . The variables ξSirjk 
+
+and ξTirjk capture execution randomness. SIREN next uses a selector to convert the selection scores into weights for each split, and combines those weights with the held-out scores and form a weighted average. This aims to reduce dependence on any single partition while preserving the separation between selection and evaluation. We denote a selector as a map gj,B : RKj,B → ∆Kj,B that converts the above selection scores into deployment weights. The split-level selected output is denoted as bqr,j (B) = gj,B 
+
+  bSr,j (B), and the corresponding weighted-average of the held-out score is the form of bYr,j (B) = bqr,j (B)⊤ bTr,j (B). For computing the final estimator, given nonnegative weights ω1, . . . , ω R with PRr=1 ωr = 1 , the SIREN point estimator is 
+
+eθj,R (B) = 
+
+> R
+
+X
+
+> r=1
+
+ωr bYr,j (B), (6) 
+
+with natural weights choices being ωr = |Er |  
+
+> PRs=1 |Es|
+
+and ωr = 1 
+
+> R
+
+. The next subsection describes the Gaussian multiplier bootstrap used to form confidence intervals and simultaneous bands. 
+
+3.2 Bootstrap 
+
+Once the estimator in (6) is obtained, SIREN asks how variable this estimator would be if the evaluation pool were redrawn while the completed tuning stage and repeated-split design were held fixed. To formalize this target, we define the average score that the frozen shortlist, repeated-split protocol, and selector would produce under the realized split design: 
+
+θRS |G  
+
+> j,M
+
+(B) = Eeθj,R (B) | G M
+
+. (7) 
+
+The bootstrap therefore aims to characterize the uncertainty gap eθj,R (B) − θRS |G  
+
+> j,M
+
+(B). This gap is not a simple sample-mean error because each benchmark item can affect the estimator in two ways: through held-out evaluation scores and through scoring-subset scores that change the splitwise selection weights. SIREN summarizes these two effects using an item-level first-order contribution 
+
+bψi,j,B,M for each benchmark item Wi. It is computed by combining, across repeated splits, the item’s centered held-out score contribution and its centered scoring-subset contribution after passing through the selector derivative. The exact formula is recorded in Appendix B. Intuitively, bψi,j,B,M estimates the summand in the linear approximation √M {eθj,R (B) − θRS |G  
+
+> j,M
+
+(B)} ≈ 1√M
+
+PMi=1 ψi,j,B,M . For each (j, B ), define the empirical average contribution ¯bψj,B,M = 1
+
+> M
+
+PMi=1 bψi,j,B,M , SIREN then draws independent Gaussian multipliers ζ1, . . . , ζ M
+
+> i.i.d.
+
+∼ N (0 , 1) and forms the joint bootstrap process bG∗ 
+
+> M
+
+=
+
+n bG∗
+
+> j,B
+
+o
+
+> j≤N, B ∈B
+
+with bG∗ 
+
+> j,B
+
+= 1√M
+
+PMi=1 ζi
+
+  bψi,j,B,M − ¯bψj,B,M 
+
+. This randomly 4reweights benchmark items rather than splits or candidate artifacts. Using the same multiplier ζi for item Wi across all systems and budgets preserves the dependence created by evaluating the same benchmark pool across the whole grid. The conditional distribution of bG∗ 
+
+> M
+
+is used as an approximation to the sampling distribution of n√M  eθj,R (B) − θRS |G  
+
+> j,M
+
+(B)o
+
+> j≤N, B ∈B
+
+. Pointwise intervals use the corresponding coordinatewise bootstrap quantiles, while simultaneous bands use the quantile of max j≤N, B ∈B | bG∗ 
+
+> j,B
+
+|. The same bootstrap process also supports fixed equal-budget comparisons, cross-budget gains, and other pre-specified linear contrasts on the grid. The theory below justifies this item-level resampling scheme for the selected repeated-split estimator, including both held-out evaluation noise and the first-order effect of selection. Scores                                  
+
+> Artifacts
+> (b) Freeze Shortlist
+> Sorting and
+> Select top K
+> highest artifact
+> (c) Scores on
+> Evaluation Pool
+> Top K
+> Artifacts
+> Artifact 1
+> Artifact 2
+> Artifact K
+> Score Subset
+> Artifact 1
+> Artifact 3
+> Artifact K
+> Tuning and Evaluation Phase
+> Held-Out Subset Selector and Held-out Scoring
+> Selection-aware repeated-split estimator
+> Item-level contributors
+> multipliers
+> Bootstrap Process Pointwise
+> CI
+> Simultaneous
+> Band
+> Selection Only Evaluation Only
+> Reweight benchmark items,
+> not splits or artifacts
+> Fixed
+> Comparisons
+> (e) Aggregate Split-wise
+> Estimates
+> (f) Gaussian Multiplier Bootstrap
+> (d) Repeated-Split Scoring and Selection
+> For each split r=1,...,R
+> Inference and reporting
+> (g) Inference Outputs
+> Final results for performance
+> Artifact 2
+> (a) Search Phase
+> Budget B
+> Token Count
+> Tuner
+> Tuning Sample D
+> Science, Math, Law, etc.
+> Artifacts
+> Prompts
+> LLM
+> Scores of
+> Prompts
+> Selection Scores Held-Out Subset
+
+Figure 1: Overview of the SIREN pipeline. (a)–(b) tuning and shortlist freezing; (c) score tensor on the split benchmarks; (d)–(e) repeated-split inference and aggregation into the procedure-level estimate eθ; (f)–(g) multiplier-bootstrap uncertainty quantification and final CI output. 
+
+3.3 Theoretical guarantees 
+
+We now justify the two statistical outputs of SIREN: the repeated-split estimate and the bootstrap confidence interval. The formal assumptions, full details of SIREN’s computation steps, and proofs are given in Appendix B. All statistical statements are conditioned on the completed tuning stage, so the retained shortlists and selectors are treated as fixed independent objects in SIREN’s pipeline. In the following theorem-ready regime, we consider the number of systems, budgets, repeated splits, and retained artifacts are fixed; split sizes are proportional to M ; and the selector gj,B is a stabilized smooth map with uniformly bounded derivatives. Under these settings, the softmax-type selectors are covered directly, while a discontinuous hard argmax requires smoothing or an additional margin condition. We first define the joint scaled error over the finite system-budget grid as 
+
+ZM =
+
+n√M  eθj,R (B) − θRS |G  
+
+> j,M
+
+(B)o
+
+> j≤N, B ∈B
+
+.
+
+Theorem 1 (Selection-aware CLT) . Conditioned on the repeated-split design, the joint error vector 
+
+ZM admits a first-order item-level linearization and converges to a mean-zero Gaussian law over the budget grid B. The item-level linearization has one summand per benchmark task instance and includes both sources of uncertainty: the direct held-out evaluation effect and the first-order effect of using scoring subsets to choose splitwise weights. 
+
+For each item Wi, the proof characterizes all of its impact across splits, systems, budgets, and retained artifacts into one item-level vector. These vectors are independent across items, although their 5coordinates are dependent within an item because the same task can appear in multiple split-level comparisons. A finite-dimensional CLT then applies to the full score table. The nonstandard step is the selection layer: the splitwise weights are chosen from the scoring subset rather than fixed in advance. Smoothness of gj,B lets us linearize how scoring-set perturbations change these weights, producing a derivative-weighted selection term in addition to ordinary held-out evaluation noise. This is the uncertainty ignored by winner-based reports that treat the selected artifact as fixed. Theorem 1 explains what SIREN is estimating and motivates the repeated-split construction. The target is not the score of a single observed prompt, program, or demonstration set chosen after search, it is instead the performance of a frozen artifact shortlist plus a specified reporting rule. The theorem shows that this selected reporting rule still has a tractable large-sample distribution once the effect of selection is included. The following theorem further explains the validity of the bootstrapping approach. 
+
+Theorem 2 (Multiplier bootstrap validity) . Suppose the computable item-level quantities used by the bootstrap consistently approximate the corresponding first-order item effects in the linearization, in the sense that their average squared discrepancy over benchmark items vanishes as M grows. Then the conditional law of the multiplier process bG∗ 
+
+> M
+
+consistently approximates the joint law of 
+
+ZM . Consequently, the bootstrap quantiles used in Section 3 yield asymptotically valid pointwise confidence intervals and simultaneous bands for θRS |G  
+
+> j,M
+
+(B) over the budget grid B.
+
+Theorem 2 gives the computational payoff. SIREN resamples benchmark-item contributions rather than rerunning the tuner or regenerating candidates. Because each item contribution already encodes both evaluation noise and selection effects, one multiplier per item preserves dependence across systems, budgets, and splits. Thus the same bootstrap supports confidence intervals, simultaneous bands, and fixed grid contrasts. Conceptually, the condition in Theorem 2 requires the computable item-level contributions to recover the same two first-order effects from Theorem 1: the direct held-out score effect and the derivative-weighted selection effect. The proof compares the feasible multiplier process with the infeasible linear expansion; conditional on the observed contributions, the bootstrap is Gaussian with empirical covariance, and plug-in consistency makes this covariance match the limiting covariance of ZM .
+
+4 Experiments 
+
+Adaptive LLM benchmarking is vulnerable to a winner’s curse: when benchmark items are reused during prompt or program search, the reported winner can overstate the fresh-data performance of the full procedure. Our experiments evaluate whether this bias appears after real tuning and whether SIREN effectively estimates the corresponding procedure-level target. We organize these studies around the following three Research Questions ( RQ s): 
+
+(RQ1) Does SIREN estimate the procedure-level target without winner-induced optimism? 
+
+(RQ2) Does selection-aware reporting change tuned-versus-default deployment decisions? 
+
+(RQ3) Is budget-aware prompt evaluation over a pool sufficient after adaptive tuning, or is selection-aware inference still needed? We evaluate SIREN on MMLU-Pro [ 29 ] Math and Law across two tuner families, random search and DSPy, and eleven open-weight instruction-tuned LLMs. For each subject, the tuner uses a small training pool to generate candidate artifacts under the shared token-budget grid 
+
+B = {500K , 1.5M , 3M , 6.5M }, and the reporting layer uses a disjoint evaluation pool to estimate procedure-level performance. All methods are compared on the same retained shortlist and evaluation pool, differing only in the final reporting rule. Unless otherwise stated, SIREN uses R=10 repeated splits, scoring fraction ρscore =0 .5, softmax selector temperature τ =1 , uniform split weights ωr , and 
+
+2,000 Gaussian multiplier bootstrap draws. We compare SIREN with four internal baselines: • M1 (naive max ) evaluates every retained candidate on the full evaluation pool and reports the empirical winner, bθM1 = max k ¯Z·,k .• M2 (M1 + Wald ) uses the same selected-winner point estimate as M1, with a conventional Wald interval computed on the same items used for selection; 6• M3 (single-split holdout ) partitions the evaluation set into a selection fold and a held-out scoring fold, picks the empirical winner on the selection fold, and reports its mean accuracy on the held-out fold; • M4 (R-split argmax with Student-t CI ) repeats the selection-and-evaluation procedure R
+
+times with independent splits, takes the average of the per-split held-out means as the point estimate, and forms a Student-t confidence interval from the variance across splits. Appendix C.1 provides controlled validation of the inference mechanism. Study A checks multiplier-bootstrap calibration and the predicted M −1/2 width scaling. Study B shows the near-tie instability of hard argmax selection. Study C shows that same-data best-of reporting becomes more optimistic as the number of searched artifacts grows. We also compare against PromptEval [ 24 ], an IRT-based external baseline for budget-aware prompt evaluation. For the real-data comparisons, θ⋆ denotes a 10 , 000 -redraw Monte Carlo approximation of the finite-sample reporting target θRS |G  
+
+> j,M
+
+(B) in (7) .This reference lets us separate point-estimation bias from tuned-versus-default directional error. We note that all models are served via vLLM on a single NVIDIA RTX 4090 GPU (24 GB VRAM) with sequential model loading, and the interval calibration is evaluated separately. 
+
+4.1 RQ1: Procedure-level target and winner-induced bias 
+
+We first answer RQ1 by comparing each reported tuned estimate bθA with the Monte Carlo reference 
+
+θ⋆A. Each cell is a (subject, tuner, model, budget) configuration on the grid described above, with the model ranging over the 11 open-weight models that appear in all four subject vs tuner combinations. We report two summaries. The column “bias” is bθA −θ⋆A, in percentage points; positive values indicate optimistic reporting of the tuned procedure. The column “dir” counts the number of cells in which the point-estimate ordering agrees with the Monte Carlo ordering sign( bθA − θ⋆B ) = sign( θ⋆A − θ⋆B ).Tables 1 and 2 summarize these quantities on MMLU-Pro Math and Law .Table 1: Per-budget directional accuracy on MMLU-Pro Math.                                                                                                                         
+
+> M1 (Naive max) M2 (M1+Wald) M3 (single split) M4 ( R-split t)SIREN
+> Tuner Bdir bias dir bias dir bias dir bias dir bias Random search 500K 9/11 +3 .70 9/11 +3 .70 8/11 +3 .99 7/11 +4 .35 11 /11 −0.09
+> 1.5M 9/11 +0 .42 9/11 +0 .42 9/11 +1 .41 6/11 +1 .80 10 /11 +0.10
+> 3M 9/11 +0 .71 9/11 +0 .71 9/11 +0 .80 8/11 +1 .39 10 /11 +0.06
+> 6.5M 10 /11 +0 .66 10 /11 +0 .66 9/11 +0 .30 8/11 +1 .09 11 /11 +0.08
+> All (44 cells) 37 /44 +1 .37 37 /44 +1 .37 35 /44 +1 .62 29 /44 +2 .16 42 /44 +0.04
+> DSPy 500K 10 /11 +1 .37 10 /11 +1 .37 6/11 −0.76 9/11 +0 .55 10 /11 −0.09
+> 1.5M 8/11 +1 .52 8/11 +1 .52 8/11 −0.54 10 /11 +0 .78 11 /11 −0.03
+> 3M 8/11 +1 .49 8/11 +1 .49 9/11 +0 .00 10 /11 +0 .70 11 /11 −0.05
+> 6.5M 8/11 +1 .33 8/11 +1 .33 8/11 −0.17 10 /11 +0 .63 11 /11 −0.03
+> All (44 cells) 34 /44 +1 .43 34 /44 +1 .43 31 /44 −0.37 39 /44 +0 .67 43 /44 −0.05
+
+Table 2: Per-budget directional accuracy on MMLU-Pro Law.                                                                                                                         
+
+> M1 (Naive max) M2 (M1+Wald) M3 (single split) M4 ( R-split t)SIREN
+> Tuner Bdir bias dir bias dir bias dir bias dir bias Random search 500K 4/11 +1 .50 4/11 +1 .50 3/11 +2 .13 8/11 +1 .00 11 /11 +0.05
+> 1.5M 2/11 +2 .24 2/11 +2 .24 5/11 +1 .59 5/11 +1 .37 10 /11 +0.11
+> 3M 4/11 +2 .10 4/11 +2 .10 6/11 +1 .47 6/11 +1 .18 11 /11 +0.07
+> 6.5M 5/11 +1 .77 5/11 +1 .77 6/11 +1 .74 8/11 +1 .13 10 /11 +0.10
+> All (44 cells) 15 /44 +1 .90 15 /44 +1 .90 20 /44 +1 .73 27 /44 +1 .17 42 /44 +0.08
+> DSPy 500K 10 /11 +0 .77 10 /11 +0 .77 8/11 −0.01 8/11 −0.15 9/11 −0.21
+> 1.5M 10 /11 +1 .10 10 /11 +1 .10 9/11 +0 .72 11 /11 +0 .25 10 /11 −0.17
+> 3M 10 /11 +1 .13 10 /11 +1 .13 9/11 +0 .77 11 /11 +0 .22 10 /11 −0.20
+> 6.5M 10 /11 +1 .04 10 /11 +1 .04 9/11 +0 .25 10 /11 −0.01 11 /11 −0.21
+> All (44 cells) 40 /44 +1 .01 40 /44 +1 .01 35 /44 +0 .43 40 /44 +0 .08 40 /44 −0.20
+
+Tables 1 and 2 show a consistent positive bias for winner-based reporting. M1 is optimistic in all four subject and tuner summaries. M2 has the same point estimate as M1, and therefore inherits the same signed bias; the Wald interval changes only the uncertainty report, not the selected-winner estimate. M3 and M4 reduce direct same-data reuse, but they still use hard winner selection and do not account 7for the first-order effect of the scoring subset on the selected artifact. SIREN remains close to the Monte Carlo reference across budgets and tuners, with mean signed errors between −0.20 and +0 .08 
+
+percentage points in the four aggregate rows. These results answer RQ1 : the main source of error is not the choice of a particular confidence interval, but the selected-winner point estimate itself. SIREN changes the reported object from the naive best artifact to the selected repeated-split procedure, which removes most of the optimistic shift seen in M1-M4. 
+
+4.2 Comparison against reporting baselines M1–M4 
+
+We next answer RQ2 by examining whether the bias corrections in Tables 1-2 change the tuned-versus-default conclusion. For each model and budget, we compare the sign of the reported gap 
+
+sign( bθA − θ⋆B ) with the ground-truth direction sign( θ⋆A − θ⋆B ). Table 3 gives one representative comparison on MMLU-Pro Math with the DSPy tuner for eleven models shown as columns. The default reference θ⋆B is fixed across budgets and is shown at the top row. For each budget, θ⋆A is the Monte Carlo tuned-procedure reference, and each method row reports an estimate bθA of this tuned target. The ✓/✗marker records whether sign( bθA − θ⋆B ) matches sign( θ⋆A − θ⋆B ).Table 3: Unified per-model comparison across budgets on MMLU-Pro Math with the DSPy tuner.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+
+> BRow Qwen3 Phi-3.5 Qwen2.5-7B Llama3.1 Yi-1.5 InternLM Qwen2-7B Qwen2.5-3B GLM-4 Mistr-v0.3 Mistr-v0.1 Ref. θ⋆B0.373 0.263 0.306 0.222 0.196 0.249 0.257 0.249 0.255 0.169 0.130
+> 500 Kθ⋆A0.379 0.267 0.339 0.230 0.161 0.253 0.258 0.283 0.254 0.165 0.140 True dir. A>B A>B A>B A>B A<B A>B A>B A>B A<B A<B A>B M1/M2 0.388 ✓0.285 ✓0.349 ✓0.240 ✓0.196 ✓0.265 ✓0.265 ✓0.322 ✓0.257 ✗0.168 ✓0.146 ✓
+> M3 0.369 ✗0.281 ✓0.345 ✓0.216 ✗0.177 ✓0.232 ✗0.217 ✗0.304 ✓0.232 ✓0.152 ✓0.121 ✗
+> M4 0.382 ✓0.274 ✓0.343 ✓0.230 ✓0.196 ✗0.262 ✓0.253 ✗0.306 ✓0.245 ✓0.160 ✓0.138 ✓
+> SIREN 0.380 ✓0.264 ✓0.342 ✓0.230 ✓0.162 ✓0.254 ✓0.256 ✗0.278 ✓0.249 ✓0.164 ✓0.139 ✓
+> 1.5Mθ⋆A0.383 0.278 0.344 0.251 0.193 0.254 0.262 0.290 0.255 0.166 0.142 True dir. A>B A>B A>B A>B A<B A>B A>B A>B A<B A<B A>B M1/M2 0.398 ✓0.305 ✓0.350 ✓0.282 ✓0.214 ✗0.262 ✓0.267 ✓0.325 ✓0.257 ✗0.174 ✗0.149 ✓
+> M3 0.382 ✓0.267 ✓0.343 ✓0.257 ✓0.198 ✗0.222 ✗0.240 ✗0.312 ✓0.238 ✓0.168 ✓0.133 ✓
+> M4 0.396 ✓0.295 ✓0.344 ✓0.274 ✓0.211 ✗0.262 ✓0.258 ✓0.316 ✓0.248 ✓0.163 ✓0.137 ✓
+> SIREN 0.387 ✓0.275 ✓0.348 ✓0.250 ✓0.193 ✓0.257 ✓0.260 ✓0.284 ✓0.253 ✓0.165 ✓0.143 ✓
+> 3Mθ⋆A0.384 0.279 0.342 0.251 0.193 0.250 0.264 0.294 0.254 0.164 0.142 True dir. A>B A>B A>B A>B A<B A>B A>B A>B A<B A<B A>B M1/M2 0.398 ✓0.305 ✓0.349 ✓0.285 ✓0.211 ✗0.263 ✓0.269 ✓0.321 ✓0.257 ✗0.176 ✗0.149 ✓
+> M3 0.382 ✓0.302 ✓0.342 ✓0.262 ✓0.193 ✓0.246 ✗0.240 ✗0.310 ✓0.241 ✓0.169 ✓0.133 ✓
+> M4 0.396 ✓0.293 ✓0.342 ✓0.275 ✓0.205 ✗0.266 ✓0.259 ✓0.307 ✓0.246 ✓0.168 ✓0.139 ✓
+> SIREN 0.389 ✓0.275 ✓0.347 ✓0.249 ✓0.194 ✓0.252 ✓0.263 ✓0.287 ✓0.252 ✓0.163 ✓0.143 ✓
+> 6.5Mθ⋆A0.384 0.274 0.343 0.252 0.193 0.252 0.263 0.302 0.255 0.169 0.143 True dir. A>B A>B A>B A>B A<B A>B A>B A>B A<B A<B A>B M1/M2 0.398 ✓0.293 ✓0.349 ✓0.284 ✓0.208 ✗0.263 ✓0.269 ✓0.330 ✓0.257 ✗0.176 ✗0.149 ✓
+> M3 0.382 ✓0.288 ✓0.342 ✓0.262 ✓0.196 ✗0.246 ✗0.240 ✗0.315 ✓0.238 ✓0.169 ✓0.133 ✓
+> M4 0.396 ✓0.283 ✓0.345 ✓0.273 ✓0.202 ✗0.266 ✓0.259 ✓0.320 ✓0.248 ✓0.167 ✓0.139 ✓
+> SIREN 0.389 ✓0.270 ✓0.347 ✓0.251 ✓0.194 ✓0.254 ✓0.261 ✓0.296 ✓0.253 ✓0.168 ✓0.143 ✓
+
+The table shows that winner-based reporting can change the deployment verdict, especially in small-gap cases. Because M1 and M2 use the same selected-winner point estimate, they inherit the same optimistic shift and can turn near ties or weak regressions into apparent gains. M3 and M4 reduce direct reuse of the evaluation pool, but their hard splitwise selections remain sensitive to the realized split. SIREN instead tracks the procedure-level target, so its estimates remain close to the Monte Carlo tuned target even in near ties. This is the deployment-level consequence of the bias reductions in Tables 1–2: the correction is not merely a numerical calibration improvement, but can change which system would be deployed. We refer to the remaining subject vs tuner cells in Tables 9, 10, and 11 in the appendix. These results answer RQ2 affirmatively. Selection-aware reporting can change tuned-versus-default conclusions because the same-data winner and the tune-then-deploy procedure are different statistical objects. SIREN preserves gains that remain after held-out splitwise evaluation, while removing gains that are mainly due to adaptive selection on the evaluation pool. 
+
+4.3 Comparison against PromptEval 
+
+To answer RQ3 , we compared PromptEval [ 24 ], the closest external baseline to our setting since it also studies budget-aware evaluation over a prompt pool. We sweep PromptEval’s cell-observation fraction 
+
+f ∈ { 0.05 , 0.10 , 0.20 , 0.40 , 0.60 , 0.80 , 1.00 }, where f is the fraction of the K × M prompt–item score matrix observed before fitting the Rasch IRT model and imputing the remaining cells. Small f
+
+8corresponds to the sparse budget-constrained regime. Notably, when f =1 , PromptEval degenerates back into M1. The comparison in Table 4 shows that PromptEval faces a bias trade-off that is not Table 4: Unified PromptEval [ 24 ] vs SIREN comparison on MMLU-Pro Math with the DSPy tuner. 
+
+B Row Qwen3 Phi-3.5 Qwen2.5-7B Llama3.1 Yi-1.5 InternLM Qwen2-7B Qwen2.5-3B GLM-4 Mistr-v0.3 Mistr-v0.1 Ref. θ⋆B 0.373 0.263 0.306 0.222 0.196 0.249 0.257 0.249 0.255 0.169 0.130 
+
+500 Kθ⋆A 0.379 0.267 0.339 0.230 0.161 0.253 0.258 0.283 0.254 0.165 0.140 True dir. A>B A>B A>B A>B A<B A>B A>B A>B A<B A<B A>B PE f =0 .05 0.254 ✗ 0.193 ✗ 0.267 ✗ 0.136 ✗ 0.109 ✓ 0.180 ✗ 0.157 ✗ 0.181 ✗ 0.164 ✓ 0.092 ✓ 0.076 ✗
+
+PE f =0 .10 0.305 ✗ 0.204 ✗ 0.267 ✗ 0.180 ✗ 0.115 ✓ 0.199 ✗ 0.194 ✗ 0.227 ✗ 0.226 ✓ 0.125 ✓ 0.117 ✗
+
+PE f =0 .20 0.401 ✓ 0.267 ✓ 0.349 ✓ 0.245 ✓ 0.164 ✓ 0.265 ✓ 0.274 ✓ 0.305 ✓ 0.286 ✗ 0.175 ✗ 0.162 ✓
+
+PE f =0 .40 0.399 ✓ 0.281 ✓ 0.346 ✓ 0.252 ✓ 0.164 ✓ 0.266 ✓ 0.270 ✓ 0.322 ✓ 0.268 ✗ 0.183 ✗ 0.149 ✓
+
+PE f =0 .60 0.399 ✓ 0.285 ✓ 0.346 ✓ 0.240 ✓ 0.182 ✓ 0.265 ✓ 0.269 ✓ 0.327 ✓ 0.267 ✗ 0.174 ✗ 0.153 ✓
+
+PE f =0 .80 0.391 ✓ 0.286 ✓ 0.352 ✓ 0.237 ✓ 0.192 ✓ 0.263 ✓ 0.268 ✓ 0.326 ✓ 0.265 ✗ 0.171 ✗ 0.149 ✓
+
+PE f =1 .00 (M1) 0.388 ✓ 0.285 ✓ 0.349 ✓ 0.240 ✓ 0.196 ✓ 0.265 ✓ 0.265 ✓ 0.322 ✓ 0.257 ✗ 0.168 ✓ 0.146 ✓
+
+SIREN 0.380 ✓ 0.264 ✓ 0.342 ✓ 0.230 ✓ 0.162 ✓ 0.254 ✓ 0.256 ✗ 0.278 ✓ 0.249 ✓ 0.164 ✓ 0.139 ✓
+
+1.5Mθ⋆A 0.383 0.278 0.344 0.251 0.193 0.254 0.262 0.290 0.255 0.166 0.142 True dir. A>B A>B A>B A>B A<B A>B A>B A>B A<B A<B A>B PE f =0 .05 0.271 ✗ 0.175 ✗ 0.212 ✗ 0.174 ✗ 0.123 ✓ 0.173 ✗ 0.168 ✗ 0.227 ✗ 0.151 ✓ 0.102 ✓ 0.079 ✗
+
+PE f =0 .10 0.304 ✗ 0.226 ✗ 0.265 ✗ 0.218 ✗ 0.172 ✓ 0.205 ✗ 0.207 ✗ 0.250 ✓ 0.209 ✓ 0.133 ✓ 0.112 ✗
+
+PE f =0 .20 0.393 ✓ 0.299 ✓ 0.353 ✓ 0.273 ✓ 0.224 ✗ 0.268 ✓ 0.279 ✓ 0.321 ✓ 0.264 ✗ 0.181 ✗ 0.151 ✓
+
+PE f =0 .40 0.403 ✓ 0.302 ✓ 0.345 ✓ 0.291 ✓ 0.229 ✗ 0.269 ✓ 0.276 ✓ 0.318 ✓ 0.264 ✗ 0.180 ✗ 0.151 ✓
+
+PE f =0 .60 0.403 ✓ 0.307 ✓ 0.346 ✓ 0.278 ✓ 0.218 ✗ 0.265 ✓ 0.273 ✓ 0.320 ✓ 0.259 ✗ 0.171 ✗ 0.154 ✓
+
+PE f =0 .80 0.403 ✓ 0.308 ✓ 0.349 ✓ 0.283 ✓ 0.210 ✗ 0.262 ✓ 0.267 ✓ 0.324 ✓ 0.257 ✗ 0.170 ✗ 0.153 ✓
+
+PE f =1 .00 (M1) 0.398 ✓ 0.305 ✓ 0.350 ✓ 0.282 ✓ 0.214 ✗ 0.262 ✓ 0.267 ✓ 0.325 ✓ 0.257 ✗ 0.174 ✗ 0.149 ✓
+
+SIREN 0.387 ✓ 0.275 ✓ 0.348 ✓ 0.250 ✓ 0.193 ✓ 0.257 ✓ 0.260 ✓ 0.284 ✓ 0.253 ✓ 0.165 ✓ 0.143 ✓
+
+3Mθ⋆A 0.384 0.279 0.342 0.251 0.193 0.250 0.264 0.294 0.254 0.164 0.142 True dir. A>B A>B A>B A>B A<B A>B A>B A>B A<B A<B A>B PE f =0 .05 0.298 ✗ 0.181 ✗ 0.221 ✗ 0.182 ✗ 0.129 ✓ 0.190 ✗ 0.167 ✗ 0.229 ✗ 0.151 ✓ 0.107 ✓ 0.067 ✗
+
+PE f =0 .10 0.326 ✗ 0.215 ✗ 0.272 ✗ 0.230 ✓ 0.153 ✓ 0.193 ✗ 0.197 ✗ 0.261 ✓ 0.213 ✓ 0.139 ✓ 0.113 ✗
+
+PE f =0 .20 0.412 ✓ 0.281 ✓ 0.365 ✓ 0.273 ✓ 0.228 ✗ 0.263 ✓ 0.274 ✓ 0.335 ✓ 0.272 ✗ 0.177 ✗ 0.151 ✓
+
+PE f =0 .40 0.397 ✓ 0.310 ✓ 0.353 ✓ 0.280 ✓ 0.217 ✗ 0.268 ✓ 0.273 ✓ 0.322 ✓ 0.279 ✗ 0.171 ✗ 0.154 ✓
+
+PE f =0 .60 0.410 ✓ 0.306 ✓ 0.348 ✓ 0.284 ✓ 0.203 ✗ 0.262 ✓ 0.273 ✓ 0.316 ✓ 0.260 ✗ 0.172 ✗ 0.149 ✓
+
+PE f =0 .80 0.402 ✓ 0.309 ✓ 0.346 ✓ 0.290 ✓ 0.212 ✗ 0.261 ✓ 0.272 ✓ 0.325 ✓ 0.257 ✗ 0.176 ✗ 0.153 ✓
+
+PE f =1 .00 (M1) 0.398 ✓ 0.305 ✓ 0.349 ✓ 0.285 ✓ 0.211 ✗ 0.263 ✓ 0.269 ✓ 0.321 ✓ 0.257 ✗ 0.176 ✗ 0.149 ✓
+
+SIREN 0.389 ✓ 0.275 ✓ 0.347 ✓ 0.249 ✓ 0.194 ✓ 0.252 ✓ 0.263 ✓ 0.287 ✓ 0.252 ✓ 0.163 ✓ 0.143 ✓
+
+6.5Mθ⋆A 0.384 0.274 0.343 0.252 0.193 0.252 0.263 0.302 0.255 0.169 0.143 True dir. A>B A>B A>B A>B A<B A>B A>B A>B A<B A<B A>B PE f =0 .05 0.302 ✗ 0.169 ✗ 0.215 ✗ 0.179 ✗ 0.115 ✓ 0.163 ✗ 0.192 ✗ 0.231 ✗ 0.153 ✓ 0.110 ✓ 0.087 ✗
+
+PE f =0 .10 0.309 ✗ 0.216 ✗ 0.269 ✗ 0.227 ✓ 0.151 ✓ 0.196 ✗ 0.207 ✗ 0.260 ✓ 0.204 ✓ 0.140 ✓ 0.126 ✗
+
+PE f =0 .20 0.397 ✓ 0.283 ✓ 0.353 ✓ 0.276 ✓ 0.224 ✗ 0.274 ✓ 0.269 ✓ 0.330 ✓ 0.264 ✗ 0.184 ✗ 0.164 ✓
+
+PE f =0 .40 0.411 ✓ 0.296 ✓ 0.347 ✓ 0.295 ✓ 0.210 ✗ 0.269 ✓ 0.272 ✓ 0.338 ✓ 0.268 ✗ 0.187 ✗ 0.150 ✓
+
+PE f =0 .60 0.403 ✓ 0.294 ✓ 0.345 ✓ 0.287 ✓ 0.211 ✗ 0.264 ✓ 0.273 ✓ 0.328 ✓ 0.260 ✗ 0.184 ✗ 0.148 ✓
+
+PE f =0 .80 0.401 ✓ 0.291 ✓ 0.347 ✓ 0.290 ✓ 0.212 ✗ 0.262 ✓ 0.270 ✓ 0.332 ✓ 0.258 ✗ 0.180 ✗ 0.150 ✓
+
+PE f =1 .00 (M1) 0.398 ✓ 0.293 ✓ 0.349 ✓ 0.284 ✓ 0.208 ✗ 0.263 ✓ 0.269 ✓ 0.330 ✓ 0.257 ✗ 0.176 ✗ 0.149 ✓
+
+SIREN 0.389 ✓ 0.270 ✓ 0.347 ✓ 0.251 ✓ 0.194 ✓ 0.254 ✓ 0.261 ✓ 0.296 ✓ 0.253 ✓ 0.168 ✓ 0.143 ✓
+
+resolved by choosing a different cell-budget fraction. The sign of PromptEval’s error depends on the observation fraction: sparse PromptEval is too pessimistic, while dense PromptEval approaches the optimistic same-data winner. SIREN does not interpolate between these two regimes. It evaluates the post-search reporting rule on held-out split evaluations and uses item-level resampling to account for the first-order effect of selection. Across the four budgets in Table 5, SIREN’s signed error stays between −0.09 and −0.03 percentage points, while every PromptEval fraction has substantially larger absolute bias. Full PromptEval tables for the other subject-tuner cells appear in Appendix C. Table 5: PromptEval on MMLU-Pro Math for DSPy. 
+
+500K 1.5M 3M 6.5M 
+
+f dir bias dir bias dir bias dir bias 
+
+0.05 3/11 −8.37 3/11 −8.75 3/11 −8.15 3/11 −8.29 0.10 3/11 −5.20 4/11 −4.69 5/11 −4.59 5/11 −4.76 0.20 9/11 +1 .49 8/11 +1 .70 8/11 +1 .93 8/11 +1 .71 0.40 9/11 +1 .56 8/11 +1 .91 8/11 +1 .86 8/11 +1 .95 0.60 9/11 +1 .62 8/11 +1 .60 8/11 +1 .48 8/11 +1 .52 0.80 9/11 +1 .55 8/11 +1 .53 8/11 +1 .68 8/11 +1 .49 1.00 10 /11 +1 .37 8/11 +1 .52 8/11 +1 .49 8/11 +1 .33 
+
+SIREN 10 /11 −0.09 11 /11 −0.03 11 /11 −0.05 11 /11 −0.03 
+
+Therefore, budget-aware prompt scor-ing is not the same as selection-aware inference. PromptEval is designed for efficient evaluation over a fixed prompt pool. In our post-tuning set-ting, however, the shortlist has already been produced by an adaptive tuner, and the target is the fresh-data perfor-mance of a specified reporting rule rather than the imputed performance distribution over prompts. In the results above, sparse PromptEval can have high directional accuracy because shrinkage moves estimates to the same side of θ⋆B as the truth, rather than because it esti-mates θ⋆A accurately. Dense PromptEval has the opposite failure mode: it approaches the full-matrix selected winner and inherits the winner’s-curse bias. SIREN targets the reporting quantity directly by evaluating the selected repeated-split procedure and accounting for the first-order effect of selection. 95 Conclusion 
+
+Adaptive prompt and program search changes what an LLM benchmark score estimates. Once benchmark items are reused for tuning, the reported winner is a data-dependent artifact, not a fixed system evaluated on fresh data. SIREN addresses this tune-then-deploy setting by freezing the post-search shortlist, separating splitwise selection from held-out evaluation, and bootstrapping item-level contributions without rerunning the tuner. In the fixed-shortlist smooth-selector regime, this supports valid simultaneous inference over the budget grid. Experiments show that same-data winner reports are optimistic, can change tuned-versus-default conclusions, and are not fixed by budget-aware prompt scoring alone. Fully open-ended adaptive search remains future work. 
+
+References 
+
+[1] Isaiah Andrews, Toru Kitagawa, and Adam McCloskey. Inference on winners. The Quarterly Journal of Economics , 139(1):305–358, 2024. [2] Anastasios N. Angelopoulos, Jacob Eisenstein, Jonathan Berant, Alekh Agarwal, and Adam Fisch. Cost-optimal active AI model evaluation. arXiv preprint arXiv:2506.07949 , 2025. [3] Rohan Anil, Sebastian Borgeaud, Yonghui Wu, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M. Dai, Anja Hauth, Katie Millican, et al. Palm 2 technical report. 
+
+arXiv preprint arXiv:2305.10403 , 2023. [4] Rin Ashizawa, Yoichi Hirose, Nozomu Yoshinari, Kento Uchida, and Shinichi Shirakawa. Bandit-based prompt design strategy selection improves prompt optimizers. In Findings of the Association for Computational Linguistics: ACL 2025 , pages 20799–20817. Association for Computational Linguistics, 2025. [5] Richard Berk, Lawrence Brown, Andreas Buja, Kai Zhang, and Linda Zhao. Valid post-selection inference. The Annals of Statistics , 41(2):802–837, 2013. [6] Avrim Blum and Moritz Hardt. The ladder: A reliable leaderboard for machine learning competitions. In Proceedings of the 32nd International Conference on Machine Learning , pages 1006–1014, 2015. [7] Victor Chernozhukov, Denis Chetverikov, and Kengo Kato. Gaussian approximations and multiplier bootstrap for maxima of sums of high-dimensional random vectors. The Annals of Statistics , 41(6):2786–2819, 2013. [8] Cynthia Dwork, Vitaly Feldman, Moritz Hardt, Toniann Pitassi, Omer Reingold, and Aaron Roth. Preserving statistical validity in adaptive data analysis. In Proceedings of the Forty-Seventh Annual ACM Symposium on Theory of Computing , pages 117–126, 2015. [9] Cynthia Dwork, Vitaly Feldman, Moritz Hardt, Toniann Pitassi, Omer Reingold, and Aaron Roth. The reusable holdout: Preserving validity in adaptive data analysis. Science , 349(6248):636–638, 2015. [10] Bradley Efron. Tweedie’s formula and selection bias. Journal of the American Statistical Association , 106(496):1602–1614, 2011. [11] Bradley Efron and Robert Tibshirani. Improvements on cross-validation: The .632+ bootstrap method. Journal of the American Statistical Association , 92(438):548–560, 1997. [12] William Fithian, Dennis Sun, and Jonathan Taylor. Optimal inference after model selection. 
+
+arXiv preprint arXiv:1410.2597 , 2014. [13] Riccardo Fogliato, Pratik Patil, Mathew Monfort, and Pietro Perona. A framework for ef-ficient model evaluation through stratification, sampling, and estimation. arXiv preprint arXiv:2406.07320 , 2024. [14] Kristina Gligori´ c, Tijana Zrnic, Cinoo Lee, Emmanuel Candès, and Dan Jurafsky. Can un-confident LLM annotations be used for confident conclusions? In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 3514–3533. Association for Computational Linguistics, 2025. 10 [15] Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Vaughan, et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. [16] Qingyan Guo, Rui Wang, Junliang Guo, Bei Li, Kaitao Song, Xu Tan, Guoqing Liu, Jiang Bian, and Yujiu Yang. Connecting large language models with evolutionary algorithms yields powerful prompt optimizers. In International Conference on Learning Representations , 2024. [17] Omar Khattab, Arnav Singhvi, Paridhi Maheshwari, Zhiyuan Zhang, Keshav Santhanam, Sri Vardhamanan, Saiful Haq, Ashutosh Sharma, Thomas T. Joshi, Hanna Moazam, Heather Miller, Matei Zaharia, and Christopher Potts. DSPy: Compiling declarative language model calls into self-improving pipelines. arXiv preprint arXiv:2310.03714 , 2023. [18] Jason D. Lee, Dennis L. Sun, Yuekai Sun, and Jonathan E. Taylor. Exact post-selection inference, with application to the lasso. The Annals of Statistics , 44(3):907–927, 2016. [19] Gili Lior, Eliya Habba, Shahar Levy, Avi Caciularu, and Gabriel Stanovsky. ReliableEval: A recipe for stochastic LLM evaluation via method of moments. In Findings of the Association for Computational Linguistics: EMNLP 2025 , pages 11146–11153. Association for Computational Linguistics, 2025. [20] Felipe Maia Polo, Lucas Weber, Leshem Choshen, Yuekai Sun, Gongjun Xu, and Mikhail Yurochkin. tinyBenchmarks: evaluating LLMs with fewer examples. In Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 34303–34326. PMLR, 2024. [21] Moran Mizrahi, Guy Kaplan, Dan Malkin, Rotem Dror, Dafna Shahaf, and Gabriel Stanovsky. State of what art? a call for multi-prompt LLM evaluation. Transactions of the Association for Computational Linguistics , 12:933–949, 2024. [22] OpenAI. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 , 2023. [23] Krista Opsahl-Ong, Michael J. Ryan, Josh Purtell, David Broman, Christopher Potts, Matei Zaharia, and Omar Khattab. Optimizing instructions and demonstrations for multi-stage language model programs. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 9340–9366. Association for Computational Linguistics, 2024. [24] Felipe Maia Polo, Ronald Xu, Lucas Weber, Mírian Silva, Onkar Bhardwaj, Leshem Choshen, Allysson Flavio Melo de Oliveira, Yuekai Sun, and Mikhail Yurochkin. Efficient multi-prompt evaluation of LLMs. In Advances in Neural Information Processing Systems , volume 37, pages 22483–22512, 2024. [25] Chengshuai Shi, Kun Yang, Zihan Chen, Jundong Li, Jing Yang, and Cong Shen. Efficient prompt optimization through the lens of best arm identification. In Advances in Neural Informa-tion Processing Systems , 2024. [26] Taylor Shin, Yasaman Razeghi, Robert L. Logan IV, Eric Wallace, and Sameer Singh. Auto-Prompt: Eliciting knowledge from language models with automatically generated prompts. In 
+
+Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP) , pages 4222–4235, 2020. [27] Xiaoying Tian and Jonathan Taylor. Selective inference with a randomized response. The Annals of Statistics , 46(2):679–710, 2018. [28] Rajan Vivek, Kawin Ethayarajh, Diyi Yang, and Douwe Kiela. Anchor points: Benchmarking models with much fewer examples. In Proceedings of the 18th Conference of the European Chapter of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 1576–1601. Association for Computational Linguistics, 2024. [29] Yubo Wang, Xueguang Ma, Ge Zhang, Yuansheng Ni, Abhranil Chandra, Shiguang Guo, Weiming Ren, Aaran Arulraj, Xuan He, Ziyan Jiang, Tianle Li, Max Ku, Kai Wang, Alex Zhuang, Rongqi Fan, Xiang Yue, and Wenhu Chen. MMLU-Pro: A more robust and challenging multi-task language understanding benchmark. In Advances in Neural Information Processing Systems , volume 37, pages 95266–95290, 2024. 11 [30] Skyler Wu, Yash Nair, and Emmanuel J. Candès. Efficient evaluation of LLM performance with statistical guarantees. arXiv preprint arXiv:2601.20251 , 2026. [31] Chengrun Yang, Xuezhi Wang, Yifeng Lu, Hanxiao Liu, Quoc V. Le, Denny Zhou, and Xinyun Chen. Large language models as optimizers. In International Conference on Learning Representations , 2024. [32] Guanhua Zhang, Florian E. Dorner, and Moritz Hardt. How benchmark prediction from fewer data misses the mark. arXiv preprint arXiv:2506.07673 , 2025. [33] Xu-Xiang Zhong, Chao Yi, and Han-Jia Ye. Efficient evaluation of large language models via collaborative filtering. arXiv preprint arXiv:2504.08781 , 2025. [34] Jin Peng Zhou, Christian K. Belardi, Ruihan Wu, Travis Zhang, Carla P. Gomes, Wen Sun, and Kilian Q. Weinberger. On speeding up language model evaluation. In International Conference on Learning Representations , 2025. [35] Yongchao Zhou, Andrei Ioan Muresanu, Ziwen Han, Keiran Paster, Silviu Pitis, Harris Chan, and Jimmy Ba. Large language models are human-level prompt engineers. In International Conference on Learning Representations , 2023. [36] Thomas P. Zollo, Todd Morrill, Zhun Deng, Jake C. Snell, Toniann Pitassi, and Richard Zemel. Prompt risk control: A rigorous framework for responsible deployment of large language models. In International Conference on Learning Representations , 2024. [37] Tijana Zrnic and Emmanuel Candes. Active statistical inference. In Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 62993–63010. PMLR, 2024. 12 A Related works 
+
+A first line of related work develops methods that use data to search over prompts, demonstrations, and larger language-model programs. Early automatic prompting methods such as AutoPrompt optimize discrete trigger tokens for masked language models, while Automatic Prompt Engineer treats instructions as candidate programs generated and selected by an LLM [ 26 , 35 ]. More recent prompt optimizers make the search loop itself increasingly adaptive: OPRO uses an LLM as a derivative-free optimizer that proposes new instructions from previous scores, and EvoPrompt connects LLM prompt generation with evolutionary search [ 31 , 16 ]. At the program level, DSPy abstracts LM pipelines into parameterized modules and compiles them against a task metric, while MIPRO extends this idea by jointly optimizing instructions and few-shot demonstrations for multi-stage LM programs [17 , 23 ]. Other work makes the evaluation budget explicit: TRIPLE formulates prompt selection as fixed-budget best-arm identification, and OPTS uses bandit-based strategy selection inside prompt optimization [ 25 , 4 ]. These methods are natural upstream tuners for our setting, including the random-search and DSPy tuners used in our experiments. Our contribution is complementary: rather than proposing another optimizer, we study how to report the fresh-data performance of the full budgeted tune-then-deploy procedure after such adaptive search has selected a candidate artifact. A second line of work asks how to make model evaluation more stable, cheaper, or more statistically meaningful. Benchmarks such as MMLU-Pro increase task difficulty and robustness by emphasizing reasoning-focused questions and larger answer sets, but even fixed-benchmark reports can be fragile because prompt templates affect both absolute scores and model rankings [ 29 , 21 ]. PromptEval addresses this prompt sensitivity by estimating a performance distribution over a prespecified prompt pool with an IRT-style model under limited cell budgets, making it the closest external baseline in our experiments [ 24 ]. ReliableEval instead treats evaluation as stochastic over meaning-preserving prompt perturbations and uses method-of-moments reasoning to determine how many perturbations are needed, while Prompt Risk Control selects prompts using upper bounds on deployment-relevant risk measures [ 19 , 36 ]. A parallel body of efficient-evaluation work reduces benchmark cost through curated subsets, anchor points, matrix factorization, collaborative filtering, stratified or model-assisted sampling, and active querying with valid confidence intervals [ 20 , 28 , 34 , 33 , 13 , 37 , 14 , 2, 32 , 30 ]. Our internal baselines M1–M4 instantiate common reporting choices in this space, same-data winner reporting, a Wald interval around the winner, a single holdout split, and repeated split-level argmax with a Student-t interval, and illustrate that budget awareness or data splitting alone is not the same as selection-aware inference. Our paper targets a different estimand from these works: the post-search, procedure-level performance of a frozen shortlist plus a specified reporting rule, together with uncertainty that accounts for both held-out evaluation noise and the first-order effect of selection. A third line of work studies how repeated data use and data-dependent selection invalidate naive uncertainty estimates. The reusable holdout and related adaptive data-analysis theory show that repeatedly querying the same validation data can destroy nominal guarantees unless the reporting protocol controls information leakage; leaderboard-oriented methods such as the Ladder pursue similar goals for machine-learning competitions [ 9, 8, 6]. Post-selection inference studies valid inference after a model, coefficient, or hypothesis has been chosen from the data, using tools such as simultaneous inference, selective error control, exact conditioning for the lasso, and randomized selection [ 5, 12 , 18 , 27 ]. The winner’s curse literature makes the bias mechanism explicit: the empirically best option is likely to have benefited from positive noise, so conventional estimates and confidence intervals for selected winners can be optimistic [ 10 , 1]. Finally, bootstrap and resampling methods provide the computational machinery for quantifying uncertainty in complex estimators, including classical bootstrap corrections and Gaussian multiplier bootstraps for maxima over many coordinates [ 11 , 7 ]. Our work brings these ideas into adaptive LLM benchmarking by defining the selected tune-then-deploy procedure as the inferential target and by deriving an item-level repeated-split linearization whose multiplier bootstrap simultaneously covers systems, budgets, and fixed contrasts without rerunning the tuner. 
+
+B Proofs for Section 3 
+
+B.1 Formal setup and assumptions 
+
+This appendix gives the formal version of the guarantees stated informally in Section 3.3. 13 Let Ftune denote the information generated by the completed tuning stage, including the retained shortlists and selectors. All arguments are conditional on Ftune ; consequently, the retained shortlists and selectors are treated as fixed reporting-layer objects, and this conditioning is suppressed below. Asymptotics are taken as M → ∞ with the number of systems, budgets, repeated splits, and retained artifacts fixed. For each split, system, and budget, define the population score vectors 
+
+sr,j,M (B) = E bSr,j (B) | G M
+
+, tr,j,M (B) = E bTr,j (B) | G M
+
+, qr,j,M (B) = gj,B 
+
+ sr,j,M (B).
+
+(8) For a differentiable selector gj,B , let Dg j,B (x) denote its Jacobian at x. We also define the centered repeated-split score table 
+
+UM =
+
+n bSr,j (B) − sr,j,M (B), bTr,j (B) − tr,j,M (B)
+
+o
+
+> r≤R, j ≤N, B ∈B
+
+. (9) Finally, define the joint scaled error vector over the finite system-budget grid as 
+
+ZM =
+
+n√M  eθj,R (B) − θRS |G  
+
+> j,M
+
+(B)o
+
+> j≤N, B ∈B
+
+. (10) 
+
+Assumption 1 (Fixed-shortlist smooth-selector regime) . Fix the number of systems N , budget grid 
+
+B, and number of repeated splits R, and assume sup j≤N, B ∈B Kj,B < ∞. The split design GM
+
+is independent of the benchmark items and their execution randomness. There exist determinis-tic integers mM , ℓ M and constants ρscore , ρ eval ∈ (0 , 1) such that |Dscore  
+
+> r
+
+| = mM , |Er | = ℓM ,
+
+mM /M → ρscore , and ℓM /M → ρeval for every r ≤ R. All score variables take values in [0 , 1] .For each item i, let Ri collect Wi together with all execution randomness used to score item i across splits, systems, budgets, and retained artifacts. The tuples R1, . . . , RM are i.i.d. and independent of 
+
+GM . No independence is required among the coordinates within a fixed Ri.There exist constants δ0 > 0 and Cg < ∞ such that, for all sufficiently large M and all r, j, B , the selector gj,B is twice continuously differentiable on {x : ∥x − sr,j,M (B)∥ ≤ δ0}, with first and second derivatives uniformly bounded by Cg . The weights ωr are GM -measurable, nonnegative, and sum to one. 
+
+B.2 Coordinate formulas and plug-in contributions 
+
+The main text uses item-level contributions only conceptually. We now give the exact coordinate formulas used in the formal statements and proofs. Let 
+
+dU = 2 R X
+
+> j≤N, B ∈B
+
+Kj,B (11) denote the dimension of the stacked score table. For the score vectors in (4) and (5) , define the coordinatewise item-level contributions 
+
+ΓSi,r,j,k,M (B) = M
+
+|Dscore  
+
+> r
+
+| 1{i ∈ Dscore  
+
+> r
+
+}
+
+
+
+Zj
+
+ Wi, a j,B,k , ξ SirjBk 
+
+ − sr,j,k,M (B)
+
+
+
+, (12) 
+
+ΓTi,r,j,k,M (B) = M
+
+|Er | 1{i ∈ Er }
+
+
+
+Zj
+
+ Wi, a j,B,k , ξ TirjBk 
+
+ − tr,j,k,M (B)
+
+
+
+, (13) and their block vectors 
+
+ΓSi,r,j,M (B) =  ΓSi,r,j, 1,M (B), . . . , ΓSi,r,j,K j,B ,M (B)⊤, (14) 
+
+ΓTi,r,j,M (B) =  ΓTi,r,j, 1,M (B), . . . , ΓTi,r,j,K j,B ,M (B)⊤. (15) The stacked vector √M UM = 1√M
+
+PMi=1 Γi,M is obtained by stacking the blocks in (14) and (15) over the finite index set {(r, j, B ) : r ≤ R, j ≤ N, B ∈ B} under any fixed deterministic ordering. The coordinate definitions imply the score-table identities 
+
+√M   bSr,j (B) − sr,j,M (B) = 1
+
+√M
+
+> M
+
+X
+
+> i=1
+
+ΓSi,r,j,M (B), (16) 14 √M   bTr,j (B) − tr,j,M (B) = 1
+
+√M
+
+> M
+
+X
+
+> i=1
+
+ΓTi,r,j,M (B). (17) For the selected repeated-split estimator, define the population item-level contribution 
+
+ψi,j,B,M =
+
+> R
+
+X
+
+> r=1
+
+ωr
+
+h
+
+qr,j,M (B)⊤ΓTi,r,j,M (B) + tr,j,M (B)⊤Dg j,B 
+
+ sr,j,M (B)ΓSi,r,j,M (B)
+
+i
+
+. (18) The first term is the direct held-out evaluation contribution of item Wi. The second term is the first-order selection contribution: when Wi appears in a scoring subset, it perturbs the selection scores and hence the splitwise weights through the derivative of gj,B .Stack these contributions over the finite system-budget grid as 
+
+Ψi,M = {ψi,j,B,M }j≤N, B ∈B , ΩM = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+EΨi,M Ψ⊤ 
+
+> i,M
+
+| G M
+
+. (19) For the computable bootstrap contributions, define the sample-centered coordinatewise analogues 
+
+bΓSi,r,j,k,M (B) = M
+
+|Dscore  
+
+> r
+
+| 1{i ∈ Dscore  
+
+> r
+
+}
+
+
+
+Zj
+
+ Wi, a j,B,k , ξ SirjBk 
+
+ − bSr,j,k (B)
+
+
+
+, (20) 
+
+bΓTi,r,j,k,M (B) = M
+
+|Er | 1{i ∈ Er }
+
+
+
+Zj
+
+ Wi, a j,B,k , ξ TirjBk 
+
+ − bTr,j,k (B)
+
+
+
+, (21) and the corresponding block vectors 
+
+bΓSi,r,j,M (B) =  bΓSi,r,j, 1,M (B), . . . , bΓSi,r,j,K j,B ,M (B)⊤, (22) 
+
+bΓTi,r,j,M (B) =  bΓTi,r,j, 1,M (B), . . . , bΓTi,r,j,K j,B ,M (B)⊤. (23) The plug-in contribution estimator used in the bootstrap subsection is 
+
+bψi,j,B,M =
+
+> R
+
+X
+
+> r=1
+
+ωr
+
+hbqr,j (B)⊤ bΓTi,r,j,M (B) + bTr,j (B)⊤Dg j,B 
+
+  bSr,j (B)bΓSi,r,j,M (B)
+
+i
+
+. (24) Here the first term is the sample analogue of the direct held-out contribution, and the second term is the sample analogue of the first-order selection contribution. We also write 
+
+bΨi,M = { bψi,j,B,M }j≤N, B ∈B , HM = σ GM , bΨ1,M , . . . , bΨM,M 
+
+. (25) 
+
+B.3 Conditional convergence convention and score-table CLT 
+
+For completeness, we state the conditional convergence convention used in the formal results below. We write XM ⇝ X conditionally on GM in probability if 
+
+sup 
+
+> h∈BL 1
+
+Eh(XM ) | G M
+
+ − Eh(X) →p 0, (26) where BL 1 is the class of real-valued functions bounded by one and Lipschitz with constant at most one. 
+
+Lemma 1 (Exact score-table representation) . Under Assumption 1, 
+
+√M UM = 1
+
+√M
+
+> M
+
+X
+
+> i=1
+
+Γi,M , (27) 
+
+where Γi,M is the stacked vector obtained from (12) and (13) . Conditional on GM , the vectors 
+
+Γ1,M , . . . , ΓM,M are independent, mean zero, and satisfy 
+
+max  
+
+> 1≤i≤M
+
+E∥Γi,M ∥2 | G M
+
+ ≤ C (28) 
+
+for a deterministic constant C < ∞ and all sufficiently large M . Consequently, 
+
+max  
+
+> r,j,B,k
+
+M E
+
+h  bSr,j,k (B) − sr,j,k,M (B)2 | G M
+
+i
+
+≤ C (29) 
+
+and 
+
+max  
+
+> r,j,B,k
+
+M E
+
+h  bTr,j,k (B) − tr,j,k,M (B)2 | G M
+
+i
+
+≤ C. (30) 15 Proof. For a scoring coordinate, 
+
+bSr,j,k (B) = 1
+
+|Dscore  
+
+> r
+
+|
+
+> M
+
+X
+
+> i=1
+
+1{i ∈ Dscore  
+
+> r
+
+}Zj
+
+ Wi, a j,B,k , ξ SirjBk 
+
+. (31) Subtracting sr,j,k,M (B) and multiplying by √M gives 
+
+√M   bSr,j,k (B) − sr,j,k,M (B) = 1
+
+√M
+
+> M
+
+X
+
+> i=1
+
+M
+
+|Dscore  
+
+> r
+
+| 1{i ∈ Dscore  
+
+> r
+
+}×
+
+
+
+Zj
+
+ Wi, a j,B,k , ξ SirjBk 
+
+ − sr,j,k,M (B)
+
+
+
+, (32) which is the corresponding coordinate of M −1/2 PMi=1 Γi,M . The same calculation with (5) gives the held-out coordinates. Stacking all coordinates proves (27). Conditional on GM , the split membership indicators and denominators are deterministic. The vector 
+
+Γi,M depends only on Wi and the execution randomness attached to item i. By Assumption 1, these item-level tuples are independent across i, and therefore Γ1,M , . . . , ΓM,M are conditionally independent. For mean zero, consider a scoring coordinate. If i / ∈ Dscore  
+
+> r
+
+, then the corresponding contribution is zero. If i ∈ Dscore  
+
+> r
+
+, then the included summands in (31) are conditionally identically distributed given GM , so 
+
+sr,j,k,M (B) = E
+
+h
+
+Zj
+
+ Wi, a j,B,k , ξ SirjBk 
+
+ | G M
+
+i
+
+. (33) The same argument applies to held-out coordinates. Hence 
+
+EΓi,M | G M
+
+ = 0 . (34) The dimension dU is fixed by Assumption 1. Also, the split fractions stay away from zero, so there exists L < ∞ such that 
+
+max 
+
+> r≤R
+
+M
+
+|Dscore  
+
+> r
+
+| ≤ L, max 
+
+> r≤R
+
+M
+
+|Er | ≤ L (35) for all sufficiently large M . Since scores lie in [0 , 1] , every coordinate of Γi,M is bounded by L in absolute value. Thus ∥Γi,M ∥2 ≤ C for a deterministic constant C < ∞, proving (28). Finally, by (32), conditional independence, and mean zero, 
+
+M E
+
+h  bSr,j,k (B) − sr,j,k,M (B)2 | G M
+
+i
+
+= 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+E
+
+h ΓSi,r,j,k,M (B)2 | G M
+
+i
+
+≤ C. (36) The proof of (30) is identical. 
+
+Assumption 2 (Score-table covariance stabilization) . Let 
+
+ΣM = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+EΓi,M Γ⊤ 
+
+> i,M
+
+| G M
+
+. (37) 
+
+There exists a deterministic positive semidefinite matrix Σ such that 
+
+∥ΣM − Σ∥op →p 0. (38) 
+
+Proposition 1 (Score-table CLT) . Under Assumptions 1 and 2, 
+
+√M UM ⇝ N (0 , Σ) conditionally on GM in probability . (39) 
+
+In particular, √M UM = Op(1) .
+
+16 Proof. By Lemma 1, 
+
+√M UM = 1
+
+√M
+
+> M
+
+X
+
+> i=1
+
+Γi,M , (40) where, conditional on GM , the summands are independent, mean zero, and uniformly bounded. Fix a deterministic vector u ∈ RdU and define 
+
+Yi,M (u) = 1
+
+√M u⊤Γi,M . (41) Then MX
+
+> i=1
+
+EYi,M (u)2 | G M
+
+ = u⊤ΣM u. (42) By Assumption 2, this variance converges in probability to u⊤Σu.The Lindeberg condition is immediate. Lemma 1 and bounded scores imply that there exists C0 < ∞
+
+such that max i ∥Γi,M ∥ ≤ C0 for all sufficiently large M . Hence 
+
+max  
+
+> 1≤i≤M
+
+|Yi,M (u)| ≤ ∥u∥C0
+
+√M → 0, (43) which implies the conditional Lindeberg condition for every fixed u.Along any subsequence there is a further subsequence on which ∥ΣM − Σ∥op → 0 almost surely. On that further subsequence, the conditional Lindeberg–Feller theorem gives 
+
+u⊤√M UM ⇝ N (0 , u ⊤Σu) conditionally on GM (44) almost surely. Since the dimension is fixed, Cramér–Wold gives (39) . The bound √M UM = Op(1) 
+
+follows from the same display. 
+
+B.4 Selection-aware linearization Lemma 2 (Selector linearization) . Under Assumption 1, 
+
+max  
+
+> r≤R, j ≤N, B ∈B
+
+bqr,j (B) − qr,j,M (B) − Dg j,B 
+
+ sr,j,M (B)  bSr,j (B) − sr,j,M (B) = op(M −1/2).
+
+(45) 
+
+Proof. By Lemma 1, each coordinate of bSr,j (B) − sr,j,M (B) has conditional second moment bounded by C/M . Since the index set is finite, 
+
+max 
+
+> r,j,B
+
+bSr,j (B) − sr,j,M (B) = Op(M −1/2). (46) Fix r, j, B and write bS = bSr,j (B), s = sr,j,M (B), g = gj,B , and h = bS − s. Assumption 1 gives a neighborhood of s on which g is twice continuously differentiable with uniformly bounded second derivatives. On the event {∥ h∥ ≤ δ0}, Taylor’s theorem yields 
+
+g(s + h) = g(s) + Dg (s)h + R(h), ∥R(h)∥ ≤ C∥h∥2, (47) with C uniform over the finite index set. By (46) , the event on which all relevant ∥h∥ are at most δ0
+
+has probability tending to one. Hence 
+
+max  
+
+> r,j,B
+
+bqr,j (B) − qr,j,M (B) − Dg j,B 
+
+ sr,j,M (B)  bSr,j (B) − sr,j,M (B)
+
+≤ C
+
+
+
+max 
+
+> r,j,B
+
+bSr,j (B) − sr,j,M (B)
+
+2
+
+= Op(M −1), (48) which proves the claim. 17 Lemma 3 (Selected split-level expansion) . Under Assumption 1, jointly over r ≤ R, j ≤ N , and 
+
+B ∈ B ,
+
+bYr,j (B) − E bYr,j (B) | G M
+
+ = qr,j,M (B)⊤  bTr,j (B) − tr,j,M (B)
+
++ tr,j,M (B)⊤Dg j,B 
+
+ sr,j,M (B)  bSr,j (B) − sr,j,M (B)
+
++ op(M −1/2). (49) 
+
+Proof. Fix r, j, B and abbreviate 
+
+bS = bSr,j (B), s = sr,j,M (B), bT = bTr,j (B), t = tr,j,M (B), A = Dg j,B (s), bq = bqr,j (B), q = qr,j,M (B).
+
+(50) 
+
+By Lemma 2, 
+
+bq = q + A( bS − s) + Rq , ∥Rq ∥ = op(M −1/2). (51) The proof of Lemma 2 also gives the sharper bound ∥Rq ∥ = Op(M −1). Moreover, since g maps into a simplex, the scores are bounded, and A is uniformly bounded, the Taylor remainder is uniformly bounded off the local event. Combining this boundedness with the conditional second-moment bound for bS − s gives 
+
+E∥Rq ∥ | G M
+
+ = Op(M −1), E∥Rq ∥2 | G M
+
+ = Op(M −1). (52) Expanding bY = bq⊤ bT gives 
+
+bY =  q + A( bS − s) + Rq
+
+⊤ t + ( bT − t)
+
+= q⊤t + q⊤( bT − t) + t⊤A( bS − s) + R, (53) where 
+
+R = t⊤Rq +  A( bS − s)⊤( bT − t) + R⊤ 
+
+> q
+
+( bT − t). (54) Since q, t, A are GM -measurable and s, t are the conditional means, 
+
+Eq⊤( bT − t) | G M
+
+ = 0 , Et⊤A( bS − s) | G M
+
+ = 0 . (55) Therefore bY − E bY | G M
+
+ = q⊤( bT − t) + t⊤A( bS − s) + R − ER | G M
+
+. (56) It remains to show that the centered remainder is op(M −1/2). Lemma 1 implies 
+
+∥ bS − s∥ = Op(M −1/2), ∥ bT − t∥ = Op(M −1/2), (57) jointly over the finite index set, and also gives conditional second moments of order M −1. The first remainder term is Op(M −1) with conditional expectation Op(M −1) by (52) . For the second term, Cauchy–Schwarz and the conditional second-moment bounds give 
+
+E
+
+h  A( bS − s)⊤( bT − t) | G M
+
+i
+
+= Op(M −1), (58) and the term itself is Op(M −1). The third term is handled similarly using (52) and the conditional second-moment bound for bT − t. Thus 
+
+R − ER | G M
+
+ = op(M −1/2). (59) Substituting (59) into (56) proves the lemma. 
+
+Lemma 4 (Aggregation over repeated splits) . Under Assumption 1, jointly over j ≤ N and B ∈ B ,
+
+√M
+
+eθj,R (B) − θRS |G  
+
+> j,M
+
+(B)
+
+
+
+= 1
+
+√M
+
+> M
+
+X
+
+> i=1
+
+ψi,j,B,M + op(1) . (60) 
+
+If ΩM = 1
+
+> M
+
+PMi=1 EΨi,M Ψ⊤ 
+
+> i,M
+
+| G M
+
+ satisfies ∥ΩM − Ω∥op →p 0, then 
+
+ZM ⇝ N (0 , Ω) conditionally on GM in probability . (61) 18 Proof. By definition of the target and the GM -measurability of the weights, 
+
+eθj,R (B) − θRS |G  
+
+> j,M
+
+(B) = 
+
+> R
+
+X
+
+> r=1
+
+ωr
+
+ bYr,j (B) − E bYr,j (B) | G M
+
+
+
+. (62) Multiplying by √M and substituting Lemma 3 yields 
+
+√M
+
+eθj,R (B) − θRS |G  
+
+> j,M
+
+(B)
+
+
+
+=
+
+> R
+
+X
+
+> r=1
+
+ωr qr,j,M (B)⊤√M   bTr,j (B) − tr,j,M (B)
+
++
+
+> R
+
+X
+
+> r=1
+
+ωr tr,j,M (B)⊤Dg j,B 
+
+ sr,j,M (B)√M   bSr,j (B) − sr,j,M (B)
+
++ op(1) . (63) Using (16) and (17), the right-hand side becomes 
+
+1
+
+√M
+
+> M
+
+X
+
+> i=1
+> R
+
+X
+
+> r=1
+
+ωr
+
+h
+
+qr,j,M (B)⊤ΓTi,r,j,M (B) + tr,j,M (B)⊤Dg j,B 
+
+ sr,j,M (B)ΓSi,r,j,M (B)
+
+i
+
++ op(1) .
+
+(64) The inner sum is exactly ψi,j,B,M in (18), proving (60). For the conditional Gaussian limit, let d = N |B| and fix u ∈ Rd. Define 
+
+Zi,M (u) = 1
+
+√M u⊤Ψi,M . (65) Conditional on GM , the variables Z1,M (u), . . . , Z M,M (u) are independent and mean zero, because each Ψi,M is a GM -measurable linear transformation of Γi,M . Their variance sum is 
+
+> M
+
+X
+
+> i=1
+
+EZi,M (u)2 | G M
+
+ = u⊤ΩM u. (66) By ∥ΩM − Ω∥op →p 0, this variance converges in probability to u⊤Ωu. Since scores, shortlist sizes, and selector derivatives are uniformly bounded, there exists CΨ < ∞ such that 
+
+max  
+
+> 1≤i≤M
+
+∥Ψi,M ∥ ≤ CΨ (67) for all sufficiently large M . Hence max i |Zi,M (u)| ≤ ∥ u∥CΨ/√M → 0, giving the conditional Lindeberg condition. The conditional Lindeberg–Feller theorem, followed by Cramér–Wold and the usual subsequence argument for convergence in probability of the conditional laws, gives 
+
+1
+
+√M
+
+> M
+
+X
+
+> i=1
+
+Ψi,M ⇝ N (0 , Ω) conditionally on GM in probability . (68) Combining (68) with (60) proves (61). 
+
+Theorem 3 (Formal selection-aware linearization) . Under Assumption 1, jointly over j ≤ N and 
+
+B ∈ B ,
+
+ZM = 1
+
+√M
+
+> M
+
+X
+
+> i=1
+
+Ψi,M + op(1) . (69) 
+
+Furthermore, if there exists a deterministic positive semidefinite matrix Ω such that ∥ΩM −Ω∥op →p 0,then 
+
+ZM ⇝ N (0 , Ω) conditionally on GM in probability . (70) 
+
+Proof. The linear representation (69) is exactly the first conclusion of Lemma 4. The conditional Gaussian limit (70) is the second conclusion of Lemma 4. 19 B.5 Multiplier bootstrap validity Theorem 4 (Formal multiplier bootstrap validity) . Work under Assumption 1, and suppose there exists a deterministic positive semidefinite matrix Ω such that ∥ΩM − Ω∥op →p 0. Assume further that the computable contributions satisfy 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bΨi,M − Ψi,M  
+
+> 2
+
+→p 0. (71) 
+
+Let 
+
+¯bΨM = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bΨi,M , bG∗ 
+
+> M
+
+= 1
+
+√M
+
+> M
+
+X
+
+> i=1
+
+ζi
+
+  bΨi,M − ¯bΨM
+
+, (72) 
+
+where ζ1, . . . , ζ M
+
+> i.i.d.
+
+∼ N (0 , 1) are independent of the data. Then, with G ∼ N (0 , Ω) and d = N |B| ,
+
+sup 
+
+> h∈BL 1(Rd)
+
+Eh( bG∗ 
+
+> M
+
+) | H M
+
+ − Eh(G) →p 0. (73) 
+
+Moreover, 
+
+sup 
+
+> h∈BL 1(Rd)
+
+Eh( bG∗ 
+
+> M
+
+) | H M
+
+ − Eh(ZM ) | G M
+
+ →p 0. (74) 
+
+Proof. Use the notation in (72) . Conditional on HM , the vectors bΨi,M − ¯bΨM are fixed and the multipliers are i.i.d. standard Gaussian. Hence 
+
+bG∗ 
+
+> M
+
+| H M ∼ N  0, bΩ∗
+
+> M
+
+, (75) where 
+
+bΩ∗ 
+
+> M
+
+= 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+  bΨi,M − ¯bΨM
+
+  bΨi,M − ¯bΨM
+
+⊤. (76) Define the infeasible centered covariance 
+
+¯ΨM = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+Ψi,M , eΩM = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+ Ψi,M − ¯ΨM
+
+  Ψi,M − ¯ΨM
+
+⊤. (77) We first show that eΩM is close to Ω. Since the Ψi,M are conditionally independent, mean zero, and uniformly bounded, each entry of 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+Ψi,M Ψ⊤ 
+
+> i,M
+
+− ΩM (78) has conditional variance of order M −1. The dimension is fixed, so 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+Ψi,M Ψ⊤ 
+
+> i,M
+
+− ΩM
+
+> op
+
+→p 0. (79) Moreover, 
+
+E∥√M ¯ΨM ∥2 | G M
+
+ = tr(Ω M ) = Op(1) , (80) where the last equality follows from ∥ΩM − Ω∥op →p 0. Hence ¯ΨM ¯Ψ⊤ 
+
+> M
+
+= op(1) , and 
+
+∥eΩM − Ω∥op →p 0. (81) We next compare bΩ∗ 
+
+> M
+
+with eΩM . Let 
+
+ai,M = bΨi,M − ¯bΨM , bi,M = Ψi,M − ¯ΨM . (82) 20 Then 
+
+∥bΩ∗ 
+
+> M
+
+− eΩM ∥op ≤ 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+∥ai,M − bi,M ∥ ∥ ai,M ∥ + 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+∥bi,M ∥ ∥ ai,M − bi,M ∥≤ 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+∥ai,M − bi,M ∥2
+
+!1/2
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+∥ai,M ∥2
+
+!1/2
+
++ 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+∥bi,M ∥2
+
+!1/2
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+∥ai,M − bi,M ∥2
+
+!1/2
+
+. (83) Since 
+
+ai,M − bi,M =   bΨi,M − Ψi,M 
+
+ −   ¯bΨM − ¯ΨM
+
+, (84) the plug-in condition of 1
+
+> M
+
+PMi=1 bΨi,M − Ψi,M  
+
+> 2
+
+→p 0 implies 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+∥ai,M − bi,M ∥2 →p 0. (85) The remaining two factors in (83) are Op(1) : this is immediate for the bi,M factor from uniform boundedness, and for the ai,M factor from the condition of 1
+
+> M
+
+PMi=1 bΨi,M − Ψi,M  
+
+> 2
+
+→p 0. Thus 
+
+∥bΩ∗ 
+
+> M
+
+− eΩM ∥op →p 0. (86) Combining (81) and (86) gives 
+
+∥bΩ∗ 
+
+> M
+
+− Ω∥op →p 0. (87) Let U ∼ N (0 , I d), d = N |B| , be independent of everything else, and write 
+
+AM = ( bΩ∗ 
+
+> M
+
+)1/2, A = Ω 1/2. (88) The conditional law of bG∗ 
+
+> M
+
+given HM is the law of AM U , while G ∼ N (0 , Ω) has the law of 
+
+AU . Since matrix square roots are continuous on the cone of positive semidefinite matrices in fixed dimension, (87) implies ∥AM − A∥op →p 0. Therefore 
+
+sup 
+
+> h∈BL 1
+
+Eh( bG∗ 
+
+> M
+
+) | H M
+
+ − Eh(G) ≤ ∥ AM − A∥op E∥U ∥ → p 0. (89) This proves that sup h∈BL 1 Eh( bG∗ 
+
+> M
+
+) | H M
+
+ − Eh(G) →p 0. The validity statement 
+
+sup h∈BL 1 Eh( bG∗ 
+
+> M
+
+) | H M
+
+ − Eh(ZM ) | G M
+
+ →p 0 follows by the triangle inequality and The-orem 3. The plug-in condition (71) is stated abstractly in Theorem 4. The next proposition gives a sufficient condition for this requirement in the smooth-selector regime. 
+
+B.6 Plug-in consistency for the computable contributions Proposition 2 (Sufficient condition for plug-in consistency) . Work under Assumption 1. Suppose there exist constants L1, L 2 < ∞ such that, for every j ≤ N , B ∈ B , and all x, y ∈ [0 , 1] Kj,B ,
+
+∥Dg j,B (x)∥op ≤ L1, ∥Dg j,B (x) − Dg j,B (y)∥op ≤ L2∥x − y∥. (90) 
+
+Then 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bΨi,M − Ψi,M  
+
+> 2
+
+= Op(M −1), (91) 
+
+and in particular 1
+
+> M
+
+PMi=1 bΨi,M − Ψi,M  
+
+> 2
+
+→p 0 holds. 
+
+21 Proof. By Lemma 1, the coordinatewise conditional second moments of bSr,j (B) − sr,j,M (B) and 
+
+bTr,j (B) − tr,j,M (B) are of order M −1. Since the index set is finite, 
+
+bSr,j (B) − sr,j,M (B) = Op(M −1/2), bTr,j (B) − tr,j,M (B) = Op(M −1/2) (92) jointly over the finite index set. The bound (90) gives 
+
+bqr,j (B)−qr,j,M (B) = Op(M −1/2), Dg j,B 
+
+  bSr,j (B)−Dg j,B 
+
+ sr,j,M (B) 
+
+> op
+
+= Op(M −1/2).
+
+(93) Since the scores are bounded and the split fractions stay away from zero, there exists CΓ < ∞ such that 
+
+max 
+
+> i,r,j,B
+
+
+
+∥ΓSi,r,j,M (B)∥, ∥ΓTi,r,j,M (B)∥, ∥bΓSi,r,j,M (B)∥, ∥bΓTi,r,j,M (B)∥
+
+
+
+≤ CΓ (94) for all sufficiently large M . Moreover, 
+
+bΓSi,r,j,k,M (B) − ΓSi,r,j,k,M (B) = M
+
+|Dscore  
+
+> r
+
+| 1{i ∈ Dscore  
+
+> r
+
+} sr,j,k,M (B) − bSr,j,k (B), (95) and similarly for bΓTi,r,j,k,M (B) − ΓTi,r,j,k,M (B). Therefore, 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bΓSi,r,j,M (B) − ΓSi,r,j,M (B) 2 = Op(M −1), (96) 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bΓTi,r,j,M (B) − ΓTi,r,j,M (B) 2 = Op(M −1). (97) For fixed r, j, B , define 
+
+Ui,r,j,B,M = qr,j,M (B)⊤ΓTi,r,j,M (B), bUi,r,j,B,M = bqr,j (B)⊤ bΓTi,r,j,M (B). (98) Using (93), (94), and (97), 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bUi,r,j,B,M − Ui,r,j,B,M  
+
+> 2
+
+= Op(M −1). (99) Likewise define 
+
+Vi,r,j,B,M = tr,j,M (B)⊤Dg j,B 
+
+ sr,j,M (B)ΓSi,r,j,M (B), (100) 
+
+bVi,r,j,B,M = bTr,j (B)⊤Dg j,B 
+
+  bSr,j (B)bΓSi,r,j,M (B). (101) The same bounds, together with (96), imply 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bVi,r,j,B,M − Vi,r,j,B,M  
+
+> 2
+
+= Op(M −1). (102) Finally, 
+
+bψi,j,B,M − ψi,j,B,M =
+
+> R
+
+X
+
+> r=1
+
+ωr
+
+h  bUi,r,j,B,M − Ui,r,j,B,M 
+
+ +   bVi,r,j,B,M − Vi,r,j,B,M 
+
+i
+
+. (103) Since R is fixed and the weights are nonnegative and sum to one, 
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bψi,j,B,M − ψi,j,B,M  
+
+> 2
+
+≤ 2
+
+> R
+
+X
+
+> r=1
+
+ωr
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bUi,r,j,B,M − Ui,r,j,B,M 
+
+> 2
+
++ 2 
+
+> R
+
+X
+
+> r=1
+
+ωr
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+bVi,r,j,B,M − Vi,r,j,B,M  
+
+> 2
+
+= Op(M −1).
+
+(104) Summing over the finite index set (j, B ) proves (91). 
+
+Remark 1. The multiplier bootstrap uses one multiplier per benchmark item rather than one multiplier per split because the same item can appear in different roles across repeated splits and because the same evaluation pool is used across systems and budgets. The item-level vector bΨi,M 
+
+collects all these roles before resampling. Using a common multiplier for the whole vector preserves the dependence structure needed for simultaneous bands and fixed contrasts. 
+
+22 C Additional experiments 
+
+This appendix collects three sets of supplementary results that support the main paper’s claims across all four (subject, tuner) configurations: (i) Track I theory-validation studies in controlled simulation (Section C.1); (ii) per-model SIREN-vs-baseline comparisons on real data (Section C.2); and (iii) per-model and per-budget PromptEval-vs-SIREN comparisons (Section C.3). 
+
+C.1 Theory Validation 
+
+Track I validates the three core theoretical results in controlled settings where ground truth is known by construction. All three studies use a common Bernoulli item-response DGP: item i has difficulty 
+
+δi ∼ Uniform( −2, 2) , artifact k has quality qk, and Zik ∼ Bernoulli( σ(qk − δi)) .
+
+C.1.1 Study A: Coverage Validation of the Multiplier Bootstrap 
+
+Study A validates the three central operational claims of Theorems 1 and 2 in a controlled setting where the ground truth is tractable by Monte Carlo: (i) the multiplier bootstrap on the plug-in influence function bψ achieves nominal coverage for the repeated-split estimator eθ; (ii) its confidence bands shrink at the theoretical M −1/2 rate; (iii) it reproduces a nonparametric item-bootstrap’s coverage and width at a fraction of the computational cost. 
+
+Data generating process. Items have i.i.d. difficulties δi ∼ Uniform (−2, 2) and K artifacts have qualities equally spaced over [0 , 0.3] ; scores are Zik ∼ Bernoulli (σ(qk −δi)) . The selector is softmax with τ =0 .1, the split fraction is ρ=0 .5, and the bootstrap uses Bboot =500 Gaussian multipliers. Ground truth θ⋆ = E[eθ] is estimated by Ngt =3 ,000 independent Monte Carlo replications; empirical coverage is then measured over Nsim =2 ,000 trials per configuration, giving a Monte Carlo standard error of approximately SE ≈ 0.5 pp at the nominal 95% level. 
+
+Main result: calibrated coverage across M , K, and R. Figure 2 shows the coverage sweep at 
+
+R=5 across M ∈ { 100 , 200 , 500 , 1000 , 2000 } and K ∈ { 2, 5, 10 }. All fifteen configurations fall within the Monte Carlo 95% band around nominal (coverages range 93 .9% to 95 .9% ; see Table 6 for widths), with no point more than 1.1 pp from the nominal level. The right panel confirms that CI width tracks the theoretical M −1/2 scaling on a log–log plot: the empirical log–log slopes are 
+
+−0.510 , −0.524 , and −0.520 for K=2 , 5, 10 , all within 5% of the theoretical −0.5, and the three curves run parallel as predicted. In the practitioner regime of M ≥ 500 the coverage is always within 
+
+0.6 pp of nominal and the width is well below 0.1, showing that the bootstrap is usable at sample sizes typical of LLM benchmarks. 100 200 500 1000 2000                         
+
+> Benchmark size M
+> 0.88
+> 0.90
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> 1.00
+> Empirical coverage
+> (a) Coverage vs Mat R= 5
+> Nominal (0.95)
+> MC 95% band
+> K= 2
+> K= 5
+> K= 10
+> 100 200 500 1000 2000
+> Benchmark size M
+> 10 1
+> 3 × 10 2
+> 4 × 10 2
+> 6 × 10 2
+> 2 × 10 1
+> Average 95% CI width
+> (b) CI width scales as M1/2
+> K= 2
+> K= 5
+> K= 10
+> M1/2
+
+Figure 2: Study A: Coverage and width across M at R=5 . (a) Empirical coverage of the multiplier-bootstrap 95% CI. Error bars are ±SE over Nsim =2 ,000 trials; the grey band is the Monte Carlo 95% 
+
+tolerance region around the nominal level. (b) Log–log plot of average CI width; dotted line shows the reference M −1/2 slope. 23 Table 6: Study A: Average CI width of the SIREN multiplier bootstrap at R=5 .
+
+Average CI width 
+
+M K=2 K=5 K=10 
+
+100 0.186 0.148 0.129 200 0.129 0.101 0.088 500 0.081 0.062 0.055 1000 0.057 0.044 0.038 2000 0.040 0.031 0.027 
+
+Repeated splits are cheap but not magical. Figure 3 examines the effect of R at fixed M =500 
+
+and K=10 . Coverage is stable across R ∈ { 1, 3, 5, 10 } (all within 1 pp of nominal), confirming that the influence-function bootstrap is already first-order valid at R=1 . What R does buy is efficiency: increasing R from 1 to 5 contracts the CI width by 22% (from 0.0705 to 0.0547 ), but doubling R
+
+further to 10 contracts it by only another 4% (to 0.0525 ). The curvature reflects the fact that the held-out sample at a given R is not R-fold independent but merely R-fold reweighted, so the additional splits add vanishing information once R is moderate. This matches the practitioner recommendation 
+
+R∈[5 , 10] used throughout the remainder of the paper. 1 3 5 10               
+
+> Number of repeated splits R
+> 0.88
+> 0.90
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> 1.00
+> Empirical coverage
+> (a) Coverage is stable across R
+> Nominal (0.95)
+> MC 95% band
+> 13510
+> Number of repeated splits R
+> 0.0525
+> 0.0550
+> 0.0575
+> 0.0600
+> 0.0625
+> 0.0650
+> 0.0675
+> 0.0700
+> Average 95% CI width
+> (b) More splits give tighter bands
+> Effect of Rat M= 500, K= 10, = 0.5, = 0.1
+
+Figure 3: Study A: Effect of the number of repeated splits R at fixed M =500 , K=10 . (a) Coverage is stable across R (all within the MC 95% band). (b) Width contracts quickly up to R=5 , with diminishing returns beyond. 
+
+SIREN matches a nonparametric item-bootstrap at a fraction of the cost. A practitioner could, in principle, bypass the influence-function machinery and instead resample items with replacement and rerun the entire repeated-split pipeline on each resample—a nonparametric item bootstrap that respects split dependence by construction. This baseline serves as a strong sanity check: if SIREN’s influence-function shortcut is correct, its CIs should agree with the item-bootstrap’s, up to Monte Carlo noise. Figure 4 (a) confirms this: at K=10 , R =5 and M ∈ { 200 , 500 , 1000 },both methods cover within the MC band (SIREN: 94 .6–95 .0% ; item-bootstrap: 95 .0–96 .0% ), and their average widths agree to within 0.8% in every configuration (Figure 4 (b), ratios 0.994 –1.008 ). However, the two methods are not equally cheap. On a representative configuration ( M =500 , K=10 ,
+
+R=5 , Bboot =1000 ), the SIREN multiplier bootstrap runs in 7.5 ms, while the nonparametric item bootstrap takes 281 ms — a 37 .6× speedup from replacing Bboot rerun pipelines with a single length-
+
+M dot product per resample. The gap grows with R, K, and Bboot : at the LLM-evaluation scale of the main MMLU-Pro experiments (Section 4.3) the same speedup reaches 35 × over a paired bootstrap and ∼ 10 5× over the IRT-based PromptEval. Beyond wall-clock efficiency, the influence function 
+
+bψ in (24) decomposes additively into a held-out evaluation contribution and a derivative-weighted selection contribution, which lets the same bootstrap deliver a variance decomposition by source and paired CIs across budget pairs — neither of which has any counterpart in the item-resample baseline. 24 M = 200 M = 500 M = 1000        
+
+> 0.88
+> 0.90
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> 1.00
+> Empirical coverage
+> (a) Both methods cover at nominal 95%
+> SIREN (multiplier BS on )
+> Naive (item-resample full pipeline)
+> M = 200 M = 500 M = 1000
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> 1.01
+> 1.02
+> 1.03
+> 1.04
+> CI width ratio  (naive / SIREN)
+> 1.008×
+> 1.000×
+> 0.994×
+> (b) SIREN and naive widths essentially match
+> SIREN vs naive item-bootstrap (K= 10, R= 5)
+
+Figure 4: Study A: SIREN versus a nonparametric item-bootstrap baseline at K=10 , R=5 .(a) Both methods cover at the nominal level (error bars: ±1.96 ·SE). (b) CI width ratios are within 
+
+±0.8% of unity. The item-bootstrap is ∼ 38 × slower because it reruns the full repeated-split pipeline on every resample, while SIREN runs it once and bootstraps a length-M vector. 
+
+Takeaway. Across 22 trial-configurations totaling more than 40 ,000 simulated trials, the SIREN multiplier bootstrap is empirically calibrated at the nominal level, scales with the theoretical M −1/2
+
+rate, and reproduces a nonparametric item-bootstrap’s inference at a ∼ 38 × speedup. This establishes a clean empirical baseline before Studies B and C turn to the regimes (near-tie hard selection, same-data best-of reporting) where the theorem’s regularity conditions are designed to fail. 
+
+C.1.2 Study B: Near-Tie Nonregularity of Hard Selection 
+
+Study B validates three operational claims about hard-selection nonregularity in the same two-artifact setting where it predicts failure: (i) hard argmax selection systematically undercovers when the top two artifacts are close in quality; (ii) soft (softmax) selection, whose smooth Jacobian is exactly the regularity condition required by Theorem 1, remains calibrated across all gaps; (iii) the winner-instability diagnostic bπwin serves as a practical trigger for switching between the two regimes. 
+
+Data generating process. Items have i.i.d. difficulties δi ∼ Uniform( −2, 2) . The two artifacts have qualities q1 = 0 .5 + ∆ and q2 = 0 .5, so that ∆ directly controls the population margin. Scores are Zik ∼ Bernoulli( σ(qk − δi)) . We fix M =500 , R=5 , ρ=0 .5, τ =0 .1, and Bboot =500 ,sweep ∆ over 17 values from 0.00 to 0.80 , and use Nsim =2 ,000 trials and Ngt =3 ,000 Monte Carlo replications per configuration (MC SE ≈ 0.5 pp at nominal coverage). For each method, ground truth 
+
+θ⋆ is computed separately by taking the expectation of that method’s eθ under the same DGP, so that coverage measures whether each method’s CI covers its own procedure-level target. 
+
+Main result: a U-shaped undercoverage curve for hard selection. Figure 5 (a) shows the coverage sweep. Hard-selection coverage traces a clear U-shape: it is close to nominal at ∆=0 
+
+(where the two artifacts are identical, so misselection is harmless), drops to a worst of 89 .8% at 
+
+∆=0 .20 (5.2 pp below nominal, more than ten Monte Carlo SEs outside the band), and recovers to within MC noise once ∆ ≥ 0.35 . Soft selection, in contrast, holds between 93 .7% and 96 .0% 
+
+coverage across the entire sweep. Table 7 reports representative points. The U-shape is the empirical signature of hard-selection nonregularity: at ∆=0 the two artifacts are interchangeable; at large ∆
+
+the winner is stable; between these two extremes is a window where the winner flips frequently yet misselection carries a real cost, and that is exactly where hard bootstrap fails. 
+
+Mechanism: hard bootstrap estimates the wrong variance. Figure 6 visualizes exactly why hard selection fails. For each gap we compare the true standard deviation of eθ across trials (solid) with the standard deviation implied by the average CI width (dashed; half-width divided by 1.96 , i.e., the Gaussian-CI interpretation of the bootstrap quantile). Under soft selection the two curves track each other to within Monte Carlo noise at every ∆, confirming Theorem 2. Under hard selection the two curves diverge in the near-tie window: the true std climbs from ≈ 0.023 at ∆=0 to a peak of 
+
+≈ 0.027 around ∆=0 .25 , while the bootstrap-estimated std remains essentially flat near 0.022 . The 25 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8              
+
+> Quality gap = q q
+> 0.88
+> 0.90
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> 1.00
+> Empirical coverage
+> Worst: 0.897
+> at =0.20
+> (a) Coverage vs quality gap
+> Hard argmax
+> Soft (softmax)
+> MC 95% band
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8
+> Quality gap = q q
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> Winner instability  win
+> (b) Winner instability diagnostic
+> Hard-undercoverage zone
+> win
+> Adaptive threshold = 0.10
+
+Figure 5: Study B: Hard-selection coverage fails in the near-tie regime. (a) Empirical coverage vs. quality gap ∆; error bands are ±SE over Nsim =2 ,000 trials, grey band is the Monte Carlo 95% 
+
+tolerance region around the nominal level. Hard (orange) drops to 89 .8% at ∆=0 .20 ; soft (blue) is stable across the sweep. (b) Winner instability bπwin and the adaptive threshold 0.10 . The shaded orange band marks the empirical hard-undercoverage zone ∆ ∈ [0 .10 , 0.30] and aligns with the regime where bπwin crosses the threshold from above. Table 7: Study B: Empirical coverage (%) and winner instability at selected gap levels ( M =500 ,
+
+K=2 , R=5 , Monte Carlo SE ≈ 0.5 pp at Nsim =2 ,000 ). Hard-selection coverage drops up to 5.2 pp below nominal; soft is stable. 
+
+Gap ∆ Hard (%) Soft (%) Adaptive (%) bπwin 
+
+0.00 93.6 94.8 93.8 0.201 0.06 93.1 96.0 94.1 0.191 0.10 91.1 94.7 92.8 0.170 0.15 91.1 94.7 93.2 0.137 
+
+0.20 89.8 95.2 93.5 0.114 
+
+0.30 89.8 94.6 93.5 0.057 
+
+shaded region is the missed variance : a real source of randomness—the discrete jump in bk⋆ across splits—that the plug-in influence function bψhard is blind to because the argmax selector has zero derivative almost everywhere. At ∆=0 .20 the bootstrap underestimates the std by approximately 
+
+14% , with the maximum miss of ≈ 15% occurring at ∆=0 .25 ; both lie squarely inside the empirical undercoverage zone ∆ ∈ [0 .10 , 0.30] .0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8       
+
+> Quality gap =q1q2
+> 0.000
+> 0.005
+> 0.010
+> 0.015
+> 0.020
+> 0.025
+> 0.030
+> 0.035
+> Standard deviation of point estimate  At = 0.25: bootstrap
+> underestimates by 15%
+> Bootstrap estimates the wrong variance under hard selection
+> (Hard-Selection variance mechanism)
+> Hard: MISSED variance
+> (bootstrap underestimates)
+> Hard: true std( )
+> Hard: bootstrap-estimated std
+> Soft: true std( )
+> Soft: bootstrap-estimated std
+
+Figure 6: Study B: Why hard-selection bootstrap undercovers. The orange shaded area is the variance that the hard influence function bψhard does not capture: the discontinuous jump of the argmax winner across splits. Soft selection has a non-zero Jacobian and therefore estimates its own variance correctly (blue lines track each other). 26 Instability-triggered adaptive rule: useful, but not a free lunch. Figure 7 evaluates an instability-triggered adaptive rule: on each trial, use hard selection when the winner-instability frequency bπwin 
+
+(the fraction of repeated splits whose argmax differs from the across-split majority winner) satisfies 
+
+bπwin ≤ 0.10 , and switch to soft otherwise. Across the sweep, adaptive coverage improves on hard by 2–4 pp in the near-tie window, recovering to 93 .5% at the worst gap ∆=0 .20 (vs. 89 .8% for hard). Its CI width in the stable regime ( ∆ ≥ 0.40 , where bπwin is below the threshold on essentially every trial) coincides with hard’s to within 1% , avoiding the ∼ 12% width penalty that soft pays when the margin is large (Figure 7 (b); at ∆=0 .40 , ¯wadapt / ¯whard =0 .99 but ¯wsoft / ¯whard =0 .89 ). However, the rule does not fully close the gap at boundary points: at ∆=0 .20 the population bπwin is 
+
+0.114 , just above the threshold, so individual trials oscillate across the decision boundary and the ensemble coverage sits between hard and soft. The practical takeaway is that the adaptive rule is a reasonable compromise when one wants tight intervals whenever possible, but a practitioner who needs guaranteed nominal coverage should use soft selection throughout. 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8             
+
+> Quality gap = q q
+> 0.88
+> 0.90
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> 1.00
+> Empirical coverage
+> (a) Coverage: adaptive rule inherits soft's validity
+> Hard argmax
+> Soft (softmax)
+> Adaptive rule
+> MC 95% band
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8
+> Quality gap = q q
+> 0.076
+> 0.078
+> 0.080
+> 0.082
+> 0.084
+> 0.086
+> 0.088
+> Average CI width
+> (b) Width: adaptive matches hard when safe, softens near tie
+> Hard argmax
+> Soft (softmax)
+> Adaptive rule
+
+Figure 7: Study B: Instability-triggered adaptive rule. (a) Coverage of hard, soft, and adaptive across ∆. Adaptive (green) improves on hard near ties but does not fully match soft at boundary points where bπwin ≈ 0.10 . (b) Average CI width: adaptive coincides with hard in the stable regime (large ∆) and pulls toward soft near ties, giving a dynamic trade-off between width and coverage. 
+
+Takeaway. Across 17 gap levels and 2,000 trials each, hard argmax selection is empirically non-regular in a narrow but operationally relevant window around ∆ ≈ 0.10 –0.30 , where its bootstrap CIs lose up to 5.2 pp of coverage. The failure mechanism is straightforward: the plug-in influence function for argmax has zero derivative and therefore misses the selection-jump component of the true variance ( ≈ 15% underestimation of std( eθ) at the peak). Soft selection, which has a non-zero softmax Jacobian, eliminates this failure while paying a modest ∼ 12% width cost in the stable regime. The winner-instability diagnostic bπwin correctly localizes the failure regime and powers an adaptive rule that partly reclaims the width advantage of hard in safe regimes. Together, Studies A and B show that Theorem 1’s smoothness assumption is not cosmetic: remove it and coverage breaks in a predictable, measurable way. 
+
+C.1.3 Study C: Same-Data Optimism 
+
+Study C empirically validates the same-data optimism phenomenon in a setting that is adversarial to any method relying on same-data best-of reporting: two systems with identical true performance but unequal search budgets. The question is whether the method under evaluation correctly declares them equivalent, or whether it inflates the score of whichever system happened to try more artifacts. 
+
+Data generating process. Items have i.i.d. difficulties δi ∼ Uniform (−2, 2) , and every artifact in every system shares the identical quality qk ≡ 0.5, so all systems have common population mean 
+
+θ⋆ ≈ 0.596 . We fix M =500 , R=5 , ρ=0 .5, τ =0 .1, and Bboot =500 , with Nsim =2 ,000 trials and 
+
+Ngt =10 ,000 Monte Carlo replications per configuration. The bias sweep (Table 8 and Figure 8 (left)) varies HA ∈ { 3, 5, 10 , 20 , 50 } against a fixed comparator System B with HB =3 artifacts under shared item draws, so that bias and false-winner rate are measured on the same paired comparison. The unequal-search bar chart (Figure 8 (right)) sweeps six (HA, H B ) pairs with independent item draws per system, the regime of practical interest where two teams report on disjoint evaluation runs. 27 Table 8: Study C: Same-data optimism ( M =500 , all artifacts identical, θ⋆ ≈ 0.596 , comparator 
+
+HB =3 , paired item draws). “FWR” = false-winner rate (% of trials declaring System A the winner). Fair baseline is 50% .                         
+
+> Optimism bias (pp) FWR: A wins (%)
+> HASame-data SIREN Same-data SIREN 3+1 .5−0.248 .30.0
+> 5+2 .30.062 .10.0
+> 10 +3 .1+0 .176 .40.0
+> 20 +3 .7+0 .186 .30.0
+> 50 +4 .0−0.394 .00.0
+
+Main result: same-data bias tracks the √2 log H theory. Table 8 and the left panel of Figure 8 report the optimism bias E[bθ − θ⋆] of the two estimators on System A. Same-data best-of reporting inflates System A’s score from +1 .5 pp at HA=3 to +4 .0 pp at HA=50 , and its growth tracks the theoretical rate σ√2 log HA/√M (dashed line) up to a constant factor; the empirical bias sits below the theoretical curve because the maximum-of-Gaussians bound is conservative in finite-M Bernoulli scores. The repeated-split estimator eθ shows bias bounded by 0.4 pp across all library sizes, because its held-out evaluation is independent of the development scores used to form the softmax weights. 
+
+Mechanism: the winner of a noisy ensemble is biased upward. The root cause is an elementary extreme-value fact. When H artifacts have identical true quality and i.i.d. empirical estimates with standard error σ/ √M , the expected maximum of those estimates sits σ√2 log H/ √M above the common true value. Same-data best-of reporting picks the arg-max and reports its value on the same data that identified it as the winner, so the reported score inherits the entire extreme-value inflation. The repeated-split estimator breaks this coupling: the development arg-max is evaluated on held-out items, where the selected artifact has no special noise structure, so no extreme-value premium is embedded in the reported score. 
+
+Unequal search effort fabricates rankings. The practical consequence appears when the two systems have unequal H. Same-data reporting inflates both systems’ scores, but inflates the larger-library system more, creating a spurious gap between the two reports. At HA=50 vs. HB =3 in the paired-item table, this gap is +4 .0 − (+1 .5) ≈ 2.5 pp of fabricated advantage for System A, despite identical ground truth. The FWR columns of Table 8 translate this into false rankings: the probability that same-data reporting declares System A the winner climbs from 48 .3% at HA=3 
+
+(ties, near the 50% fair baseline) to 94 .0% at HA=50 . The right panel of Figure 8 shows the same effect for the more practical regime in which two teams evaluate on independent item draws: across six (HA, H B ) pairs, the win rate of the system with the larger search library ranges from 70 .7% at 
+
+(20 , 5) to 87 .6% at (100 , 5) , all well above the fair 50% baseline. By contrast, the SIREN 95% CIs overlap in essentially every trial at every library size, so SIREN declares neither system the winner 
+
+100% of the time—which is the correct answer. 
+
+Takeaway. A benchmark report that compares two systems via their same-data best-of scores is not measuring procedure quality; it is partly measuring who searched harder. Across 5 paired library sizes and 6 unpaired pairings totaling 22 ,000 trials, the false-winner rate under same-data reporting grows from chance-level 48% to near-certain 94% as the search-effort imbalance widens, in qualitative agreement with the √2 log H extreme-value theory. The influence-function bootstrap is the only method in the comparison that preserves fair inference under unequal search effort, and it does so by correctly reporting “inconclusive” when the data genuinely do not distinguish the two systems. 28 10 1                               
+
+> Library size H(number of artifacts searched)
+> 0.00
+> 0.01
+> 0.02
+> 0.03
+> 0.04
+> 0.05
+> 0.06
+> Bias  (reported  true)
+> Same-Data Optimism vs Library Size
+> (Same-data optimism validation)
+> Same-data best-of optimism
+> Theory: /M×2log H
+> Repeated-split bias
+> 40 50 60 70 80 90 100
+> Win rate of system with larger search library (%)
+> H= 100 vs H= 10
+> H= 50 vs H= 10
+> H= 100 vs H= 5
+> H= 50 vs H= 5
+> H= 20 vs H= 5
+> H= 10 vs H= 2
+> Unfair "Wins" from Unequal Search Effort
+> (Both systems have identical true performance)
+> Fair (50%)
+
+Figure 8: Study C: same-data optimism validation. Left : Optimism bias vs. library size HA
+
+at fixed HB =3 (paired item draws). Same-data reporting (red) produces bias growing roughly as 
+
+σ√2 log H/ √M (dashed); the repeated-split estimator (blue) has near-zero bias. Right : When two systems with identical true quality search over unequal libraries (independent item draws), same-data reporting declares the system with the larger library the winner 71 –88% of the time across six pairings, despite ground-truth equality. 
+
+C.2 Per-model SIREN-vs-baseline comparisons 
+
+For each (subject, tuner) cell we report the per-model directional calls and point estimates of SIREN against the four internal baselines: M1/M2 (naive max, Wald), M3 (single-split holdout), and M4 (R-split t-CI). Tables 9–11 give the per-model breakdown for all four cells. Across all 11 models and 4 budgets, SIREN’s tuned-versus-default calls track the Monte Carlo direction far more reliably than any baseline, especially in the small-gap cells where M1’s winner-curse inflation flips the deployment decision. The aggregated directional accuracy across these per-model breakdowns appears in Tables 1 and 2 of the main text. Table 9: Unified per-model comparison across budgets on MMLU-Pro Math with the random search tuner. The untuned-pipeline-default reference θ⋆B is fixed across budgets and shown once at the top. For each budget, θ⋆A is the Monte-Carlo tuned target, and all method rows report estimates 
+
+ˆθA of this tuned target only. The ✓/✗marker indicates whether sign( ˆθA − θ⋆B ) agrees with the true direction sign( θ⋆A − θ⋆B ). M1 and M2 are merged because they are numerically identical in point estimate and directional call. 
+
+B Row Qwen3 Phi-3.5 Qwen2.5-7B Llama3.1 Yi-1.5 InternLM Qwen2-7B Qwen2.5-3B GLM-4 Mistr-v0.3 Mistr-v0.1 Ref. θ⋆B 0.329 0.192 0.325 0.244 0.225 0.245 0.284 0.262 0.232 0.163 0.153 
+
+500 Kθ⋆A 0.294 0.175 0.213 0.145 0.147 0.201 0.243 0.240 0.189 0.124 0.130 True dir. A<B A<B A<B A<B A<B A<B A<B A<B A<B A<B A<B M1/M2 0.371 ✗ 0.208 ✗ 0.297 ✓ 0.203 ✓ 0.197 ✓ 0.244 ✓ 0.246 ✓ 0.237 ✓ 0.225 ✓ 0.140 ✓ 0.138 ✓
+
+M3 0.359 ✗ 0.233 ✗ 0.304 ✓ 0.188 ✓ 0.200 ✓ 0.246 ✗ 0.275 ✓ 0.236 ✓ 0.209 ✓ 0.158 ✓ 0.129 ✓
+
+M4 0.351 ✗ 0.235 ✗ 0.323 ✓ 0.198 ✓ 0.183 ✓ 0.252 ✗ 0.284 ✗ 0.243 ✓ 0.224 ✓ 0.151 ✓ 0.134 ✓
+
+SIREN 0.291 ✓ 0.174 ✓ 0.213 ✓ 0.144 ✓ 0.147 ✓ 0.202 ✓ 0.241 ✓ 0.238 ✓ 0.187 ✓ 0.125 ✓ 0.129 ✓
+
+1.5Mθ⋆A 0.346 0.198 0.311 0.211 0.162 0.244 0.264 0.247 0.221 0.154 0.136 True dir. A>B A>B A<B A<B A<B A<B A<B A<B A<B A<B A<B M1/M2 0.373 ✓ 0.204 ✓ 0.331 ✗ 0.184 ✓ 0.167 ✓ 0.240 ✓ 0.262 ✓ 0.253 ✓ 0.226 ✓ 0.165 ✗ 0.133 ✓
+
+M3 0.366 ✓ 0.225 ✓ 0.327 ✗ 0.233 ✓ 0.190 ✓ 0.244 ✓ 0.275 ✓ 0.259 ✓ 0.209 ✓ 0.188 ✗ 0.129 ✓
+
+M4 0.354 ✓ 0.222 ✓ 0.329 ✗ 0.227 ✓ 0.191 ✓ 0.256 ✗ 0.289 ✗ 0.265 ✗ 0.227 ✓ 0.191 ✗ 0.137 ✓
+
+SIREN 0.352 ✓ 0.199 ✓ 0.312 ✓ 0.213 ✓ 0.163 ✓ 0.245 ✗ 0.265 ✓ 0.246 ✓ 0.218 ✓ 0.155 ✓ 0.135 ✓
+
+3Mθ⋆A 0.345 0.196 0.313 0.212 0.164 0.244 0.263 0.239 0.218 0.155 0.137 True dir. A>B A>B A<B A<B A<B A<B A<B A<B A<B A<B A<B M1/M2 0.373 ✓ 0.237 ✓ 0.321 ✓ 0.193 ✓ 0.157 ✓ 0.256 ✗ 0.260 ✓ 0.259 ✓ 0.211 ✓ 0.165 ✗ 0.133 ✓
+
+M3 0.358 ✓ 0.220 ✓ 0.323 ✓ 0.214 ✓ 0.176 ✓ 0.244 ✓ 0.270 ✓ 0.214 ✓ 0.227 ✓ 0.169 ✗ 0.158 ✗
+
+M4 0.352 ✓ 0.238 ✓ 0.317 ✓ 0.217 ✓ 0.189 ✓ 0.255 ✗ 0.273 ✓ 0.251 ✓ 0.230 ✓ 0.163 ✗ 0.154 ✗
+
+SIREN 0.347 ✓ 0.196 ✓ 0.313 ✓ 0.215 ✓ 0.165 ✓ 0.246 ✗ 0.265 ✓ 0.238 ✓ 0.216 ✓ 0.156 ✓ 0.136 ✓
+
+6.5Mθ⋆A 0.353 0.200 0.319 0.213 0.187 0.239 0.257 0.248 0.227 0.153 0.146 True dir. A>B A>B A<B A<B A<B A<B A<B A<B A<B A<B A<B M1/M2 0.373 ✓ 0.236 ✓ 0.321 ✓ 0.221 ✓ 0.173 ✓ 0.244 ✓ 0.263 ✓ 0.253 ✓ 0.235 ✗ 0.162 ✓ 0.132 ✓
+
+M3 0.348 ✓ 0.220 ✓ 0.297 ✓ 0.219 ✓ 0.206 ✓ 0.244 ✓ 0.251 ✓ 0.248 ✓ 0.214 ✓ 0.171 ✗ 0.155 ✗
+
+M4 0.346 ✓ 0.235 ✓ 0.311 ✓ 0.220 ✓ 0.208 ✓ 0.261 ✗ 0.269 ✓ 0.260 ✓ 0.232 ✗ 0.161 ✓ 0.157 ✗
+
+SIREN 0.356 ✓ 0.201 ✓ 0.320 ✓ 0.214 ✓ 0.189 ✓ 0.243 ✓ 0.255 ✓ 0.246 ✓ 0.225 ✓ 0.153 ✓ 0.146 ✓
+
+29 Table 10: Unified per-model comparison across budgets on MMLU-Pro Law with the random search tuner. The untuned-pipeline-default reference θ⋆B is fixed across budgets and shown once at the top. For each budget, θ⋆A is the Monte-Carlo tuned target, and all method rows report estimates 
+
+ˆθA of this tuned target only. The ✓/✗marker indicates whether sign( ˆθA − θ⋆B ) agrees with the true direction sign( θ⋆A − θ⋆B ). M1 and M2 are merged because they are numerically identical in point estimate and directional call. 
+
+B Row Qwen3 Phi-3.5 Qwen2.5-7B Llama3.1 Yi-1.5 InternLM Qwen2-7B Qwen2.5-3B GLM-4 Mistr-v0.3 Mistr-v0.1 Ref. θ⋆B 0.359 0.318 0.345 0.315 0.227 0.269 0.311 0.234 0.282 0.225 0.185 
+
+500 Kθ⋆A 0.317 0.293 0.324 0.294 0.222 0.261 0.300 0.224 0.272 0.230 0.172 True dir. A<B A<B A<B A<B A<B A<B A<B A<B A<B A>B A<B M1/M2 0.364 ✗ 0.312 ✓ 0.330 ✓ 0.314 ✓ 0.227 ✗ 0.275 ✗ 0.315 ✗ 0.237 ✗ 0.285 ✗ 0.234 ✓ 0.185 ✗
+
+M3 0.377 ✗ 0.325 ✗ 0.335 ✓ 0.317 ✗ 0.238 ✗ 0.281 ✗ 0.309 ✓ 0.236 ✗ 0.283 ✗ 0.246 ✓ 0.196 ✗
+
+M4 0.359 ✗ 0.318 ✓ 0.330 ✓ 0.305 ✓ 0.220 ✓ 0.272 ✗ 0.303 ✓ 0.226 ✓ 0.271 ✓ 0.229 ✓ 0.186 ✗
+
+SIREN 0.317 ✓ 0.300 ✓ 0.328 ✓ 0.291 ✓ 0.223 ✓ 0.262 ✓ 0.298 ✓ 0.220 ✓ 0.267 ✓ 0.234 ✓ 0.176 ✓
+
+1.5Mθ⋆A 0.308 0.298 0.324 0.283 0.223 0.265 0.304 0.235 0.274 0.217 0.165 True dir. A<B A<B A<B A<B A<B A<B A<B A>B A<B A<B A<B M1/M2 0.364 ✗ 0.318 ✗ 0.338 ✓ 0.325 ✗ 0.251 ✗ 0.275 ✗ 0.320 ✗ 0.244 ✓ 0.285 ✗ 0.240 ✗ 0.185 ✗
+
+M3 0.377 ✗ 0.311 ✓ 0.329 ✓ 0.339 ✗ 0.259 ✗ 0.271 ✗ 0.309 ✓ 0.232 ✗ 0.253 ✓ 0.248 ✗ 0.140 ✓
+
+M4 0.359 ✗ 0.318 ✗ 0.329 ✓ 0.323 ✗ 0.245 ✗ 0.263 ✓ 0.304 ✓ 0.230 ✗ 0.264 ✓ 0.234 ✗ 0.176 ✓
+
+SIREN 0.309 ✓ 0.305 ✓ 0.326 ✓ 0.283 ✓ 0.226 ✓ 0.265 ✓ 0.303 ✓ 0.232 ✗ 0.270 ✓ 0.220 ✓ 0.168 ✓
+
+3Mθ⋆A 0.324 0.294 0.325 0.281 0.224 0.265 0.308 0.241 0.273 0.230 0.173 True dir. A<B A<B A<B A<B A<B A<B A<B A>B A<B A>B A<B M1/M2 0.364 ✗ 0.318 ✗ 0.339 ✓ 0.327 ✗ 0.249 ✗ 0.277 ✗ 0.328 ✗ 0.261 ✓ 0.280 ✓ 0.246 ✓ 0.185 ✗
+
+M3 0.377 ✗ 0.327 ✗ 0.317 ✓ 0.301 ✓ 0.244 ✗ 0.257 ✓ 0.321 ✗ 0.251 ✓ 0.253 ✓ 0.257 ✓ 0.194 ✗
+
+M4 0.359 ✗ 0.321 ✗ 0.330 ✓ 0.321 ✗ 0.236 ✗ 0.262 ✓ 0.320 ✗ 0.246 ✓ 0.259 ✓ 0.235 ✓ 0.181 ✓
+
+SIREN 0.326 ✓ 0.302 ✓ 0.327 ✓ 0.279 ✓ 0.225 ✓ 0.264 ✓ 0.308 ✓ 0.238 ✓ 0.270 ✓ 0.232 ✓ 0.176 ✓
+
+6.5Mθ⋆A 0.318 0.294 0.325 0.288 0.240 0.261 0.309 0.242 0.279 0.224 0.176 True dir. A<B A<B A<B A<B A>B A<B A<B A>B A<B A<B A<B M1/M2 0.335 ✓ 0.303 ✓ 0.342 ✓ 0.330 ✗ 0.265 ✓ 0.284 ✗ 0.319 ✗ 0.258 ✓ 0.292 ✗ 0.240 ✗ 0.185 ✗
+
+M3 0.323 ✓ 0.287 ✓ 0.339 ✓ 0.355 ✗ 0.267 ✓ 0.297 ✗ 0.305 ✓ 0.251 ✓ 0.283 ✗ 0.246 ✗ 0.190 ✗
+
+M4 0.328 ✓ 0.298 ✓ 0.338 ✓ 0.328 ✗ 0.261 ✓ 0.284 ✗ 0.305 ✓ 0.244 ✓ 0.278 ✓ 0.234 ✗ 0.180 ✓
+
+SIREN 0.320 ✓ 0.300 ✓ 0.329 ✓ 0.288 ✓ 0.240 ✓ 0.262 ✓ 0.308 ✓ 0.239 ✓ 0.276 ✓ 0.225 ✗ 0.179 ✓
+
+Table 11: Unified per-model comparison across budgets on MMLU-Pro Law with the DSPy tuner. The untuned-pipeline-default reference θ⋆B is fixed across budgets and shown once at the top. For each budget, θ⋆A is the Monte-Carlo tuned target, and all method rows report estimates ˆθA of this tuned target only. The ✓/✗marker indicates whether sign( ˆθA − θ⋆B ) agrees with the true direction 
+
+sign( θ⋆A − θ⋆B ). M1 and M2 are merged because they are numerically identical in point estimate and directional call. 
+
+B Row Qwen3 Phi-3.5 Qwen2.5-7B Llama3.1 Yi-1.5 InternLM Qwen2-7B Qwen2.5-3B GLM-4 Mistr-v0.3 Mistr-v0.1 Ref. θ⋆B 0.340 0.312 0.334 0.328 0.219 0.256 0.302 0.251 0.257 0.201 0.169 
+
+500 Kθ⋆A 0.349 0.327 0.357 0.329 0.244 0.284 0.317 0.256 0.279 0.236 0.166 True dir. A>B A>B A>B A>B A>B A>B A>B A>B A>B A>B A<B M1/M2 0.360 ✓ 0.333 ✓ 0.361 ✓ 0.339 ✓ 0.250 ✓ 0.296 ✓ 0.323 ✓ 0.261 ✓ 0.286 ✓ 0.246 ✓ 0.177 ✗
+
+M3 0.371 ✓ 0.335 ✓ 0.329 ✗ 0.351 ✓ 0.246 ✓ 0.279 ✓ 0.321 ✓ 0.238 ✗ 0.269 ✓ 0.228 ✓ 0.176 ✗
+
+M4 0.350 ✓ 0.332 ✓ 0.351 ✓ 0.325 ✗ 0.248 ✓ 0.292 ✓ 0.312 ✓ 0.242 ✗ 0.271 ✓ 0.233 ✓ 0.173 ✗
+
+SIREN 0.346 ✓ 0.331 ✓ 0.356 ✓ 0.325 ✗ 0.247 ✓ 0.284 ✓ 0.314 ✓ 0.247 ✗ 0.273 ✓ 0.231 ✓ 0.166 ✓
+
+1.5Mθ⋆A 0.353 0.331 0.359 0.323 0.243 0.284 0.323 0.258 0.285 0.237 0.172 True dir. A>B A>B A>B A<B A>B A>B A>B A>B A>B A>B A>B M1/M2 0.374 ✓ 0.341 ✓ 0.372 ✓ 0.330 ✗ 0.248 ✓ 0.290 ✓ 0.342 ✓ 0.269 ✓ 0.294 ✓ 0.253 ✓ 0.180 ✓
+
+M3 0.387 ✓ 0.335 ✓ 0.363 ✓ 0.341 ✗ 0.250 ✓ 0.289 ✓ 0.349 ✓ 0.246 ✗ 0.277 ✓ 0.234 ✓ 0.176 ✓
+
+M4 0.366 ✓ 0.337 ✓ 0.365 ✓ 0.319 ✓ 0.240 ✓ 0.281 ✓ 0.336 ✓ 0.253 ✓ 0.280 ✓ 0.247 ✓ 0.171 ✓
+
+SIREN 0.350 ✓ 0.335 ✓ 0.356 ✓ 0.318 ✓ 0.246 ✓ 0.284 ✓ 0.320 ✓ 0.250 ✗ 0.281 ✓ 0.234 ✓ 0.174 ✓
+
+3Mθ⋆A 0.345 0.323 0.356 0.326 0.248 0.284 0.325 0.258 0.279 0.238 0.175 True dir. A>B A>B A>B A<B A>B A>B A>B A>B A>B A>B A>B M1/M2 0.358 ✓ 0.339 ✓ 0.362 ✓ 0.339 ✗ 0.258 ✓ 0.294 ✓ 0.342 ✓ 0.269 ✓ 0.290 ✓ 0.248 ✓ 0.187 ✓
+
+M3 0.379 ✓ 0.329 ✓ 0.343 ✓ 0.339 ✗ 0.267 ✓ 0.287 ✓ 0.349 ✓ 0.242 ✗ 0.265 ✓ 0.255 ✓ 0.186 ✓
+
+M4 0.349 ✓ 0.337 ✓ 0.351 ✓ 0.327 ✓ 0.249 ✓ 0.287 ✓ 0.334 ✓ 0.254 ✓ 0.277 ✓ 0.240 ✓ 0.178 ✓
+
+SIREN 0.344 ✓ 0.326 ✓ 0.352 ✓ 0.321 ✓ 0.251 ✓ 0.283 ✓ 0.322 ✓ 0.251 ✗ 0.275 ✓ 0.235 ✓ 0.178 ✓
+
+6.5Mθ⋆A 0.346 0.323 0.357 0.324 0.244 0.282 0.322 0.259 0.283 0.240 0.176 True dir. A>B A>B A>B A<B A>B A>B A>B A>B A>B A>B A>B M1/M2 0.358 ✓ 0.339 ✓ 0.362 ✓ 0.333 ✗ 0.251 ✓ 0.294 ✓ 0.342 ✓ 0.269 ✓ 0.291 ✓ 0.248 ✓ 0.187 ✓
+
+M3 0.379 ✓ 0.329 ✓ 0.343 ✓ 0.325 ✓ 0.246 ✓ 0.287 ✓ 0.349 ✓ 0.242 ✗ 0.265 ✓ 0.255 ✓ 0.162 ✗
+
+M4 0.349 ✓ 0.337 ✓ 0.349 ✓ 0.321 ✓ 0.240 ✓ 0.286 ✓ 0.334 ✓ 0.250 ✗ 0.273 ✓ 0.241 ✓ 0.176 ✓
+
+SIREN 0.345 ✓ 0.326 ✓ 0.353 ✓ 0.320 ✓ 0.248 ✓ 0.281 ✓ 0.320 ✓ 0.251 ✓ 0.278 ✓ 0.237 ✓ 0.177 ✓
+
+30 C.3 Per-model PromptEval-vs-SIREN comparisons 
+
+We next report the same per-model breakdown for our external baseline, PromptEval [ 24 ], sweeping its cell-observation fraction f ∈ { 0.05 , 0.10 , 0.20 , 0.40 , 0.60 , 0.80 , 1.00 }. Tables 12–14 give the per-model point estimates and directional calls for each (f, B ) combination across all four (subject, tuner) cells. A consistent picture emerges: PromptEval’s signed error transitions from strongly negative at small f (because the Rasch model shrinks strong prompts toward the mean when the score matrix is sparse) through a positive plateau at large f (where dense observation reintroduces the same selection bias as M1), while SIREN remains within ±0.21 pp of the Monte Carlo target at every budget across all four cells. Table 12: Unified PromptEval [ 24 ] vs SIREN comparison across budgets on MMLU-Pro Math with the random search tuner. The untuned-pipeline-default reference θ⋆B is fixed across budgets and shown once at the top. For each budget, θ⋆A is the Monte-Carlo tuned target, and all method rows report estimates ˆθA of this tuned target only. The ✓/✗marker indicates whether sign( ˆθA − θ⋆B ) agrees with the true direction sign( θ⋆A − θ⋆B ).
+
+B Row Qwen3 Phi-3.5 Qwen2.5-7B Llama3.1 Yi-1.5 InternLM Qwen2-7B Qwen2.5-3B GLM-4 Mistr-v0.3 Mistr-v0.1 Ref. θ⋆B 0.329 0.192 0.325 0.244 0.225 0.245 0.284 0.262 0.232 0.163 0.153 
+
+500 Kθ⋆A 0.294 0.175 0.213 0.145 0.147 0.201 0.243 0.240 0.189 0.124 0.130 True dir. A<B A<B A<B A<B A<B A<B A<B A<B A<B A<B A<B PE f =0 .05 0.260 ✓ 0.147 ✓ 0.283 ✓ 0.140 ✓ 0.120 ✓ 0.173 ✓ 0.194 ✓ 0.201 ✓ 0.176 ✓ 0.097 ✓ 0.125 ✓
+
+PE f =0 .10 0.309 ✓ 0.191 ✓ 0.261 ✓ 0.160 ✓ 0.170 ✓ 0.219 ✓ 0.252 ✓ 0.264 ✗ 0.212 ✓ 0.119 ✓ 0.149 ✓
+
+PE f =0 .20 0.348 ✗ 0.241 ✗ 0.357 ✗ 0.219 ✓ 0.221 ✓ 0.269 ✗ 0.286 ✗ 0.298 ✗ 0.240 ✗ 0.149 ✓ 0.170 ✗
+
+PE f =0 .40 0.360 ✗ 0.228 ✗ 0.349 ✗ 0.218 ✓ 0.211 ✓ 0.261 ✗ 0.283 ✓ 0.267 ✗ 0.242 ✗ 0.154 ✓ 0.157 ✗
+
+PE f =0 .60 0.370 ✗ 0.233 ✗ 0.332 ✗ 0.215 ✓ 0.199 ✓ 0.258 ✗ 0.293 ✗ 0.258 ✓ 0.234 ✗ 0.155 ✓ 0.152 ✓
+
+PE f =0 .80 0.372 ✗ 0.232 ✗ 0.327 ✗ 0.205 ✓ 0.198 ✓ 0.260 ✗ 0.299 ✗ 0.253 ✓ 0.233 ✗ 0.155 ✓ 0.149 ✓
+
+PE f =1 .00 (M1) 0.371 ✗ 0.234 ✗ 0.324 ✓ 0.203 ✓ 0.197 ✓ 0.259 ✗ 0.292 ✗ 0.254 ✓ 0.233 ✗ 0.158 ✓ 0.145 ✓
+
+SIREN 0.291 ✓ 0.174 ✓ 0.213 ✓ 0.144 ✓ 0.147 ✓ 0.202 ✓ 0.241 ✓ 0.238 ✓ 0.187 ✓ 0.125 ✓ 0.129 ✓
+
+1.5Mθ⋆A 0.346 0.198 0.311 0.211 0.162 0.244 0.264 0.247 0.221 0.154 0.136 True dir. A>B A>B A<B A<B A<B A<B A<B A<B A<B A<B A<B PE f =0 .05 0.296 ✗ 0.180 ✗ 0.274 ✓ 0.163 ✓ 0.147 ✓ 0.200 ✓ 0.204 ✓ 0.206 ✓ 0.199 ✓ 0.122 ✓ 0.099 ✓
+
+PE f =0 .10 0.349 ✓ 0.216 ✓ 0.318 ✓ 0.227 ✓ 0.184 ✓ 0.256 ✗ 0.276 ✓ 0.264 ✗ 0.237 ✗ 0.166 ✗ 0.149 ✓
+
+PE f =0 .20 0.396 ✓ 0.241 ✓ 0.352 ✗ 0.238 ✓ 0.240 ✗ 0.283 ✗ 0.290 ✗ 0.292 ✗ 0.259 ✗ 0.199 ✗ 0.158 ✗
+
+PE f =0 .40 0.383 ✓ 0.228 ✓ 0.328 ✗ 0.233 ✓ 0.209 ✓ 0.286 ✗ 0.307 ✗ 0.285 ✗ 0.244 ✗ 0.189 ✗ 0.151 ✓
+
+PE f =0 .60 0.374 ✓ 0.229 ✓ 0.325 ✗ 0.232 ✓ 0.204 ✓ 0.270 ✗ 0.302 ✗ 0.274 ✗ 0.236 ✗ 0.189 ✗ 0.148 ✓
+
+PE f =0 .80 0.373 ✓ 0.224 ✓ 0.330 ✗ 0.234 ✓ 0.198 ✓ 0.260 ✗ 0.292 ✗ 0.271 ✗ 0.237 ✗ 0.184 ✗ 0.146 ✓
+
+PE f =1 .00 (M1) 0.373 ✓ 0.230 ✓ 0.331 ✗ 0.233 ✓ 0.197 ✓ 0.264 ✗ 0.292 ✗ 0.272 ✗ 0.237 ✗ 0.189 ✗ 0.149 ✓
+
+SIREN 0.352 ✓ 0.199 ✓ 0.312 ✓ 0.213 ✓ 0.163 ✓ 0.245 ✗ 0.265 ✓ 0.246 ✓ 0.218 ✓ 0.155 ✓ 0.135 ✓
+
+3Mθ⋆A 0.345 0.196 0.313 0.212 0.164 0.244 0.263 0.239 0.218 0.155 0.137 True dir. A>B A>B A<B A<B A<B A<B A<B A<B A<B A<B A<B PE f =0 .05 0.366 ✓ 0.144 ✗ 0.275 ✓ 0.159 ✓ 0.104 ✓ 0.213 ✓ 0.208 ✓ 0.202 ✓ 0.187 ✓ 0.117 ✓ 0.116 ✓
+
+PE f =0 .10 0.369 ✓ 0.206 ✓ 0.323 ✓ 0.218 ✓ 0.172 ✓ 0.275 ✗ 0.282 ✓ 0.263 ✗ 0.236 ✗ 0.169 ✗ 0.150 ✓
+
+PE f =0 .20 0.382 ✓ 0.250 ✓ 0.340 ✗ 0.251 ✗ 0.212 ✓ 0.280 ✗ 0.302 ✗ 0.282 ✗ 0.246 ✗ 0.194 ✗ 0.179 ✗
+
+PE f =0 .40 0.397 ✓ 0.247 ✓ 0.326 ✗ 0.230 ✓ 0.204 ✓ 0.288 ✗ 0.292 ✗ 0.277 ✗ 0.253 ✗ 0.188 ✗ 0.175 ✗
+
+PE f =0 .60 0.391 ✓ 0.243 ✓ 0.330 ✗ 0.231 ✓ 0.214 ✓ 0.265 ✗ 0.296 ✗ 0.264 ✗ 0.249 ✗ 0.176 ✗ 0.162 ✗
+
+PE f =0 .80 0.375 ✓ 0.234 ✓ 0.330 ✗ 0.226 ✓ 0.204 ✓ 0.268 ✗ 0.291 ✗ 0.263 ✗ 0.242 ✗ 0.174 ✗ 0.164 ✗
+
+PE f =1 .00 (M1) 0.373 ✓ 0.237 ✓ 0.329 ✗ 0.226 ✓ 0.201 ✓ 0.264 ✗ 0.289 ✗ 0.267 ✗ 0.241 ✗ 0.171 ✗ 0.162 ✗
+
+SIREN 0.347 ✓ 0.196 ✓ 0.313 ✓ 0.215 ✓ 0.165 ✓ 0.246 ✗ 0.265 ✓ 0.238 ✓ 0.216 ✓ 0.156 ✓ 0.136 ✓
+
+6.5Mθ⋆A 0.353 0.200 0.319 0.213 0.187 0.239 0.257 0.248 0.227 0.153 0.146 True dir. A>B A>B A<B A<B A<B A<B A<B A<B A<B A<B A<B PE f =0 .05 0.287 ✗ 0.179 ✗ 0.274 ✓ 0.172 ✓ 0.138 ✓ 0.199 ✓ 0.200 ✓ 0.193 ✓ 0.200 ✓ 0.119 ✓ 0.117 ✓
+
+PE f =0 .10 0.365 ✓ 0.221 ✓ 0.325 ✗ 0.225 ✓ 0.206 ✓ 0.262 ✗ 0.277 ✓ 0.252 ✓ 0.244 ✗ 0.165 ✗ 0.166 ✗
+
+PE f =0 .20 0.400 ✓ 0.245 ✓ 0.329 ✗ 0.235 ✓ 0.250 ✗ 0.277 ✗ 0.295 ✗ 0.277 ✗ 0.249 ✗ 0.183 ✗ 0.168 ✗
+
+PE f =0 .40 0.377 ✓ 0.251 ✓ 0.321 ✓ 0.236 ✓ 0.230 ✗ 0.283 ✗ 0.288 ✗ 0.276 ✗ 0.245 ✗ 0.177 ✗ 0.169 ✗
+
+PE f =0 .60 0.372 ✓ 0.246 ✓ 0.327 ✗ 0.231 ✓ 0.237 ✗ 0.266 ✗ 0.276 ✓ 0.264 ✗ 0.243 ✗ 0.171 ✗ 0.164 ✗
+
+PE f =0 .80 0.373 ✓ 0.239 ✓ 0.328 ✗ 0.236 ✓ 0.228 ✗ 0.273 ✗ 0.283 ✓ 0.270 ✗ 0.243 ✗ 0.174 ✗ 0.160 ✗
+
+PE f =1 .00 (M1) 0.373 ✓ 0.237 ✓ 0.322 ✓ 0.233 ✓ 0.219 ✓ 0.264 ✗ 0.280 ✓ 0.269 ✗ 0.241 ✗ 0.171 ✗ 0.163 ✗
+
+SIREN 0.356 ✓ 0.201 ✓ 0.320 ✓ 0.214 ✓ 0.189 ✓ 0.243 ✓ 0.255 ✓ 0.246 ✓ 0.225 ✓ 0.153 ✓ 0.146 ✓
+
+31 Table 13: Unified PromptEval [ 24 ] vs SIREN comparison across budgets on MMLU-Pro Law with the random search tuner. The untuned-pipeline-default reference θ⋆B is fixed across budgets and shown once at the top. For each budget, θ⋆A is the Monte-Carlo tuned target, and all method rows report estimates ˆθA of this tuned target only. The ✓/✗marker indicates whether sign( ˆθA − θ⋆B ) agrees with the true direction sign( θ⋆A − θ⋆B ).
+
+B Row Qwen3 Phi-3.5 Qwen2.5-7B Llama3.1 Yi-1.5 InternLM Qwen2-7B Qwen2.5-3B GLM-4 Mistr-v0.3 Mistr-v0.1 Ref. θ⋆B 0.359 0.318 0.345 0.315 0.227 0.269 0.311 0.234 0.282 0.225 0.185 
+
+500 Kθ⋆A 0.317 0.293 0.324 0.294 0.222 0.261 0.300 0.224 0.272 0.230 0.172 True dir. A<B A<B A<B A<B A<B A<B A<B A<B A<B A>B A<B PE f =0 .05 0.248 ✓ 0.162 ✓ 0.157 ✓ 0.141 ✓ 0.119 ✓ 0.172 ✓ 0.137 ✓ 0.087 ✓ 0.163 ✓ 0.121 ✗ 0.128 ✓
+
+PE f =0 .10 0.254 ✓ 0.169 ✓ 0.190 ✓ 0.192 ✓ 0.146 ✓ 0.209 ✓ 0.178 ✓ 0.112 ✓ 0.225 ✓ 0.122 ✗ 0.123 ✓
+
+PE f =0 .20 0.311 ✓ 0.227 ✓ 0.244 ✓ 0.234 ✓ 0.177 ✓ 0.283 ✗ 0.204 ✓ 0.164 ✓ 0.280 ✓ 0.158 ✗ 0.154 ✓
+
+PE f =0 .40 0.362 ✗ 0.299 ✓ 0.339 ✓ 0.318 ✗ 0.243 ✗ 0.275 ✗ 0.302 ✓ 0.235 ✗ 0.291 ✗ 0.235 ✓ 0.196 ✗
+
+PE f =0 .60 0.360 ✗ 0.301 ✓ 0.335 ✓ 0.323 ✗ 0.229 ✗ 0.285 ✗ 0.301 ✓ 0.230 ✓ 0.282 ✗ 0.237 ✓ 0.197 ✗
+
+PE f =0 .80 0.357 ✓ 0.311 ✓ 0.335 ✓ 0.321 ✗ 0.228 ✗ 0.284 ✗ 0.313 ✗ 0.236 ✗ 0.278 ✓ 0.236 ✓ 0.192 ✗
+
+PE f =1 .00 (M1) 0.364 ✗ 0.312 ✓ 0.330 ✓ 0.314 ✓ 0.227 ✓ 0.275 ✗ 0.315 ✗ 0.237 ✗ 0.285 ✗ 0.234 ✓ 0.185 ✓
+
+SIREN 0.317 ✓ 0.300 ✓ 0.328 ✓ 0.291 ✓ 0.223 ✓ 0.262 ✓ 0.298 ✓ 0.220 ✓ 0.267 ✓ 0.234 ✓ 0.176 ✓
+
+1.5Mθ⋆A 0.308 0.298 0.324 0.283 0.223 0.265 0.304 0.235 0.274 0.217 0.165 True dir. A<B A<B A<B A<B A<B A<B A<B A>B A<B A<B A<B PE f =0 .05 0.236 ✓ 0.257 ✓ 0.243 ✓ 0.303 ✓ 0.187 ✓ 0.225 ✓ 0.265 ✓ 0.206 ✗ 0.265 ✓ 0.191 ✓ 0.128 ✓
+
+PE f =0 .10 0.325 ✓ 0.300 ✓ 0.320 ✓ 0.305 ✓ 0.225 ✓ 0.277 ✗ 0.334 ✗ 0.256 ✓ 0.299 ✗ 0.241 ✗ 0.174 ✓
+
+PE f =0 .20 0.345 ✓ 0.322 ✗ 0.352 ✗ 0.345 ✗ 0.246 ✗ 0.287 ✗ 0.354 ✗ 0.274 ✓ 0.305 ✗ 0.270 ✗ 0.207 ✗
+
+PE f =0 .40 0.353 ✓ 0.318 ✓ 0.351 ✗ 0.345 ✗ 0.247 ✗ 0.279 ✗ 0.338 ✗ 0.253 ✓ 0.293 ✗ 0.253 ✗ 0.197 ✗
+
+PE f =0 .60 0.365 ✗ 0.317 ✓ 0.341 ✓ 0.330 ✗ 0.238 ✗ 0.278 ✗ 0.325 ✗ 0.248 ✓ 0.289 ✗ 0.248 ✗ 0.191 ✗
+
+PE f =0 .80 0.362 ✗ 0.322 ✗ 0.340 ✓ 0.323 ✗ 0.252 ✗ 0.279 ✗ 0.321 ✗ 0.243 ✓ 0.284 ✗ 0.243 ✗ 0.190 ✗
+
+PE f =1 .00 (M1) 0.364 ✗ 0.318 ✓ 0.338 ✓ 0.325 ✗ 0.251 ✗ 0.275 ✗ 0.320 ✗ 0.244 ✓ 0.285 ✗ 0.240 ✗ 0.185 ✓
+
+SIREN 0.309 ✓ 0.305 ✓ 0.326 ✓ 0.283 ✓ 0.226 ✓ 0.265 ✓ 0.303 ✓ 0.232 ✗ 0.270 ✓ 0.220 ✓ 0.168 ✓
+
+3Mθ⋆A 0.324 0.294 0.325 0.281 0.224 0.265 0.308 0.241 0.273 0.230 0.173 True dir. A<B A<B A<B A<B A<B A<B A<B A>B A<B A>B A<B PE f =0 .05 0.314 ✓ 0.284 ✓ 0.344 ✓ 0.296 ✓ 0.218 ✓ 0.247 ✓ 0.277 ✓ 0.274 ✓ 0.254 ✓ 0.204 ✗ 0.145 ✓
+
+PE f =0 .10 0.350 ✓ 0.308 ✓ 0.351 ✗ 0.329 ✗ 0.261 ✗ 0.282 ✗ 0.327 ✗ 0.274 ✓ 0.296 ✗ 0.242 ✓ 0.189 ✗
+
+PE f =0 .20 0.372 ✗ 0.333 ✗ 0.360 ✗ 0.326 ✗ 0.267 ✗ 0.297 ✗ 0.329 ✗ 0.279 ✓ 0.308 ✗ 0.258 ✓ 0.199 ✗
+
+PE f =0 .40 0.362 ✗ 0.315 ✓ 0.363 ✗ 0.338 ✗ 0.251 ✗ 0.276 ✗ 0.333 ✗ 0.275 ✓ 0.306 ✗ 0.258 ✓ 0.187 ✗
+
+PE f =0 .60 0.367 ✗ 0.312 ✓ 0.350 ✗ 0.342 ✗ 0.248 ✗ 0.283 ✗ 0.327 ✗ 0.273 ✓ 0.281 ✓ 0.252 ✓ 0.186 ✗
+
+PE f =0 .80 0.358 ✓ 0.317 ✓ 0.346 ✗ 0.331 ✗ 0.250 ✗ 0.280 ✗ 0.330 ✗ 0.269 ✓ 0.283 ✗ 0.248 ✓ 0.185 ✗
+
+PE f =1 .00 (M1) 0.364 ✗ 0.318 ✓ 0.339 ✓ 0.327 ✗ 0.249 ✗ 0.277 ✗ 0.328 ✗ 0.261 ✓ 0.280 ✓ 0.246 ✓ 0.185 ✓
+
+SIREN 0.326 ✓ 0.302 ✓ 0.327 ✓ 0.279 ✓ 0.225 ✓ 0.264 ✓ 0.308 ✓ 0.238 ✓ 0.270 ✓ 0.232 ✓ 0.176 ✓
+
+6.5Mθ⋆A 0.318 0.294 0.325 0.288 0.240 0.261 0.309 0.242 0.279 0.224 0.176 True dir. A<B A<B A<B A<B A>B A<B A<B A>B A<B A<B A<B PE f =0 .05 0.250 ✓ 0.248 ✓ 0.287 ✓ 0.271 ✓ 0.155 ✗ 0.226 ✓ 0.288 ✓ 0.231 ✗ 0.234 ✓ 0.209 ✓ 0.170 ✓
+
+PE f =0 .10 0.341 ✓ 0.306 ✓ 0.344 ✓ 0.318 ✗ 0.223 ✗ 0.277 ✗ 0.331 ✗ 0.269 ✓ 0.287 ✗ 0.245 ✗ 0.213 ✗
+
+PE f =0 .20 0.355 ✓ 0.330 ✗ 0.347 ✗ 0.353 ✗ 0.269 ✓ 0.298 ✗ 0.358 ✗ 0.285 ✓ 0.309 ✗ 0.255 ✗ 0.215 ✗
+
+PE f =0 .40 0.354 ✓ 0.311 ✓ 0.346 ✗ 0.338 ✗ 0.269 ✓ 0.279 ✗ 0.330 ✗ 0.272 ✓ 0.317 ✗ 0.249 ✗ 0.204 ✗
+
+PE f =0 .60 0.344 ✓ 0.311 ✓ 0.344 ✓ 0.331 ✗ 0.269 ✓ 0.281 ✗ 0.326 ✗ 0.262 ✓ 0.299 ✗ 0.243 ✗ 0.194 ✗
+
+PE f =0 .80 0.337 ✓ 0.306 ✓ 0.344 ✓ 0.324 ✗ 0.260 ✓ 0.284 ✗ 0.322 ✗ 0.264 ✓ 0.292 ✗ 0.243 ✗ 0.187 ✗
+
+PE f =1 .00 (M1) 0.335 ✓ 0.303 ✓ 0.342 ✓ 0.330 ✗ 0.265 ✓ 0.284 ✗ 0.319 ✗ 0.258 ✓ 0.292 ✗ 0.240 ✗ 0.185 ✓
+
+SIREN 0.320 ✓ 0.300 ✓ 0.329 ✓ 0.288 ✓ 0.240 ✓ 0.262 ✓ 0.308 ✓ 0.239 ✓ 0.276 ✓ 0.225 ✗ 0.179 ✓
+
+32 Table 14: Unified PromptEval [ 24 ] vs SIREN comparison across budgets on MMLU-Pro Law with the DSPy tuner. The untuned-pipeline-default reference θ⋆B is fixed across budgets and shown once at the top. For each budget, θ⋆A is the Monte-Carlo tuned target, and all method rows report estimates 
+
+ˆθA of this tuned target only. The ✓/✗marker indicates whether sign( ˆθA − θ⋆B ) agrees with the true direction sign( θ⋆A − θ⋆B ).
+
+B Row Qwen3 Phi-3.5 Qwen2.5-7B Llama3.1 Yi-1.5 InternLM Qwen2-7B Qwen2.5-3B GLM-4 Mistr-v0.3 Mistr-v0.1 Ref. θ⋆B 0.340 0.312 0.334 0.328 0.219 0.256 0.302 0.251 0.257 0.201 0.169 
+
+500 Kθ⋆A 0.349 0.327 0.357 0.329 0.244 0.284 0.317 0.256 0.279 0.236 0.166 True dir. A>B A>B A>B A>B A>B A>B A>B A>B A>B A>B A<B PE f =0 .05 0.237 ✗ 0.179 ✗ 0.207 ✗ 0.168 ✗ 0.106 ✗ 0.139 ✗ 0.153 ✗ 0.153 ✗ 0.174 ✗ 0.122 ✗ 0.108 ✓
+
+PE f =0 .10 0.223 ✗ 0.197 ✗ 0.269 ✗ 0.218 ✗ 0.145 ✗ 0.202 ✗ 0.211 ✗ 0.195 ✗ 0.213 ✗ 0.152 ✗ 0.114 ✓
+
+PE f =0 .20 0.314 ✗ 0.259 ✗ 0.365 ✓ 0.317 ✗ 0.182 ✗ 0.261 ✓ 0.285 ✗ 0.240 ✗ 0.295 ✓ 0.215 ✓ 0.156 ✓
+
+PE f =0 .40 0.376 ✓ 0.337 ✓ 0.372 ✓ 0.347 ✓ 0.252 ✓ 0.296 ✓ 0.331 ✓ 0.259 ✓ 0.293 ✓ 0.249 ✓ 0.197 ✗
+
+PE f =0 .60 0.365 ✓ 0.330 ✓ 0.361 ✓ 0.342 ✓ 0.252 ✓ 0.287 ✓ 0.323 ✓ 0.268 ✓ 0.289 ✓ 0.244 ✓ 0.189 ✗
+
+PE f =0 .80 0.364 ✓ 0.332 ✓ 0.362 ✓ 0.338 ✓ 0.249 ✓ 0.289 ✓ 0.321 ✓ 0.259 ✓ 0.289 ✓ 0.248 ✓ 0.176 ✗
+
+PE f =1 .00 (M1) 0.360 ✓ 0.333 ✓ 0.361 ✓ 0.339 ✓ 0.250 ✓ 0.296 ✓ 0.323 ✓ 0.261 ✓ 0.286 ✓ 0.246 ✓ 0.177 ✗
+
+SIREN 0.346 ✓ 0.331 ✓ 0.356 ✓ 0.325 ✗ 0.247 ✓ 0.284 ✓ 0.314 ✓ 0.247 ✗ 0.273 ✓ 0.231 ✓ 0.166 ✓
+
+1.5Mθ⋆A 0.353 0.331 0.359 0.323 0.243 0.284 0.323 0.258 0.285 0.237 0.172 True dir. A>B A>B A>B A<B A>B A>B A>B A>B A>B A>B A>B PE f =0 .05 0.261 ✗ 0.196 ✗ 0.287 ✗ 0.300 ✓ 0.163 ✗ 0.163 ✗ 0.210 ✗ 0.162 ✗ 0.197 ✗ 0.181 ✗ 0.135 ✗
+
+PE f =0 .10 0.277 ✗ 0.246 ✗ 0.314 ✗ 0.284 ✓ 0.200 ✗ 0.219 ✗ 0.254 ✗ 0.189 ✗ 0.243 ✗ 0.221 ✓ 0.135 ✗
+
+PE f =0 .20 0.365 ✓ 0.340 ✓ 0.374 ✓ 0.343 ✗ 0.276 ✓ 0.295 ✓ 0.335 ✓ 0.279 ✓ 0.300 ✓ 0.254 ✓ 0.194 ✓
+
+PE f =0 .40 0.378 ✓ 0.336 ✓ 0.369 ✓ 0.340 ✗ 0.250 ✓ 0.289 ✓ 0.330 ✓ 0.282 ✓ 0.304 ✓ 0.259 ✓ 0.191 ✓
+
+PE f =0 .60 0.368 ✓ 0.339 ✓ 0.371 ✓ 0.335 ✗ 0.255 ✓ 0.294 ✓ 0.335 ✓ 0.276 ✓ 0.297 ✓ 0.246 ✓ 0.188 ✓
+
+PE f =0 .80 0.376 ✓ 0.336 ✓ 0.370 ✓ 0.333 ✗ 0.250 ✓ 0.291 ✓ 0.342 ✓ 0.274 ✓ 0.295 ✓ 0.251 ✓ 0.188 ✓
+
+PE f =1 .00 (M1) 0.374 ✓ 0.341 ✓ 0.372 ✓ 0.330 ✗ 0.248 ✓ 0.290 ✓ 0.342 ✓ 0.269 ✓ 0.294 ✓ 0.253 ✓ 0.180 ✓
+
+SIREN 0.350 ✓ 0.335 ✓ 0.356 ✓ 0.318 ✓ 0.246 ✓ 0.284 ✓ 0.320 ✓ 0.250 ✗ 0.281 ✓ 0.234 ✓ 0.174 ✓
+
+3Mθ⋆A 0.345 0.323 0.356 0.326 0.248 0.284 0.325 0.258 0.279 0.238 0.175 True dir. A>B A>B A>B A<B A>B A>B A>B A>B A>B A>B A>B PE f =0 .05 0.257 ✗ 0.192 ✗ 0.286 ✗ 0.256 ✓ 0.152 ✗ 0.167 ✗ 0.216 ✗ 0.196 ✗ 0.182 ✗ 0.159 ✗ 0.149 ✗
+
+PE f =0 .10 0.284 ✗ 0.239 ✗ 0.299 ✗ 0.272 ✓ 0.208 ✗ 0.226 ✗ 0.252 ✗ 0.198 ✗ 0.219 ✗ 0.192 ✗ 0.156 ✗
+
+PE f =0 .20 0.356 ✓ 0.326 ✓ 0.376 ✓ 0.343 ✗ 0.281 ✓ 0.304 ✓ 0.335 ✓ 0.270 ✓ 0.288 ✓ 0.248 ✓ 0.205 ✓
+
+PE f =0 .40 0.363 ✓ 0.340 ✓ 0.377 ✓ 0.337 ✗ 0.272 ✓ 0.298 ✓ 0.337 ✓ 0.276 ✓ 0.290 ✓ 0.247 ✓ 0.198 ✓
+
+PE f =0 .60 0.356 ✓ 0.334 ✓ 0.374 ✓ 0.333 ✗ 0.260 ✓ 0.295 ✓ 0.334 ✓ 0.261 ✓ 0.287 ✓ 0.256 ✓ 0.188 ✓
+
+PE f =0 .80 0.356 ✓ 0.337 ✓ 0.366 ✓ 0.339 ✗ 0.264 ✓ 0.294 ✓ 0.339 ✓ 0.264 ✓ 0.286 ✓ 0.251 ✓ 0.185 ✓
+
+PE f =1 .00 (M1) 0.358 ✓ 0.339 ✓ 0.362 ✓ 0.339 ✗ 0.258 ✓ 0.294 ✓ 0.342 ✓ 0.269 ✓ 0.290 ✓ 0.248 ✓ 0.187 ✓
+
+SIREN 0.344 ✓ 0.326 ✓ 0.352 ✓ 0.321 ✓ 0.251 ✓ 0.283 ✓ 0.322 ✓ 0.251 ✗ 0.275 ✓ 0.235 ✓ 0.178 ✓
+
+6.5Mθ⋆A 0.346 0.323 0.357 0.324 0.244 0.282 0.322 0.259 0.283 0.240 0.176 True dir. A>B A>B A>B A<B A>B A>B A>B A>B A>B A>B A>B PE f =0 .05 0.220 ✗ 0.206 ✗ 0.270 ✗ 0.260 ✓ 0.148 ✗ 0.166 ✗ 0.233 ✗ 0.194 ✗ 0.184 ✗ 0.184 ✗ 0.129 ✗
+
+PE f =0 .10 0.268 ✗ 0.263 ✗ 0.305 ✗ 0.274 ✓ 0.185 ✗ 0.215 ✗ 0.281 ✗ 0.190 ✗ 0.223 ✗ 0.229 ✓ 0.148 ✗
+
+PE f =0 .20 0.361 ✓ 0.354 ✓ 0.373 ✓ 0.342 ✗ 0.258 ✓ 0.295 ✓ 0.341 ✓ 0.277 ✓ 0.308 ✓ 0.268 ✓ 0.207 ✓
+
+PE f =0 .40 0.363 ✓ 0.344 ✓ 0.380 ✓ 0.358 ✗ 0.254 ✓ 0.291 ✓ 0.351 ✓ 0.277 ✓ 0.297 ✓ 0.252 ✓ 0.202 ✓
+
+PE f =0 .60 0.359 ✓ 0.337 ✓ 0.373 ✓ 0.344 ✗ 0.259 ✓ 0.291 ✓ 0.342 ✓ 0.278 ✓ 0.298 ✓ 0.252 ✓ 0.190 ✓
+
+PE f =0 .80 0.360 ✓ 0.338 ✓ 0.364 ✓ 0.334 ✗ 0.260 ✓ 0.294 ✓ 0.341 ✓ 0.280 ✓ 0.292 ✓ 0.249 ✓ 0.184 ✓
+
+PE f =1 .00 (M1) 0.358 ✓ 0.339 ✓ 0.362 ✓ 0.333 ✗ 0.251 ✓ 0.294 ✓ 0.342 ✓ 0.269 ✓ 0.291 ✓ 0.248 ✓ 0.187 ✓
+
+SIREN 0.345 ✓ 0.326 ✓ 0.353 ✓ 0.320 ✓ 0.248 ✓ 0.281 ✓ 0.320 ✓ 0.251 ✓ 0.278 ✓ 0.237 ✓ 0.177 ✓
+
+33 C.3.1 Per-budget directional accuracy summaries 
+
+The per-budget summary tables below collapse each (f, B ) cell to a single (dir , bias) pair averaged over the 11 models, making the f -dependent bias trade-off easier to read at a glance. Table 5 for Math with the DSPy tuner appears in the main text alongside the discussion of the PromptEval comparison; the corresponding tables for the other three (subject, tuner) cells are presented here. The U-shape pattern across f is consistent across all four cells: SIREN’s mean signed error stays bounded by 0.21 pp at every budget, while every PromptEval fraction f reports a bias of at least 0.74 pp in absolute value. Table 15: PromptEval [ 24 ] per-budget directional accuracy on MMLU-Pro Math for Random Search. 
+
+500K 1.5M 3M 6.5M 
+
+f dir bias dir bias dir bias dir bias 
+
+0.05 11 /11 −1.67 9/11 −3.66 10 /11 −3.59 9/11 −4.20 0.10 10 /11 +1 .87 7/11 +1 .35 7/11 +1 .61 6/11 +1 .52 0.20 3/11 +6 .36 3/11 +4 .14 3/11 +3 .94 3/11 +3 .33 0.40 4/11 +5 .72 5/11 +3 .20 4/11 +3 .54 4/11 +2 .84 0.60 5/11 +5 .43 5/11 +2 .65 4/11 +3 .06 4/11 +2 .34 0.80 5/11 +5 .29 5/11 +2 .33 4/11 +2 .58 4/11 +2 .43 1.00 6/11 +5 .19 5/11 +2 .50 4/11 +2 .49 6/11 +2 .09 
+
+SIREN 11 /11 −0.09 10 /11 +0.10 10 /11 +0.06 11 /11 +0.08 
+
+Table 16: PromptEval [ 24 ] per-budget directional accuracy on MMLU-Pro Law for Random Search. 
+
+500K 1.5M 3M 6.5M 
+
+f dir bias dir bias dir bias dir bias 
+
+0.05 10 /11 −11 .58 10 /11 −3.52 10 /11 −0.74 9/11 −3.51 0.10 10 /11 −9.01 7/11 +1 .46 4/11 +2 .45 4/11 +1 .80 0.20 9/11 −4.30 2/11 +3 .74 2/11 +3 .54 3/11 +3 .81 0.40 4/11 +1 .68 3/11 +3 .02 3/11 +2 .96 4/11 +2 .85 0.60 5/11 +1 .56 3/11 +2 .51 4/11 +2 .55 5/11 +2 .25 0.80 5/11 +1 .65 2/11 +2 .40 4/11 +2 .34 5/11 +1 .89 1.00 6/11 +1 .50 4/11 +2 .24 6/11 +2 .10 6/11 +1 .77 
+
+SIREN 11 /11 +0.05 10 /11 +0.11 11 /11 +0.07 10 /11 +0.10 
+
+Table 17: PromptEval [24] per-budget directional accuracy on MMLU-Pro Law for DSPy. 
+
+500K 1.5M 3M 6.5M 
+
+f dir bias dir bias dir bias dir bias 
+
+0.05 1/11 −12 .72 1/11 −8.30 1/11 −8.60 1/11 −8.76 0.10 1/11 −9.14 2/11 −5.34 1/11 −5.56 2/11 −5.22 0.20 5/11 −2.31 10 /11 +1 .70 10 /11 +1 .57 10 /11 +2 .08 0.40 10 /11 +1 .49 10 /11 +1 .46 10 /11 +1 .59 10 /11 +1 .93 0.60 10 /11 +0 .96 10 /11 +1 .24 10 /11 +1 .08 10 /11 +1 .50 0.80 10 /11 +0 .74 10 /11 +1 .26 10 /11 +1 .12 10 /11 +1 .27 1.00 10 /11 +0 .77 10 /11 +1 .10 10 /11 +1 .13 10 /11 +1 .04 
+
+SIREN 9/11 −0.21 10 /11 −0.17 10 /11 −0.20 11 /11 −0.21 
+
+34

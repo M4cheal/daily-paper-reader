@@ -1,0 +1,2497 @@
+Title: Reflection Anchors for Propagation-Aware Visual Retention in Long-Chain Multimodal Reasoning
+
+URL Source: https://arxiv.org/pdf/2605.09614v1
+
+Published Time: Tue, 12 May 2026 01:41:35 GMT
+
+Number of Pages: 38
+
+Markdown Content:
+# Reflection Anchors for Propagation-Aware Visual Retention in Long-Chain Multimodal Reasoning 
+
+Xuan Gong 1 Hanbo Huang 1 Hao Zheng 1 Yiran Zhang 1 Wenbin Dai 1,2
+
+Weishu Zhao 1 Shiyu Liang 1,†
+
+> 1
+
+Shanghai Jiao Tong University 2Lanzhou University gongxuan0610@sjtu.edu.cn lsy18602808513@sjtu.edu.cn 
+
+Abstract 
+
+Long chain-of-thought (CoT) reasoning improves large vision–language models, but visual information often fades during generation, limiting long-horizon mul-timodal reasoning. Existing methods either re-inject vision at inference or train policies for stronger grounding, but where to intervene relies on perception heuris-tics rather than principled gain analysis, and how local visual influence propagates remains implicit. We study this problem from an information-theoretic standpoint and derive a lower bound on the downstream visual gain of a one-step intervention, which suggests two factors: local branching room (token entropy) and downstream visual propagation potential (suffix divergence from a vision-marginalized refer-ence). Guided by this analysis, we propose reflection-anchor policy optimization 
+
+(RAPO) , a GRPO-based policy optimization method that selects high-entropy reflection anchors and optimizes a chain-masked finite-window KL surrogate for downstream visual dependence. Experiments on reasoning-intensive and general-domain benchmarks show that RAPO delivers substantial gains over strong base-lines across multiple LVLM backbones. Mechanism analyses further indicate that reflection anchors are enriched for visually sensitive decision points and that RAPO increases contrastive visual-dependence signals along generated trajectories. 
+
+1 Introduction 
+
+Test-time scaling via long Chain-of-Thought (CoT) [ 1, 2] has emerged as a cornerstone of recent advancements in Large Language Models (LLMs) [ 3– 5]. Inspired by this, recent works have adapted CoT paradigms to Large Vision-Language Models (LVLMs) [ 6 –9]. However, unlike text-only LLMs that effectively maintain context through linguistic recurrence, LVLMs struggle to sustain visual information across extended reasoning sequences. This “visual forgetting” reflects a mismatch between prefix-based visual embeddings and visual reasoning demands [10–12]. Recent studies have followed two main directions to address visual forgetting. The former revisits or injects visual evidence through re-attention, reflection, or interleaved visual-token reasoning [ 11 , 13 –20 ]. These methods help restore or maintain visual evidence during long reasoning, but they often require additional supervision, intervention rules, architectural changes, or generation-time computation. The second line trains policies to generate more visually grounded trajectories via perception-aware RL [ 21 – 23 ], yet leaves the control implicit in the learned policy. Despite their different mechanisms, both lines treat downstream visual dependence as an indirect consequence of either context injection or learned policy bias. What remains unspecified is an explicit rule, for a given trajectory, for how native decoding itself should be modified to preserve visual influence in future reasoning. This gap motivates the following question: 
+
+Can visual dependence be preserved by minimally reshaping native decoding at sparse steps, each selected to maximize downstream influence on future reasoning?          
+
+> †Corresponding author. The code will be released at https://github.com/coder-gx/RAPO
+> Preprint.
+> arXiv:2605.09614v1 [cs.CV] 10 May 2026 ... ... ...
+> Policy Image Question
+> Vision Information
+> Rollout
+> Question
+> Rollout
+> Text ... ... ...
+> Policy
+> Reuse
+> Policy
+> Forward
+> ...  ...
+> Answer
+> Verify
+> Group
+> Estimation Policy
+> Update
+> Token Visual contrastive KL
+> High Entropy
+> Low Entropy
+> Attention
+> Mask
+
+Figure 1: Overview of RAPO. Given an input, the policy generates the i-th reasoning rollout {oi,t , P i,t }Tt=1 ,where oi,t is the t-th generated token and Pi,t is the corresponding logit-induced next-token distribution. A chain-masked forward pass produces vision-masked distributions {P ′
+
+> i,t
+
+}Tt=1 . RAPO targets high-entropy reflection anchors and uses the KL divergence between Pi,t and P ′ 
+
+> i,t
+
+to encourage visual influence propagation across subsequent tokens, encouraging stronger visual-dependence along reasoning. 
+
+We formulate this as optimizing the downstream visual-dependence gain induced by in-place inter-vention of the next-token distribution. We derive a lower bound showing that nontrivial visual gains arise at tokens where (1) the next-token distribution has high entropy, leaving room for effective local intervention, and (2) the future continuation remains distributionally separated from its visual-marginalized counterpart, allowing visual influence to propagate. This suggests a simple algorithmic principle: select intervention sites by uncertainty, and train interventions by propagation. We call the selected positions reflection anchors —a name that reflects an empirical observation: high-entropy positions coincide with reasoning-procedural tokens such as “examine” and “reconsider.” Based on this principle, we propose RAPO (Figure 1), a GRPO-based policy optimization algorithm [ 24 ] that selects reflection anchors by reference-policy entropy and optimizes a branching-room-weighted contrastive KL between normal continuations and their chain-masked counterfactuals. Thus, RAPO realizes propagation-aware sparse policy reshaping without modifying the inference-time decoder. Our contributions are as follows: • We provide an information-theoretic view on the downstream visual-dependence gain in long CoT reasoning, characterizing where and how in-place intervention can shape future reasoning. • Based on the principle, we propose RAPO , a GRPO-based reinforcement learning algorithm that targets reflection anchors and reinforces propagation of visual influence across reasoning steps. • Extensive experiments on various benchmarks show that RAPO outperforms baselines across multiple base models in long-chain multimodal reasoning. • Empirical studies highlight the contribution of each component and provide guidance for effective downstream visual-dependence gain. 
+
+2 Related Work 
+
+Visual restoration for long CoT reasoning. Long CoT reasoning in LVLMs is prone to visual forgetting : later steps follow the textual prefix and gradually lose dependence on the image. Existing methods address this by restoring visual evidence during generation. Interleaved methods inject vision explicitly. ICoT [ 16 ] inserts image–text rationales, and MINT-CoT [ 15 ] selects visual tokens on the fly. CoVT [ 18 ] keeps the same idea but moves the evidence into a continuous visual-token space. Decoder-side methods inject vision internally. TVC [ 11 ] reintroduces image conditioning at selected stages, while v1 [ 17 ] copies image-patch representations into decoding. Adaptive methods further decide when to restore vision: Qwen-LA [ 14 ] learns when to revisit the image, and Reflection-V [ 13 ]repairs reasoning through vision-centered reflection. These methods share one pattern: they detect drift, revisit the image, and inject visual evidence back into generation. They are effective, but they preserve visual dependence by adding external interventions to the native decoder, including extra triggers, modules, supervision, or inference-time computation. 
+
+Policy optimization for visual grounding. A complementary line avoids explicit visual operations at inference time. Instead of re-injecting vision during decoding, it optimizes the policy so that visual grounding is absorbed into native generation. This direction builds on RL frameworks for 2long-chain reasoning, such as GRPO [ 24 ] and DAPO [ 25 ], and extends them to multimodal reasoning through methods such as Vision-R1 [ 8] and MM-Eureka [ 9]. Beyond final-answer rewards, VL-Rethinker [ 26 ], SRPO [ 27 ], and Mulberry [ 28 ] improve intermediate trajectories through reflection or refinement. More recent perception-aware methods, including PAPO [ 21 ], VPPO [ 22 ], PeRL [ 29 ], and VAPO [ 30 ], push the policy toward stronger perceptual grounding and visual utilization. This yields a clean test-time interface: normal decoding, no visual re-injection. Yet the mechanism remains implicit: rewards promote grounding, but do not locate visual forgetting or trace how a local correction propagates through later reasoning. 
+
+3 Problem Formulation: Selective Policy Reshaping for Visual Retention 
+
+Visual reasoning. Let V denote the visual input, X the textual prompt, and Y1: T the reasoning trajectory 1. A native LVLM pθ generates pθ (Y1: T | V, X ) = QTt=1 pθ (Yt | V, X, Y <t ). We write 
+
+Ht = ( X, Y <t ) for the history before step t, and Y≥t = ( Yt, . . . , Y T ) for the future continuation. In long-horizon visual reasoning, later tokens may increasingly condition on the textual prefix rather than the image. Visual retention therefore requires not only final-answer correctness, but also sustained dependence of Y≥t on V , which final-answer-only policy optimization does not directly enforce. 
+
+Selective policy reshaping. We learn a single decoder π by locally reshaping the native decoder pθ at only a few steps. For a native trajectory y1: T , let A ⊆ [T ] ≜ {1, . . . , T } be the selected steps and let 
+
+ht = ( x, y <t ) denote a history instance. If t / ∈ A , the decoder stays native, π(· | v, h t) = pθ (· | v, h t).If t ∈ A , the next-token distribution is reshaped. A useful reshaping should not merely make the current token more visual. It should make the later continuation more visual. During training, A is an instance-level oracle used to construct the learning signal for a single decoder π. The learned decoder then internalizes where and how to deviate from pθ . At inference, no oracle set is provided and π
+
+decodes normally. V           
+
+> X
+> y1y2ytyT……
+> X
+> y3yt-1yt+1 yt+2
+> Vimage prompt generated tokens masked tokens selected tokens
+> Marginal Downstream Visual Gain
+> masked previous
+> selected step
+> current reshaping
+> step
+> baseline suffix visual dependence
+> reshaped suffix visual dependence
+
+Figure 2: Marginal downstream visual gain. Downstream visual gain. The key question is whether a local change at step t carries visual evidence into later reasoning. To assign this effect to step t, we condition on a masked his-tory eht = ( x, M t(y<t ; A)) , where Mt
+
+masks the previously selected positions in A ∩ [t − 1] . This masking is essential: masking suppresses the direct contribu-tion of earlier selected steps, allowing the measured gain to be attributed marginally to step t. Based on the masked history eht, we perform a one-step intervention: sample Yt from π(· | v, eht), then roll back to the native decoder pθ for all later steps. This rollback makes the credit local: any downstream change is attributed to the reshaping at step t, not to later use of π. Let Iπ (V ; Y≥t | eht) denote the conditional mutual information under this one-step-then-rollback rollout. We define the marginal downstream visual gain (Figure 2) as 
+
+∆t(π) := Iπ (V ; Y≥t | eht) − Ipθ (V ; Y≥t | eht). Thus, ∆t(π) rewards persistent downstream visual influence, not only transient visual evidence at the current token. We do not compute ∆t(π) during training. It is the population-level target that motivates the surrogate introduced next. 
+
+Instance-level objective. Given a native trajectory instance y1: T , we jointly decide where to reshape and how to reshape. Let ρ be the budget ratio and ε be the local KL radius. We solve 
+
+max 
+
+> A,π
+
+X
+
+> t∈A
+
+∆t(π) s.t. A ⊆ [T ], |A| ≤ ρT, D KL 
+
+
+
+π(· | v, eht) ∥ pθ (· | v, eht)
+
+
+
+≤ ε ∀t ∈ A . (1) The objective makes the mechanism explicit: A chooses where to intervene, π chooses how to intervene, and ∆t(π) rewards only visual influence that persists into future reasoning. The KL constraint keeps each deviation local and close to the native decoder. Thus, visual retention is cast as sparse instance-level reshaping: change only a few steps, but make each change propagate. 
+
+> 1In this paper, uppercase and lowercase letters denote the random variables and their realizations, respectively.
+
+34 Methodology 
+
+4.1 Reflection Anchors: Where Local Reshaping Matters Which steps matter more? Section 3 reduces visual retention to a selection problem: choose a few decoding steps whose local reshaping can make the future continuation Y≥t more image-dependent. A useful selector should be causal and predictive: it should use only information available before step t, yet identify changes that can affect later reasoning. Therefore, when scoring step t, we only remove earlier selected positions. Let A<t = A ∩ [t − 1] and eht = ( x, M t(y<t ; A<t )) , where Mt
+
+masks only positions in A<t . The current token yt and the future suffix y≥t remain intact. Selection therefore asks a local intervention question: given the masked prefix eht, is step t worth reshaping? 
+
+A theoretical guide. We next characterize what makes a step worth reshaping. Fix a candidate set 
+
+A and a step t. Let mt,v = pθ (· | v, eht) be the next-token distribution under the masked prefix. To quantify future visual relevance, we compare two suffix laws: pt,v (y≥t) = pθ (y≥t | v, h t), the suffix law under the realized image v, and pM,t (y≥t) = EV |eht [pθ (y≥t | V, eht)] , the masked-reference suffix law. The first standard suffix law keeps the image, while the second suffix law marginalizes over images compatible with the cleaned prefix and removes visual evidence leaked from earlier reshaping steps. In Appendix B, we prove that, under standard regularity conditions, the best downstream visual gain at step t under KL radius ε satisfies 
+
+∆⋆t (A<t , ε ) = Ω 
+
+√ε · EV |eht
+
+
+
+eH(mt,V ) − 2
+
+
+
+> +
+
+·
+
+q
+
+DKL (pt,V ∥ pM,t )
+
+ 
+
+.
+
+Here (a)+ = max {a, 0}, and the hidden constants depend only on the appendix regularity constants. 
+
+From oracle scores to practical anchors. The bound gives two signals: local branching room ,through H(mt,v ), and downstream visual relevance , through DKL (pt,v ∥pM,t ). Exact use is im-practical: H(mt,v ) is masked-prefix dependent, so selecting earlier positions changes eht and forces recomputation of later next-token distributions; the suffix divergence is harder, requiring counter-factual continuation laws, suffix rollouts, and marginalization over images compatible with eht. We therefore use the bound as a design principle, not as a scoring rule. Although the bound is not directly usable, its message is clear: useful reshaping needs branching room. Entropy captures this room: low entropy means the decoder is nearly committed to one next token, while high entropy means several continuations remain plausible. We therefore approximate the masked-prefix entropy H(mt,v ) = H(pθ (· | v, eht)) by the native-prefix entropy ct ≜ H(pθ (· | 
+
+v, h t)) . This fixes the prefix before selection, gives all scores in one native forward pass, and avoids circular dependence on A. The score is a necessary filter, not a visual-relevance oracle. Suffix relevance is handled during training through continuation-level objective. Thus, reflection anchors are practical branch points, not exact rankings of downstream visual gain. 
+
+Reflection anchors. Given a native trajectory y1: T , we score each step by its native uncertainty ct.For a budget ratio ρ ∈ (0 , 1) , let Kρ = ⌊ρT ⌋, and define Aρ = TopK t∈[T ] {ct}Kρ , Here TopK {·} K
+
+returns any set of K indices with the largest scores. This gives a one-pass selector: choose the steps where the native decoder still has branching room, then let training decide how to reshape them. 
+
+4.2 RAPO: Reflection-Anchor Policy Optimization From the theoretical bound to an implementable principle. Section 4.1 shows that local reshaping requires two ingredients: local branching room and downstream visual dependence. RAPO turns this characterization into a practical policy optimization procedure by closing two implementation gaps. First, the intractable selection of the sparse set A in Eq. 1 is replaced by top-ρ native-entropy anchors, which provide a fixed single-pass proxy for uncertain branch points. Second, the suffix divergence 
+
+DKL (pt,V ∥pM,t ) in the bound, which requires counterfactual suffix laws and visual marginalization, is replaced by a finite-window chain-masked KL target. Thus, RAPO converts the intractable oracle objective into a practical surrogate: entropy determines where the policy-gradient update is applied, while chain-masked finite-window KL supplies a local proxy for downstream visual dependence. 
+
+Anchor selection at training time. For each sampled trajectory y1: T , RAPO applies the reflection-anchor rule from Section 4.1. With ht = ( x, y <t ), it computes ct = H(pθ (· | V, h t)) and keeps the 4top-ρ fraction of positions: A = TopK t∈[T ]{ct}⌊ρT ⌋. Equivalently, wt = 1[t ∈ A ], so PTt=1 wt =
+
+⌊ρT ⌋. All policy-gradient and visual-dependence terms below are evaluated only on t ∈ A .key        
+
+> visual
+> query
+> key
+> visual
+> Causal Mask Chain Mask
+> t1t2t3t1t2t3
+> t1
+> query
+> t2
+> t3
+> t1
+> t2
+> t3
+> unmasked token masked token
+
+Figure 3: Chain mask. For an anchor tk ∈ A , the chain mask 
+
+Mtk enforces three constraints: (i) the query at tk cannot attend to the visual tokens V ; (ii) it cannot attend to any pre-ceding anchors {t1, . . . , t k−1}; and (iii) attention to all other textual positions remains unchanged. 
+
+Chain-masked reference. The oracle reference pM,t marginalizes over im-ages compatible with the masked history, which is not computable inside RL. RAPO uses a local counterfactual instead. Let 
+
+A = {t1, . . . , t K } be the ordered anchor set. For an anchor tk, the chain mask Mtk
+
+blocks visual access and earlier-anchor leakage, while preserving the remaining textual chain, as shown in Figure 3. Run-ning the policy under this mask gives 
+
+πmask  
+
+> θ
+
+(· | htk ; Mtk ), a vision-reduced ref-erence under the same generated prefix. It plays the role of pM,t , but is tractable and compatible with policy optimization. 
+
+Finite-horizon surrogate for downstream visual dependence. The bound uses the suffix divergence 
+
+DKL (pt,v ∥pM,t ), which is a full-continuation quantity. RAPO turns it into a local, finite-window comparison. For an anchor tk, we keep one chain mask Mtk . At each suffix position tk + i, the full visual law is πθ (· | v, h tk +i), while the vision-reduced reference is πmask  
+
+> θ
+
+(· | htk +i; Mtk ). Their KL measures how much the next step still changes when visual access and earlier-anchor evidence are removed. Averaging this comparison over a window of length w′ = min( w, T − tk + 1) , we define 
+
+DKL tk (θ) = 1
+
+> w′
+
+Pw′−1 
+
+> i=0
+
+DKL 
+
+ πθ (· | v, h tk +i) πmask  
+
+> θ
+
+(· | htk +i; Mtk ) . This finite-window KL is the trainable surrogate for downstream visual dependence: it preserves the suffix spirit of the bound, but avoids counterfactual suffix laws and visual marginalization. 
+
+Optimization objective. We now lift the above construction to the group-based GRPO objective by indexing trajectories with i. For each sampled trajectory i, GRPO assigns a scalar reward Ri,computed from the task-specific objective. Under the reflection-anchor mask, RAPO applies the standard GRPO clipped surrogate objective only at anchor positions and normalizes the loss by the anchor length. The resulting objective is 
+
+J (θ) = E
+
+"
+
+1
+
+G
+
+> G
+
+X
+
+> i=1
+
+1
+
+|A i|
+
+X
+
+> t∈A i
+
+
+
+Lclip  
+
+> i,t
+
+(θ) + γω br 
+
+> i,t
+
+q
+
+DKL i,t (θ) − β DKL [πθ || πref ]
+
+#
+
+.
+
+where Lclip  
+
+> i,t
+
+(θ) = min 
+
+
+
+ri,t (θ) ˆAi,t , clip ( ri,t (θ), 1 − εclip , 1 + εclip ) ˆAi,t 
+
+
+
+, Ai denotes the reflection-anchor set for trajectory i, ωbr  
+
+> i,t
+
+= max( eH(pθ (·| Vi,h i,t )) −2, 0) denotes the branching-room weight, the importance ratio ri,t (θ) = πθ (yi,t |v,x,y i,<t )  
+
+> πθold (yi,t |v,x,y i,<t )
+
+, group-normalized advantage ˆAi,t = Ri− 1   
+
+> G
+> PGj=1 Rj
+> std( {Rj}Gj=1 )
+
+,
+
+and γ > 0 denotes the visual-dependence surrogate coefficient. All other components of GRPO, including rollouts, rewards, clipping, group normalization, and the KL penalty term remain unchanged. During training, the masked reference and ωbr  
+
+> i,t
+
+is stop-gradient. 
+
+Connection to prior work. RAPO combines the explicitness of visual restoration with the clean inter-face of policy optimization. Visual-restoration methods repair forgetting by revisiting or re-injecting vision during decoding [ 16 , 15 , 13 ], while policy-optimization methods internalize grounding into normal generation [ 24 , 25 , 21 , 22 ]. RAPO keeps the latter interface but adds a local retention mechanism: entropy-selected anchors specify where a KL-bounded update has room to matter, and the branching-room-weighted chain-masked KL rewards whether visual dependence persists over downstream continuations. Thus, visual retention is trained as selective policy reshaping inside the native decoder, rather than added as inference-time repair or left as a global grounding reward. 
+
+5 Experiments 
+
+In this section, we answer the following research questions: 5Table 1: Main results (mean@8 acc %). Performance comparison across reasoning-intensive and general-domain multimodal benchmarks. The best results in each group are highlighted in bold . The second best results in each group are highlighted in underlined . RAPO G and RAPO D denote RAPO built upon GRPO and DAPO, respectively.                                                                                                                                                                             
+
+> Base Model Model Reasoning-Intensive General-Domain Avg.
+> MathVision MathVerse EMMA LogicVista MMMU-Pro RealWorldQA
+> Qwen3-VL-8B Instruct
+> Base 41.74 50.21 38.34 62.28 37.59 67.20 49.56 + GRPO 48.03 55.23 41.34 59.51 48.50 67.66 53.38 ( ↑3.82) + PAPO G43.75 54.57 39.00 64.29 50.00 69.41 53.50 ( ↑3.94) + VPPO G48.03 56.35 36.00 66.07 49.16 67.48 53.85 ( ↑4.29)
+> + RAPO G48.27 56.72 42.50 62.50 51.10 69.54 55.11 (↑5.55)
+> Qwen3-VL-2B Instruct
+> Base 27.30 36.75 26.87 47.13 24.44 60.47 37.16 + GRPO 28.29 44.35 28.50 48.71 30.61 64.28 40.79 ( ↑3.63) + PAPO G28.29 45.18 27.25 46.43 31.45 64.05 40.44 ( ↑3.28) + VPPO G30.59 45.43 28.75 45.76 31.73 63.14 40.90 ( ↑3.74)
+> + RAPO G33.55 46.13 31.25 49.55 32.20 65.36 43.01 (↑5.85)
+> Qwen2.5-VL-7B Instruct
+> Base 21.05 29.44 23.25 42.19 21.22 54.51 31.94 MM-Eureka 32.57 45.18 28.75 44.64 26.82 61.96 39.99 ( ↑8.05) VL-Rethinker 34.21 45.30 28.75 44.20 34.10 59.22 40.96 ( ↑9.02) R1-ShareVL 25.99 46.22 30.50 46.88 34.45 56.47 40.09 ( ↑8.15) Base+RAPO G27.96 47.34 29.00 45.31 36.01 60.26 40.98 ( ↑9.04)
+> Base+RAPO D30.26 47.59 30.50 47.13 36.04 58.40 41.65 (↑9.71)
+> Qwen2-VL-7B Instruct
+> Base 15.79 10.25 11.75 13.17 11.73 31.83 15.75 TVC 18.75 21.98 20.75 41.96 23.34 52.88 29.94 ( ↑14.19) MINT-CoT 22.04 24.62 19.00 31.47 17.63 49.15 27.32 ( ↑11.57) Base+RAPO G22.37 32.99 25.25 37.72 28.22 64.67 35.21 ( ↑19.46)
+> Base+RAPO D23.36 36.31 28.75 39.73 29.39 65.01 37.09 (↑21.34)
+
+RQ1 : Method Effectiveness. Can RAPO outperform baseline methods across model scales and diverse multimodal benchmarks? 
+
+RQ2 : Mechanism Study. Do reflection anchors correspond to visually sensitive decision points, and does RAPO increase downstream visual-dependence signals along generated trajectories? 
+
+RQ3 : Ablation and Robustness Analysis. How sensitive is RAPO to design choices such as KL win-dow length and KL coefficient, and how robust is it across reasoning length and model architecture? 
+
+5.1 Experimental Setup 
+
+All experimental details are provided in Appendix C.1. 
+
+Models and Baselines. We adopt LVLMs from the Qwen family [ 31 , 32 , 7] as our base models. To ensure fair comparison, we group baselines by base model and restrict comparisons to methods built on the same base model. (i) Qwen3-VL-Instruct. We evaluate our method on the Qwen3-VL-2B-Instruct and 8B-Instruct models [ 7], and compare it with representative RL–based optimization methods, including GRPO [ 24 ], PAPO [ 21 ], and VPPO [ 22 ]. All baselines in this group are retrained under their original RL settings for controlled comparison. (ii) Qwen2.5-VL-7B-Instruct. We com-pare against strong open-source reasoning models built on the Qwen2.5-VL-7B-Instruct, including MM-Eureka [ 9], VL-Rethinker [ 26 ], and R1-ShareVL [ 33 ]. These models are evaluated using the officially released checkpoints without additional training. (iii) Qwen2-VL-7B-Instruct. We further compare with prior methods built on the earlier Qwen2-VL-7B-Instruct, including TVC [ 11 ] and MINT-CoT [15], which are trained with supervised fine-tuning followed by reinforcement learning. 
+
+Training Settings. We implement RAPO on top of GRPO, and also implement PAPO and VPPO following the GRPO-based training settings as reported in their original papers. All models are trained on the ViRL dataset [ 26 ], which is designed for long CoT multimodal reasoning. Across all experiments, we use a learning rate of 1e −6. For group (i), models are trained for 100 RL steps with a rollout batch size of 256 and a PPO minibatch size of 64, which is sufficient to reach stable reward values. For group (ii) and (iii), models are trained for 200 RL steps, respectively, using a rollout batch size of 384 and a PPO batch size of 128. For all RAPO training across three groups, we set the KL 6coefficient γ to 0.01 , the window size w to 3 for Qwen3-VL-2B-Instruct and 1 for the others, and select reflection anchors as the top 20% highest-entropy tokens. 
+
+Evaluation Settings. We evaluate all models using the vLLM framework [ 34 ] on six multimodal benchmarks spanning two categories. (1) Reasoning-intensive (Reas.) benchmarks assess mul-timodal reasoning ability and include MathVision [ 35 ], MathVerse [ 36 ], EMMA [ 37 ] and Log-icVista [ 38 ]. (2) General-domain (Gen.) benchmarks evaluate overall ability across diverse domains and include MMMU-Pro [ 39 ] and RealWorldQA 2. Across all evaluations, we use a sampling tem-perature of 1.0, a maximum generation length of 8192 tokens and sample 8 responses per input, reporting final performance using the mean@8 accuracy metric following prior work [21, 22]. 
+
+5.2 Main Results (RQ1) RAPO achieves the best overall performance in both controlled and same-backbone reference comparisons. We evaluate RAPO across three experimental settings covering different base models and benchmark types, as summarized in Table 1. Across all three experimental groups, RAPO achieves the best overall average performance across both reasoning-intensive and general-domain benchmarks. In the pure RL setting on Qwen3-VL-Instruct models, RAPO yields consistent gains over GRPO, PAPO, and VPPO; since Qwen3-VL is already a strong backbone, these gains are best viewed as controlled improvements under reduced headroom. Moreover, RAPO shows improvements across both reasoning-intensive and general-domain benchmarks, indicating that the gains are not driven by overfitting to specific tasks. Under a compute-matched setting on Qwen3-VL-2B-Instruct, extending GRPO from 100 to 120 steps improves the average score from 40.79 to 41.45, but remains below RAPO-100 at 43.01. This suggests that the improvement is not explained solely by additional wall-clock training compute. Detailed wall-clock comparisons are provided in Appendix F. 0 20 40 60 80 100       
+
+> Steps
+> 0.58
+> 0.60
+> 0.62
+> 0.64
+> 0.66
+> Reward
+> (a) Qwen3-VL-2B-Instruct
+> GRPO RAPO
+> 020 40 60 80 100
+> Steps
+> 0.75
+> 0.77
+> 0.79
+> 0.81
+> 0.83 (b) Qwen3-VL-8B-Instruct
+> GRPO RAPO
+
+Figure 4: Training dynamics. Reward curves of GRPO and RAPO on Qwen3-VL-2B-Instruct and 8B during RL. 
+
+RAPO exhibits faster and more stable reward optimization during training. Figure 4 illustrates the ac-curacy reward trajectories on Qwen3-VL-2B-Instruct and Qwen3-VL-8B-Instruct. For both model scales, RAPO achieves faster reward growth and maintains higher reward values than GRPO across training steps, in-dicating improved optimization effi-ciency across different model sizes. 
+
+5.3 Empirical Analysis of RAPO’s Mechanism (RQ2) 
+
+In this subsection, we empirically examine why RAPO improves long-chain visual reasoning by analyzing how visual information is used, where local intervention is effective, and how its influence propagates during generation. All analysis in this subsection are conducted using the same data and model configuration. We randomly sample 500 instances from the validation set of ViRL dataset and evaluate the Qwen3-VL-2B-Instruct model both before training and after GRPO and RAPO training from the main experiments. Additional experimental details are provided in Appendix D. 
+
+Sustained downstream visual dependence distinguishes successful reasoning and is reinforced by RAPO. We analyze token-wise contrastive KL along generated trajectories, defined as the divergence between vision-conditioned and vision-masked continuation distributions. Figure 5a shows that correct trajectories retain larger residual KL values and stronger late-stage fluctuations after the initial decay, whereas incorrect trajectories collapse more rapidly toward near-zero visual dependence. In contrast, visual-token attention, despite being a common proxy for visual use, follows similar positional trends for correct and incorrect outputs and fails to distinguish reasoning outcomes (Figure 5b). Figure 5c further shows that RAPO raises the token-wise KL profile over GRPO and maintains stronger late-stage KL signals. These results support the hypothesis that RAPO improves long-chain reasoning by maintaining stronger contrastive visual-dependence signals over the downstream continuation; unlike prior RL training where visual dependence remains an implicit 
+
+> 2https://huggingface.co/datasets/xai-org/RealworldQA
+
+70 500 1000 1500 2000 2500           
+
+> Token Position
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> KL Divergence  (a) KL over Token Positions
+> Wrong Answer Correct Answer
+> 0500 1000 1500 2000 2500
+> Token Position
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Attention
+> (b) Attention over Token Positions
+> Wrong Answer Correct Answer
+> 0500 1000 1500 2000 2500
+> Token Position
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> KL Divergence  (c) RAPO-Induced KL Amplification
+> GRPO RAPO
+
+Figure 5: Trajectory analysis. (a, b) Visual dependence in correct vs. incorrect trajectories, measured by token-wise KL and attention; (c) Token-wise KL after GRPO and RAPO training. The KL at token 
+
+t, DKL t, is the contrastive divergence between the distributions induced by vision-conditioned and vision-masked logits, with window length w = 1 ; higher values indicate stronger visual dependence. 80% 85% 90% 95% 100%   
+
+> external
+> actually
+> based
+> just
+> related
+> write
+> situation
+> 'll
+> interested
+> complex
+> re
+> setup
+> identify
+> express
+> instead
+> idea
+> looking
+> relate
+> reconsider
+> alternatively
+> recall
+> specifically
+> construction
+> examine
+> draw
+> denote
+> preserves
+> arrangement
+> start
+> insight
+> 0.8533
+> 0.8557
+> 0.8571
+> 0.8607
+> 0.8624
+> 0.8639
+> 0.8678
+> 0.8685
+> 0.8690
+> 0.8718
+> 0.8768
+> 0.8793
+> 0.8812
+> 0.8815
+> 0.8889
+> 0.8899
+> 0.8900
+> 0.8975 0.9166
+> 0.9171
+> 0.9174
+> 0.9200
+> 0.9222
+> 0.9231
+> 0.9246
+> 0.9267
+> 0.9310
+> 0.9333
+> 0.9400 0.9586
+
+(a) Anchor Token Concentration. 0.00 0.01 0.03 0.05 0.10 0.20   
+
+> Noise σ
+> 0
+> 10 −6
+> 10 −5
+> 10 −4
+> 10 −3
+> 10 −2
+> DKL (P ‖Pnoised )
+> Top 20% Random 20% Bottom 20%
+
+(b) DKL vs. Visual Noise. 
+
+Axis Method Reas. Gen. Avg. 
+
+– GRPO 37.46 47.45 40.79 Quantity top-10% 38.77 47.81 41.78 top-20% 40.12 48.78 43.01 top-50% 37.90 49.59 41.80 top-100% 29.19 45.84 34.75 Position top-20% 40.12 48.78 43.01 bottom-20% 38.33 47.06 41.24 random-20% 37.61 48.05 41.09 
+
+(c) Anchor-Selection Ablation. 
+
+Figure 6: Reflection anchor analysis. (a) Reflection-anchor concentration, measured as the fraction of each token type’s occurrences selected as top-entropy anchors. (b) KL divergence between original and noise-perturbed token distributions across entropy groups. (c) Analysis of anchor token selection strategies based on entropy ranking and token position. property of the learned policy, RAPO explicitly reinforces this trajectory-level dependence beyond standard GRPO. 
+
+Reflection anchors locate the positions whose local reshaping most plausibly carries visual evidence into future reasoning. We analyze the positions selected by the entropy-based reflection-anchor rule. Figure 6a shows that high-entropy anchors are concentrated on tokens that control the next reasoning operation, including explicit inspection or revision verbs such as “examine,” “reconsider,” “identify,” and “draw,” but also discourse and relational operators such as “actually,” “instead,” “based,” and “specifically.” Such tokens often mark points where the model decides whether to inspect, revise, contrast, relate, or reparameterize the current reasoning state. This supports the view that reflection anchors occur at operation-selecting positions, where local reshaping can alter how visual evidence is carried forward. Figure 6b further shows that high-entropy tokens consistently exhibit larger KL divergence under visual perturbations than random or low-entropy tokens. Correspondingly, restricting RAPO’s updates to the top 20% high-entropy tokens outperforms random selection, low-entropy tokens, and alternative anchor set sizes (Table 6c). Beyond these, Appendix G.2 evaluates noun-based, fixed-count, and outlier-threshold selectors. Together, these results indicate that RAPO intervenes at naturally occurring, decision-uncertain steps that are effective for local reshaping, in contrast to visual-injection methods that rely on fixed or predefined positions. 
+
+RAPO strengthens downstream contrastive visual-dependence signals beyond reflection anchors. 
+
+RAPO first selectively amplifies visual dependence at reflection anchors: after training, the average contrastive KL at the top 20% entropy tokens rises from 0.30 to 0.55, while the bottom 20% entropy tokens slightly decrease from 0.06 to 0.05. We then study whether this local amplification propagates by masking visual tokens at selected anchors and measuring the induced KL decrement at the next anchor and over subsequent local tokens. Figure 7 shows that RAPO yields the largest downstream KL reductions in both cases, indicating that visual influence reinforced at reflection anchors persists into the future suffix rather than remaining a local token effect. A chain-mask ablation further shows that replacing chain masking with image-level masking lowers the average score from 43.01 to 40.43, indicating that structured anchor-chain masking provides a more effective propagation signal than blanket image removal. Together with intervention-based causal diagnostics in Appendix E, these results support the interpretation that RAPO reinforces not only local visual dependence at anchor positions, but also its propagation into the future suffix, yielding a more explicit propagation mechanism than prior RL methods whose visual influence remains localized or implicit. 820% 40% 60% 80%                      
+
+> CoT position (% of tokens)
+> −0.084
+> −0.063
+> −0.042
+> −0.021
+> 0.000 ∆DKL
+> (a) Next-anchor KL decrement
+> Base GRPO VPPO RAPO
+> 20% 40% 60% 80%
+> CoT position (% of tokens)
+> (b) Local-token KL decrement
+> Base GRPO VPPO RAPO (c) Chain-mask ablation.
+> Mask MathVis. MathVer. EMMA
+> Image 26.64 44.80 27.00 Chain 33.55 46.13 31.25 Mask LogicV. MMMU-P. RealWQ
+> Image 47.32 32.79 64.02 Chain 49.55 32.20 65.36
+
+Figure 7: Propagation of visual influence. (a) KL change at the next anchor token. (b) Average KL change at subsequent local tokens under window length w = 3 , measured by visual-token masking at different CoT positions. (c) Comparison between image-level masking and the proposed chain mask. 
+
+5.4 Ablation and Robustness Analysis (RQ3) 
+
+We further evaluate RAPO through hyperparameter ablations and robustness checks. More experi-mental details and additional analysis are reported in Appendix G. 
+
+Hyperparameter Ablations. Table 2a shows that a small positive KL target coefficient γ improves over both GRPO and the γ = 0 variant, with the best result at γ = 0 .01 . Large γ over-optimizes contrastive visual divergence and can dominate the task reward, causing the policy to increase visual sensitivity without preserving answer correctness. Table 2b further studies the KL window length 
+
+w, which controls the temporal range of measured visual influence. A moderate window w = 3 
+
+performs best: w = 1 captures only short-term effects, while larger windows w ≥ 5 introduce noise from weakly coupled distant continuations. 
+
+Robustness. We evaluate RAPO under more capable reasoning models and different model archi-tectures. On Qwen3-VL-2B-Thinking, which generates substantially longer CoT sequences than Qwen3-VL-2B-Instruct ( ∼6k vs. ∼2k tokens) with a maximum generation length of 16,384 tokens, RAPO remains effective under long-CoT regimes and shows pronounced gains on reasoning-intensive benchmarks (Table 2c). We further evaluate RAPO on Gemma3-4B-IT [ 40 ], whose architecture dif-fers from the Qwen series used in the main results. RAPO outperforms GRPO (Table 2c), indicating that its effectiveness is not tied to a specific reasoning length or model family. Table 2: Ablation and robustness analysis. (a) Ablation on the KL coefficient γ. (b) Ablation on KL window length w, i.e., the temporal range of visual-influence estimation. (c) Robustness across longer reasoning trajectories and different base model architectures. 
+
+(a) Visual-Dependence Coefficient γ                
+
+> Method Reas. Gen. Avg.
+> GRPO 37.46 47.45 40.79 RAPO G(γ=0) 38.59 47.19 41.46 RAPO G(γ=0 .001) 39.66 47.23 42.18 RAPO G(γ=0 .005) 38.61 47.70 41.64 RAPO G(γ=0 .01) 40.12 48.78 43.01 RAPO G(γ=0 .02) 37.68 48.14 41.16 RAPO G(γ=0 .1) Collapse
+
+(b) Window Length w             
+
+> Method Reas. Gen. Avg.
+> GRPO 37.46 47.45 40.79 RAPO G(w=1) 39.76 48.59 42.70 RAPO G(w=2) 38.52 47.93 41.66 RAPO G(w=3) 40.12 48.78 43.01 RAPO G(w=5) 38.24 48.93 41.80 RAPO G(w=10) 39.64 48.06 42.45
+
+(c) Base Model        
+
+> Model Reas. Gen. Avg.
+> Thinking 38.48 41.41 39.45 + GRPO 40.43 47.79 42.88 + RAPO G44.04 47.82 45.30 Gemma3-4B-IT 15.86 26.99 19.57 + GRPO 27.47 34.39 29.77 + RAPO G28.62 33.67 30.30
+
+6 Conclusion 
+
+We frame visual retention in long-chain multimodal reasoning as selective policy reshaping: local deviations from the native decoder should make future continuations remain visually dependent. This led to RAPO, an RL method that updates high-entropy reflection anchors and optimizes a chain-masked finite-window target for downstream visual dependence, without architectural changes or explicit visual-token injection at inference. Experiments across multiple LVLM backbones and multimodal benchmarks show that RAPO improves average performance over strong baselines, while mechanism analyses indicate that entropy anchors correspond to visually sensitive decision points and that RAPO strengthens downstream visual-dependence signals. The results point to propagation-aware visual-retention optimization as a useful direction for long-CoT LVLM reasoning. We discuss the current scope and future extensions of RAPO in Section J. 9References 
+
+[1] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large language models, 2023. URL https://arxiv.org/abs/2201.11903 .[2] Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yutaka Matsuo, and Yusuke Iwasawa. Large language models are zero-shot reasoners, 2023. URL https://arxiv.org/abs/2205. 11916 .[3] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, Xiaokang Zhang, Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhihong Shao, Zhuoshu Li, Ziyi Gao, Aixin Liu, Bing Xue, Bingxuan Wang, Bochao Wu, Bei Feng, Chengda Lu, Chenggang Zhao, Chengqi Deng, Chong Ruan, Damai Dai, Deli Chen, Dongjie Ji, Erhang Li, Fangyun Lin, Fucong Dai, Fuli Luo, Guangbo Hao, Guanting Chen, Guowei Li, H. Zhang, Hanwei Xu, Honghui Ding, Huazuo Gao, Hui Qu, Hui Li, Jianzhong Guo, Jiashi Li, Jingchang Chen, Jingyang Yuan, Jinhao Tu, Junjie Qiu, Junlong Li, J. L. Cai, Jiaqi Ni, Jian Liang, Jin Chen, Kai Dong, Kai Hu, Kaichao You, Kaige Gao, Kang Guan, Kexin Huang, Kuai Yu, Lean Wang, Lecong Zhang, Liang Zhao, Litong Wang, Liyue Zhang, Lei Xu, Leyi Xia, Mingchuan Zhang, Minghua Zhang, Minghui Tang, Mingxu Zhou, Meng Li, Miaojun Wang, Mingming Li, Ning Tian, Panpan Huang, Peng Zhang, Qiancheng Wang, Qinyu Chen, Qiushi Du, Ruiqi Ge, Ruisong Zhang, Ruizhe Pan, Runji Wang, R. J. Chen, R. L. Jin, Ruyi Chen, Shanghao Lu, Shangyan Zhou, Shanhuang Chen, Shengfeng Ye, Shiyu Wang, Shuiping Yu, Shunfeng Zhou, Shuting Pan, S. S. Li, Shuang Zhou, Shaoqing Wu, Tao Yun, Tian Pei, Tianyu Sun, T. Wang, Wangding Zeng, Wen Liu, Wenfeng Liang, Wenjun Gao, Wenqin Yu, Wentao Zhang, W. L. Xiao, Wei An, Xiaodong Liu, Xiaohan Wang, Xiaokang Chen, Xiaotao Nie, Xin Cheng, Xin Liu, Xin Xie, Xingchao Liu, Xinyu Yang, Xinyuan Li, Xuecheng Su, Xuheng Lin, X. Q. Li, Xiangyue Jin, Xiaojin Shen, Xiaosha Chen, Xiaowen Sun, Xiaoxiang Wang, Xinnan Song, Xinyi Zhou, Xianzu Wang, Xinxia Shan, Y. K. Li, Y. Q. Wang, Y. X. Wei, Yang Zhang, Yanhong Xu, Yao Li, Yao Zhao, Yaofeng Sun, Yaohui Wang, Yi Yu, Yichao Zhang, Yifan Shi, Yiliang Xiong, Ying He, Yishi Piao, Yisong Wang, Yixuan Tan, Yiyang Ma, Yiyuan Liu, Yongqiang Guo, Yuan Ou, Yuduan Wang, Yue Gong, Yuheng Zou, Yujia He, Yunfan Xiong, Yuxiang Luo, Yuxiang You, Yuxuan Liu, Yuyang Zhou, Y. X. Zhu, Yanping Huang, Yaohui Li, Yi Zheng, Yuchen Zhu, Yunxian Ma, Ying Tang, Yukun Zha, Yuting Yan, Z. Z. Ren, Zehui Ren, Zhangli Sha, Zhe Fu, Zhean Xu, Zhenda Xie, Zhengyan Zhang, Zhewen Hao, Zhicheng Ma, Zhigang Yan, Zhiyu Wu, Zihui Gu, Zijia Zhu, Zijun Liu, Zilin Li, Ziwei Xie, Ziyang Song, Zizheng Pan, Zhen Huang, Zhipeng Xu, Zhongyu Zhang, and Zhen Zhang. Deepseek-r1 incentivizes reasoning in llms through reinforcement learning. Nature ,645(8081):633–638, September 2025. ISSN 1476-4687. doi: 10.1038/s41586-025-09422-z. URL http://dx.doi.org/10.1038/s41586-025-09422-z .[4] Kimi Team, Yifan Bai, Yiping Bao, Guanduo Chen, Jiahao Chen, Ningxin Chen, Ruijue Chen, Yanru Chen, Yuankun Chen, Yutian Chen, Zhuofu Chen, Jialei Cui, Hao Ding, Mengnan Dong, Angang Du, Chenzhuang Du, Dikang Du, Yulun Du, Yu Fan, Yichen Feng, Kelin Fu, Bofei Gao, Hongcheng Gao, Peizhong Gao, Tong Gao, Xinran Gu, Longyu Guan, Haiqing Guo, Jianhang Guo, Hao Hu, Xiaoru Hao, Tianhong He, Weiran He, Wenyang He, Chao Hong, Yangyang Hu, Zhenxing Hu, Weixiao Huang, Zhiqi Huang, Zihao Huang, Tao Jiang, Zhejun Jiang, Xinyi Jin, Yongsheng Kang, Guokun Lai, Cheng Li, Fang Li, Haoyang Li, Ming Li, Wentao Li, Yanhao Li, Yiwei Li, Zhaowei Li, Zheming Li, Hongzhan Lin, Xiaohan Lin, Zongyu Lin, Chengyin Liu, Chenyu Liu, Hongzhang Liu, Jingyuan Liu, Junqi Liu, Liang Liu, Shaowei Liu, T. Y. Liu, Tianwei Liu, Weizhou Liu, Yangyang Liu, Yibo Liu, Yiping Liu, Yue Liu, Zhengying Liu, Enzhe Lu, Lijun Lu, Shengling Ma, Xinyu Ma, Yingwei Ma, Shaoguang Mao, Jie Mei, Xin Men, Yibo Miao, Siyuan Pan, Yebo Peng, Ruoyu Qin, Bowen Qu, Zeyu Shang, Lidong Shi, Shengyuan Shi, Feifan Song, Jianlin Su, Zhengyuan Su, Xinjie Sun, Flood Sung, Heyi Tang, Jiawen Tao, Qifeng Teng, Chensi Wang, Dinglu Wang, Feng Wang, Haiming Wang, Jianzhou Wang, Jiaxing Wang, Jinhong Wang, Shengjie Wang, Shuyi Wang, Yao Wang, Yejie Wang, Yiqin Wang, Yuxin Wang, Yuzhi Wang, Zhaoji Wang, Zhengtao Wang, Zhexu Wang, Chu Wei, Qianqian Wei, Wenhao Wu, Xingzhe Wu, Yuxin Wu, Chenjun Xiao, Xiaotong Xie, Weimin Xiong, Boyu Xu, Jing Xu, Jinjing Xu, L. H. Xu, Lin Xu, Suting Xu, Weixin Xu, Xinran Xu, Yangchuan Xu, Ziyao Xu, Junjie Yan, Yuzi Yan, Xiaofei Yang, Ying Yang, Zhen Yang, Zhilin Yang, Zonghan Yang, Haotian Yao, Xingcheng Yao, Wenjie Ye, Zhuorui Ye, Bohong Yin, Longhui Yu, Enming 10 Yuan, Hongbang Yuan, Mengjie Yuan, Haobing Zhan, Dehao Zhang, Hao Zhang, Wanlu Zhang, Xiaobin Zhang, Yangkun Zhang, Yizhi Zhang, Yongting Zhang, Yu Zhang, Yutao Zhang, Yutong Zhang, Zheng Zhang, Haotian Zhao, Yikai Zhao, Huabin Zheng, Shaojie Zheng, Jianren Zhou, Xinyu Zhou, Zaida Zhou, Zhen Zhu, Weiyu Zhuang, and Xinxing Zu. Kimi k2: Open agentic intelligence, 2025. URL https://arxiv.org/abs/2507.20534 .[5] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayiheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jingren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, Ruize Gao, Shixuan Liu, Shuang Luo, Tianhao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zihan Qiu. Qwen3 technical report, 2025. URL https://arxiv.org/abs/2505.09388 .[6] Kimi Team, Angang Du, Bohong Yin, Bowei Xing, Bowen Qu, Bowen Wang, Cheng Chen, Chenlin Zhang, Chenzhuang Du, Chu Wei, Congcong Wang, Dehao Zhang, Dikang Du, Dongliang Wang, Enming Yuan, Enzhe Lu, Fang Li, Flood Sung, Guangda Wei, Guokun Lai, Han Zhu, Hao Ding, Hao Hu, Hao Yang, Hao Zhang, Haoning Wu, Haotian Yao, Haoyu Lu, Heng Wang, Hongcheng Gao, Huabin Zheng, Jiaming Li, Jianlin Su, Jianzhou Wang, Jiaqi Deng, Jiezhong Qiu, Jin Xie, Jinhong Wang, Jingyuan Liu, Junjie Yan, Kun Ouyang, Liang Chen, Lin Sui, Longhui Yu, Mengfan Dong, Mengnan Dong, Nuo Xu, Pengyu Cheng, Qizheng Gu, Runjie Zhou, Shaowei Liu, Sihan Cao, Tao Yu, Tianhui Song, Tongtong Bai, Wei Song, Weiran He, Weixiao Huang, Weixin Xu, Xiaokun Yuan, Xingcheng Yao, Xingzhe Wu, Xinhao Li, Xinxing Zu, Xinyu Zhou, Xinyuan Wang, Y. Charles, Yan Zhong, Yang Li, Yangyang Hu, Yanru Chen, Yejie Wang, Yibo Liu, Yibo Miao, Yidao Qin, Yimin Chen, Yiping Bao, Yiqin Wang, Yongsheng Kang, Yuanxin Liu, Yuhao Dong, Yulun Du, Yuxin Wu, Yuzhi Wang, Yuzi Yan, Zaida Zhou, Zhaowei Li, Zhejun Jiang, Zheng Zhang, Zhilin Yang, Zhiqi Huang, Zihao Huang, Zijia Zhao, Ziwei Chen, and Zongyu Lin. Kimi-vl technical report, 2025. URL 
+
+https://arxiv.org/abs/2504.07491 .[7] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, Wenbin Ge, Zhifang Guo, Qidong Huang, Jie Huang, Fei Huang, Binyuan Hui, Shutong Jiang, Zhaohai Li, Mingsheng Li, Mei Li, Kaixin Li, Zicheng Lin, Junyang Lin, Xuejing Liu, Jiawei Liu, Chenglong Liu, Yang Liu, Dayiheng Liu, Shixuan Liu, Dunjie Lu, Ruilin Luo, Chenxu Lv, Rui Men, Lingchen Meng, Xuancheng Ren, Xingzhang Ren, Sibo Song, Yuchong Sun, Jun Tang, Jianhong Tu, Jianqiang Wan, Peng Wang, Pengfei Wang, Qiuyue Wang, Yuxuan Wang, Tianbao Xie, Yiheng Xu, Haiyang Xu, Jin Xu, Zhibo Yang, Mingkun Yang, Jianxin Yang, An Yang, Bowen Yu, Fei Zhang, Hang Zhang, Xi Zhang, Bo Zheng, Humen Zhong, Jingren Zhou, Fan Zhou, Jing Zhou, Yuanzhi Zhu, and Ke Zhu. Qwen3-vl technical report, 2025. URL https://arxiv.org/abs/2511.21631 .[8] Wenxuan Huang, Bohan Jia, Zijie Zhai, Shaosheng Cao, Zheyu Ye, Fei Zhao, Zhe Xu, Yao Hu, and Shaohui Lin. Vision-r1: Incentivizing reasoning capability in multimodal large language models. arXiv preprint arXiv:2503.06749 , 2025. [9] Fanqing Meng, Lingxiao Du, Zongkai Liu, Zhixiang Zhou, Quanfeng Lu, Daocheng Fu, Tiancheng Han, Botian Shi, Wenhai Wang, Junjun He, Kaipeng Zhang, Ping Luo, Yu Qiao, Qiaosheng Zhang, and Wenqi Shao. Mm-eureka: Exploring the frontiers of multimodal reasoning with rule-based reinforcement learning, 2025. URL https://arxiv.org/abs/ 2503.07365 .[10] Wenyan Li, Raphael Tang, Chengzu Li, Caiqi Zhang, Ivan Vulic, and Anders Søgaard. Lost in embeddings: Information loss in vision-language models. arXiv preprint arXiv:2509.11986 , 2, 2025. [11] Hai-Long Sun, Zhun Sun, Houwen Peng, and Han-Jia Ye. Mitigating visual forgetting via take-along visual conditioning for multi-modal long cot reasoning. arXiv preprint arXiv:2503.13360 ,2025. 11 [12] Ahmed Masry, Juan A. Rodriguez, Tianyu Zhang, Suyuchen Wang, Chao Wang, Aarash Feizi, Akshay Kalkunte Suresh, Abhay Puri, Xiangru Jian, Pierre-André Noël, Sathwik Tejaswi Madhusudhan, Marco Pedersoli, Bang Liu, Nicolas Chapados, Yoshua Bengio, Enamul Hoque, Christopher Pal, Issam H. Laradji, David Vazquez, Perouz Taslakian, Spandana Gella, and Sai Rajeswar. Alignvlm: Bridging vision and language latent spaces for multimodal document understanding, 2025. URL https://arxiv.org/abs/2502.01341 .[13] Pu Jian, Junhong Wu, Wei Sun, Chen Wang, Shuo Ren, and Jiajun Zhang. Look again, think slowly: Enhancing visual reflection in vision-language models. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 9262–9281, 2025. [14] Xu Chu, Xinrong Chen, Guanyu Wang, Zhijie Tan, Kui Huang, Wenyu Lv, Tong Mo, and Weiping Li. Qwen look again: Guiding vision-language reasoning models to re-attention visual information. arXiv preprint arXiv:2505.23558 , 2025. [15] Xinyan Chen, Renrui Zhang, Dongzhi Jiang, Aojun Zhou, Shilin Yan, Weifeng Lin, and Hongsheng Li. MINT-cot: Enabling interleaved visual tokens in mathematical chain-of-thought reasoning. In The Thirty-ninth Annual Conference on Neural Information Processing Systems ,2025. URL https://openreview.net/forum?id=vMpvtSmtXY .[16] Jun Gao, Yongqi Li, Ziqiang Cao, and Wenjie Li. Interleaved-modal chain-of-thought. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference , pages 19520–19529, 2025. [17] Jiwan Chung, Junhyeok Kim, Siyeol Kim, Jaeyoung Lee, Min Soo Kim, and Youngjae Yu. v1: Learning to point visual tokens for multimodal grounded reasoning, 2025. URL https: //arxiv.org/abs/2505.18842 .[18] Yiming Qin, Bomin Wei, Jiaxin Ge, Konstantinos Kallidromitis, Stephanie Fu, Trevor Darrell, and XuDong Wang. Chain-of-visual-thought: Teaching vlms to see and think better with continuous visual tokens. arXiv preprint arXiv:2511.19418 , 2025. [19] Zihui Cheng, Qiguang Chen, Xiao Xu, Jiaqi WANG, Weiyun Wang, Hao Fei, Yidong Wang, Alex Jinpeng Wang, Zhi Chen, Wanxiang Che, and Libo Qin. Visual thoughts: A unified per-spective of understanding multimodal chain-of-thought. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2026. URL https://openreview.net/forum? id=xPcKmKSEis .[20] Guohao Sun, Hang Hua, Jian Wang, Jiebo Luo, Sohail Dianat, Majid Rabbani, Raghuveer Rao, and Zhiqiang Tao. Latent chain-of-thought for visual reasoning, 2025. URL https: //arxiv.org/abs/2510.23925 .[21] Zhenhailong Wang, Xuehang Guo, Sofia Stoica, Haiyang Xu, Hongru Wang, Hyeonjeong Ha, Xiusi Chen, Yangyi Chen, Ming Yan, Fei Huang, and Heng Ji. Perception-aware policy optimization for multimodal reasoning, 2025. URL https://arxiv.org/abs/2507.06448 .[22] Siyuan Huang, Xiaoye Qu, Yafu Li, Yun Luo, Zefeng He, Daizong Liu, and Yu Cheng. Spotlight on token perception for multimodal reinforcement learning, 2025. URL https://arxiv.org/ abs/2510.09285 .[23] Yunheng Li, Hangyi Kuang, Hengrui Zhang, Jiangxia Cao, Zhaojie Liu, Qibin Hou, and Ming-Ming Cheng. Rethinking token-level policy optimization for multimodal chain-of-thought, 2026. URL https://arxiv.org/abs/2603.22847 .[24] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. [25] Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, YuYue, Weinan Dai, Tiantian Fan, Gaohong Liu, Juncai Liu, LingJun Liu, Xin Liu, Haibin Lin, Zhiqi Lin, Bole Ma, Guangming Sheng, Yuxuan Tong, Chi Zhang, Mofan Zhang, Ru Zhang, Wang Zhang, Hang Zhu, Jinhua Zhu, Jiaze Chen, Jiangjie Chen, Chengyi Wang, Hongli Yu, Yuxuan Song, Xiangpeng Wei, Hao Zhou, Jingjing Liu, Wei-Ying Ma, Ya-Qin Zhang, Lin Yan, Yonghui Wu, 12 and Mingxuan Wang. DAPO: An open-source LLM reinforcement learning system at scale. In 
+
+The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. URL 
+
+https://openreview.net/forum?id=2a36EMSSTp .[26] Haozhe Wang, Chao Qu, Zuming Huang, Wei Chu, Fangzhen Lin, and Wenhu Chen. Vl-rethinker: Incentivizing self-reflection of vision-language models with reinforcement learning, 2025. URL https://arxiv.org/abs/2504.08837 .[27] Zhongwei Wan, Zhihao Dou, Che Liu, Yu Zhang, Dongfei Cui, Qinjian Zhao, Hui Shen, Jing Xiong, Yi Xin, Yifan Jiang, et al. Srpo: Enhancing multimodal llm reasoning via reflection-aware reinforcement learning. arXiv preprint arXiv:2506.01713 , 2025. [28] Huanjin Yao, Jiaxing Huang, Wenhao Wu, Jingyi Zhang, Yibo Wang, Shunyu Liu, Yingjie Wang, Yuxin Song, Haocheng Feng, Li Shen, et al. Mulberry: Empowering mllm with o1-like reasoning and reflection via collective monte carlo tree search. arXiv preprint arXiv:2412.18319 ,2024. [29] Yizhen Zhang, Yang Ding, Shuoshuo Zhang, Xinchen Zhang, Haoling Li, Zhong-zhi Li, Peijie Wang, Jie Wu, Lei Ji, Yelong Shen, et al. Perl: Permutation-enhanced reinforcement learning for interleaved vision-language reasoning. arXiv preprint arXiv:2506.14907 , 2025. [30] Xinyu Tian, Shu Zou, Zhaoyuan Yang, Mengqi He, Fabian Waschkowski, Lukas Wesemann, Peter Henry Tu, and Jing Zhang. More thought, less accuracy? on the dual nature of rea-soning in vision-language models. In The Fourteenth International Conference on Learning Representations , 2026. URL https://openreview.net/forum?id=XpL5eqjCjF .[31] Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Yang Fan, Kai Dang, Mengfei Du, Xuancheng Ren, Rui Men, Dayiheng Liu, Chang Zhou, Jingren Zhou, and Junyang Lin. Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution, 2024. URL https://arxiv.org/ abs/2409.12191 .[32] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. Qwen2.5-vl technical report, 2025. URL https://arxiv.org/abs/2502.13923 .[33] Huanjin Yao, Qixiang Yin, Jingyi Zhang, Min Yang, Yibo Wang, Wenhao Wu, Fei Su, Li Shen, Minghui Qiu, Dacheng Tao, and Jiaxing Huang. R1-sharevl: Incentivizing reasoning capability of multimodal large language models via share-grpo, 2025. URL https://arxiv.org/abs/ 2505.16673 .[34] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang, and Ion Stoica. Efficient memory management for large language model serving with pagedattention. In Proceedings of the 29th symposium on operating systems principles , pages 611–626, 2023. [35] Ke Wang, Junting Pan, Weikang Shi, Zimu Lu, Houxing Ren, Aojun Zhou, Mingjie Zhan, and Hongsheng Li. Measuring multimodal mathematical reasoning with math-vision dataset. 
+
+Advances in Neural Information Processing Systems , 37:95095–95169, 2024. [36] Renrui Zhang, Dongzhi Jiang, Yichi Zhang, Haokun Lin, Ziyu Guo, Pengshuo Qiu, Aojun Zhou, Pan Lu, Kai-Wei Chang, Peng Gao, and Hongsheng Li. Mathverse: Does your multi-modal llm truly see the diagrams in visual math problems?, 2024. URL https://arxiv.org/abs/ 2403.14624 .[37] Yunzhuo Hao, Jiawei Gu, Huichen Will Wang, Linjie Li, Zhengyuan Yang, Lijuan Wang, and Yu Cheng. Can mllms reason in multimodality? emma: An enhanced multimodal reasoning benchmark, 2025. URL https://arxiv.org/abs/2501.05444 .[38] Yijia Xiao, Edward Sun, Tianyu Liu, and Wei Wang. Logicvista: Multimodal llm logical reasoning benchmark in visual contexts, 2024. URL https://arxiv.org/abs/2407.04973 .13 [39] Xiang Yue, Tianyu Zheng, Yuansheng Ni, Yubo Wang, Kai Zhang, Shengbang Tong, Yuxuan Sun, Botao Yu, Ge Zhang, Huan Sun, Yu Su, Wenhu Chen, and Graham Neubig. Mmmu-pro: A more robust multi-discipline multimodal understanding benchmark, 2025. URL https: //arxiv.org/abs/2409.02813 .[40] Gemma Team, Aishwarya Kamath, Johan Ferret, Shreya Pathak, Nino Vieillard, Ramona Merhej, Sarah Perrin, Tatiana Matejovicova, Alexandre Ramé, Morgane Rivière, Louis Rouillard, Thomas Mesnard, Geoffrey Cideron, Jean bastien Grill, Sabela Ramos, Edouard Yvinec, Michelle Casbon, Etienne Pot, Ivo Penchev, Gaël Liu, Francesco Visin, Kathleen Kenealy, Lucas Beyer, Xiaohai Zhai, Anton Tsitsulin, Robert Busa-Fekete, Alex Feng, Noveen Sachdeva, Benjamin Coleman, Yi Gao, Basil Mustafa, Iain Barr, Emilio Parisotto, David Tian, Matan Eyal, Colin Cherry, Jan-Thorsten Peter, Danila Sinopalnikov, Surya Bhupatiraju, Rishabh Agarwal, Mehran Kazemi, Dan Malkin, Ravin Kumar, David Vilar, Idan Brusilovsky, Jiaming Luo, Andreas Steiner, Abe Friesen, Abhanshu Sharma, Abheesht Sharma, Adi Mayrav Gilady, Adrian Goedeckemeyer, Alaa Saade, Alex Feng, Alexander Kolesnikov, Alexei Bendebury, Alvin Abdagic, Amit Vadi, András György, André Susano Pinto, Anil Das, Ankur Bapna, Antoine Miech, Antoine Yang, Antonia Paterson, Ashish Shenoy, Ayan Chakrabarti, Bilal Piot, Bo Wu, Bobak Shahriari, Bryce Petrini, Charlie Chen, Charline Le Lan, Christopher A. Choquette-Choo, CJ Carey, Cormac Brick, Daniel Deutsch, Danielle Eisenbud, Dee Cattle, Derek Cheng, Dimitris Paparas, Divyashree Shivakumar Sreepathihalli, Doug Reid, Dustin Tran, Dustin Zelle, Eric Noland, Erwin Huizenga, Eugene Kharitonov, Frederick Liu, Gagik Amirkhanyan, Glenn Cameron, Hadi Hashemi, Hanna Klimczak-Pluci´ nska, Harman Singh, Harsh Mehta, Harshal Tushar Lehri, Hussein Hazimeh, Ian Ballantyne, Idan Szpektor, Ivan Nardini, Jean Pouget-Abadie, Jetha Chan, Joe Stanton, John Wieting, Jonathan Lai, Jordi Orbay, Joseph Fernandez, Josh Newlan, Ju yeong Ji, Jyotinder Singh, Kat Black, Kathy Yu, Kevin Hui, Kiran Vodrahalli, Klaus Greff, Linhai Qiu, Marcella Valentine, Marina Coelho, Marvin Ritter, Matt Hoffman, Matthew Watson, Mayank Chaturvedi, Michael Moynihan, Min Ma, Nabila Babar, Natasha Noy, Nathan Byrd, Nick Roy, Nikola Momchev, Nilay Chauhan, Noveen Sachdeva, Oskar Bunyan, Pankil Botarda, Paul Caron, Paul Kishan Rubenstein, Phil Culliton, Philipp Schmid, Pier Giuseppe Sessa, Pingmei Xu, Piotr Stanczyk, Pouya Tafti, Rakesh Shivanna, Renjie Wu, Renke Pan, Reza Rokni, Rob Willoughby, Rohith Vallu, Ryan Mullins, Sammy Jerome, Sara Smoot, Sertan Girgin, Shariq Iqbal, Shashir Reddy, Shruti Sheth, Siim Põder, Sijal Bhatnagar, Sindhu Raghuram Panyam, Sivan Eiger, Susan Zhang, Tianqi Liu, Trevor Yacovone, Tyler Liechty, Uday Kalra, Utku Evci, Vedant Misra, Vincent Roseberry, Vlad Feinberg, Vlad Kolesnikov, Woohyun Han, Woosuk Kwon, Xi Chen, Yinlam Chow, Yuvein Zhu, Zichuan Wei, Zoltan Egyed, Victor Cotruta, Minh Giang, Phoebe Kirk, Anand Rao, Kat Black, Nabila Babar, Jessica Lo, Erica Moreira, Luiz Gustavo Martins, Omar Sanseviero, Lucas Gonzalez, Zach Gleicher, Tris Warkentin, Vahab Mirrokni, Evan Senter, Eli Collins, Joelle Barral, Zoubin Ghahramani, Raia Hadsell, Yossi Matias, D. Sculley, Slav Petrov, Noah Fiedel, Noam Shazeer, Oriol Vinyals, Jeff Dean, Demis Hassabis, Koray Kavukcuoglu, Clement Farabet, Elena Buchatskaya, Jean-Baptiste Alayrac, Rohan Anil, Dmitry, Lepikhin, Sebastian Borgeaud, Olivier Bachem, Armand Joulin, Alek Andreev, Cassidy Hardin, Robert Dadashi, and Léonard Hussenot. Gemma 3 technical report, 2025. URL https://arxiv.org/abs/2503.19786 .
+
+A Related Works 
+
+A.1 Mitigating Visual Forgetting in long CoT Reasoning 
+
+A key challenge in applying Chain-of-Thought (CoT) reasoning to MLLMs is visual forgetting , where reliance on initial visual inputs progressively decays as reasoning chains lengthen, often leading to ungrounded hallucinations. To address this, recent work explores modality interleaving, explicit visual re-attention during inference, and visual self-reflection mechanisms. One line of work seeks to prevent visual attention decay by structurally embedding visual evidence throughout the reasoning process. Interleaved-Modal Chain-of-Thought (ICoT) [ 16 ] interleaves paired visual-textual rationales with intermediate reasoning steps, maintaining access to visual evidence during multi-hop inference. Similarly, MINT-CoT [ 15 ] employs interleaved image-text sequences with dynamic visual token selection to support long-context reasoning. From a represen-tation perspective, Chain-of-Visual-Thought (CoVT) [ 18 ] enables reasoning in a continuous visual 14 token space trained with dense perceptual supervision, thereby strengthening spatial and geomet-ric grounding over extended reasoning horizons. Visual Thoughts [ 19 ] provides a unified view of multimodal CoT by showing that both textual and interleaved MCoT can benefit from intermediate “visual thoughts,” which convey image information through different expression forms and act as intermediaries between the input image and deeper reasoning layers. Latent Chain-of-Thought [ 20 ]instead treats visual reasoning as inference over latent CoT variables, using amortized variational inference and sparse token-level rewards to encourage diverse, high-likelihood latent rationales. Another line of approaches emphasize inference-time re-attention to visual inputs. TVC [ 11 ] mitigates visual forgetting by reintroducing image conditioning at critical reasoning stages and dynamically pruning redundant visual tokens, effectively preserving visual context over long chains. In parallel, v1 [ 17 ] proposes a point-and-copy mechanism that selects relevant image patches and injects their representations into the reasoning sequence, ensuring continued access to visual evidence. Recent studies further incorporate explicit visual self-reflection and reinforcement learning to address hallucinations induced by visual forgetting. Qwen-LA [ 14 ] introduces a vision-text reflection process and optimizes the timing of visual re-examination via reinforcement learning, complemented by visual token routing. Reflection-V [ 13 ] constructs vision-centered reasoning data for cold-start training and employs a visual-attention-based reward model to encourage reasoning trajectories that remain grounded in image evidence. 
+
+A.2 Multimodal Reinforcement Learning 
+
+Recent work has extended reinforcement learning (RL) techniques from large language models (LLMs) to multimodal large language models (MLLMs) to improve complex reasoning. Foundational policy optimization relies on algorithms such as Group Relative Policy Optimization (GRPO) [ 24 ], which establishes a baseline for group-based advantage estimation without value functions. Building on this, Decoupled Clip and Dynamic Sampling Policy Optimization (DAPO) [ 25 ] addresses training instability and entropy collapse in long-chain reasoning through decoupled clipping and dynamic sampling mechanisms. Building on these frameworks, several studies aim to elicit robust reasoning behaviors in MLLMs. Vision-R1 [ 8] proposes progressive thinking suppression training to reduce overthinking during cold starts, encouraging efficient reasoning trajectories. Similarly, MM-Eureka [ 9] extends rule-based RL to the multimodal domain, inducing emergent self-correction and reasoning patterns comparable to text-only models. To further improve reasoning quality, recent methods incorporate explicit self-reflection into the RL loop. VL-Rethinker [ 26 ] addresses the vanishing advantage problem via selective sample replay and a F orced Rethinking trigger. SRPO (Self-Reflection enhanced reasoning with Group Relative Policy Optimization) [ 27 ] applies a two-stage framework that trains models to generate and refine their own reflections, rewarding instructive self-corrections. Adopting a tree-search perspective, Mulberry [ 28 ]leverages Collective Monte Carlo Tree Search to construct high-quality reasoning paths for training reasoning-intensive MLLMs. Beyond general reasoning, increasing focus has been placed on visual grounding in RL. PAPO (Perception-Aware Policy Optimization) [ 21 ] introduces an Implicit Perception Loss to anchor reasoning steps to visual inputs, thereby reducing perception errors. VPPO (Visually-Perceptive Policy Optimization) [ 22 ] further refines this by analyzing token-level visual dependency to prioritize perceptually pivotal tokens. Extending to more complex inputs, PeRL [ 29 ] utilizes a permutation-enhanced RL framework for interleaved vision–language tasks, improving multi-image reasoning through rollout filtering and position-aware exploration. 15 B Theoretical Results 
+
+Throughout this appendix, DKL (·∥· ) denotes DKL (·∥· ), and 
+
+[a]+ = max {a, 0}.
+
+All discrete entropies are Shannon entropies and are denoted by H(·). We follow the notation convention in the main text: uppercase letters denote random variables and lowercase letters denote realizations. This appendix justifies the sparse one-step-then-rollback objective in Eq. (1) . The selected set A
+
+affects the masked history at step t only through its earlier elements 
+
+A<t = A ∩ [t − 1] .
+
+Thus, the ideal local gain at step t is set-dependent: changing earlier selected positions changes the masked context eht(A<t ), and hence changes both the local next-token marginal and the masked-reference suffix law. The analysis is local in the following sense. For each selected step t, we evaluate a one-step intervention that changes only the next-token marginal and then rolls back to the native decoder for the future suffix. The resulting quantity is a marginal downstream visual gain. The joint sparse objective sums these marginal gains over selected steps; it is not the mutual information of a full rollout in which all selected steps are intervened on simultaneously. When an optimizer need not exist, all occurrences of max can be read as sup . The proofs below are unchanged under this convention. 
+
+B.1 Problem Setup 
+
+Let V be the visual input, X the textual prompt, and Y1: T the reasoning trajectory. Let [T ] = 
+
+{1, . . . , T }. The native decoder pθ generates 
+
+pθ (Y1: T | V, X ) = 
+
+> T
+
+Y
+
+> s=1
+
+pθ (Ys | V, X, Y <s ).
+
+For a realized native trajectory, write 
+
+ht = ( x, y <t ), Y≥t = ( Yt, . . . , Y T ), Y>t = ( Yt+1 , . . . , Y T ).
+
+Fix a candidate selected set A ⊆ [T ]. Let 
+
+A<t = A ∩ [t − 1] ,
+
+and define the realized masked history 
+
+eht(A<t ) =  x, M t(y<t ; A<t ).
+
+When A and t are clear from context, we write eht instead of eht(A<t ). All conditional quantities below are evaluated conditioned on this realized masked history. Thus, V | eht denotes the population distribution of visual inputs compatible with the masked context eht.For a visual realization v, define the masked-context native next-token marginal 
+
+mt,v (y) := pθ (y | V = v, eht).
+
+Define the native masked-history rollback continuation by 
+
+Kt,v (y>t | y) := pθ (y>t | V = v, eht, Y t = y).
+
+The corresponding native masked-history suffix law is 
+
+ept,v (y, y >t ) = mt,v (y)Kt,v (y>t | y). (2) A local reshaping replaces only the next-token marginal mt,v by 
+
+qt(· | V = v, eht),
+
+16 while keeping the native rollback continuation Kt,v (· | y) unchanged. The intervened suffix law is 
+
+epqt 
+
+> t,v
+
+(y, y >t ) = qt(y | V = v, eht)Kt,v (y>t | y). (3) The downstream visual gain of this one-step intervention is 
+
+∆t(qt; A<t ) = Iqt (V ; Y≥t | eht) − Ipθ (V ; Y≥t | eht), (4) where Iqt is computed under the one-step-then-rollback rollout in Eq. (3) , and the native term is computed under Eq. (2). The local feasible set is 
+
+Qt(A<t , ε ) = 
+
+n
+
+qt : DKL 
+
+
+
+qt(· | V, eht) mt,V 
+
+
+
+≤ ε for V | eht-a.e. 
+
+o
+
+. (5) The local optimal downstream gain is 
+
+∆⋆t (A<t , ε ) = sup 
+
+> qt∈Q t(A<t ,ε )
+
+∆t(qt; A<t ). (6) We also define the full-history native next-token distribution, evaluated at the same realized full prefix 
+
+ht = ( x, y <t ), by 
+
+πfull  
+
+> t,v
+
+(y) := pθ (y | V = v, h t),
+
+and the full-history native continuation by 
+
+Kfull  
+
+> t,v
+
+(y>t | y) := pθ (y>t | V = v, h t, Y t = y).
+
+The full-history suffix law is 
+
+pt,v (y, y >t ) = πfull  
+
+> t,v
+
+(y)Kfull  
+
+> t,v
+
+(y>t | y). (7) The asymmetry between pt,v and the masked-reference suffix law below is intentional: pt,v measures the visual separability of the realized full-history continuation, while the masked-reference law removes visual evidence directly leaked through previously selected positions. Let 
+
+Kρ = ⌊ρT ⌋.
+
+For a selected set A, define the decoder-feasible class 
+
+Π( A, ε ) = 
+
+n
+
+π : π(· | V, eht(A<t )) ∈ Q t(A<t , ε ) ∀t ∈ A 
+
+o
+
+.
+
+For π ∈ Π( A, ε ), write 
+
+∆t(π; A<t ) = ∆ t(qπt ; A<t ), qπt (· | V, eht) = π(· | V, eht).
+
+The joint sparse oracle objective corresponding to Eq. (1) is 
+
+J ⋆(ε) = max   
+
+> A⊆ [T],|A|≤ Kρ
+
+sup 
+
+> π∈Π( A,ε )
+
+X
+
+> t∈A
+
+∆t(π; A<t ). (8) 
+
+B.2 Additional Necessary Notations 
+
+Fix a candidate set A, a step t, and the induced masked history 
+
+eht = eht(A<t ).
+
+Masked-reference suffix law. Define the masked-reference suffix distribution by 
+
+pM,t (y≥t) = EV |eht [ept,V (y≥t)] . (9) Equivalently, 
+
+pM,t (y, y >t ) = EV |eht [ept,V (y, y >t )] .
+
+Its next-token marginal is denoted by 
+
+mM,t (y) = X
+
+> y>t
+
+pM,t (y, y >t ).
+
+For an intervened next-token distribution qt, define the corresponding intervened masked-reference suffix law by 
+
+pqt
+
+> M,t
+
+(y, y >t ) = EV |eht
+
+hepqt 
+
+> t,V
+
+(y, y >t )
+
+i
+
+.
+
+17 Downstream visual score. Define the pointwise masked-history-to-reference log-likelihood ratio 
+
+ℓt(v, y ≥t) = log ept,v (y≥t)
+
+pM,t (y≥t) .
+
+The downstream visual score of choosing token y at step t is 
+
+ψt(v, y ) = EY>t ∼Kt,v (·| y) [ℓt(v, (y, Y >t ))] . (10) This score measures how distinguishable the future suffix induced by choosing y remains from the masked-reference suffix distribution. 
+
+Claim B.1 . For any y with mt,v (y) > 0,
+
+ψt(v, y ) = log mt,v (y)
+
+mM,t (y) + DKL (Kt,v (· | y) ∥ pM,t (· | y)) . (11) 
+
+Claim B.2 . Under the native masked-history one-step-then-rollback suffix law ept,V ,
+
+Ipθ (V ; Y≥t | eht) = EV |eht EYt∼mt,V [ψt(V, Y t)] . (12) 
+
+B.3 Assumptions Assumption B.1 (Finite common support and absolute continuity) . For each step t, all next-token distributions are supported on a finite set Yt. Since the horizon T is finite, the corresponding suffix space is also finite. For every candidate set A, every step t, and V | eht(A<t )-almost every v, the distributions ept,v , epqt 
+
+> t,v
+
+, pt,v , and pM,t are mutually compatible in the following sense: whenever a likelihood ratio or KL divergence appears below, the numerator is absolutely continuous with respect to the denominator. In particular, 
+
+qt(· | v, eht) ≪ mt,v 
+
+for every feasible qt.
+
+Remark B.1 (Role of Assumption B.1) . This assumption avoids support pathologies and ensures that the KL divergences, likelihood ratios, and exponential-tilting perturbations are well-defined. For a finite-vocabulary decoder with strictly positive softmax probabilities, the next-token part of this assumption is automatic. For suffix distributions, it can be enforced by restricting the analysis to the common support used for scoring. 
+
+Assumption B.2 (Bounded reference ratios and bounded full-history gap) . There exists 0 < B < ∞
+
+such that, for every candidate set A, every step t, and every (v, y, y >t ) with ept,v (y, y >t ) > 0,
+
+log ept,v (y, y >t )
+
+pM,t (y, y >t ) ≤ B. 
+
+Moreover, the full-history suffix gap is bounded by the same constant: 
+
+0 ≤ DKL (pt,v ∥pM,t ) ≤ B for V | eht(A<t )-a.e. v. 
+
+Remark B.2 (Role of Assumption B.2) . The first bound ensures that the downstream score ψt is uniformly bounded, which is needed for the KL trust-region expansion. The second bound ensures that the full-history reference gap DKL (pt,V ∥pM,t ) is finite and can be used as a multiplicative reference-gap factor in the entropy lower bound. Both are standard bounded-likelihood-ratio conditions. In practice, the same condition can be imposed on the truncated candidate support used for scoring. 
+
+Assumption B.3 (Generic non-coincidence) . There exists γ > 0 such that, for every candidate set A,every step t, and V | eht(A<t )-almost surely, the score map 
+
+y 7 → ψt(V, y )
+
+is injective on the support of mt,V and γ-separated. That is, for any y̸ = y′ with mt,V (y)mt,V (y′) >
+
+0,
+
+|ψt(V, y ) − ψt(V, y ′)| ≥ γ. 
+
+Remark B.3 (Role of Assumption B.3) . Exact score ties are a measure-zero degeneracy. In our setting, ψt(V, y ) is a real-valued functional of logits and continuation likelihoods. Under non-degenerate perturbations, distinct candidate tokens almost surely have distinct downstream scores. The separation constant γ formalizes finite numerical resolution. Since Assumption B.2 also bounds 
+
+|ψt|, this assumption is best interpreted on the finite candidate set used by the reshaping or scoring procedure, rather than as a claim about an arbitrarily large full vocabulary. 18 Assumption B.4 (Local target realizability) . For every candidate set A and every collection of feasible local reshaping targets 
+
+{qt : t ∈ A , q t ∈ Q t(A<t , ε )},
+
+there exists a decoder π ∈ Π( A, ε ) such that, for every t ∈ A ,
+
+π(· | V, eht(A<t )) = qt(· | V, eht(A<t )) for V | eht(A<t )-a.e. 
+
+Remark B.4 (Role of Assumption B.4) . This is an oracle target-construction assumption. The theory identifies local reshaping targets at selected masked histories, and training a single decoder π attempts to approximate those targets. If exact realizability is replaced by approximation up to error δreal in downstream gain per selected step, the final joint lower bound loses at most Kρδreal .
+
+B.4 Local Technical Lemmas Lemma B.1 (Exact first-order decomposition and one-sided lower bound) . Fix a candidate set 
+
+A, a step t, and the induced masked history eht = eht(A<t ). Assume Assumption B.1. For any 
+
+qt ∈ Q t(A<t , ε ), the downstream visual gain admits the exact decomposition 
+
+∆t(qt; A<t ) = G1,t (qt; A<t ) + EV |eht
+
+h
+
+DKL 
+
+
+
+qt(· | V, eht) mt,V 
+
+i 
+
+− DKL 
+
+
+
+pqt 
+
+> M,t
+
+pM,t 
+
+
+
+, (13) 
+
+where 
+
+G1,t (qt; A<t ) = EV |eht
+
+"X
+
+> y
+
+
+
+qt(y | V, eht) − mt,V (y)
+
+
+
+ψt(V, y )
+
+#
+
+. (14) 
+
+Moreover, 
+
+∆t(qt; A<t ) ≥ G1,t (qt; A<t ). (15) 
+
+Proof. Throughout the proof, write 
+
+E[·] = EV |eht [·], qV (y) = qt(y | V, eht).
+
+Under the one-step intervention, 
+
+epqt 
+
+> t,V
+
+(y, y >t ) = qV (y)Kt,V (y>t | y),
+
+and 
+
+pqt
+
+> M,t
+
+(y, y >t ) = E
+
+hepqt 
+
+> t,V
+
+(y, y >t )
+
+i
+
+.
+
+Thus 
+
+Iqt (V ; Y≥t | eht) = E
+
+" X
+
+> y,y >t
+
+epqt 
+
+> t,V
+
+(y, y >t ) log epqt 
+
+> t,V
+
+(y, y >t )
+
+pqt
+
+> M,t
+
+(y, y >t )
+
+#
+
+.
+
+Insert the native masked-history ratio: 
+
+epqt 
+
+> t,V
+
+(y, y >t )
+
+pqt
+
+> M,t
+
+(y, y >t ) = ept,V (y, y >t )
+
+pM,t (y, y >t ) · qV (y)
+
+mt,V (y) · pM,t (y, y >t )
+
+pqt
+
+> M,t
+
+(y, y >t ) .
+
+Splitting the logarithm gives three terms. The first term equals 
+
+E
+
+"X
+
+> y
+
+qV (y)ψt(V, y )
+
+#
+
+.
+
+The second term equals 
+
+E [DKL (qV ∥mt,V )] .
+
+The third term equals 
+
+− DKL (pqt
+
+> M,t
+
+∥pM,t ).
+
+Therefore, 
+
+Iqt (V ; Y≥t | eht) = E
+
+"X
+
+> y
+
+qV (y)ψt(V, y )
+
+#
+
++ E [DKL (qV ∥mt,V )] − DKL (pqt
+
+> M,t
+
+∥pM,t ).
+
+19 Under the native choice, qV = mt,V and pqt 
+
+> M,t
+
+= pM,t . By Claim B.2, 
+
+Ipθ (V ; Y≥t | eht) = E
+
+"X
+
+> y
+
+mt,V (y)ψt(V, y )
+
+#
+
+.
+
+Subtracting proves Eq. (13). It remains to show the one-sided bound. By joint convexity of KL divergence, 
+
+DKL (pqt
+
+> M,t
+
+∥pM,t ) = DKL 
+
+
+
+E[epqt 
+
+> t,V
+
+] E[ept,V ]
+
+
+
+≤ E
+
+h
+
+DKL (epqt 
+
+> t,V
+
+∥ept,V )
+
+i
+
+.
+
+Because the rollback continuation Kt,V (· | y) is the same in epqt 
+
+> t,V
+
+and ept,V , the continuation cancels in the inner KL: 
+
+DKL (epqt 
+
+> t,V
+
+∥ept,V ) = DKL (qV ∥mt,V ).
+
+Therefore, 
+
+DKL (pqt
+
+> M,t
+
+∥pM,t ) ≤ E [DKL (qV ∥mt,V )] .
+
+Substituting this inequality into the exact decomposition yields 
+
+∆t(qt; A<t ) ≥ G1,t (qt; A<t ).
+
+Lemma B.2 (Optimal first-order perturbation and variance lower bound) . Fix a candidate set A, a step t, and the induced masked history eht = eht(A<t ). Assume Assumptions B.1 and B.2. For each visual realization v, define 
+
+μt(v) = X
+
+> y
+
+mt,v (y)ψt(v, y ), eψt(v, y ) = ψt(v, y ) − μt(v),
+
+and 
+
+σt(v) = 
+
+q
+
+Var Y ∼mt,v 
+
+ ψt(v, Y ).
+
+Define the averaged conditional score standard deviation 
+
+Σt(A<t ) = EV |eht(A<t ) [σt(V )] . (16) 
+
+Let 
+
+G⋆
+
+> 1,t
+
+(A<t , ε ) = sup 
+
+> qt∈Q t(A<t ,ε )
+
+G1,t (qt; A<t ).
+
+Then the following statements hold. 
+
+(i) Pointwise first-order optimizer. For V | eht-almost every v, any finite interior optimizer of the pointwise first-order problem has the exponential-tilting form 
+
+q⋆t (y | v, eht) = mt,v (y) exp  η⋆t (v)ψt(v, y )P 
+
+> y′
+
+mt,v (y′) exp  η⋆t (v)ψt(v, y ′) = mt,v (y) exp  η⋆t (v) eψt(v, y )P 
+
+> y′
+
+mt,v (y′) exp  η⋆t (v) eψt(v, y ′) , (17) 
+
+where η⋆t (v) ≥ 0. If σt(v) = 0 , the native choice q⋆t (· | v, eht) = mt,v (·) is optimal. 
+
+(ii) Lower bound for the optimal first-order gain. There exists a constant CB > 0, depending only on the bounded-ratio constant B, such that for every ε > 0,
+
+G⋆
+
+> 1,t
+
+(A<t , ε ) ≥ √2ε Σt(A<t ) − CB ε. (18) 
+
+Proof. For a fixed visual realization v, define the pointwise first-order objective 
+
+gv (q) = X
+
+> y
+
+(q(y) − mt,v (y)) ψt(v, y )
+
+under the constraint 
+
+DKL (q∥mt,v ) ≤ ε. 
+
+20 Because the KL constraint is pointwise in v, the first-order optimization separates across visual realizations. For fixed v, maximizing gv (q) is equivalent to maximizing 
+
+X
+
+> y
+
+q(y)ψt(v, y )
+
+subject to the KL constraint. The Lagrangian calculation gives, for some λv > 0,
+
+q⋆(y) ∝ mt,v (y) exp 
+
+ ψt(v, y )
+
+λv
+
+
+
+.
+
+Writing η⋆t (v) = 1 /λ v gives the exponential-tilting form in Eq. (17) . Adding the v-dependent constant −μt(v) to the score does not change the normalized distribution, so the centered form is equivalent. If σt(v) = 0 , then gv (q) = 0 for all feasible q, and the native choice is optimal. This proves Part (i). We now prove Part (ii). By Assumption B.2, for every y ∈ Supp( mt,v ),
+
+|ψt(v, y )| ≤ B. 
+
+Therefore the centered score satisfies 
+
+| eψt(v, y )| ≤ 2B. 
+
+Let 
+
+M = 2 B. 
+
+For a fixed v, consider the centered exponential family 
+
+qv,η (y) = mt,v (y) exp  η eψt(v, y )P 
+
+> y′
+
+mt,v (y′) exp  η eψt(v, y ′) , η ≥ 0.
+
+Let 
+
+Λv (η) = log X
+
+> y
+
+mt,v (y) exp  η eψt(v, y ).
+
+Then 
+
+Λ′ 
+
+> v
+
+(0) = 0 , Λ′′  
+
+> v
+
+(0) = σ2 
+
+> t
+
+(v),
+
+and 
+
+Λ′ 
+
+> v
+
+(η) = EY ∼qv,η 
+
+h eψt(v, Y )
+
+i
+
+, Λ′′  
+
+> v
+
+(η) = Var Y ∼qv,η 
+
+h eψt(v, Y )
+
+i
+
+.
+
+Since | eψt| ≤ M , the density ratio between qv,η and mt,v is bounded between e−2M η and e2M η .Hence 
+
+e−2M η σ2 
+
+> t
+
+(v) ≤ Λ′′  
+
+> v
+
+(η) ≤ e2M η σ2 
+
+> t
+
+(v).
+
+For 0 ≤ η ≤ 1/(2 M ), using e−x ≥ 1 − x, we obtain 
+
+Λ′ 
+
+> v
+
+(η) = 
+
+Z η
+
+> 0
+
+Λ′′  
+
+> v
+
+(u) du ≥ σ2 
+
+> t
+
+(v)
+
+Z η
+
+> 0
+
+(1 − 2M u ) du = σ2 
+
+> t
+
+(v) η − M η 2.
+
+Moreover, 
+
+DKL (qv,η ∥mt,v ) = ηΛ′ 
+
+> v
+
+(η) − Λv (η) = 
+
+Z η
+
+> 0
+
+u Λ′′  
+
+> v
+
+(u) du. 
+
+For 0 ≤ u ≤ 1/(2 M ), we have e2M u ≤ 1 + 4 M u . Therefore, 
+
+DKL (qv,η ∥mt,v ) ≤ σ2 
+
+> t
+
+(v)
+
+Z η
+
+> 0
+
+u(1 + 4 M u ) du = σ2 
+
+> t
+
+(v)
+
+ η2
+
+2 + 4M η 3
+
+3
+
+
+
+.
+
+Equivalently, 
+
+DKL (qv,η ∥mt,v ) ≤ σ2 
+
+> t
+
+(v)η2
+
+2
+
+
+
+1 + 8M η 
+
+3
+
+
+
+.
+
+21 If σt(v) = 0 , the desired lower bound holds because the native choice gives first-order gain zero. Assume σt(v) > 0. Define 
+
+av =
+
+√2εσt(v) , sv = M a v , d0 = 83 .
+
+First consider the small-radius regime sv ≤ 1/d 0. Choose 
+
+ηv = av (1 − d0sv ).
+
+Then 0 ≤ ηv ≤ av and M η v ≤ sv ≤ 1/d 0 < 1/2. Hence the preceding KL bound applies. Since 
+
+M η v ≤ sv ,
+
+DKL (qv,η v ∥mt,v ) ≤ σ2 
+
+> t
+
+(v)a2
+
+> v
+
+2 (1 − d0sv )2(1 + d0sv ).
+
+Because σ2 
+
+> t
+
+(v)a2 
+
+> v
+
+/2 = ε and 
+
+(1 − z)2(1 + z) ≤ 1 for 0 ≤ z ≤ 1,
+
+with z = d0sv , we have 
+
+DKL (qv,η v ∥mt,v ) ≤ ε. 
+
+Thus qv,η v is feasible. Its first-order gain satisfies 
+
+gv (qv,η v ) = Λ ′ 
+
+> v
+
+(ηv ) ≥ σ2 
+
+> t
+
+(v)( ηv − M η 2 
+
+> v
+
+).
+
+Using ηv = av (1 − d0sv ) and sv = M a v , we obtain 
+
+gv (qv,η v ) ≥ √2ε σ t(v) − 2M (d0 + 1) ε. 
+
+Now consider the complementary regime sv > 1/d 0. Since av = √2ε/σ t(v), this implies 
+
+√2ε σ t(v) = 2εav
+
+< 2M d 0 ε. 
+
+Choosing CB ≥ 2M max {d0 + 1 , d 0}, the right-hand side 
+
+√2ε σ t(v) − CB ε
+
+is nonpositive. Since the native choice q = mt,v is feasible and gives gv (q) = 0 , the desired lower bound also holds in this regime. Combining both regimes, for all v,
+
+g⋆v (ε) ≥ √2ε σ t(v) − CB ε, 
+
+where CB depends only on B, since M = 2 B. Taking expectation over V | eht(A<t ) yields 
+
+G⋆
+
+> 1,t
+
+(A<t , ε ) ≥ √2ε EV |eht(A<t )[σt(V )] − CB ε = √2ε Σt(A<t ) − CB ε. 
+
+Lemma B.3 (Entropy–reference-gap lower bound) . Fix a candidate set A, a step t, and the induced masked history eht = eht(A<t ). Assume Assumptions B.1, B.2, and B.3. Then 
+
+Σt(A<t ) ≥ γ
+
+√2πe B EV |eht(A<t )
+
+ exp  H(mt,V ) − 2
+
+> +
+
+q
+
+DKL (pt,V ∥ pM,t )
+
+
+
+. (19) 
+
+Remark B.5 . Lemma B.3 expresses Σt(A<t ) as a product of an entropy-based factor and a reference-gap factor. The entropy factor arises from a variance–entropy inequality applied to ψt(V, Y ). The reference-gap factor is introduced through Assumption B.2: since 
+
+DKL (pt,V ∥pM,t )/B ∈ [0 , 1] ,
+
+multiplying any nonnegative lower bound on σ2 
+
+> t
+
+(V ) by this ratio yields a possibly looser lower bound on the same quantity. The resulting factored form is therefore conservative: it is tight in the entropy factor but loose in the reference-gap factor, and reflects the operational principle that branching room is useful only when the corresponding continuation remains distinguishable from the vision-marginalized reference. 22 Proof. Fix a candidate set A, a step t, the induced masked history eht, and a visual realization v. Let 
+
+Y ∼ mt,v , and define 
+
+Z = ψt(v, Y ).
+
+By Assumption B.3, distinct values of Z are separated by at least γ. Let U ∼ Unif[0 , γ ) be independent of Z, and define 
+
+W = Z + U. 
+
+Since the support points of Z are γ-separated, the intervals [z, z + γ) are disjoint up to endpoints. Hence 
+
+h(W ) = H(Z) + log γ, 
+
+where h(·) denotes differential entropy. By the maximum-entropy property of Gaussians, 
+
+Var( W ) ≥ 12πe exp(2 h(W )) .
+
+Since Z and U are independent, 
+
+Var( W ) = Var( Z) + γ2
+
+12 .
+
+Therefore, 
+
+Var( Z) + γ2
+
+12 ≥ γ2
+
+2πe exp(2 H(Z)) .
+
+Because Z = ψt(v, Y ) is a deterministic function of Y , and Assumption B.3 makes this function injective on Supp( mt,v ),
+
+H(Z) = H(Y ) = H(mt,v ).
+
+Thus 
+
+Var Y ∼mt,v 
+
+ ψt(v, Y ) ≥
+
+ γ2
+
+2πe exp(2 H(mt,v )) − γ2
+
+12 
+
+
+
+> +
+
+.
+
+Equivalently, 
+
+Var Y ∼mt,v 
+
+ ψt(v, Y ) ≥ γ2
+
+2πe 
+
+h
+
+exp(2 H(mt,v )) − πe 
+
+6
+
+i
+
+> +
+
+.
+
+By Assumption B.2, 
+
+0 ≤ DKL (pt,v ∥pM,t ) ≤ B. 
+
+Therefore, for any nonnegative A0,
+
+A0 ≥ DKL (pt,v ∥pM,t )
+
+B A0.
+
+Applying this with 
+
+A0 = γ2
+
+2πe 
+
+h
+
+exp(2 H(mt,v )) − πe 
+
+6
+
+i
+
+> +
+
+gives 
+
+Var Y ∼mt,v 
+
+ ψt(v, Y ) ≥ γ2
+
+2πe B 
+
+h
+
+exp(2 H(mt,v )) − πe 
+
+6
+
+i
+
+> +
+
+DKL (pt,v ∥pM,t ).
+
+Taking square roots yields 
+
+σt(v) ≥ γ
+
+√2πe B 
+
+rh
+
+exp(2 H(mt,v )) − πe 
+
+6
+
+i
+
+> +
+
+DKL (pt,v ∥pM,t ).
+
+Using p(x − c)+ ≥ (√x − √c)+, x ≥ 0, c > 0,
+
+with 
+
+x = exp(2 H(mt,v )) , c = πe 
+
+6 ,
+
+and using pπe/ 6 < 2, we obtain 
+
+σt(v) ≥ γ
+
+√2πe B (exp( H(mt,v )) − 2) +
+
+q
+
+DKL (pt,v ∥pM,t ).
+
+Averaging over V | eht(A<t ) proves Eq. (19). 23 Lemma B.4 (Local downstream visual-gain lower bound) . Fix a candidate set A, a step t, and the induced masked history eht = eht(A<t ). Assume Assumptions B.1, B.2, and B.3. Then 
+
+∆⋆t (A<t , ε ) ≥ γ√ε
+
+√πe B EV |eht(A<t )
+
+ exp  H(mt,V ) − 2
+
+> +
+
+q
+
+DKL (pt,V ∥ pM,t )
+
+
+
+− CB ε. (20) 
+
+Proof. By Lemma B.1, for any qt ∈ Q t(A<t , ε ),
+
+∆t(qt; A<t ) ≥ G1,t (qt; A<t ).
+
+Taking the supremum over qt ∈ Q t(A<t , ε ) gives 
+
+∆⋆t (A<t , ε ) ≥ G⋆
+
+> 1,t
+
+(A<t , ε ).
+
+By Lemma B.2(ii), 
+
+G⋆
+
+> 1,t
+
+(A<t , ε ) ≥ √2ε Σt(A<t ) − CB ε. 
+
+Combining the two inequalities, 
+
+∆⋆t (A<t , ε ) ≥ √2ε Σt(A<t ) − CB ε. 
+
+By Lemma B.3, 
+
+Σt(A<t ) ≥ γ
+
+√2πe B EV |eht(A<t )
+
+ exp  H(mt,V ) − 2
+
+> +
+
+q
+
+DKL (pt,V ∥pM,t )
+
+
+
+.
+
+Substituting this into the previous display yields 
+
+∆⋆t (A<t , ε ) ≥ γ√ε
+
+√πe B EV |eht(A<t )
+
+ exp  H(mt,V ) − 2
+
+> +
+
+q
+
+DKL (pt,V ∥pM,t )
+
+
+
+− CB ε, 
+
+which proves the claim. 
+
+B.5 Main Theorem: Joint Sparse Selection 
+
+For each candidate set A and each step t, define the ideal local lower-bound score 
+
+Lt(A, ε ) = 
+
+ γ√ε
+
+√πe B EV |eht(A<t )
+
+ exp  H(mt,V ) − 2
+
+> +
+
+q
+
+DKL (pt,V ∥ pM,t )
+
+
+
+− CB ε
+
+
+
+> +
+
+. (21) Here pM,t and mt,V are defined using the masked history eht(A<t ). The positive part is valid because the native choice is feasible and gives zero downstream gain. 
+
+Theorem B.1 (Joint sparse lower bound for one-step rollback gains) . Let Kρ = ⌊ρT ⌋. Assume Assumptions B.1, B.2, B.3, and B.4. Then the following statements hold. 
+
+(1) Lower bound for every candidate selected set. For every A ⊆ [T ] with |A| ≤ Kρ,
+
+sup 
+
+> π∈Π( A,ε )
+
+X
+
+> t∈A
+
+∆t(π; A<t ) ≥ X
+
+> t∈A
+
+Lt(A, ε ). (22) 
+
+(2) Joint lower bound for the sparse oracle. The joint sparse optimum in Eq. (8) satisfies 
+
+J ⋆(ε) ≥ max   
+
+> A⊆ [T],|A|≤ Kρ
+
+X
+
+> t∈A
+
+Lt(A, ε ). (23) 
+
+(3) Ideal lower-bound selection. The ideal lower-bound selected set is 
+
+A⋆ 
+
+> LB
+
+∈ arg max   
+
+> A⊆ [T],|A|≤ Kρ
+
+X
+
+> t∈A
+
+Lt(A, ε ). (24) 
+
+(4) Top-Kρ rule as a special case. If the local scores are fixed independently of A, that is, 
+
+Lt(A, ε ) = Lt(ε) for all A,
+
+then the ideal lower-bound selection reduces to 
+
+A⋆ 
+
+> LB
+
+∈ TopK t∈[T ] {L t(ε)}Kρ .
+
+Equivalently, it selects the largest Kρ = ⌊ρT ⌋ ideal local lower-bound scores, with ties broken arbitrarily. 
+
+24 Remark B.6 (Set-dependent scores) . Because eht(A<t ) depends on the earlier selected positions, the score Lt(A, ε ) can change when A changes. Thus the general lower-bound selection problem in Eq. (24) is a genuine joint set optimization. The simple top-Kρ rule is rigorously valid only in the fixed-score special case. 
+
+Remark B.7 (Scope of the lower bound) . The theorem lower bounds the sparse objective used in Eq. (1) , namely the sum of one-step-then-rollback marginal downstream gains. It does not claim that this sum is equal to the conditional mutual information of a policy that applies all selected interventions simultaneously during a full rollout. The masking construction and rollback evaluation intentionally isolate marginal credit for each selected step. 
+
+Remark B.8 (Connection to practical reflection anchors) . The lower-bound score Lt(A, ε ) contains two signals: local branching room, through H(mt,V ), and downstream visual relevance, through 
+
+DKL (pt,V ∥pM,t ). Computing the full score would require set-dependent masking, counterfactual suffix laws, and visual marginalization. The practical reflection-anchor rule in the main text therefore uses native-history entropy as a tractable proxy for the branching-room factor, while the continuation-level training objective supplies the downstream visual-relevance pressure. 
+
+Proof. Fix any candidate set A ⊆ [T ] with |A| ≤ Kρ. For each t ∈ A , Lemma B.4 gives 
+
+∆⋆t (A<t , ε ) ≥ γ√ε
+
+√πe B EV |eht(A<t )
+
+ exp  H(mt,V ) − 2
+
+> +
+
+q
+
+DKL (pt,V ∥pM,t )
+
+
+
+− CB ε. 
+
+Since the native choice qt = mt,V is feasible and gives zero gain, 
+
+∆⋆t (A<t , ε ) ≥ 0.
+
+Therefore, 
+
+∆⋆t (A<t , ε ) ≥ L t(A, ε ).
+
+Summing over t ∈ A gives X
+
+> t∈A
+
+∆⋆t (A<t , ε ) ≥ X
+
+> t∈A
+
+Lt(A, ε ).
+
+We next relate the local optima to a single decoder. Fix any η > 0. For each t ∈ A , choose a feasible local target 
+
+qηt ∈ Q t(A<t , ε )
+
+such that 
+
+∆t(qηt ; A<t ) ≥ ∆⋆t (A<t , ε ) − η
+
+max {|A| , 1} .
+
+By Assumption B.4, there exists πη ∈ Π( A, ε ) realizing all these local targets at the selected masked histories. Hence 
+
+sup 
+
+> π∈Π( A,ε )
+
+X
+
+> t∈A
+
+∆t(π; A<t ) ≥ X
+
+> t∈A
+
+∆t(qηt ; A<t ) ≥ X
+
+> t∈A
+
+∆⋆t (A<t , ε ) − η. 
+
+Letting η ↓ 0 gives 
+
+sup 
+
+> π∈Π( A,ε )
+
+X
+
+> t∈A
+
+∆t(π; A<t ) ≥ X
+
+> t∈A
+
+∆⋆t (A<t , ε ).
+
+Combining this with the lower bound on P 
+
+> t∈A
+
+∆⋆t (A<t , ε ) proves Eq. (22). Taking the maximum over all A ⊆ [T ] with |A| ≤ Kρ, and using the definition of J ⋆(ε), gives 
+
+J ⋆(ε) ≥ max   
+
+> A⊆ [T],|A|≤ Kρ
+
+X
+
+> t∈A
+
+Lt(A, ε ),
+
+which proves Eq. (23) . The selection rule in Eq. (24) follows directly from maximizing this lower-bound surrogate over A.Finally, suppose the local scores are fixed independently of A, so that 
+
+Lt(A, ε ) = Lt(ε).
+
+Then the surrogate becomes modular: 
+
+max   
+
+> A⊆ [T],|A|≤ Kρ
+
+X
+
+> t∈A
+
+Lt(ε).
+
+25 Let 
+
+L(1) (ε) ≥ L (2) (ε) ≥ · · · ≥ L (T )(ε)
+
+be the sorted scores. Since all scores are nonnegative by construction, any set of size at most Kρ has value at most PKρ 
+
+> i=1
+
+L(i)(ε), and this value is achieved by selecting the Kρ indices with the largest scores. Hence, in the fixed-score special case, the lower-bound oracle selects the largest Kρ = ⌊ρT ⌋
+
+ideal local lower-bound scores. 
+
+B.6 Proofs of Claim B.1 and Claim B.2 
+
+Proof of Claim B.1. Fix a candidate set A, a step t, the induced masked history eht, and a visual realization v. For any y with mt,v (y) > 0, by the definition of ψt,
+
+ψt(v, y ) = EY>t ∼Kt,v (·| y)
+
+
+
+log ept,v (y, Y >t )
+
+pM,t (y, Y >t )
+
+
+
+.
+
+Using the factorizations 
+
+ept,v (y, y >t ) = mt,v (y)Kt,v (y>t | y),
+
+and 
+
+pM,t (y, y >t ) = mM,t (y)pM,t (y>t | y),
+
+we obtain 
+
+log ept,v (y, Y >t )
+
+pM,t (y, Y >t ) = log mt,v (y)
+
+mM,t (y) + log Kt,v (Y>t | y)
+
+pM,t (Y>t | y) .
+
+Taking expectation over Y>t ∼ Kt,v (· | y) yields 
+
+ψt(v, y ) = log mt,v (y)
+
+mM,t (y) + DKL (Kt,v (· | y) ∥ pM,t (· | y)) .
+
+Proof of Claim B.2. By the definition of conditional mutual information under the native masked-history one-step-then-rollback suffix law, 
+
+Ipθ (V ; Y≥t | eht) = EV |eht
+
+X
+
+> y≥t
+
+ept,V (y≥t) log ept,V (y≥t)
+
+pM,t (y≥t)
+
+ .
+
+Using 
+
+ept,V (y≥t) = mt,V (yt)Kt,V (y>t | yt),
+
+we rewrite this as 
+
+Ipθ (V ; Y≥t | eht) = EV |eht EYt∼mt,V EY>t ∼Kt,V (·| Yt)
+
+
+
+log ept,V (Yt, Y >t )
+
+pM,t (Yt, Y >t )
+
+
+
+.
+
+The inner conditional expectation is exactly ψt(V, Y t). Therefore, 
+
+Ipθ (V ; Y≥t | eht) = EV |eht EYt∼mt,V [ψt(V, Y t)] .
+
+26 C Experimental Details of Main Results 
+
+Table 3: Main results with standard deviation (mean@8 acc %). 
+
+Base Model Model Reasoning-Intensive General-Domain Avg. 
+
+MathVision MathVerse EMMA LogicVista MMMU-Pro RealWorldQA 
+
+Qwen3-VL-8B Instruct 
+
+Base 41.74 ± 1.21 50.21 ± 0.87 38.34 ± 0.25 62.28 ± 0.04 37.59 ± 0.20 67.20 ± 0.55 49.56 + GRPO 48.03 ± 0.14 55.23 ± 0.49 41.34 ± 0.41 59.51 ± 0.96 48.50 ± 0.60 67.66 ± 0.62 53.38 ( ↑ 3.82) + PAPO G 43.75 ± 0.29 54.57 ± 0.15 39.00 ± 0.11 64.29 ± 0.32 50.00 ± 0.50 69.41 ± 0.74 53.50 ( ↑ 3.94) + VPPO G 48.03 ± 0.27 56.35 ± 0.38 36.00 ± 0.23 66.07 ± 0.38 49.16 ± 0.52 67.48 ± 0.17 53.85 ( ↑ 4.29) 
+
++ RAPO G 48.27 ± 0.19 56.72 ± 0.09 42.50 ± 0.44 62.50 ± 0.86 51.10 ± 0.25 69.54 ± 0.18 55.11 (↑ 5.55) 
+
+Qwen3-VL-2B Instruct 
+
+Base 27.30 ± 1.67 36.75 ± 0.75 26.87 ± 1.72 47.13 ± 1.16 24.44 ± 0.49 60.47 ± 0.38 37.16 + GRPO 28.29 ± 1.71 44.35 ± 0.87 28.50 ± 0.30 48.71 ± 0.99 30.61 ± 0.60 64.28 ± 0.85 40.79 ( ↑ 3.63) + PAPO G 28.29 ± 0.33 45.18 ± 0.67 27.25 ± 0.33 46.43 ± 0.66 31.45 ± 0.14 64.05 ± 0.57 40.44 ( ↑ 3.28) + VPPO G 30.59 ± 0.25 45.43 ± 0.32 28.75 ± 0.65 45.76 ± 1.06 31.73 ± 0.32 63.14 ± 0.44 40.90 ( ↑ 3.74) 
+
++ RAPO G 33.55 ± 1.21 46.13 ± 0.56 31.25 ± 0.71 49.55 ± 0.48 32.20 ± 0.63 65.36 ± 0.40 43.01 (↑ 5.85) 
+
+Qwen2.5-VL-7B Instruct 
+
+Base 21.05 ± 0.52 29.44 ± 0.44 23.25 ± 0.42 42.19 ± 0.57 21.22 ± 0.42 54.51 ± 0.46 31.94 MM-Eureka 32.57 ± 0.27 45.18 ± 0.45 28.75 ± 0.46 44.64 ± 1.03 26.82 ± 0.33 61.96 ± 0.65 39.99 ( ↑ 8.05) VL-Rethinker 34.21 ± 0.33 45.30 ± 0.89 28.75 ± 0.77 44.20 ± 0.34 34.10 ± 0.23 59.22 ± 0.92 40.96 ( ↑ 9.02) R1-ShareVL 25.99 ± 0.11 46.22 ± 0.34 30.50 ± 0.56 46.88 ± 0.25 34.45 ± 0.28 56.47 ± 0.10 40.09 ( ↑ 8.15) Base+RAPO G 27.96 ± 0.33 47.34 ± 0.71 29.00 ± 0.67 45.31 ± 0.55 36.01 ± 0.48 60.26 ± 0.13 40.98 ( ↑ 9.04) 
+
+Base+RAPO D 30.26 ± 0.50 47.59 ± 0.42 30.50 ± 0.99 47.13 ± 0.13 36.04 ± 0.48 58.40 ± 0.77 41.65 (↑ 9.71) 
+
+Qwen2-VL-7B Instruct 
+
+Base 15.79 ± 1.16 10.25 ± 0.65 11.75 ± 0.46 13.17 ± 0.94 11.73 ± 0.45 31.83 ± 0.51 15.75 TVC 18.75 ± 0.82 21.98 ± 1.10 20.75 ± 0.45 41.96 ± 0.77 23.34 ± 0.87 52.88 ± 0.38 29.94 ( ↑ 14.19) MINT-CoT 22.04 ± 0.19 24.62 ± 0.23 19.00 ± 0.66 31.47 ± 0.71 17.63 ± 0.86 49.15 ± 0.12 27.32 ( ↑ 11.57) Base+RAPO G 22.37 ± 0.33 32.99 ± 0.71 25.25 ± 0.40 37.72 ± 0.55 28.22 ± 0.48 64.67 ± 0.13 35.21 ( ↑ 19.46) 
+
+Base+RAPO D 23.36 ± 0.87 36.31 ± 0.66 28.75 ± 0.56 39.73 ± 1.52 29.39 ± 0.86 65.01 ± 0.35 37.09 (↑ 21.34) 
+
+C.1 Training Details 
+
+We adopt ViRL39K 3 as the RL training dataset, consisting of 38,870 curated and verifiable multimodal QA pairs. All training samples are formatted using the prompt template illustrated in the box below. 
+
+CoT Training Data Template: 
+
+<image> {Question} 
+
+You FIRST think about the reasoning process as an internal monologue and then provide the final answer. The reasoning process MUST BE enclosed within <think> </think> tags. The final answer MUST BE put in \boxed{} .We implement GRPO and RAPO using the VeRL framework 4, and PAPO and VPPO using Easy-R1 5,following the training settings reported in their original papers. In the main experiments, among the baselines we only conduct RL training for PAPO and VPPO. Both methods follow the original training settings reported in their respective papers, with minor adjustments to the batch_size ,
+
+training steps , max_prompt_length , and max_response_length to ensure consistency with RAPO when training on Qwen3-VL-2B-Instruct and Qwen3-VL-8B-Instruct. For VPPO, we adopt the same training settings as provided in its official code repository to train Qwen3-VL-8B-Instruct. For PAPO, we follow the settings used for Qwen2.5-VL-3B-Instruct and Qwen2.5-VL-7B to train Qwen3-VL-2B-Instruct and Qwen3-VL-8B-Instruct, respectively. The reward signal used in the main experiments, as well as in all additional experiments, is a binary accuracy score, where a correct answer receives a reward of 1 and an incorrect answer receives a reward of 0. In addition, 
+
+> 3
+
+https://huggingface.co/datasets/TIGER-Lab/ViRL39K 
+
+> 4
+
+https://github.com/volcengine/verl 
+
+> 5
+
+https://github.com/hiyouga/EasyR1 
+
+27 Table 4: RL hyperparameters for different experimental groups. 
+
+Hyperparameter Group (i) Group (ii) & (iii) General Training 
+
+Learning rate 1e−6 1e−6
+
+RL steps 100 200 Optimizer AdamW AdamW LR scheduler Constant Constant Freeze vision tower True True 
+
+Basic GRPO Settings 
+
+Rollout batch size 256 384 Rollouts per prompt 5 5PPO minibatch size 64 128 Rollout temperature 1.0 1.0 Rollout top-p 1.0 1.0 Max prompt length 2048 4096 Max response length 8192 2048 KL penalty coefficient 0.02 0.02 Loss aggregation mode Token-level Token-level 
+
+DAPO Recipe 
+
+Dynamic sampling True True Clip ratio (low) 0.20 0.20 Clip ratio (high) 0.28 0.28 Overlong reward shaping True False Overlong buffer length 1024 –Overlong penalty factor 1.0 –Loss aggregation mode Token-level Token-level 
+
+RAPO-Specific Settings 
+
+MI enhancement factor γ 0.01 0.01 Token selection threshold Top 20% Top 20% Window length 3 (1 for 8B) 1
+
+the vision tower is frozen during training for all RL experiments. For computational resources, Qwen3-VL-2B-Instruct and Qwen3-VL-8B-Instruct are trained on 8 × NVIDIA RTX PRO 6000 Blackwell GPUs, while Qwen2-VL-7B-Instruct and Qwen2.5-VL-7B-Instruct are trained on 4 GPUs. All key hyperparameters for RL training are summarized in Table 4. 
+
+C.2 Evaluation Details Benchmarks We evaluate our method on two categories of benchmarks: reasoning-intensive and general-domain, enabling comprehensive assessment of VLM capabilities. All evaluations are based on directly verifiable answers rather than LLM-as-a-judge evaluation. Detailed benchmark statistics are summarized in Table 5. Table 5: Evaluation benchmarks used in our experiments. 
+
+Benchmark Size Domain Task Type Subset Source 
+
+MathVision 304 Math Free-form QA Test-mini HuggingFace MathVerse 788 Math Multiple-choice & Free-form QA Visual-dominant HuggingFace EMMA-mini 400 STEM Multiple-choice QA Full HuggingFace LogicVista 448 Logic Multiple-choice QA Full HuggingFace MMMU-Pro 1,730 General Multiple-choice QA Vision HuggingFace RealWorldQA 765 General Free-form QA Full HuggingFace 
+
+28 Evaluation Settings. Benchmark evaluation is conducted using vLLM v0.11.0 6. Multiple-choice questions are evaluated via exact-match accuracy, while free-form questions are verified using math-verify 7. The prompt template used during evaluation is identical to that employed for training. During evaluation, we set the sampling temperature to 1.0 with top-p = 1 .0) and top-k set to −1. Inference is performed with a batch size of 512. We enable the vLLM V1 execution mode ( VLLM_USE_V1=True )and the maximum number of newly generated tokens is set to 8,192. We report mean and standard deviation over 8 sampled evaluation responses per input in Table 3. 
+
+D Experimental Details of Empirical Analysis of RAPO’s Mechanism 
+
+We randomly sample 500 instances from the ViRL dataset and evaluate the Qwen3-VL-2B-Instruct model before training and after GRPO and RAPO training, using the same settings as in the main experiments. Responses are generated via greedy decoding with a maximum length of 4096 tokens. We conduct three groups of experiments. 
+
+D.1 Trajectory Analysis 
+
+In this subsection, we visualize the KL divergence and attention distributions. The KL divergence is used to quantify token-level visual dependency by measuring the Kullback–Leibler (KL) divergence between the policy’s predictive distributions under vision-conditioned and vision-masked settings. Formally, let V denote the visual input, X the textual context, and Y1: T = ( Y1, . . . , Y T ) a length-T
+
+reasoning trajectory. We define the history at decoding step t as Ht = ( X, Y <t ). The token-level visual dependency at step t is defined as the KL divergence between the policy output distributions conditioned on (V, H t) and on Ht alone: 
+
+S(Ht, V ) = DKL (πθ (· | Ht, V ) ∥ πθ (· | Ht)) .
+
+A high value of S(Ht, V ) indicates that visual information plays a critical role in predicting the token at step t, identifying a key moment of visually grounded reasoning. We further visualize the attention distribution from the next generated token to visual tokens. Denoting the attention function as Attn( ·), the attention weights for token Yt over visual tokens are computed as 
+
+Attn( Yt, V ) = softmax 
+
+ qtK⊤
+
+> V
+
+√d
+
+
+
+,
+
+where qt is the query vector corresponding to Yt, KV denotes the key vectors of all visual tokens, and d is the key dimension. We use Qwen3-VL-2B-Instruct to generate responses for 500 questions, which are divided into two groups based on correctness: incorrect (322) and correct (178). For each group, we compute the token-wise average of the KL divergence and attention distributions. For training comparison, we average the KL distributions over all 500 instances to compare RAPO and GRPO. This analysis shows that RAPO effectively increases visual dependency in the later stages of the chain-of-thought (CoT), whereas GRPO does not. As shown in Figures 8, GRPO fails to improve the KL divergence relative to the base model, while RAPO leads to a clear enhancement. 0 500 1000 1500 2000 2500      
+
+> Token Position
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> KL Divergence  GRPO-Induced KL Divergence Amplification
+> Before Training After Training 0500 1000 1500 2000 2500
+> Token Position
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> KL Divergence  RAPO-Induced KL Divergence Amplification
+> Before Training After Training
+
+Figure 8: KL Distributions along CoT. (a) KL distribution after GRPO training; (b) KL distribution after RAPO training. 
+
+> 6https://github.com/vllm-project/vllm
+> 7https://github.com/huggingface/Math-Verify
+
+29 D.2 Anchor Token Analysis 
+
+For the anchor-token concentration visualization, we identify the top-20% highest-entropy tokens across all 500 responses generated by Qwen3-VL-2B-Instruct. To avoid rare-token artifacts, we restrict the analysis to token types appearing at least N times in the corpus ( N = 10 in our experiments), and report for each retained type the fraction of its occurrences selected as a top-entropy anchor. We construct a noised visual input ˜V by injecting additive Gaussian noise: 
+
+˜V = V + ε, ε ∼ N (0 , σ 2I),
+
+where σ controls the noise magnitude and I denotes the identity covariance matrix with the same dimensionality as V . We then analyze the distributional shifts of different token categories under varying noise levels σ. Specifically, we use 
+
+DKL 
+
+
+
+πθ (· | Ht, V ) ∥ πθ (· | Ht, ˜V )
+
+
+
+to measure token sensitivity to visual perturbations, where larger KL values indicate stronger depen-dence on visual information. 
+
+D.3 Propagation of Visual Influence Analysis 
+
+We design a targeted experiment to measure visual information propagation from anchor token positions . Given a reflection anchor tk ∈ A , we evaluate how blocking its visual information, implemented by masking the corresponding visual attention, affects the visual dependency of other tokens. Specifically, we examine (i) the average impact on the subsequent three tokens Ytk :tk +3 , and (ii) the impact on the visual dependency of the next anchor token tk+1 . To quantify this effect, we define 
+
+∆ DKL = S(H′
+
+> t
+
+, V ) − S (Ht, V ),
+
+where S(Ht, V ) = DKL (πθ (·| Ht, V ) ∥ πθ (·| Ht)) measures the visual dependence at step t under the original history, and S(H′
+
+> t
+
+, V ) is the analogous quantity after masking the visual information associated with the selected anchor. By construction, ∆DKL ≤ 0: more negative values indicate that masking the anchor produces a larger drop in downstream visual dependence, i.e., stronger propagation of visual influence from the anchor. We evaluate this effect across anchor tokens at different positions and compare RAPO with baseline methods. The results demonstrate that RAPO significantly enhances both the visual influence at anchor tokens and the propagation of visual information along the reasoning trajectory. 
+
+E Intervention-Based Diagnostics for Reflection Anchors 
+
+We provide an intervention-based diagnostic to examine whether reflection anchors are associated with task-relevant visual evidence. This diagnostic does not directly estimate the oracle gain ∆t(π),but tests whether the visual regions attended at reflection anchors have measurable influence on final prediction. 
+
+Attention-guided patch masking. We test whether early anchors attend to task-relevant visual evidence. On 100 randomly sampled ViRL validation examples, we select early reflection anchors and mask 20% of image patches under two strategies: attention-guided masking, which removes the highest-attended patches at the selected anchor, and random masking, which removes the same number of randomly sampled patches. We report the accuracy drop ∆Acc .Table 6: Attention-guided patch masking. More negative values indicate larger accuracy degrada-tion.          
+
+> Model Attention-guided Random Gap
+> GRPO -24.3 -19.7 4.6 RAPO -27.7 -21.3 6.4
+
+30 As shown in Table 6, attention-guided masking causes larger accuracy degradation than random masking for both GRPO and RAPO. This suggests that early reflection anchors attend to image regions that are more relevant to final prediction than randomly selected patches. The larger gap under RAPO is consistent with the intended effect of strengthening the coupling between reflection anchors and task-relevant visual evidence. Together with the KL propagation analysis in Figure 7, this diagnostic provides intervention-based support for the proposed mechanism. 
+
+F Compute-Matched Comparison 
+
+RAPO introduces an additional chain-masked contrastive KL signal during training, which increases per-step training cost relative to GRPO. To verify that the performance gain is not merely due to additional computation, we first report wall-clock training cost and then compare RAPO against a compute-matched GRPO baseline trained for additional steps under a similar wall-clock budget. All measurements are conducted on 8× NVIDIA RTX PRO 6000 Blackwell GPUs. Table 7: Training wall-clock cost. RAPO incurs additional training overhead due to the chain-masked contrastive KL computation, but it uses the standard autoregressive forward pass at inference and therefore adds no inference-time overhead.                
+
+> Model GRPO Total RAPO Total GRPO / Step RAPO / Step Overhead
+> Qwen3-VL-2B 10h38m 12h31m 383s 451s ∼18% Qwen3-VL-8B 28h04m 35h58m 1010s 1295s ∼28%
+
+We then train GRPO for 120 steps to approximately match RAPO’s 100-step wall-clock budget on Qwen3-VL-2B-Instruct. The GRPO-120 run takes 12h43m, comparable to RAPO-100 at 12h31m. As shown in Table 8, increasing GRPO from 100 to 120 steps improves the average score from 40.79 to 41.45, but still remains below RAPO’s 43.01. This indicates that RAPO’s gain is not explained by additional training computation, but by the proposed anchor-based propagation objective. Table 8: Compute-matched comparison. GRPO is trained for additional steps to match RAPO’s wall-clock budget. RAPO still achieves higher average performance.                                 
+
+> Method Steps MathVis. MathVer. EMMA LogicV. MMMU-P. RealWQ Avg.
+> GRPO 100 28.29 44.35 28.50 48.71 30.61 64.28 40.79 GRPO 120 30.92 44.73 31.25 49.11 31.20 61.50 41.45 RAPO G100 33.55 46.13 31.25 49.55 32.20 65.36 43.01
+
+RAPO’s additional cost is training-only: at inference, the learned policy runs with the same standard autoregressive decoding procedure as the base model and does not require anchor search, chain masking, or additional visual re-attention modules. 
+
+G Ablation and Robustness Study 
+
+G.1 Experimental Details 
+
+We additionally conduct experiments on two other models: Qwen3-VL-2B-Thinking and Gemma3-4B-IT. Qwen3-VL-2B-Thinking is designed to generate substantially longer CoT, which allows us to further validate the effectiveness of our method under long-CoT reasoning settings. For this model, we adopt the same training configuration as Qwen3-VL-2B-Instruct used in the main experiments, except that the maximum response length is increased to 16,384 tokens. The evaluation protocol is also kept identical, with the maximum number of newly generated tokens set to 16,384. Gemma3-4B-IT is a vision–language model with a substantially different architecture from the Qwen3-VL family. To assess the generality of our method across model architectures, we evaluate it under the same experimental settings as Qwen3-VL-Instruct, except that the maximum response length is set to 4,096 tokens. Unless otherwise specified, all remaining ablation studies are conducted under the same training and evaluation configuration as the Qwen3-VL-2B-Instruct experiments reported in the main results. 31 G.2 Ablation on Anchor Selection 
+
+We further analyze how the anchor set A should be selected. The results are shown in Table 9. Table 9: Ablation on anchor-selection strategies.                                                                    
+
+> Strategy Frac. MathVis. MathVer. EMMA LogicV. MMMU-P. RealWQ Avg. No anchors (GRPO) 100% 28.29 44.35 28.50 48.71 30.61 64.28 40.79 Random 20% 20.0% 29.61 42.93 26.56 48.88 30.81 60.98 39.96 Noun 28.7% 27.30 43.94 28.56 46.88 31.36 62.09 40.02 Fixed 100 –29.93 45.11 29.75 50.39 31.33 64.58 41.85 Fixed 200 –30.26 43.50 25.75 45.76 30.48 63.14 39.82 Outlier (μ+σ)16.0% 34.21 45.69 26.50 47.54 30.14 63.01 41.18 Top-20% entropy 20.0% 33.55 46.13 31.25 49.55 32.20 65.36 43.01
+
+Table 9 shows that anchor selection is crucial. Unrestricted GRPO-style updating without anchors achieves 40 .79 average, while applying the objective to Top-20% entropy anchors improves the score to 43 .01 . Random and noun-based anchors perform poorly ( 39 .96 and 40 .02 ), even though noun selection uses a larger token fraction than Top-20% entropy selection ( 28 .7% vs. 20 .0% ). This suggests that effective anchors are not simply visually named content words, but positions with high structural uncertainty and visual leverage. Top-20% entropy selection is also more robust than fixed or threshold-based alternatives. It outper-forms Fixed-100 and Fixed-200 anchors ( 43 .01 vs. 41 .85 and 39 .82 ), indicating that a fraction-based rule better adapts to variable sequence lengths. It also outperforms the fixed outlier criterion ct > μ +σ
+
+(43 .01 vs. 41 .18 ), supporting our use of a per-trajectory Top-ρ criterion for sparse and adaptive anchor selection. 
+
+G.3 Robustness on Decoding Temperature 
+
+We further evaluate whether RAPO relies primarily on stochastic sampling or also improves deter-ministic decoding. Specifically, we compare greedy decoding with temperature 0 and pass@1 against stochastic decoding with temperature 1 and mean@8 on Qwen3-VL-2B-Instruct. Table 10: Robustness to decoding temperature.                                                         
+
+> Method Decoding MathVision MathVerse EMMA LogicVista MMMU-Pro RealWorldQA Avg Base greedy 13.16 26.78 14.50 31.25 18.90 58.82 27.24 Base temp=1 27.30 36.75 26.87 47.13 24.44 60.47 37.16 GRPO greedy 11.51 27.41 13.75 32.81 22.49 59.22 27.87 GRPO temp=1 28.29 44.35 28.50 48.71 30.61 64.28 40.79 RAPO Ggreedy 16.12 33.63 15.50 33.71 25.55 63.92 31.41
+> RAPO Gtemp=1 33.55 46.13 31.25 49.55 32.20 65.36 43.01
+
+GRPO only marginally improves greedy decoding over the base model, from 27.24 to 27.87, while its larger gain appears under stochastic decoding. In contrast, RAPO improves both settings, reaching 31.41 under greedy decoding and 43.01 under temperature-1 sampling. Moreover, the greedy– stochastic gap is smaller for RAPO, 11.46, than for GRPO, 12.92, suggesting that RAPO learns a more stable policy rather than depending mainly on stochastic sampling. 
+
+G.4 Robustness on Context Length 
+
+Finally, we evaluate robustness under a longer context budget. We set the maximum context length to 16,384 tokens and compare GRPO with RAPO. Under the longer-context setting, RAPO improves the average score from 41.4 to 43.8. This result shows that RAPO remains effective when the context budget is increased and that its gains are not an artifact of a particular maximum generation length. 32 Table 11: Robustness to longer context length. 
+
+Model MathVision MathVerse EMMA LogicVista MMMU-Pro RealWorldQA Avg GRPO 31.6 44.0 28.0 51.3 31.2 62.2 41.4 RAPO 34.5 46.2 31.5 51.6 33.0 65.8 43.8 
+
+H RAPO based on DAPO 
+
+H.1 RAPO D Optimization Objective 
+
+To extend DAPO with RAPO, we incorporate the same DKL i,t (θ) used in RAPO G (Section 4).The complete RAPO D objective is shown as follows: 
+
+JRAPO D (θ) = E{oi}Gi=1 ∼πθold (O|q,I ),t ∈A i,Ai⊂oi
+
+"
+
+1
+
+PGi=1 |A i|
+
+> G
+
+X
+
+> i=1
+
+X
+
+> t∈A i
+
+n
+
+min 
+
+h
+
+ri,t (θ) ˆAi,t , clip  ri,t (θ), 1 − ϵl, 1 + ϵh
+
+ ˆAi,t 
+
+i
+
++ γ ω br  
+
+> i,t
+
+DKL i,t (θ)
+
+o#
+
+,
+
+(5) with 
+
+0 < |{ oi | is_equivalent (a, o i) }| < G. 
+
+Here, γ is the weighting coefficient for ωbr  
+
+> i,t
+
+DKL i,t (θ) and Ai is the set of reflection anchors. 
+
+H.2 Results of DAPO Experiments 
+
+The DAPO results for the pure RL experiment group are reported in Table 12. The evaluation settings follow the main experiments, except that the temperature is set to 0.6. Results show that RAPO D still outperforms the baselines. Table 12: DAPO Results of pure RL Group. (mean@8 acc %). Performance comparison across reasoning-intensive and general-domain multimodal benchmarks. The best results in each group are highlighted in bold . The second-best results are underlined . RAPO D , PAPO D and VPPO D denote RAPO, PAPO and VPPO built upon DAPO, respectively.                                                  
+
+> Base Model Model Reasoning-Intensive General-Domain Avg.
+> MathVision MathVerse EMMA LogicVista MMMU-Pro RealWorldQA
+> Qwen3-VL-8B Instruct
+> Base 41.74 50.21 38.34 62.28 37.59 67.20 49.56 + DAPO 50.33 60.95 38.75 60.94 51.85 68.30 55.19 ( ↑5.63) + PAPO D49.67 59.64 42.25 62.95 52.54 71.37 56.40 ( ↑6.84) + VPPO D50.99 59.64 43.75 61.61 52.60 66.80 55.90 ( ↑6.34) + RAPO D51.36 58.50 45.50 64.51 52.83 71.63 57.39 (↑7.83)
+
+I Licenses of Existing Assets 
+
+We summarize the existing external assets used in this work, including codebases, datasets, bench-marks, and models, together with their publicly stated licenses or access terms. We cite the original papers and official repositories, dataset cards, or model cards throughout the paper. All assets are used only for research training, evaluation, and reproducibility purposes. When an asset is distributed under a model-specific license or usage policy, we use it in accordance with the corresponding license agreement, acceptable use policy, and redistribution terms. The results are presented in Table 13. 33 Table 13: Existing assets used in this work and their publicly stated licenses or access terms.                                               
+
+> Asset Type License / Terms of Use VeRL Github Code Apache-2.0 EasyR1 Github Code Apache-2.0 vLLM [34] Code Apache-2.0 Math-Verify Github Code Apache-2.0 ViRL39K [26] Dataset MIT MathVision [35] Benchmark MIT MathVerse [36] Benchmark MIT EMMA [37] Benchmark No explicit standard dataset license found; research evaluation only LogicVista [38] Benchmark Apache-2.0 MMMU-Pro [39] Benchmark Apache-2.0 RealWorldQA Huggingface Benchmark CC BY-ND 4.0 Qwen3-VL-2B-Instruct [7] Model Apache-2.0 Qwen3-VL-8B-Instruct [7] Model Apache-2.0 Qwen3-VL-2B-Thinking [7] Model Apache-2.0 Qwen2.5-VL-7B-Instruct [32] Model Apache-2.0 Qwen2-VL-7B-Instruct [31] Model Apache-2.0 Gemma3-4B-IT [40] Model Gemma Terms of Use MM-Eureka [9] Model Apache-2.0 VL-Rethinker [26] Model Apache-2.0 R1-ShareVL [33] Model Apache-2.0 TVC [11] Model Apache-2.0 MINT-CoT [15] Model No explicit standard license found; research baseline only
+
+J Limitations and Broader Impacts 
+
+J.1 Limitations 
+
+RAPO provides a practical training-time route to visual-retention optimization in long-chain mul-timodal reasoning. The current implementation uses native-entropy anchors and a chain-masked finite-window KL target, which keeps the method simple, scalable, and architecture-free at inference, while leaving richer anchor criteria and counterfactual references to future work. Future extensions could incorporate semantic or causal anchor signals, adaptive counterfactual references, and dynam-ically selected window lengths. Also, RAPO tends to provide larger gains when the base policy exhibits substantial visual forgetting or weak long-chain visual retention. On stronger or architec-turally different backbones, the gains may be smaller, suggesting that propagation-aware shaping is most useful when visual-dependence signals are not already well preserved. While our experiments span multiple LVLM backbones and benchmark families, applying propagation-aware visual-retention objectives to broader real-world visual reasoning tasks and more fine-grained faithfulness diagnostics remains an important next step. 
+
+J.2 Broader Impacts 
+
+This work aims to improve visual grounding in long-chain multimodal reasoning. Positive im-pacts include more reliable reasoning over diagrams, charts, documents, and real-world visual inputs, especially in settings where models must maintain visual evidence across long reasoning chains. Potential negative impacts follow from improving the capability of general-purpose LVLMs: stronger multimodal reasoning could be misused for more persuasive automated content generation, surveillance-oriented visual analysis, or incorrect high-confidence decisions in sensitive domains. RAPO is evaluated as a research training method and is not intended for deployment in safety-critical settings without task-specific risk assessment, calibration, and human oversight. We do not release a new dataset or high-risk model checkpoint; released materials are intended for research reproduction. 34 K Case Study 
+
+K.1 Visualization of Entropy Distribution on Tokens 
+
+Figure 9a and Figure 9b show the distribution of token entropy. We observe that high-entropy tokens are more concentrated around key reasoning steps, indicating increased uncertainty at decision points where multiple continuations remain plausible. = ( 2 , 0 )$ We are also given that $ E $ is on $ AD $, and $ DE 
+
+= DC = 2 $. Since $ D = ( 0 , 0 )$ , and $ AD $ is vertical , $ E
+
+$ must be at $( 0 , 2 )$ , because $ DE = 2 $ and $ AD = h $, so 
+
+$ h = 2 $ . Wait , let 's check that . $ DE = 2 $, and $ D = ( 0
+
+, 0 )$ , $ E $ is on $ AD $, which is vertical . So $ E $ has coordinates 
+
+$( 0 , 2 )$ , since $ AD $ goes from $ A = ( 0 , h )$ to $ D = ( 0
+
+, 0 )$ , so $ E $ is at $( 0 , 2 )$ , and $ DE = 2 $ . But we also 
+
+have $ AE = 5 $. Since $ A = ( 0 , h )$ and $ E = ( 0 , 2 )$ , the 
+
+distance $ AE = | h - 2 | $. We are told $ AE = 5 $, so $ | h -
+
+2 | = 5 $ . This gives us two possibilities : 1 . $ h - 2 = 5
+
+$ $ h = 7 $ 2 . $ h - 2 = - 5 $ $ h = - 3 $ But height $
+
+h $ must be positive , so $ h = 7 $ .
+
+(a) Case 1. way . Let me try a different approach . Let 's denote the coordinates 
+
+of $ A $ and $ B $ . Let $ A = ( x _ 1 , y _ 1 ) $ , $ B = (
+
+x _ 2 , y _ 2 ) $ . Since $ A $ lies on $ y = - \ frac { 2 }{ 3 } x
+
+$ , we have $ y _ 1 = - \ frac { 2 }{ 3 } x _ 1 $ . Since $ A $ lies 
+
+on $ y = \ frac {k }{ x } $ , we have $ y _ 1 = \ frac {k }{ x _ 1 }
+
+$ . So $ - \ frac { 2 }{ 3 } x _ 1 = \ frac {k }{ x _ 1 } $ , which gives 
+
+$ - \ frac { 2 }{ 3 } x _ 1 ^ 2 = k $ , so $ x _ 1 ^ 2 = - \ frac { 3 k
+
+}{ 2 } $ , and $ x _ 1 = - \ sqrt {- \ frac { 3 k }{ 2 }} $ . Similarly 
+
+, for $ B $ , $ y _ 2 = - \ frac { 2 }{ 3 } x _ 2 + 2 $ , and $ y
+
+_ 2 = \ frac {k }{ x _ 2 } $ . So $ - \ frac { 2 }{ 3 } x _ 2 + 2 = \
+
+frac {k }{ x _ 2 } $ , multiply by $ x _ 2 $ : $ - \ frac { 2 }{ 3 } x _
+
+2
+
+(b) Case 2. 
+
+Figure 9: Case Study of Entropy Distributions along CoT. 
+
+35 K.2 Visualization of KL Distribution before and after RAPO training 
+
+Figure 10 and Figure 11 show the KL distributions before and after RAPO training. Compared to the base model, RAPO consistently amplifies KL values in the later stages of generation, suggesting enhanced and sustained utilization of visual information throughout the reasoning process. 
+
+Case Study 
+
+Question 
+
+As shown in the figure, within rectangle ABCD , diagonals AC and BD intersect at point 
+
+O, AE perpendicular bisects BO , with AE = √3, cm, what is the length of OD ?You FIRST think about the reasoning process as an internal monologue and then provide the final answer. The reasoning process MUST BE enclosed within <think> </think> tags. The final answer MUST BE put in \boxed{} .36 Internal Mon ologue : ** First , let 's understand the given information . We have a rectangle $ AB CD $ with diagon als $ AC $ and $
+
+BD $ intersect ing at point $ O $. Since it 's a rectangle , the diagon als are equal in length and bis ect each other . So , $ AO 
+
+= OC $ and $ BO = OD $ . We 're told that $ AE $ is perpendicular to $ BO $ and that $ AE $ bis ect s $ BO $. This means that $
+
+AE $ is the perpendicular bis ector of $ BO $. Since $ AE $ is perpendicular to $ BO $ and passes through the midpoint of $ BO $, it 
+
+implies that $ E $ is the midpoint of $ BO $ . Given that $ AE = \ sqrt { 3 }$ cm , and since $ AE $ is the perpendicular bis ector 
+
+of $ BO $, we can use the properties of right triangles and the Py thag orean theorem . Let s denote $ BO = 2 x $. Then , since 
+
+$ E $ is the midpoint of $ BO $, $ BE = EO = x $. Since $ AE $ is perpendicular to $ BO $, triangle $ A EB $ is a right triangle 
+
+with right angle at $ E $ . Now , in right triangle $ A EB $, we have : - $ AE = \ sqrt { 3 } $ - $ BE = x $ - $ AB $ is the hyp 
+
+oten use of triangle $ A EB $ But we don 't know $ AB $ yet . However , we can use the fact that $ AO $ is half of the diagonal 
+
+$ AC $, and since $ AC = BD $, and $ O $ is the midpoint , $ AO = \ frac { 1 }{ 2 } AC $ . But we can also consider triangle $ AO 
+
+B $. Since $ AO = BO $ ( because diagon als of a rectangle bis ect each other and are equal ), we have $ AO = BO = 2 x $. So ,
+
+$ AO = 2 x $ . Now , in triangle $ AO B $, we can use the Py thag orean theorem in triangle $ AO B $ : $$ AB ^ 2 = AO ^ 2 + BO 
+
+^ 2 = ( 2 x )^ 2 + ( 2 x )^ 2 = 4 x ^ 2 + 4 x ^ 2 = 8 x ^ 2 $$ So , $ AB = \ sqrt { 8 x ^ 2 } = 2 \ sqrt { 2 } x $ Now , in triangle 
+
+$ A EB $, we have : - $ AE = \ sqrt { 3 } $ - $ BE = x $ - $ AB = 2 \ sqrt { 2 } x $ Using the Py thag orean theorem in triangle 
+
+$ A EB $ : $$ AB ^ 2 = AE ^ 2 + BE ^ 2 $$ $$ ( 2 \ sqrt { 2 } x )^ 2 = (\ sqrt { 3 }) ^ 2 + x ^ 2 $$ $$ 8 x ^ 2 = 3 + x ^
+
+2 $$ $$ 8 x ^ 2 - x ^ 2 = 3 $$ $$ 7 x ^ 2 = 3 $$ $$ x ^ 2 = \ frac { 3 }{ 7 } $$ $$ x = \ sqrt {\ frac { 3 }{ 7 }} 
+
+$$ Now , we want to find $ OD $. Since $ OD = BO = 2 x $, we have : $$ OD = 2 x = 2 \ sqrt {\ frac { 3 }{ 7 }} = \ sqrt {\ 
+
+frac { 4 \ cdot 3 }{ 7 }} = \ sqrt {\ frac { 1 2 }{ 7 }} $$ So , the length of $ OD $ is $\ boxed {\ sqrt {\ frac { 1 2 }{ 7 }} }$ cm .
+
+Wait , let me double -check this . I think I made a mistake in the reasoning . Let me re -ex amine . Actually , I think I made a
+
+mistake in assuming $ AO = BO $. That 's not correct . In a rectangle , the diagon als are equal and bis ect each other , so $ AO 
+
+= OC $ and $ BO = OD $. But $ AO $ and $ BO $ are not necessarily equal . They are equal only if the rectangle is a square .
+
+Wait , no . In a rectangle , diagon als are equal and bis ect each other , so $ AO = OC $ and $ BO = OD $. So $ AO = OC $ and $
+
+BO = OD $. But $ AO $ and $ BO $ are not necessarily equal unless the rectangle is a square . So , let 's correct that . Let me 
+
+re -ex press . Let s denote $ BO = 2 x $. Then $ OD = 2 x $ because $ O $ is the midpoint of $ BD $. So $ BO = OD = 2 x $ .
+
+Now , $ AE $ is perpendicular to $ BO $ and $ E $ is the midpoint of $ BO $, so $ BE = EO = x $ . Now , in triangle $ A EB $, we 
+
+have : - $ AE = \ sqrt { 3 } $ - $ BE = x $ - $ AB $ is the hyp oten use But we also know that $ AB $ is a side of the rectangle 
+
+, and $ AB $ is related to $ AO $ and $ BO $ . Wait , in triangle $ AO B $, we have : - $ AO = \ frac { 1 }{ 2 } AC $ - $ BO = \
+
+frac { 1 }{ 2 } BD $ - Since $ AC = BD $, $ AO = BO $ So $ AO = BO $. So triangle $ AO B $ is is os ce les with $ AO = BO $ . So 
+
+$ AO = BO = 2 x $. So $ AO = 2 x $, $ BO = 2 x $ . Now , in triangle $ A EB $, we have : - $ AE = \ sqrt { 3 } $ - $ BE =
+
+x $ - $ AB $ is the hyp oten use But $ AB $ is the side of the rectangle , and $ AB $ is related to $ AO $ and $ BO $ . Wait 
+
+, in triangle $ AO B $, we have : - $ AO = 2 x $ - $ BO = 2 x $ - $ AB $ is the hyp oten use So $ AB ^ 2 = AO ^ 2 + BO ^ 2
+
+= ( 2 x )^ 2 + ( 2 x )^ 2 = 8 x ^ 2 $ So $ AB = \ sqrt { 8 x ^ 2 } = 2 \ sqrt { 2 } x $ Now , in triangle $ A EB $, we have : -
+
+$ AE = \ sqrt { 3 } $ - $ BE = x $ - $ AB = 2 \ sqrt { 2 } x $ Using the Py thag orean theorem : $$ AB ^ 2 = AE ^ 2 + BE ^ 2
+
+$$ $$ ( 2 \ sqrt { 2 } x )^ 2 = (\ sqrt { 3 }) ^ 2 + x ^ 2 $$ $$ 8 x ^ 2 = 3 + x ^ 2 $$ $$ 7 x ^ 2 = 3 $$ $$ x ^ 2 =
+
+\ frac { 3 }{ 7 } $$ $$ x = \ sqrt {\ frac { 3 }{ 7 }} $$ Now , $ OD = BO = 2 x = 2 \ sqrt {\ frac { 3 }{ 7 }} = \ sqrt {\ frac 
+
+{ 4 \ cdot 3 }{ 7 }} = \ sqrt {\ frac { 1 2 }{ 7 }} $ So $ OD = \ sqrt {\ frac { 1 2 }{ 7 }} $ cm . But let me check if this makes sense 
+
+. Is $ AE $ perpendicular to $ BO $ ? Yes , because $ AE $ is the perpendicular bis ector of $ BO $, so it is perpendicular to $ BO 
+
+$ . And $ E $ is the midpoint of $ BO $, so $ BE = EO = x $ . So the calculation seems correct . Therefore , the length of $
+
+OD $ is $\ boxed {\ sqrt {\ frac { 1 2 }{ 7 }} }$ cm .Figure 10: Token KL Distribution of Base Model (Wrong Answer). 
+
+37 Internal Mon ologue : ** First , let 's understand the given information . We have a rectangle $ AB CD $ with diagon als $ AC $ and $
+
+BD $ intersect ing at point $ O $. This means $ O $ is the midpoint of both diagon als . In a rectangle , the diagon als are equal 
+
+in length and bis ect each other . So , $ AO = OC $ and $ BO = OD $ . We 're told that $ AE $ is perpendicular to $ BO $ and that 
+
+$ AE $ bis ect s $ BO $. This means that $ E $ is the midpoint of $ BO $, and $ AE \ per p BO $. Also , $ AE = \ sqrt { 3 }\ ,\ text 
+
+{ cm }$ . Let 's consider triangle $ AO B $. Since $ O $ is the midpoint of $ BD $, and $ AE $ is perpendicular to $ BO $, and $ E
+
+$ is the midpoint of $ BO $, we can use coordinate geometry to solve this . Let s place the rectangle on the coordinate plane .
+
+Let s assume : - $ B $ is at $( 0 , 0 )$ - $ C $ is at $( c , 0 )$ - $ D $ is at $( c , d )$ - $ A $ is at $( 0 , d )$ 
+
+Then , the diagon als are : - $ AC $: from $( 0 , d )$ to $( c , 0 )$ - $ BD $: from $( 0 , 0 )$ to $( c , d )$ The intersection 
+
+point $ O $ is the midpoint of both diagon als . So , $$ O = \ left (\ frac { 0 +c }{ 2 }, \ frac { d + 0 }{ 2 }\ right ) = \ left (\ frac 
+
+{ c }{ 2 }, \ frac { d }{ 2 }\ right ) $$ Now , let 's find the coordinates of $ E $. Since $ AE $ is perpendicular to $ BO $ and $ E
+
+$ is the midpoint of $ BO $, we can find $ E $ . First , find the vector $ BO $ : $$ \ vec { BO } = \ left (\ frac { c }{ 2 }, \ frac 
+
+{ d }{ 2 }\ right ) $$ Since $ E $ is the midpoint of $ BO $, its coordinates are : $$ E = \ left (\ frac { 0 + \ frac { c }{ 2 }} { 2
+
+}, \ frac { 0 + \ frac { d }{ 2 }} { 2 }\ right ) = \ left (\ frac { c }{ 4 }, \ frac { d }{ 4 }\ right ) $$ Now , we can find the vector 
+
+$ AE $ : $$ \ vec { AE } = E - A = \ left (\ frac { c }{ 4 } - 0 , \ frac { d }{ 4 } - d \ right ) = \ left (\ frac { c }{ 4 }, - \ frac 
+
+{ 3 d }{ 4 }\ right ) $$ We are told that $ AE \ per p BO $. So , the dot product of $\ vec { AE }$ and $\ vec { BO }$ is zero . $$ 
+
+\ vec { AE } \ cdot \ vec { BO } = \ left (\ frac { c }{ 4 }\ right )\ left (\ frac { c }{ 2 }\ right ) + \ left (- \ frac { 3 d }{ 4 }\ right )\ 
+
+left (\ frac { d }{ 2 }\ right ) = 0 $$ $$ \ frac { c ^ 2 }{ 8 } - \ frac { 3 d ^ 2 }{ 8 } = 0 $$ $$ \ frac { c ^ 2 - 3 d ^ 2 }{ 8 } =
+
+0 $$ $$ c ^ 2 = 3 d ^ 2 $$ Now , we know that $ AE = \ sqrt { 3 }\ ,\ text { cm } $. Let 's find the length of $ AE $ using the 
+
+coordinates : $$ AE = \ sqrt {\ left (\ frac { c }{ 4 }\ right )^ 2 + \ left (- \ frac { 3 d }{ 4 }\ right )^ 2 } = \ sqrt {\ frac { c ^ 2 }{ 1
+
+6 } + \ frac { 9 d ^ 2 }{ 1 6 }} = \ frac { 1 }{ 4 }\ sqrt { c ^ 2 + 9 d ^ 2 } $$ We already have $ c ^ 2 = 3 d ^ 2 $, so substitute 
+
+: $$ AE = \ frac { 1 }{ 4 }\ sqrt { 3 d ^ 2 + 9 d ^ 2 } = \ frac { 1 }{ 4 }\ sqrt { 1 2 d ^ 2 } = \ frac { 1 }{ 4 } \ cdot 2 \ sqrt { 3 }
+
+d = \ frac {\ sqrt { 3 }} { 2 } d $$ We are given $ AE = \ sqrt { 3 }$ , so : $$ \ frac {\ sqrt { 3 }} { 2 } d = \ sqrt { 3 } $$ Div ide 
+
+both sides by $\ sqrt { 3 }$ : $$ \ frac { 1 }{ 2 } d = 1 $$ So , $ d = 2 $ Now , we want to find $ OD $. Since $ O $ is at $\ 
+
+left (\ frac { c }{ 2 }, \ frac { d }{ 2 }\ right )$ and $ D $ is at $( c , d )$ , the distance $ OD $ is : $$ OD = \ sqrt {\ left (c -
+
+\ frac { c }{ 2 }\ right )^ 2 + \ left (d - \ frac { d }{ 2 }\ right )^ 2 } = \ sqrt {\ left (\ frac { c }{ 2 }\ right )^ 2 + \ left (\ frac {
+
+d }{ 2 }\ right )^ 2 } $$ We know $ d = 2 $, so : $$ OD = \ sqrt {\ left (\ frac { c }{ 2 }\ right )^ 2 + \ left ( 1 \ right )^ 2 } $$ 
+
+But we also have $ c ^ 2 = 3 d ^ 2 = 3 ( 4 ) = 1 2 $, so $ c = 2 \ sqrt { 3 }$ Sub stitute : $$ OD = \ sqrt {\ left (\ frac { 2
+
+\ sqrt { 3 }} { 2 }\ right )^ 2 + 1 ^ 2 } = \ sqrt { (\ sqrt { 3 }) ^ 2 + 1 } = \ sqrt { 3 + 1 } = \ sqrt { 4 } = 2 $$ So , the length 
+
+of $ OD $ is $ 2 \ ,\ text { cm }$ . ** Final Answer : ** \ boxed { 2 }Figure 11: Token KL Distribution after RAPO Training (Right Answer). 
+
+38

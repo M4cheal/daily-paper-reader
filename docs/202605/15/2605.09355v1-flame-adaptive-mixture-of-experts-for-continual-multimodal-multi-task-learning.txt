@@ -1,0 +1,1724 @@
+Title: FLAME: Adaptive Mixture-of-Experts for Continual Multimodal Multi-Task Learning
+
+URL Source: https://arxiv.org/pdf/2605.09355v1
+
+Published Time: Tue, 12 May 2026 02:13:21 GMT
+
+Number of Pages: 37
+
+Markdown Content:
+# FLAME: Adaptive Mixture-of-Experts for Continual Multimodal Multi-Task Learning 
+
+Xing Han ∗
+
+, Shravan Chaudhari ∗, Tanvi Ranade 
+
+Department of Computer Science Johns Hopkins University 
+
+{xhan56, schaud35, tranade1}@jhu.edu 
+
+Rama Chellappa 
+
+Department of ECE Johns Hopkins University 
+
+rchella4@jhu.edu 
+
+Suchi Saria 
+
+Department of Computer Science Johns Hopkins University, Bayesian Health 
+
+ssaria1@jhu.edu 
+
+Abstract 
+
+Real-world model deployment across multiple domains requires multimodal models to operate under two complementary regimes: (1) multi-task pretraining, tasks are co-available at design time where related tasks could borrow representational strength from one another, (2) continual adaptation, in which new tasks emerge after deployment with previously unseen modality combinations. However, neither regime alone suffices: the pretraining task set is never exhaustive, while bypassing joint training forfeits the transfer gains and efficiency among co-trainable tasks. Sparse Mixture-of-Experts (MoE) is a natural fit for this dual requirement: sparse activation enables modular capacity expansion as new tasks arrive, while routing decouples modality-level computation from task-level composition. In this work, we propose a scalable MoE framework for multitask pretraining and continual learning across flexible modality combinations. The framework is designed to support training on multimodal tasks with diverse modality configurations by leveraging modality-specific routers that process tokens from each modality across tasks. Furthermore, it enables continual learning over sequential multimodal tasks within a fixed-capacity MoE by compressing accumulated expert knowledge into low-rank memory subspaces, while expanding only the lightweight routers. We validate the effectiveness of our method on multiple healthcare multimodal benchmarks. It demonstrates competitive multitask pretraining performance while alleviating catastrophic forgetting and improving parameter efficiency 2.
+
+1 Introduction 
+
+The proliferation of large-scale multimodal foundation models [ 23 , 51 , 39 ] has demonstrated great potential of learning across diverse modality combinations. Recent multimodal foundation models [ 19 , 65 , 37 , 17 ] have extended beyond conventional image-text pairs to support flexible modality combinations, accommodating arbitrary missingness and irregular temporal dynamics across a broader spectrum of modality types. This practical setting is referred as Flexi-Modal Data [ 19 ], demanding fusion frameworks that are simultaneously flexible, scalable, and temporally aware. However, as shown in Figure 1, real-world deployment requires models that simultaneously handle multiple                   
+
+> ∗Equal Contribution.
+> 2Code is available at https://github.com/aaronhan223/FLAME/tree/continual-learning . A minimal demo for FLAME multi-task continual learning on MNIST [ 9] is available for experiment at https://tinyurl.com/45h6bm8e .Preprint.
+> arXiv:2605.09355v1 [cs.LG] 10 May 2026 T1 T2 T3 T4 T5 T6
+> T1 T2 T3 T4 T5 T6
+> T1: Length -of -Stay
+> T2: Mortality Rate Prediction
+> T3: Breast Disease Prediction
+> T1 T2 T3 T4 T5 T6
+> Training
+> Deployment
+
+…     
+
+> Visit Notes
+> Heart Rate
+> Blood Urine
+> Chest -X-Ray
+> Visit Notes
+> Genomics
+> Breast Imaging
+> Blood Blood
+> Visit Notes
+> T1: Length -of -Stay
+> T2: Mortality Rate Prediction
+
+Figure 1: An illustration of the Flexi-Modal multi-task setting. Each task is associated with an arbitrary combination of modalities, where within each task, individual modality measurements may be recorded at irregular time points across channels. During pretraining, models are expected to simultaneously handle various tasks. In deployment, new tasks with unseen modality combinations frequently emerge. FLAME aims to address two core challenges: (1) how to jointly train a unified model across Flexi-Modal multitasks with heterogeneous modality combinations; and (2) how to handle arbitrary train-test modality combination shift and preserve continual learning capacity when new tasks with different modality compositions are introduced after deployment. predictive tasks [ 66 , 60 ], each associated with a heterogeneous set of input modalities, a setting rarely addressed by existing frameworks. For example, in clinical situations, a mortality rate prediction task may rely on vital signs and clinical notes, whereas a related length-of-stay prediction task may additionally incorporate electrocardiogram (ECG) and imaging data [ 29 , 28 , 13 ]. Moreover, even for similar tasks, modality combinations can differ across populations [ 57 , 52 , 19 ]. Moreover, the set of tasks available during pretraining is rarely exhaustive: after deployment, new clinical questions, sensor modalities, and institutional protocols continually emerge [ 34 , 44 ], introducing tasks with previously unseen modality combinations that must be absorbed without retraining the model from scratch or sacrificing performance on existing tasks [ 32 , 8, 56 ]. This variability is the norm rather than the exception. A straightforward solution is training separate models for each task, but this would incur substantial computational overhead, as each model requires extensive tuning, validation, and approval, and forfeits the transfer gains available when related tasks share modalities. Recent state-of-the-art multimodal models have demonstrated strong generalization across different tasks; however, these frameworks typically assume a unified and consistent input space across tasks [ 39 , 35 , 54 , 11 ], failing to handle either the Flexi-Modal multi-task setting at training time or the arrival of new tasks with shifted modality configurations after deployment. A principled entry point is to study modality sharing across tasks: a text encoder trained on clinical notes for mortality prediction should transfer useful representations to a Phenotyping task that also consumes clinical text, even if the remaining modalities differ. HighMMT [ 37 ] empirically supports this view, but relies on a pairwise Perceiver-based cross-attention fusion [ 25 ] that scales poorly as new tasks with varying modality configurations are introduced. M4oE [ 60 ] models patient-level multimodal information via dedicated experts but assumes a fixed modality combination and ignores temporal dependencies in time-varying modalities. More broadly, sparse MoEs [ 50 , 10 , 27 , 15 ] are a natural fit for joint pretraining and continual adaptation: the routing mechanism gives flexibility to allocate task-level composition, while the sparsely activated set of experts naturally supports expansion for continual adaptation. However, existing multimodal MoEs route over concatenated, flattened token sequences, coupling gate parameters to a specific modality subset and offering no mechanism to selectively share a single modality across tasks. Although MoEs are theoretically shown to mitigate forgetting [ 36 ] and have been explored in continual learning [ 6 , 47 ], prior work is confined to small-scale unimodal settings with inefficient knowledge reuse. To address these limitations, we propose FLAME , a Flexi-modal Learning Adaptive Mixture-of-
+
+Experts framework for multitask learning and continual adaptation across heterogeneous modality combinations, with a particular focus on healthcare applications. FLAME’s contributions are as 2Table 1: Capability comparison between FLAME and representative baselines along different axes. Existing multimodal models rarely support both multitask pretraining and continual learning on new tasks simultaneously. Expert knowledge compression for efficient CL is another unique contribution.                                                     
+
+> Multi-Modal Multi-Task Pretraining Continual Learning and Shifts Architecture & Efficiency Method Flexi-Modal Inputs Temporal Irregularity Heterogeneous Task Modalities New-Task Adaptation Shift of Modality Composition Sparse MoE Routing Expert Knowledge Compression HighMMT [37] ✓✗✓✗✓✗N.A. FuseMoE [19] ✓✓✗✗✗✓✗
+> Flex-MoE [65] ✓✗✗✗✓✓✗
+> M4oE [60] ✓✗✓✗✓✓✗
+> SEED [47] ✗✗N.A. ✓N.A. ✓✗
+> Lifelong-MoE [6] ✗✗N.A. ✓N.A. ✓✗
+> FLAME (Ours) ✓✓✓✓✓✓✓
+
+follows: (1) a per-modality routing mechanism that assigns each modality type a dedicated router dispatching its sequences (regardless of task origin) into a shared expert pool. It decouples the routing topology from any specific task’s modality combination and naturally accommodates train/test modal-ity shifts; (2) an efficient continual learning scheme that compresses each new task’s contribution into a low-rank additive slice of a fixed-size expert pool while expanding only lightweight task-specific routers. This is motivated by our observation that the functional energy of trained experts concentrates in a sharply low-rank subspace despite near-full-rank weights. This yields a structural no-forgetting guarantee via cursor-based inference at 5 ∼ 15 × fewer parameters than fine-tuning, EWC, and LoRA; and (3) interpretable insights in which inter-task routing fingerprints reveal which tasks collapse onto overlapping experts, providing a data-driven recommender for which multimodal task combinations benefit from joint training. 
+
+Related Works. Mixture-of-Experts has emerged as a scalable paradigm for multimodal learning, capturing inter- and intra-modality interactions through learned routing rather than explicit pairwise attention [ 50 , 40 ]. LIMoE [ 40 ] pioneered large-scale image-text MoE with entropy-based expert spe-cialization; FuseMoE [ 19 ] introduced Laplace gating for irregularly sampled and missing modalities; Flex-MoE [ 65 ] added a missing-modality bank with dual routers for arbitrary modality availability; and MERGE [ 17 ] scaled to the massively multimodal regime via redundancy–uniqueness–synergy interactions. All assume a fixed modality structure across inputs, making them incompatible with flexi-modal multi-task settings. Orthogonally, sparse MoEs are effective multitask learners [21, 16], while continual learning (CL) addresses the forward-transfer/backward-interference trade-off [ 32 , 46 ]. Recent MoE-based CL methods expand experts for new distributions (Lifelong-MoE [ 6 ]), use LoRA experts for lifelong LLM adaptation (MoRAL [ 62 ]), or selectively fine-tune the least-overlapping expert per task (SEED [ 47 ]). However, none investigate whether a multimodal MoE can continu-ally adapt to new tasks with unseen modality combinations without retraining or degrading prior performance. We compare our work with representative baselines in Table 1. 
+
+2 Adaptive MoE for Continual Multimodal Multi-Task Learning 
+
+In this section, we present the core modules of the proposed FLAME framework, which consists of two components. Sec. 2.1 describes the training of multiple flexi-modal tasks, providing a foundation for multimodal models to acquire task-specific knowledge. We then introduce continual adaptation to new multimodal tasks in Sec.2.2. We first show that, during pretraining, the functional energy of expert weights tends to concentrate in lower-rank components, indicating that the representational capacity of experts is underutilized. This observation motivates our parameter-efficient continual learning approach, which compresses accumulated expert knowledge into low-rank subspaces. 
+
+2.1 Multi-Task Pretraining of FLAME Preliminary: Flexi-Modal Formulation and Sparse MoE. Let M = {m1, . . . , m M } denote all possible modality types, and let T = {T 1, . . . , TT } be a set of tasks. Each task Tk is associated with a modality subset Mk ⊆ M , a dataset Dk, and a prediction objective Lk. A sample of Tk
+
+is a collection of modality sequences x =  xm ∈ RLm×dm m ∈ M k , where Lm and dm are the length and feature dimension of modality m. Both the modality subset Mk and the lengths 3Flexi -Modal Input                                                 
+
+> 𝒙 !!∈ℳ!
+> Modality
+> Encoder 𝜙 !
+> 𝒯 $⋅Length -of -stay
+> 𝒯 %⋅Mortality
+> 𝒯 &⋅Breast Disease
+> 𝜙 '(
+> 𝜙 '(
+> 𝜙 ')'
+> 𝜙 ')'
+> 𝜙 ')'
+> 𝜙 *+,
+> 𝜙 -!,
+> 𝜙 -!,
+> Time -series
+> Clinical text
+> Imaging
+> Imaging
+> Clinical text
+> Time -series
+> Clinical text
+> ECG
+> Router 𝑮 𝒕𝒔
+> Router 𝑮 𝒕𝒙𝒕
+> Router 𝑮 𝒊𝒎𝒈
+> Router 𝑮 𝒆𝒄𝒈
+> TAP Top -2
+> &𝒛 !𝐺 !(𝒛 !)
+> TAP Top -2
+> &𝒛 !𝐺 !(𝒛 !)
+> TAP Top -2
+> &𝒛 !𝐺 !(𝒛 !)
+> TAP Top -2
+> &𝒛 !𝐺 !(𝒛 !)
+> 𝐸 $
+> 𝐸 %
+> 𝐸 &
+> 𝐸 6
+> 𝐸 7
+> Conv1D
+> Conv1D
+> Conv1D
+> Conv1D
+> Conv1D
+> MLP
+> MLP
+> MLP
+> MLP
+> MLP
+> Shared Expert Pool {𝐸 $,…,𝐸 7}Per -modality Router 𝐺 !
+> for Unimodal Sequences
+> Fuse
+> 0𝒛 !
+> Head ℎ($)
+> →0𝑦 ($)
+> Fuse
+> 0𝒛 !
+> Head ℎ(%)
+> →0𝑦 (%)
+> Fuse
+> 0𝒛 !
+> Head ℎ(&)
+> →0𝑦 (&)
+> Weighted Combine
+> Per -task
+> Task Head
+> Shared Across all Tasks
+> 𝒯 $⋅Length -of -stay
+> 𝒯 %⋅Mortality
+> 𝒯 &⋅Breast Disease
+> 𝑝 =0.4
+> 𝑝 =0.3
+> (1) ℒ:;<
+> (!):unimodal routing (2) ℒ=->
+> (?):cross -modal sharing (3) cross -task sharing
+
+…Figure 2: FLAME multi-task pretraining architecture. Flexi-Modal tasks with overlapping but distinct modality subsets are jointly trained. Each modality m is encoded by ϕm and routed by a dedicated router Gm (Temporal Attention Pooling + Top-K gating) into a shared expert pool. Each expert applies a 1D temporal convolution followed by a position-wise MLP. Same-modality inputs from different tasks (matching arrow/module color) traverse the same router and the same experts, providing structural inter-task sharing. The router balancing function L(m)bal regulates unimodal routing for m, while the routing distribution divergence L(k)div controls cross-modal sharing for Tk.
+
+{Lm}m∈M k vary arbitrarily across tasks, and within each task, measurements may be recorded at irregular time points. A standard sparse MoE layer with N experts {E1, . . . , E N } and a gating network G maps a token z ∈ Rd to PNi=1 G(z)i · Ei(z), with sparsity enforced by activating only the top-K experts. To enter the MoE, each modality m ∈ M k is first projected by an encoder 
+
+ϕm : RLm×dm → RLm×d into a sequence of d-dimensional embeddings zm = ϕm(xm).
+
+Modality-Specific Routing. Existing multimodal MoEs [ 19 , 65 ] concatenate all modalities into a single flattened sequence and route over its tokens. This couples the gate parameter shapes to a particular modality combination Mk and to the lengths {Lm}, preventing reuse across tasks with heterogeneous modality subsets. We instead instantiate one router Gm per modality type , dispatching modality-m embeddings from any task into a single shared expert pool {E1, . . . , E N }. Routing is performed at the sample level rather than at the token level, so each decision sees an entire sequence’s temporal context while the expert input shape remains RLm×d regardless of how many modalities the current task contains. Sample-level routing requires a fixed-size summary of the variable-length sequence zm ∈ RLm×d. Mean pooling discards temporal structure, while flattening reintroduces Lm
+
+into the gate parameters. We instead use a learnable query qm ∈ Rd that attends over time: 
+
+¯zm =
+
+> Lm
+
+X
+
+> t=1
+
+αm,t zm,t , αm,t = exp( ⟨zm,t , qm⟩/√d)
+
+P 
+
+> t′
+
+exp( ⟨zm,t ′ , qm⟩/√d) . (1) The summary ¯zm ∈ Rd has fixed size and emphasizes routing-relevant time steps. Router Gm then produces sparse top-K gates over the shared pool from ¯zm via noisy top-K gating [ 50 ]; the gate parameters of Gm are shaped only by d and N and are independent of Lm and |M k|.
+
+Temporal-Aware Expert. Each expert Ei processes a full single-modality sequence at its native temporal resolution. Ei first applies a length-preserving 1D convolution along the time axis with kernel size κ to capture local temporal dynamics, followed by a position-wise two-layer MLP applied identically at every step. All expert weights depend only on d and κ, so sequences of any length and any modality can traverse the same expert. The MoE output for modality m broadcasts the sample-level gate Gm(zm) ∈ RN across the temporal axis, so the same K-expert subset processes every time step of a given sample, preserving temporal coherence while remaining sparse. 
+
+Cross-Task and Cross-Modal Interactions. Per-modality routing creates different interaction levels to be regulated jointly: (1) intra-router expert utilization within a single modality, (2) inter-
+
+4Figure 3: Cumulative top-K energy across all 10 expert sublayers (5 experts × {fc1 , fc2 }) of the first cross-modal MoE block, after FLAME multi-task pretraining on all 9 healthcare tasks. 
+
+Left: input-covariance spectrum {λj } of Ci = Ez [zz ⊤], computed over inputs the router actually dispatches to each expert. Center: weight-only Frobenius spectrum {σ2
+
+> i,k
+
+} of Wi. Right: data-aware functional energy Ei,k = σ2
+
+> i,k
+
+v⊤
+
+> i,k
+
+Civi,k on test activations. The input spectrum and the data-aware energy both saturate at very small rank ( 90% energy reached well before K=20 , 99% before K=40 ), while the weight-only spectrum is essentially full rank. This empirically confirms Proposition 1: although Wi is nearly full rank, its functional contribution along the routed-input distribution lives in a sharply low-rank subspace, exposing the idle capacity that FLAME reallocates to incoming tasks. 
+
+task sharing across tasks that contain the same modality, and (3) intra-task interaction across the modalities of a single task. We address (1) and (3) with explicit objectives, while (2) is handled by parameter sharing. Specifically, (2) arises structurally: because the router Gm and the expert pool {Ei} are shared, gradients from Lk update the same components that any other task Tk′
+
+with m ∈ M k ∩ M k′ relies on. Similar patterns of modality m across tasks are thus routed to overlapping experts without an explicit alignment loss, while tasks with disjoint modality subsets interact only through experts that both routers happen to select, naturally bounding cross-task interference. For (1), we apply the coefficient-of-variation penalty [ 50 ] to each router separately, ensuring full utilization of the shared pool without forcing distinct modalities to use experts in identical proportions. For (3), the modalities in Mk may be either complementary or partially redundant [ 17 ]. Let ¯g(k) 
+
+> m
+
+= Ex∼D k [Gm(zm)] ∈ ∆N −1 denote the average routing distribution of modality m on task 
+
+Tk. We regulate cross-modal expert overlap with L(k)div = β ·  |M k |
+
+> 2
+
+−1 Pm,m ′∈M k
+
+> m̸=m′
+
+cos  ¯g(k) 
+
+> m
+
+, ¯g(k)
+
+> m′
+
+,
+
+where cos( ·, ·) denotes cosine similarity. Setting β = +1 (spread ) penalizes overlap, so modalities specialize on disjoint experts and yield complementary representations; setting β = −1 (concentrate )rewards overlap, encouraging fused representations. The mode is selected per task family. Overall, FLAME minimizes the task loss together with the (1) router balancing loss and (3) interaction loss. 
+
+2.2 Efficient Continual Learning on New Multimodal Tasks 
+
+Multitask pretraining requires all tasks to be available simultaneously, which is rarely the case in practice. In real-world deployment scenarios, FLAME must be capable of continuously absorbing a stream of new tasks TT +1 , TT +2 , . . . that arrive with previously unseen modality combinations, without revisiting earlier data. At stage t only Dt is available, and the model is required to retain performance on previously seen tasks. Given the modularized expert pool in sparse MoEs, they have an inherent advantage in expanding capacity by adding new experts to accommodate new tasks [ 6]. However, this approach leads to rapid growth in model size, especially for multimodal tasks that require substantially more computation, making it impractical. Instead, we demonstrate a more efficient solution. We achieve this within a fixed-size expert pool {E1, . . . , E N } by combining spectral compression of expert knowledge with lightweight task-specific router expansion. 
+
+Motivation: Why is Functional Energy Low-Rank? After multi-task pretraining, we observed that the cumulative functional energy of expert weights saturates at much smaller ranks than the ranks of the weight matrices. Specifically, for each expert Ei with weight matrix Wi and Singular Value Decomposition (SVD) Wi = UiΣiV ⊤ 
+
+> i
+
+, let Ci = Ez [zz ⊤] denote the covariance of inputs that the 5router actually dispatches to Ei. The total functional energy admits two equivalent decompositions, 
+
+Ei = tr( Wi Ci W ⊤ 
+
+> i
+
+) = X
+
+> k
+
+σ2 
+
+> i,k
+
+v⊤
+
+> i,k
+
+Ci vi,k 
+
+| {z } 
+
+> in Wi’s SVD basis
+
+= X
+
+> j
+
+λj ∥Wi qj ∥2
+
+| {z } 
+
+> in Ci’s eigenbasis
+
+, (2) where {(λj , qj )} are eigenpairs of Ci. The first sum yields the per-rank functional energy Ei,k =
+
+σ2
+
+> i,k
+
+v⊤
+
+> i,k
+
+Civi,k plotted in Fig. 3 (per-task spectra across all benchmarks are collected in Appendix D.4); the second isolates its source. We can therefore characterize when the curve saturates early. 
+
+Proposition 1. If Ci has ϵ-effective rank r∗, i.e., P 
+
+> j>r ∗
+
+λj ≤ ϵ tr( Ci), then P 
+
+> j>r ∗
+
+λj ∥Wiqj ∥2 ≤
+
+ϵ ∥Wi∥2op tr( Ci), so the output Wiz is concentrated in the rank-r∗ subspace Wi span {q1, . . . , qr∗ },
+
+regardless of rank( Wi).
+
+Proposition 1 (proof in Appendix B) states that the functional rank of an expert is governed by the spectrum of its routed inputs, and not just by the spectrum of its weights as proposed in [ 31 , 30 ]. Two companion results in Appendix B.1 bridge this input-side guarantee to the weight-side truncation in Eq. (3) : gradient flow with the zero initialization of fW (t) 
+
+> i
+
+aligns its right singular vectors with 
+
+Ci’s eigenvectors (Proposition 2), and the rank-rt truncation error generalizes from n ≳ deff (Ci)
+
+stage-t samples (Proposition 3). We conjecture that modality-specific encoders ϕm project inputs onto manifolds with intrinsic dimensionality smaller than d, which drives Ci to be sharply low-rank. In addition, after sufficient training, Wi’s top singular vectors vi,k align with Ci’s top eigenvectors 
+
+qj , as evidenced by prior works [ 49 , 14 , 2], which leads to the saturation of Ei,k as observed in Fig. 3: although Wi is nearly full rank, its singular directions beyond saturation are functionally idle, they contribute negligibly to Ei. These idle ranks are the capacity FLAME reallocates to incoming tasks. 
+
+Spectral Compression of Expert Knowledge. Let W (0)  
+
+> i
+
+denote the expert weight obtained from the multitask pretraining of Sec. 2.1. At each continual stage t ≥ 1, we attach to every expert a fresh, full-rank, zero-initialized additive component fW (t) 
+
+> i
+
+of the same shape as Wi, train it under unconstrained SGD on Lt with all components from prior stages frozen, and after convergence replace it by its rank-rt truncation, 
+
+fW (t) 
+
+> i
+
+= U (t) 
+
+> i
+
+Σ(t) 
+
+> i
+
+V (t)⊤ 
+
+> i
+
+, W (t) 
+
+> i
+
+← U (t)  
+
+> i, 1: rt
+
+Σ(t)  
+
+> i, 1: rt
+
+V (t)⊤  
+
+> i, 1: rt
+
+, (3) which is appended to a frozen stack Πi = ( W (1)  
+
+> i
+
+, W (2)  
+
+> i
+
+, . . . ) along the rank dimension, so after τ
+
+stages the cumulative delta atop W (0)  
+
+> i
+
+has rank at most Pτj=1 rj . Each task t carries a cursor τ = k(t)
+
+pointing to the stage at which it was first trained, and its effective expert weight is 
+
+W eff  
+
+> i
+
+(τ ) = W (0)  
+
+> i
+
++
+
+> τ
+
+X
+
+> j=1
+
+W (j) 
+
+> i
+
+, (4) Time -series  Clinical text         
+
+> 𝜙 𝑡𝑠 𝜙 𝑡𝑥𝑡
+> Router 𝑮 𝒕𝒔 Router 𝑮 𝒕𝒙𝒕
+> 𝐸 1𝐸 2𝐸 𝑁
+> Multitask Pretrained
+> 𝑊 𝑖
+> (𝑁 −1): Rank σ𝑟 1
+> 𝑟 𝑁 −1𝑟 𝑡
+> frozen
+> ෩𝑊 (𝑁 )𝑖 : trainable
+
+…
+
+…      
+
+> Imaging
+> 𝜙 𝑖𝑚𝑔
+> Top -K
+> Router 𝑮 𝒊𝒎𝒈
+> Task
+> 𝒯 1
+> Task
+> 𝒯 2
+> Task
+> 𝒯 𝑁
+> Each new task 𝒯 iadds a freely -trained slice
+> ෩Wtito each expert; after convergence it is
+> truncated to rank rtand frozen.
+
+Figure 4: Overview of FLAME’s CL procedure for MoE, with improved parameter efficiency. so the forward pass for task t excludes any com-ponent reserved at a later stage. The per-stage rank rt is a hyperparameter, fixing the cumulative reserved rank P 
+
+> t
+
+rt and turning capacity plan-ning into an explicit choice under a fixed-size MoE. The full set of trainable and frozen parame-ters at stage t, together with the per-stage memory footprint, is detailed in Appendix E. 
+
+Task-Specific Router and Head Expansion. 
+
+Compressing experts preserves what each ex-pert knows; the routing patterns that compose them into task-specific predictions must also be preserved. We extend the per-modality router 
+
+Gm from Sec. 2.1 into a task-indexed family 
+
+{G(t) 
+
+> m
+
+}t. At stage t, for every m ∈ M t we add a new lightweight router head G(t) 
+
+> m
+
+∈ Rd×N dis-patching modality m on Tt, while earlier heads 6{G(s) 
+
+> m
+
+}s<t are frozen. A new task head h(t) is added in parallel. Modality encoders ϕm are instan-tiated fresh for any genuinely new modality and reused for those already seen; in either case, the variable-length attention layers inside ϕm that standardize sequence lengths across modalities receive the same per-stage compress-and-stack treatment as the experts via Eq. (3) . At inference, task identity selects the appropriate {G(t) 
+
+> m
+
+}m∈M t , the cursor τ = k(t) on every stack Πi, and the head h(t). The per-stage router overhead is O(|M t| d N ), negligible relative to the experts. More details can be found in Algorithm 1. 
+
+Structural Forgetting Guarantee. The combination of frozen prior components and cursor-based inference delivers a no-forgetting property that is structural rather than statistical. Parameter-level isolation : all {W (j) 
+
+> i
+
+}j<t are frozen during stage-t training, so the optimizer cannot modify any block reserved for a prior task. Inference-level isolation : under cursor τ = k(t), Eq. (4) sums only components reserved at or before stage k(t), so any W (j) 
+
+> i
+
+with j > k (t) is excluded from task t’s forward pass by construction. New tasks therefore cannot perturb the predictions of earlier tasks regardless of what they learn. This is strictly stronger than methods that prevent interference at the optimization level only, since those still combine all parameters at inference time. 
+
+Comparison to Subspace-Orthogonality CL. A complementary line of work enforces non-interference during training: GPM [ 48 ] projects gradients onto the orthogonal complement of past-task input subspaces at every step, InfLoRA [ 38 ] constrains the LoRA parameterization to a pre-designed orthogonal subspace, and O-LoRA [ 58 ] adds an orthogonality penalty between suc-cessive LoRA matrices. FLAME-CL instead trains fW (t) 
+
+> i
+
+under unconstrained SGD and applies rank-rt truncation post-hoc. This decouples the forgetting constraint from the optimizer: forgetting is prevented structurally by Eq. (4) , regardless of how fW (t) 
+
+> i
+
+is optimized. The validity of the truncation rests on Proposition 1 applied to fW (t) 
+
+> i
+
+, with Ci retaining its meaning as the routed-input covariance under stage-t data: the functional energy of fW (t) 
+
+> i
+
+concentrates in a low-rank subspace, so discarding low-singular-value directions removes only directions with negligible contribution to stage-t behavior. 
+
+3 Experiments 
+
+Overview . We evaluate FLAME on multi-task pretraining and continual adaptation, organizing the analysis around four questions: (RQ1) Is FLAME robust to heterogeneous modality combinations in joint multitask pretraining, matching task-specific multimodal baselines? (RQ2) Which task pairings benefit from joint training, and does the learned per-modality routing recover interpretable cross-task structure? (RQ3) Can FLAME-CL absorb a stream of new tasks with shifting modality combinations without forgetting earlier ones? (RQ4) What is the parameter footprint of FLAME-CL relative to the relevant baselines as the task stream grows, and is the underlying compression empirically justified? 
+
+3.1 Experimental Setup Dataset and Task Information. We evaluate FLAME on four publicly available datasets that together yield nine prediction tasks spanning critical care, breast imaging, and neurodegenerative disease. MIMIC-IV [29 ] provides ICU stays with three modalities: vital/laboratory time series, clinical notes, and chest X-rays via MIMIC-CXR [ 28 ], evaluated on three tasks (48-IHM, LOS, 25-PHENO). eICU [43 ] adds a multi-center ICU counterpart with time series and clinical notes for two tasks (MOR, RAD). EMBED [26 ] contributes mammography studies with four imaging views (FFDM and synthesized 2D C-View, in CC/MLO projections) and tabular metadata, evaluated on BIRADS, RISK, and DENSITY. ADNI [59 ] provides five per-subject modalities (MRI, FDG-PET, SNP profiles, biospecimen assays, tabular features) over modality-stratified subsets, evaluated on the three-way diagnosis task (DIAG). Further details in Appendix C. 
+
+Baselines. For multitask multimodal performance, we compare FLAME against single-task training of recent multimodal baselines: F LEX MOE [ 65 ], F USE MOE [ 19 ], and H IGH MMT [ 37 ]. F USE MOEand F LEX MOE assume a fixed modality combination and cannot be trained across tasks with heterogeneous modality subsets; H IGH MMT supports multitask training but its pairwise Perceiver cross-attention follows an offline modality- and interaction-heterogeneity sharing schedule fixed over a closed task-modality pool: any new modality combination forces re-estimation and joint retraining 7Figure 5: Per-stage continual-learning trajectories across four task sequences (columns: Setup 1–4) and three metrics (rows: AUROC, encoder params, MoE params). Series: {Simple FT, EWC, LoRA, FLAME-CL}. AUPRC counterpart in Fig. 10. We reserve 32 ranks after each stage. with all prior tasks, ruling out continual use. It also assumes regularly sampled inputs, with no mechanism for irregular clinical time series, restricting the comparison to multitask pretraining. For continual learning, we benchmark FLAME-CL against simple fine-tuning (S IMPLE FT), Elas-tic Weight Consolidation (EWC) [ 32 ], Lifelong-PT [ 6], and Low-Rank Adaptation (L ORA) [ 22 ](Figs. 5, 9); L ORA is included only as a reference point for adaptation quality rather than a practical CL solution, as its parameter count grows with the task stream. We exclude existing CL methods Inflora [ 38 ], O-LoRA [ 58 ], and MoRAL [ 62 ]: these methods attach per-task LoRA experts to a unimodal pretrained backbone, whereas our setup trains a multimodal MoE backbone from scratch with learned cross-modal routing. Similarly, SEED [ 47 ] is a class-incremental image classifier that replaces routing and discriminative heads with a per-task generative Gaussian ensemble which makes it structurally incompatible with our pipeline. 
+
+3.2 Results 
+
+A single FLAME backbone trained jointly across heterogeneous task and modality combinations matches task-specific multimodal baselines on AUROC and exceeds them on AUPRC for the imbal-anced binary tasks where positives are rare (Tables 2a, 2b). The aim is not to outperform single-task models per-task but to show that one architecture absorbs the modality gap typical of joint multi-modal training: tasks with overlapping modality pools gain mildly under per-dataset multitask, while disjoint-pool tasks regress only modestly under the all-nine-task regime. In the continual setting (Fig. 5), FLAME-CL retains end-of-stage AUROC within 0.01 of each task’s first-introduction value across four sequences while storing five- to fifteen-fold fewer encoder parameters than S IMPLE FT, EWC, and L ORA, delivering the structural no-forgetting argument of Sec. 2.2 empirically. 
+
+3.3 Discussions (RQ1) FLAME matches task-specific multimodal baselines: Tables 2a, 2b place it within 0.005 
+
+AUROC of the best baseline on six of nine tasks and ahead on AUPRC for the imbalanced binaries (48-8Table 2: Per-task performance across three runs. Multi-class/multi-label tasks use macro-averaged AUROC/AUPRC; all MoE methods use 5 experts. Cells in all FLAME rows are shaded green, darker for smaller gaps to the best value (darkest when FLAME is the best): gap = 0 , gap ≤ 0.005 , gap 
+
+≤ 0.015 , gap > 0.015 . See Table 3 for full statistics and Figure 7 for the experts ablation. 
+
+(a) MIMIC IV and eICU                                                                                                                                                                                                 
+
+> Metric Setting Method MIMIC IV eICU 48-IHM LOS 25-PHENO MOR RAD AUROC Single Task HighMMT 0.809 ±0.003 0.830 ±0.004 0.724 ±0.002 0.850 ±0.001 0.767 ±0.003
+> FuseMoE 0.798 ±0.008 0.819 ±0.004 0.706 ±0.002 0.846 ±0.003 0.763 ±0.001
+> FlexMoE 0.789 ±0.009 0.817 ±0.004 0.722 ±0.001 0.849 ±0.003 0.768 ±0.003
+> FLAME 0.808 ±0.001 0.816 ±0.005 0.723 ±0.001 0.846 ±0.002 0.756 ±0.006
+> Multitask (per dataset) FLAME 0.817 ±0.005 0.821 ±0.007 0.719 ±0.012 0.843 ±0.005 0.758 ±0.001
+> Multitask (all datasets) FLAME 0.815 ±0.002 0.821 ±0.006 0.719 ±0.006 0.835 ±0.005 0.758 ±0.001
+> AUPRC Single Task HighMMT 0.480 ±0.019 0.748 ±0.008 0.485 ±0.004 0.300 ±0.007 0.459 ±0.003
+> FuseMoE 0.444 ±0.014 0.737 ±0.003 0.455 ±0.003 0.293 ±0.007 0.449 ±0.003
+> FlexMoE 0.445 ±0.020 0.726 ±0.010 0.484 ±0.002 0.300 ±0.006 0.460 ±0.003
+> FLAME 0.492 ±0.009 0.731 ±0.007 0.481 ±0.002 0.293 ±0.006 0.449 ±0.011
+> Multitask (per dataset) FLAME 0.450 ±0.023 0.731 ±0.012 0.471 ±0.016 0.279 ±0.004 0.451 ±0.003
+> Multitask (all datasets) FLAME 0.470 ±0.018 0.743 ±0.008 0.471 ±0.004 0.271 ±0.008 0.451 ±0.001
+
+(b) EMBED and ADNI 
+
+Metric Setting Method EMBED ADNI BIRADS RISK DENSITY DIAG AUROC Single Task HighMMT 0.813 ± 0.002 0.733 ± 0.004 0.927 ± 0.001 0.743 ± 0.021 
+
+FuseMoE 0.802 ± 0.001 0.738 ± 0.001 0.920 ± 0.003 0.747 ± 0.028 
+
+FlexMoE 0.809 ± 0.003 0.735 ± 0.003 0.925 ± 0.000 0.702 ± 0.025 
+
+FLAME 0.813 ± 0.002 0.736 ± 0.001 0.926 ± 0.001 0.788 ± 0.023 
+
+Multitask (per dataset) FLAME 0.811 ± 0.002 0.738 ± 0.005 0.927 ± 0.000 –Multitask (all datasets) FLAME 0.791 ± 0.007 0.714 ± 0.011 0.915 ± 0.007 0.748 ± 0.006 
+
+AUPRC Single Task HighMMT 0.563 ± 0.001 0.142 ± 0.002 0.765 ± 0.003 0.592 ± 0.028 
+
+FuseMoE 0.550 ± 0.003 0.151 ± 0.008 0.755 ± 0.008 0.601 ± 0.040 
+
+FlexMoE 0.567 ± 0.002 0.142 ± 0.003 0.756 ± 0.004 0.549 ± 0.022 
+
+FLAME 0.564 ± 0.003 0.153 ± 0.010 0.758 ± 0.002 0.660 ± 0.039 
+
+Multitask (per dataset) FLAME 0.560 ± 0.008 0.151 ± 0.005 0.764 ± 0.002 –Multitask (all datasets) FLAME 0.542 ± 0.010 0.148 ± 0.012 0.743 ± 0.011 0.611 ± 0.018 
+
+IHM, RISK, DIAG), with the all-nine-task regime trailing per-task models by under 0.02 AUROC— the invariance to modality-pool composition that makes a single shared backbone deployable. (RQ2) 
+
+Tasks pair well exactly when their per-modality routing fingerprints overlap, and routing recovers this structure without supervision: the pairwise heatmap (Fig. 6) and per-task routing panels (Fig. 21) both group EMBED’s BIRADS/DENSITY/RISK, eICU’s MOR/RAD, and MIMIC-IV’s IHM/LOS onto overlapping expert subsets that reinforce, while cross-dataset pairs occupy disjoint experts and gain nothing. (RQ3) FLAME-CL absorbs the entire stream without forgetting, structurally rather than statistically: end-of-stage AUROC stays within 0.01 of each task’s first-introduction value across all four sequences (Fig. 5), whereas Simple FT drops 0.03 –0.05 on the earliest tasks, EWC slows but does not stop drift, and LoRA matches retention only by freezing the base; cursor-based inference plus rank reservation prevent later stages from perturbing prior-task forward passes by construction (Sec. 2.2). (RQ4) FLAME-CL stores 5−15 × fewer encoder parameters than Simple FT, EWC, and LoRA at the same retention level: data-aware spectra saturate by rank 20 –40 on every task while weight-only spectra remain near full rank, so rank reservation reuses functionally idle capacity instead of duplicating weights (Proposition 1). Per-task tables, AUPRC trajectories, the Lifelong-PT comparison [6], and full discussion are in Appendix D.6. 
+
+4 Conclusion and Future Works 
+
+Real-world multimodal deployment couples flexi-modal multitask pretraining with continual absorp-tion of new tasks, two regimes existing frameworks treat in isolation. FLAME unifies them in a single 9sparse MoE: per-modality routers decouple gating from any task’s modality subset, and a stacked, rank-truncated additive design with cursor-based inference makes no-forgetting structural rather than a tunable regularizer. Across diverse tasks, FLAME matches task-specific multimodal baselines with a shared backbone while FLAME-CL retains end-of-stage AUROC at five- to fifteen-fold fewer encoder parameters than CL baselines. 
+
+References 
+
+[1] Pedram Akbarian, Huy Nguyen, Xing Han, and Nhat Ho. Quadratic gating mixture of experts: Statistical insights into self-attention. arXiv preprint arXiv:2410.11222 , 2024. [2] Sanjeev Arora, Nadav Cohen, Wei Hu, and Yuping Luo. Implicit regularization in deep matrix factorization. Advances in neural information processing systems , 32, 2019. [3] Alexander Atanasov, Blake Bordelon, and Cengiz Pehlevan. Neural networks as kernel learners: The silent alignment effect. In International Conference on Learning Representations , 2022. [4] Tadas Baltrušaitis, Chaitanya Ahuja, and Louis-Philippe Morency. Multimodal machine learn-ing: A survey and taxonomy. IEEE transactions on pattern analysis and machine intelligence ,41(2):423–443, 2018. [5] Rich Caruana. Multitask learning. Machine learning , 28(1):41–75, 1997. [6] Wuyang Chen, Yanqi Zhou, Nan Du, Yanping Huang, James Laudon, Zhifeng Chen, and Claire Cui. Lifelong language pretraining with distribution-specialized experts. In International Conference on Machine Learning , pages 5383–5395. PMLR, 2023. [7] Chandler Davis and William M. Kahan. The rotation of eigenvectors by a perturbation. III. 
+
+SIAM Journal on Numerical Analysis , 7(1):1–46, 1970. [8] Matthias De Lange, Rahaf Aljundi, Marc Masana, Sarah Parisot, Xu Jia, Aleš Leonardis, Gregory Slabaugh, and Tinne Tuytelaars. A continual learning survey: Defying forgetting in classification tasks. IEEE transactions on pattern analysis and machine intelligence , 44(7):3366– 3385, 2021. [9] Li Deng. The mnist database of handwritten digit images for machine learning research [best of the web]. IEEE Signal Processing Magazine , 29(6):141–142, 2012. [10] William Fedus, Barret Zoph, and Noam Shazeer. Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity. Journal of Machine Learning Research ,23(120):1–39, 2022. [11] Chris Fifty, Ehsan Amid, Zhe Zhao, Tianhe Yu, Rohan Anil, and Chelsea Finn. Efficiently identifying task groupings for multi-task learning. Advances in Neural Information Processing Systems , 34:27503–27516, 2021. [12] Gauthier Gidel, Francis Bach, and Simon Lacoste-Julien. Implicit regularization of discrete gradient dynamics in linear neural networks. In Advances in Neural Information Processing Systems , 2019. [13] Brian Gow, Tom Pollard, Larry A Nathanson, Alistair Johnson, Benjamin Moody, Chrystinne Fernandes, Nathaniel Greenbaum, Jonathan W Waks, Parastou Eslami, Tanner Carbonati, et al. Mimic-iv-ecg: Diagnostic electrocardiogram matched subset. Type: dataset , 2023. [14] Suriya Gunasekar, Jason D Lee, Daniel Soudry, and Nati Srebro. Implicit bias of gradient descent on linear convolutional networks. Advances in neural information processing systems ,31, 2018. [15] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. 10 [16] Shashank Gupta, Subhabrata Mukherjee, Krishan Subudhi, Eduardo Gonzalez, Damien Jose, Ahmed H Awadallah, and Jianfeng Gao. Sparsely activated mixture-of-experts are robust multi-task learners. arXiv preprint arXiv:2204.07689 , 2022. [17] Xing Han, Hsing-Huan Chung, Joydeep Ghosh, Paul Pu Liang, and Suchi Saria. Guiding mixture-of-experts with temporal multimodal interactions. arXiv preprint arXiv:2509.25678 ,2025. [18] Xing Han, Jing Hu, and Joydeep Ghosh. Dynamic combination of heterogeneous models for hierarchical time series. In 2022 IEEE International Conference on Data Mining Workshops (ICDMW) , pages 1207–1216. IEEE, 2022. [19] Xing Han, Huy Nguyen, Carl Harris, Nhat Ho, and Suchi Saria. Fusemoe: Mixture-of-experts transformers for fleximodal fusion. Advances in Neural Information Processing Systems ,37:67850–67900, 2024. [20] Hrayr Harutyunyan, Hrant Khachatrian, David C Kale, Greg Ver Steeg, and Aram Galstyan. Multitask learning and benchmarking with clinical time series data. Scientific data , 6(1):96, 2019. [21] Ahmed Hendawy, Jan Peters, and Carlo D’Eramo. Multi-task reinforcement learning with mixture of orthogonal experts. arXiv preprint arXiv:2311.11385 , 2023. [22] Edward J Hu, yelong shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. In 
+
+International Conference on Learning Representations , 2022. [23] Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila Welihinda, Alan Hayes, Alec Radford, et al. Gpt-4o system card. arXiv preprint arXiv:2410.21276 , 2024. [24] Arthur Jacot, Franck Gabriel, and Clément Hongler. Neural tangent kernel: Convergence and generalization in neural networks. In Advances in Neural Information Processing Systems ,2018. [25] Andrew Jaegle, Felix Gimeno, Andy Brock, Oriol Vinyals, Andrew Zisserman, and Joao Carreira. Perceiver: General perception with iterative attention. In International conference on machine learning , pages 4651–4664. PMLR, 2021. [26] Jiwoong J Jeong, Brianna L Vey, Ananth Bhimireddy, Thomas Kim, Thiago Santos, Ramon Correa, Raman Dutt, Marina Mosunjac, Gabriela Oprea-Ilies, Geoffrey Smith, Minjae Woo, Christopher R McAdams, Mary S Newell, Imon Banerjee, Judy Gichoya, and Hari Trivedi. The EMory BrEast imaging dataset (EMBED): A racially diverse, granular dataset of 3.4 million screening and diagnostic mammographic images. Radiol. Artif. Intell. , 5(1):e220047, January 2023. [27] Albert Q Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, et al. Mixtral of experts. arXiv preprint arXiv:2401.04088 , 2024. [28] Alistair Johnson, Tom Pollard, Roger Mark, Seth Berkowitz, and Steven Horng. Mimic-cxr database. PhysioNet10 , 13026(C2JT1Q):5, 2024. [29] Alistair EW Johnson, Lucas Bulgarelli, Lu Shen, Alvin Gayles, Ayad Shammout, Steven Horng, Tom J Pollard, Sicheng Hao, Benjamin Moody, Brian Gow, et al. Mimic-iv, a freely accessible electronic health record dataset. Scientific data , 10(1):1, 2023. [30] Prakhar Kaushik, Shravan Chaudhari, Ankit Vaidya, Rama Chellappa, and Alan Yuille. The universal weight subspace hypothesis, 2025. [31] Prakhar Kaushik, Ankit Vaidya, Shravan Chaudhari, and Alan Yuille. Eigenlorax: Recy-cling adapters to find principal subspaces for resource-efficient adaptation and inference. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference , pages 649–659, 2025. 11 [32] James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al. Overcoming catastrophic forgetting in neural networks. Proceedings of the national academy of sciences , 114(13):3521–3526, 2017. [33] Vladimir Koltchinskii and Karim Lounici. Concentration inequalities and moment bounds for sample covariance operators. Bernoulli , 23(1):110–133, 2017. [34] Matthias Lenga, Heinrich Schulz, and Axel Saalbach. Continual learning for domain adaptation in chest x-ray classification. In Medical Imaging with Deep Learning , pages 413–423. PMLR, 2020. [35] Chunyuan Li, Cliff Wong, Sheng Zhang, Naoto Usuyama, Haotian Liu, Jianwei Yang, Tristan Naumann, Hoifung Poon, and Jianfeng Gao. Llava-med: Training a large language-and-vision assistant for biomedicine in one day. Advances in Neural Information Processing Systems ,36:28541–28564, 2023. [36] Hongbo Li, Sen Lin, Lingjie Duan, Yingbin Liang, and Ness B Shroff. Theory on mixture-of-experts in continual learning. arXiv preprint arXiv:2406.16437 , 2024. [37] Paul Pu Liang, Yiwei Lyu, Xiang Fan, Jeffrey Tsaw, Yudong Liu, Shentong Mo, Dani Yogatama, Louis-Philippe Morency, and Ruslan Salakhutdinov. High-modality multimodal transformer: Quantifying modality & interaction heterogeneity for high-modality representation learning. 
+
+arXiv preprint arXiv:2203.01311 , 2022. [38] Yan-Shuo Liang and Wu-Jun Li. Inflora: Interference-free low-rank adaptation for continual learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [39] Michael Moor, Qian Huang, Shirley Wu, Michihiro Yasunaga, Cyril Zakka, Yash Dalmia, Eduardo Pontes Reis, Pranav Rajpurkar, and Jure Leskovec. Med-flamingo: a multimodal medical few-shot learner (2023). URL: https://arxiv. org/abs/2307.15189 , 2023. [40] Basil Mustafa, Carlos Riquelme, Joan Puigcerver, Rodolphe Jenatton, and Neil Houlsby. Multi-modal contrastive learning with limoe: the language-image mixture of experts. Advances in Neural Information Processing Systems , 35:9564–9576, 2022. [41] Jiquan Ngiam, Aditya Khosla, Mingyu Kim, Juhan Nam, Honglak Lee, Andrew Y Ng, et al. Multimodal deep learning. In Icml , volume 11, pages 689–696, 2011. [42] Huy Nguyen, Xing Han, Carl Harris, Suchi Saria, and Nhat Ho. On expert estimation in hierar-chical mixture of experts: Beyond softmax gating functions. arXiv preprint arXiv:2410.02935 ,2024. [43] Tom Pollard, Alistair Johnson, Jesse Raffa, Leo Anthony Celi, Omar Badawi, and Roger Mark. eICU Collaborative Research Database. PhysioNet , April 2019. Version 2.0. [44] Nicola Rieke, Jonny Hancox, Wenqi Li, Fausto Milletari, Holger R Roth, Shadi Albarqouni, Spyridon Bakas, Mathieu N Galtier, Bennett A Landman, Klaus Maier-Hein, et al. The future of digital health with federated learning. NPJ digital medicine , 3(1):119, 2020. [45] Sebastian Ruder. An overview of multi-task learning in deep neural networks. arXiv preprint arXiv:1706.05098 , 2017. [46] Andrei A Rusu, Neil C Rabinowitz, Guillaume Desjardins, Hubert Soyer, James Kirkpatrick, Koray Kavukcuoglu, Razvan Pascanu, and Raia Hadsell. Progressive neural networks. arXiv preprint arXiv:1606.04671 , 2016. [47] Grzegorz Rype´ s´ c, Sebastian Cygert, Valeriya Khan, Tomasz Trzci´ nski, Bartosz Zieli´ nski, and Bartłomiej Twardowski. Divide and not forget: Ensemble of selectively trained experts in continual learning. arXiv preprint arXiv:2401.10191 , 2024. [48] Gobinda Saha, Isha Garg, and Kaushik Roy. Gradient projection memory for continual learning. In International Conference on Learning Representations , 2021. 12 [49] Andrew M Saxe, James L McClelland, and Surya Ganguli. Exact solutions to the nonlinear dynamics of learning in deep linear neural networks. arXiv preprint arXiv:1312.6120 , 2013. [50] Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc V. Le, Geoffrey E. Hinton, and Jeff Dean. Outrageously large neural networks: The sparsely-gated mixture-of-experts layer. In 5th International Conference on Learning Representations, ICLR 2017, Toulon, France, April 24-26, 2017, Conference Track Proceedings . OpenReview.net, 2017. [51] Gemini Team, Rohan Anil, Sebastian Borgeaud, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M Dai, Anja Hauth, Katie Millican, et al. Gemini: a family of highly capable multimodal models. arXiv preprint arXiv:2312.11805 , 2023. [52] Luan Tran, Xiaoming Liu, Jiayu Zhou, and Rong Jin. Missing modalities imputation via cascaded residual autoencoder. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 1405–1414, 2017. [53] Joel A. Tropp. An introduction to matrix concentration inequalities. Foundations and Trends in Machine Learning , 8(1–2):1–230, 2015. [54] Simon Vandenhende, Stamatios Georgoulis, Wouter Van Gansbeke, Marc Proesmans, Dengxin Dai, and Luc Van Gool. Multi-task learning for dense prediction tasks: A survey. IEEE transactions on pattern analysis and machine intelligence , 44(7):3614–3633, 2021. [55] Roman Vershynin. High-Dimensional Probability: An Introduction with Applications in Data Science . Cambridge University Press, 2018. [56] Liyuan Wang, Xingxing Zhang, Hang Su, and Jun Zhu. A comprehensive survey of continual learning: Theory, method and application. IEEE transactions on pattern analysis and machine intelligence , 46(8):5362–5383, 2024. [57] Qi Wang, Liang Zhan, Paul Thompson, and Jiayu Zhou. Multimodal learning with incomplete modalities by knowledge distillation. In Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining , pages 1828–1838, 2020. [58] Xiao Wang, Tianze Chen, Qiming Ge, Han Xia, Rong Bao, Rui Zheng, Qi Zhang, Tao Gui, and Xuanjing Huang. Orthogonal subspace learning for language model continual learning. In 
+
+Findings of the Association for Computational Linguistics: EMNLP 2023 , 2023. [59] Michael W Weiner, Dallas P Veitch, Paul S Aisen, Laurel A Beckett, Nigel J Cairns, Robert C Green, Danielle Harvey, Clifford R Jack, Jr, William Jagust, John C Morris, Ronald C Petersen, Jennifer Salazar, Andrew J Saykin, Leslie M Shaw, Arthur W Toga, John Q Trojanowski, and Alzheimer’s Disease Neuroimaging Initiative. The alzheimer’s disease neuroimaging initiative 3: Continued innovation for clinical trial improvement. Alzheimers Dement , 13(5):561–571, December 2016. [60] Chenwei Wu, Zitao Shuai, Zhengxu Tang, Luning Wang, and Liyue Shen. Dynamic modeling of patients, modalities and tasks via multi-modal multi-task mixture of experts. In The thirteenth international conference on learning representations , 2025. [61] Peng Xu, Xiatian Zhu, and David A Clifton. Multimodal learning with transformers: A survey. 
+
+IEEE Transactions on Pattern Analysis and Machine Intelligence , 45(10):12113–12132, 2023. [62] Shu Yang, Muhammad Asif Ali, Cheng-Long Wang, Lijie Hu, and Di Wang. Moral: Moe augmented lora for llms’ lifelong learning. arXiv preprint arXiv:2402.11260 , 2024. [63] Jun Yu, Yutong Dai, Xiaokang Liu, Jin Huang, Yishan Shen, Ke Zhang, Rong Zhou, Eashan Adhikarla, Wenxuan Ye, Yixin Liu, et al. Unleashing the power of multi-task learning: A comprehensive survey spanning traditional, deep, and pretrained foundation model eras. arXiv preprint arXiv:2404.18961 , 2024. [64] Yi Yu, Tengyao Wang, and Richard J. Samworth. A useful variant of the Davis–Kahan theorem for statisticians. Biometrika , 102(2):315–323, 2015. 13 [65] Sukwon Yun, Inyoung Choi, Jie Peng, Yangfan Wu, Jingxuan Bao, Qiyiwen Zhang, Jiayi Xin, Qi Long, and Tianlong Chen. Flex-moe: Modeling arbitrary modality combination via the flexible mixture-of-experts. Advances in Neural Information Processing Systems , 37:98782– 98805, 2024. [66] Yu Zhang and Qiang Yang. A survey on multi-task learning. IEEE transactions on knowledge and data engineering , 34(12):5586–5609, 2021. 14 Supplementary Material for “FLAME: Adaptive Mixture-of-Experts for Continual Multimodal Multi-Task Learning” 
+
+Appendix Contents 
+
+• A. Extended Related Works • B. Proof of Proposition 1 • C. Dataset Details • D. Additional Experimental Results 
+
+– D.1 Hardware and Implementation 
+
+– D.2 Detailed Multitask Pretraining Results — full per-task table, pairwise interactions, number-of-experts ablation, gating-function ablation 
+
+– D.3 Detailed Continual Learning Results — per-method walkthrough against Simple FT/EWC/LoRA, isolated FLAME-CL vs. LoRA comparison, comparison against Lifelong-PT, per-stage AUPRC trajectories 
+
+– D.4 Spectral Validation of Proposition 1 — single-task and multi-task expert input spectra 
+
+– D.5 Per-Modality Routing Distributions — single-task, multi-task, and continual-stage routing fingerprints 
+
+– D.6 Extended Discussion of Research Questions — long-form RQ1–RQ4 analysis with interpretive framing • E. Additional Methodological Details • F. Limitations • G. Broader Impact 
+
+A Extended Related Works 
+
+Multimodal Learning and MoEs. Multimodal learning spans early fusion, late fusion, and cross-modal attention architectures [ 41 , 4, 61 ], with recent Transformer-based approaches enabling scalable joint modeling of heterogeneous inputs. MoE [ 50 , 10 , 18 , 27 , 1, 15 , 42 ] has emerged as a powerful paradigm for scaling model capacity without proportional increases in computation, by dynamically routing inputs through a sparse subset of specialized experts. It has achieved superior results in multimodal learning, where the multimodal embeddings are routed to experts based on the learned routing mechanisms. The inter and intra-modality relationships are captured during the routing process without the need to explicitly specify pairwise modality as in cross-attention. LIMoE [ 40 ]pioneered large-scale multimodal MoE by processing images and text through a shared sparse transformer with contrastive learning, demonstrating natural expert specialization via entropy-based regularization. FuseMoE [ 19 ] addressed the flexi-modal setting with irregularly sampled and missing modalities, introducing a Laplace gating function with theoretical convergence guarantees superior to softmax routing. Building on this, Flex-MoE [ 65 ] proposed a missing modality bank and dual-router design to handle arbitrary modality availability at inference. Most recently, MERGE [ 17 ] extended multimodal MoE to the massively multimodal regime by using temporal redundancy, uniqueness, and synergy interactions to guide routing. Despite these advances, existing multimodal MoE methods operate under a fixed and consistent modality structure across inputs, making them fundamentally incompatible with the Flexi-Modal multi-task scenario. 
+
+Multi-Task and Continual Learning. Multi-task learning (MTL) [ 5, 66 , 63 ] is a principled approach to improve generalization by jointly optimizing across related tasks, leveraging shared representations to reduce sample complexity and improve model efficiency. MTL has been extended to complex settings involving gradient conflict resolution [ 11 ], task grouping, and parameter sharing strategies [ 54 , 45 ]. Recent works have shown that sparse MoEs are effective at generalizing across multiple tasks and serve as robust multitask learners [ 21 , 16 , 21 ]. Complementary to MTL, continual learning (CL) [ 56 , 8] addresses the sequential task setting, where a model must acquire new knowledge over 15 time without catastrophically forgetting previously learned tasks [ 32 ]. Foundational approaches such as Elastic Weight Consolidation (EWC) [ 32 ] and Progressive Neural Networks [ 46 ] have established the canonical trade-off between forward transfer and backward interference. A growing line of work has specifically examined the continual learning capacity of MoE. Lifelong-MoE [ 6] progressively expands experts and gating dimensions to accommodate new pretraining data distributions. MoRAL [62 ] couples MoE with LoRA, using low-rank adapters as experts so that lifelong adaptation of LLMs can be achieved with minimal trainable parameters. SEED [ 47 ] tackles class-incremental learning by maintaining a fixed-size expert ensemble and selectively fine-tuning only the single expert whose distributions overlap least with the new task. Despite these advances, the capacity for multitask and continual learning in multimodal models remains substantially understudied. Many multimodal multitask frameworks typically assume a fixed and unified set of modalities across all tasks, and none have explored the CL capabilities of multimodal MoE. A key question is whether a flexi-modal MoE model trained on an initial set of tasks can rapidly adapt to new tasks with previously unseen modality combinations after deployment, without retraining or degrading performance on existing tasks. 
+
+B Proof of Proposition 1 
+
+Proposition 1. Let Wi ∈ Rp×d be the weight matrix of expert Ei and let Ci = Ez [zz ⊤] ∈ Rd×d
+
+be the covariance of the inputs routed to Ei, with eigendecomposition Ci = Pdj=1 λj qj q⊤ 
+
+> j
+
+where 
+
+λ1 ≥ λ2 ≥ · · · ≥ λd ≥ 0. Suppose Ci has ϵ-effective rank r∗, i.e., 
+
+X
+
+> j>r ∗
+
+λj ≤ ϵ tr( Ci). (5) 
+
+Then the orthogonal-tail contribution to the functional energy satisfies 
+
+X
+
+> j>r ∗
+
+λj ∥Wi qj ∥2 ≤ ϵ ∥Wi∥2op tr( Ci), (6) 
+
+where ∥Wi∥op = σi, 1 denotes the spectral norm of Wi. Consequently, for any input z drawn from the routed distribution, the output Wiz is concentrated, in expected squared norm, in the rank-r∗
+
+subspace Wi span {q1, . . . , qr∗ }, regardless of rank( Wi).Proof. We proceed in three steps: (i) decompose the total functional energy in Ci’s eigenbasis, (ii) bound the orthogonal tail using the spectral norm of Wi, and (iii) translate the bound into a statement about the output Wiz.
+
+Step 1: Decomposition. Since {qj }dj=1 is an orthonormal eigenbasis of Ci, we may write Ci =
+
+P 
+
+> j
+
+λj qj q⊤ 
+
+> j
+
+. The total functional energy of Wi on the routed input distribution is 
+
+Ei = Ez
+
+∥Wiz∥2 = Ez
+
+tr( Wizz ⊤W ⊤ 
+
+> i
+
+) = tr( Wi Ci W ⊤ 
+
+> i
+
+)= tr 
+
+
+
+Wi
+
+ P 
+
+> j
+
+λj qj q⊤
+
+> j
+
+
+
+W ⊤
+
+> i
+
+
+
+=
+
+> d
+
+X
+
+> j=1
+
+λj tr( Wiqj q⊤ 
+
+> j
+
+W ⊤ 
+
+> i
+
+)=
+
+> d
+
+X
+
+> j=1
+
+λj ∥Wiqj ∥2, (7) where the last equality uses tr( aa ⊤) = ∥a∥2 with a = Wiqj . We split this sum at the cutoff r∗:
+
+Ei =
+
+> r∗
+
+X
+
+> j=1
+
+λj ∥Wiqj ∥2
+
+| {z }
+
+> E≤r∗
+> i
+
++
+
+> d
+
+X
+
+> j=r∗+1
+
+λj ∥Wiqj ∥2
+
+| {z }
+
+> E>r ∗
+> i
+
+. (8) 
+
+Step 2: Tail bound. For each j, the spectral norm of Wi implies the operator inequality ∥Wiqj ∥2 ≤∥Wi∥2op ∥qj ∥2 = ∥Wi∥2op , since qj is a unit vector. Substituting into E>r ∗ 
+
+> i
+
+,
+
+E>r ∗ 
+
+> i
+
+= X
+
+> j>r ∗
+
+λj ∥Wiqj ∥2 ≤ ∥ Wi∥2op 
+
+X
+
+> j>r ∗
+
+λj ≤ ϵ ∥Wi∥2op tr( Ci), (9) where the last inequality applies the effective-rank assumption (5). This establishes (6). 16 Step 3: Output concentration. Let Πr∗ = Pr∗ 
+
+> j=1
+
+qj q⊤ 
+
+> j
+
+project onto the top-r∗ eigensubspace of 
+
+Ci, and Π⊥ 
+
+> r∗
+
+= I − Πr∗ . Decompose z = Π r∗ z + Π ⊥ 
+
+> r∗
+
+z and note that the cross term vanishes in expectation because the eigenbasis diagonalizes Ci:
+
+E∥Wiz∥2 = E∥WiΠr∗ z∥2 + E∥WiΠ⊥ 
+
+> r∗
+
+z∥2, (10) since E[(Π r∗ z)⊤W ⊤ 
+
+> i
+
+Wi(Π ⊥ 
+
+> r∗
+
+z)] = tr( W ⊤ 
+
+> i
+
+WiΠ⊥ 
+
+> r∗
+
+CiΠr∗ ) = 0 . The same Step-1 calculation applied to each piece yields E[∥WiΠ⊥ 
+
+> r∗
+
+z∥2] = E>r ∗ 
+
+> i
+
+. Combining (10) with (9), 
+
+E∥WiΠ⊥ 
+
+> r∗
+
+z∥2 ≤ ϵ ∥Wi∥2op tr( Ci), (11) which is independent of rank( Wi). Hence the output Wiz is concentrated, in expected squared norm, in Wi span {q1, . . . , qr∗ }.
+
+Remark 1. Dividing both sides of (6) by Ei gives the relative tail energy E>r ∗ 
+
+> i
+
+/Ei ≤ ϵ κ i, where 
+
+κi = ∥Wi∥2op tr( Ci)/Ei measures the misalignment between Wi’s top singular directions and Ci’s top eigendirections; κi = 1 in the perfectly aligned case and grows when Wi wastes capacity on low-energy directions. Empirically, gradient training drives κi close to 1, giving the sharp saturation observed in Fig. 3. 
+
+Remark 2. Proposition 1 underwrites the spectral truncation in Eq. (3) . The truncation in FLAME-CL is applied not to the full expert weight Wi but to the stage-t additive component fW (t) 
+
+> i
+
+, whose role is to encode the new task on top of the already-frozen base W (0)  
+
+> i
+
++ P 
+
+> j<t
+
+W (j) 
+
+> i
+
+. Applying Proposition 1 to fW (t) 
+
+> i
+
+, with Ci retaining its meaning as the routed-input covariance under stage-t
+
+data, shows that the functional energy of fW (t) 
+
+> i
+
+concentrates in a low-rank subspace of its routed-input distribution. The post-training alignment of Remark 1 further implies that low-singular-value directions of fW (t) 
+
+> i
+
+correspond to low-functional-energy directions, so the rank-rt truncation defining 
+
+W (t) 
+
+> i
+
+is approximately functionally lossless on the stage-t distribution while reducing the per-stage memory footprint to rt(p + d + 1) scalars. 
+
+B.1 Alignment and Sample Complexity for the Spectral Truncation 
+
+Proposition 1 establishes input-side concentration: the output Wiz lives in the rank-r∗ eigensubspace of Ci. The truncation in Eq. (3) is applied weight-side, however, to the singular vectors of fW (t) 
+
+> i
+
+. We close that gap with two complementary results: an alignment argument under gradient flow, showing that with the zero initialization used in Eq. (3) the right singular vectors of fW (t) 
+
+> i
+
+coincide with the eigenvectors of Ci (Proposition 2), and a sample-complexity bound, showing that the resulting truncation error is faithfully estimated from finite stage-t data (Proposition 3). Both results study a linear surrogate of the expert nonlinearity; their conclusions are corroborated empirically across all benchmarks in Sec. D.4. 
+
+Linear quadratic surrogate. For the alignment argument we replace the expert by its linear part 
+
+z 7 → W z and consider continuous-time gradient flow on the population least-squares objective 
+
+L(W ) = 12 Ez∼pi W ⋆z − W z 2 = 12 tr  (W − W ⋆) Ci (W − W ⋆)⊤, (12) with stage-t optimum W ⋆ ∈ Rp×d and routed-input distribution pi of covariance Ci. The flow 
+
+˙Wt = −∇ W L(Wt) = ( W ⋆ − Wt) Ci models the training dynamics of fW (t) 
+
+> i
+
+on stage-t data, with 
+
+W ⋆ the optimal linearization at convergence; the linear-surrogate assumption is standard in implicit-bias analyses [49, 14, 2]. 
+
+Proposition 2 (Alignment under zero-initialized gradient flow) . Let Wt evolve under the gradient flow on (12) with W0 = 0 , matching the zero initialization of fW (t) 
+
+> i
+
+in Eq. (3) . Then for every t ≥ 0,
+
+Wt = W ⋆  I − e−Cit, Wtqj =  1 − e−λj t W ⋆qj . (13) 
+
+(i) Convergence on the effective subspace. For any index set J ⊆ [d] with λJ := min j∈J λj > 0,writing QJ = [ qj ]j∈J ,
+
+(Wt − W ⋆) QJ 
+
+> 2
+> F
+
+= X
+
+> j∈J
+
+∥W ⋆qj ∥2 e−2λj t ≤ ∥ W ⋆∥2 
+
+> F
+
+e−2λJ t. (14) 17 (ii) Exact SVD alignment under commutativity. If W ⋆⊤W ⋆ commutes with Ci, then for every t ≥ 0,
+
+W ⊤ 
+
+> t
+
+Wt =
+
+> d
+
+X
+
+> j=1
+
+ 1 − e−λj t2 σ⋆2 
+
+> j
+
+qj q⊤ 
+
+> j
+
+, σ⋆2 
+
+> j
+
+:= q⊤ 
+
+> j
+
+W ⋆⊤W ⋆qj , (15) 
+
+so the right singular vectors of Wt coincide with the eigenvectors {qj } of Ci, with squared singular values (1 − e−λj t)2σ⋆2 
+
+> j
+
+.Proof. Closed form. Let Xt := Wt − W ⋆, so ˙Xt = −XtCi with X0 = −W ⋆. The matrix-valued linear ODE has solution Xt = X0 e−Cit = −W ⋆ e−Cit, hence Wt = W ⋆(I − e−Cit). Right-multiplying by qj and using Ciqj = λj qj gives (13). 
+
+(i) Convergence. From (13), (Wt − W ⋆)qj = −e−λj t W ⋆qj . Squaring and summing over j ∈ J,
+
+∥(Wt − W ⋆)QJ ∥2 
+
+> F
+
+= X
+
+> j∈J
+
+∥W ⋆qj ∥2 e−2λj t ≤
+
+ X 
+
+> j∈J
+
+∥W ⋆qj ∥2
+
+e−2λJ t ≤ ∥ W ⋆∥2 
+
+> F
+
+e−2λJ t,
+
+using e−2λj t ≤ e−2λJ t for j ∈ J.
+
+(ii) Alignment. From the closed form, W ⊤ 
+
+> t
+
+Wt = ( I − e−Cit) W ⋆⊤W ⋆ (I − e−Cit). The factor 
+
+I − e−Cit is a function of Ci, hence diagonal in {qj } with entries (1 − e−λj t). Under the commuta-tivity assumption [W ⋆⊤W ⋆, C i] = 0 , both matrices are simultaneously diagonalizable in {qj }, so 
+
+W ⋆⊤W ⋆ = P 
+
+> j
+
+σ⋆2 
+
+> j
+
+qj q⊤ 
+
+> j
+
+, giving (15). 
+
+Remark 3. The closed form (13) is the η → 0 limit of SGD with step size η. Discrete-step convergence at rate (1 − ηλ K )2t for η < 1/λ 1 follows by standard arguments on linear gradient dynamics [ 12 ]. Relaxing the commutativity assumption in (ii) incurs a Davis-Kahan correction [ 7 , 64 ]of order ∥W ⊤ 
+
+> t
+
+Wt − W ⋆⊤W ⋆∥F /δ ⋆K , where δ⋆K is the squared-singular-value gap of W ⋆; this perturbation itself decays exponentially at rate λr∗ on the effective subspace, so the perfectly aligned conclusion of (ii) is the limit of approximate alignment statements that hold whenever the commutator 
+
+[W ⋆⊤W ⋆, C i] is small. 
+
+Corollary 1 (Functional truncation error under alignment) . Suppose Propositions 1 (with ϵ-effective rank r∗) and 2 (ii) hold, and let W (K) 
+
+> t
+
+denote the rank-K SVD truncation of Wt for some K ≥ r∗
+
+chosen so that the top-K right singular subspace of Wt contains span {q1, . . . , qr∗ }. Then 
+
+Ez∼pi Wtz − W (K) 
+
+> t
+
+z 2 ≤ ϵ ∥Wt∥2op tr( Ci). (16) 
+
+Proof. By Proposition 2 (ii), the right singular vectors of Wt are exactly {qj }dj=1 . Let JK ⊆ [d]
+
+index the top-K right singular directions of Wt, so that W (K) 
+
+> t
+
+z = P 
+
+> j∈J K
+
+(1 − e−λj t) W ⋆qj (q⊤ 
+
+> j
+
+z).By assumption [r∗] ⊆ J K , so the discarded directions all lie outside the top-r∗ eigensubspace of Ci.Applying the Step-1 decomposition of Proposition 1’s proof to the residual Wt − W (K) 
+
+> t
+
+,
+
+E∥Wtz − W (K) 
+
+> t
+
+z∥2 = X
+
+> j / ∈J K
+
+λj ∥Wtqj ∥2 ≤ X
+
+> j>r ∗
+
+λj ∥Wtqj ∥2 ≤ ϵ ∥Wt∥2op tr( Ci),
+
+where the last inequality is the bound (6) of Proposition 1. 
+
+Proposition 3 (Sample complexity for the empirical truncation error) . Fix W ∈ Rp×d and its rank-K SVD truncation W (K), and write W (>K ) := W − W (K). Suppose z ∈ Rd is mean-zero sub-Gaussian with parameter ν, i.e. E exp( ⟨u, z⟩) ≤ exp( ν2∥u∥2/2) for all u ∈ Rd. Let {zi}ni=1 
+
+be iid samples from pi and define the population and empirical truncation errors 
+
+T := Ez∼pi W (>K )z 2, bTn := 1
+
+> nn
+
+X
+
+> i=1
+
+W (>K )zi
+
+> 2
+
+,
+
+together with the effective rank deff (Ci) := tr( Ci)/∥Ci∥op . There exists an absolute constant c > 0
+
+such that for any δ ∈ (0 , 1) and any n ≥ deff (Ci) + log(2 /δ ), with probability at least 1 − δ,
+
+bTn − T ≤ c ν 2 W (>K ) 2
+
+> F
+
+r deff (Ci) + log(2 /δ )
+
+n . (17) 18 Proof. Write T = tr  W (>K ) Ci W (>K )⊤ and bTn = tr  W (>K ) bCn W (>K )⊤, where bCn =
+
+> 1
+> n
+
+P 
+
+> i
+
+ziz⊤ 
+
+> i
+
+. Using |tr( M N )| ≤ ∥ M ∥op ∥N ∥∗ with N = W (>K )⊤W (>K ) ⪰ 0 and ∥N ∥∗ =tr( N ) = ∥W (>K )∥2 
+
+> F
+
+,
+
+bTn − T = tr  ( bCn − Ci) W (>K )⊤W (>K ) ≤ bCn − Ci op W (>K ) 2 
+
+> F
+
+. (18) Sub-Gaussianity gives matrix-Bernstein concentration of bCn around Ci [ 53 , 55 , 33 ]: there exists 
+
+c′ > 0 such that, with probability at least 1 − δ,
+
+bCn − Ci op ≤ c′ ν2
+
+q deff (Ci)+log(2 /δ ) 
+
+> n
+
++ deff (Ci)+log(2 /δ )
+
+> n
+
+
+
+.
+
+For n ≥ deff (Ci) + log(2 /δ ) the first term dominates, so ∥ bCn − Ci∥op ≤
+
+2c′ ν2p(deff (Ci) + log(2 /δ )) /n . Substituting into (18) and absorbing the constant yields (17) .
+
+Remark 4. The bound (17) scales with deff (Ci), not the ambient dimension d. When Ci is sharply low-rank—empirically the case for FLAME’s experts on every benchmark in Sec. D.4—we have 
+
+deff (Ci) ≈ r∗, so n = O(r∗/ε 2) samples suffice to estimate T to additive accuracy ε · ∥ W (>K )∥2 
+
+> F
+
+.The same low-rank structure that motivates the truncation in Proposition 1 also controls the sample complexity of validating it from finite data. 
+
+Remark 5. Propositions 2 and 3 are stated for the linear surrogate (12) ; FLAME’s experts add a length-preserving 1-D convolution and a position-wise MLP. NTK-regime analysis [ 24 , 3 ] extends Proposition 2 to wide nonlinear networks: in the lazy regime the network behaves as a linear predictor in NTK feature space, and the alignment argument applies to the NTK feature map. We invoke both propositions as motivation for the truncation in Eq. (3) ; the spectral plots in Fig. 3 and Sec. D.4 provide direct empirical confirmation that the conclusions hold for the nonlinear experts on every benchmark in our suite. 
+
+C Dataset Details 
+
+We provide additional details on the four healthcare datasets used in our experiments, including cohort construction, label distributions, modality preprocessing, and train/validation/test splits. All datasets are publicly available under their respective data use agreements. 
+
+MIMIC-IV. MIMIC-IV [ 29 ] is a de-identified critical care database collected at the Beth Israel Dea-coness Medical Center, a single tertiary academic medical center. We follow the cohort construction and preprocessing pipeline of FuseMoE [ 19 ], which adapts the multi-task ICU benchmark of [ 20 ]to MIMIC-IV. ICU stays are restricted to adult patients and the first stay per admission. Vital signs and laboratory measurements are assembled into an irregularly sampled multivariate time series and discretized for the multi-time attention encoder. Clinical notes within the prediction window are concatenated and tokenized for a clinical text encoder. Chest X-rays linked through MIMIC-CXR [ 28 ]are matched at the stay level; stays missing imaging are retained with the modality marked absent. 
+
+48-IHM predicts in-hospital mortality from the first 48 hours of the stay, LOS predicts whether the remaining stay exceeds seven days, and 25-PHENO predicts a 25-way multi-label phenotype indicator over acute care conditions. We adopt the standard 70/10/20 train/validation/test split with patient-level disjointness. 
+
+eICU. The eICU Collaborative Research Database (v2.0) [43] comprises de-identified records from 208 U.S. hospitals and ∼139 ,367 unique patients, providing inter-institutional variation in coding practices and care patterns that complements MIMIC-IV’s single-site cohort and exercises the routing under realistic distributional shift. We mirror the MIMIC-IV preprocessing pipeline for vital and laboratory time series and clinical notes. MOR predicts in-ICU mortality and RAD predicts 30-day all-cause readmission; both tasks use the standard cohort filters (adult patients, length of stay ≥ 24 
+
+hours) and a 70/10/20 patient-level split. 
+
+EMBED. The Emory Breast Imaging Dataset [ 26 ] contains 3.4M screening and diagnostic mammo-graphic images across a racially diverse population. Each breast study yields four image streams— FFDM CC, FFDM MLO, synthesized 2D C-View CC, and synthesized 2D C-View MLO—which are resized and normalized for a shared image encoder. Tabular metadata (demographics, prior history) is one-hot/standardized. BIRADS is a multi-class classification over BI-RADS final assessment 19 categories, RISK is a binary short-term cancer risk label, and DENSITY is the multi-class ACR breast density category. Splits are constructed at the patient level to prevent leakage across breast laterality. 
+
+ADNI. The Alzheimer’s Disease Neuroimaging Initiative cohort [ 59 ] provides up to five modalities per subject: structural MRI, FDG-PET, genomic SNP profiles, biospecimen assays (CSF/blood biomarkers), and tabular clinical and cognitive assessments. Following Flex-MoE [ 65 ], we form modality-stratified subsets ranging from 757 subjects with all five modalities to 5,073 subjects with the most populous subset, and use the same five-modality combination at training time with the rest of the modalities marked absent. DIAG is a three-way classification across Cognitively Normal (CN), Mild Cognitive Impairment (MCI), and Alzheimer’s Dementia (AD), with a 70/10/20 subject-level split. 
+
+D Additional Experimental Results 
+
+This section supplements the main-text experiments with full per-task tables, ablations, an additional CL baseline, spectral diagnostics, and routing visualizations. Subsections mirror the four research questions of Sec. 3: Sec. D.2 expands on multitask pretraining (RQ1, RQ2), Sec. D.3 on continual learning (RQ3, RQ4), and Secs. D.4, D.5 provide the spectral and routing evidence that explains the multitask gains and the parameter savings (RQ2, RQ4). 
+
+D.1 Hardware and Implementation 
+
+All experiments are run on 8× NVIDIA A5500 GPUs with 24 GB memory per GPU. 
+
+D.2 Detailed Multitask Pretraining Results D.2.1 Full Per-Task Performance 
+
+Tab. 3 extends the main-text per-task tables (Tabs. 2a, 2b) along three axes: (i) it adds F1 and accuracy alongside AUROC and AUPRC, (ii) it adds FuseMoE [ 19 ] as a fourth single-task baseline, and (iii) it reports both the per-dataset multitask FLAME run and the all-nine-task multitask FLAME run alongside the single-task numbers. Across all four metrics, FLAME’s single-task numbers track HighMMT within 0.005 AUROC on six of nine tasks and exceed it on AUPRC for the imbalanced binary tasks, confirming that the AUROC story in the main text is not a metric-specific artifact. 
+
+Single-task baselines. FLAME trails HighMMT by 0.011 to 0.014 AUROC on LOS and RAD but exceeds it on ADNI DIAG by 0.045 (0.788 vs 0.743 ). On AUPRC FLAME wins on the imbalanced binary tasks where positives are rare: 48-IHM ( 0.492 vs 0.480 ), RISK ( 0.153 vs 0.142 ), and DIAG (0.660 vs 0.592 ); the win on the imbalanced tail is the architectural signature of modality-conditioned dispatch sharpening the boundary on rare positives. 
+
+Joint training is task-dependent. Per-dataset MIMIC-IV multitask raises 48-IHM AUROC from 
+
+0.808 to 0.817 and LOS to 0.821 but drops 48-IHM AUPRC by 0.042 , indicating that the AUROC gain comes from re-ranking near the operating threshold rather than from improved positive recall. Training all nine tasks at once preserves the binary-task AUROC gains and gives back 0.040 AUROC on DIAG, the only task whose modality pool (MRI, FDG-PET, SNP, biospecimen, clinical) shares no encoder with any other. Tasks that share modalities pay no measurable cost for joint training; tasks with disjoint modality combinations regress modestly when squeezed into a single shared expert pool. 
+
+D.2.2 Pairwise Task Interactions 
+
+Fig. 6 reports the pairwise multitask-gain matrix that grounds the main-text RQ2 discussion. Each row corresponds to a focal task; each column gives a co-trained partner; cell (t, t ′) is the AUROC (left) or AUPRC (right) of task t when FLAME is jointly trained on the pair {t, t ′}. Two structural patterns are visible. Within-dataset stability : the EMBED block (BIRADS, RISK, DENSITY) is uniformly bright, with DENSITY above 0.92 AUROC for every column it appears in, indicating that mammography representations transfer readily within the dataset and resist interference from unrelated co-trained tasks. Cross-dataset asymmetry : the IHM row shifts by 0.02 –0.03 depending on the partner, with the largest gain coming from co-training with LOS, while ADNI’s DIAG (whose modality pool is disjoint from every other task) regresses modestly under most pairings. Tasks pair 20 Table 3: Per-task performance (mean ± std across 3 seeds, population std). Multi-class/multi-label tasks use macro-averaged AUROC/AUPRC/F1; PHENO accuracy is Hamming. We fix number of experts to 5 for all the MoE methods. Ablation on number of experts is provided in Figure 7. Metric Setting Method MIMIC IV eICU EMBED ADNI 48-IHM LOS 25-PHENO MOR RAD BIRADS RISK DENSITY DIAG AUROC Single Task HighMMT 0.809 ± 0.003 0.830 ± 0.004 0.724 ± 0.002 0.850 ± 0.001 0.767 ± 0.003 0.813 ± 0.002 0.733 ± 0.004 0.927 ± 0.001 0.743 ± 0.021 
+
+FuseMoE 0.798 ± 0.008 0.819 ± 0.004 0.706 ± 0.002 0.846 ± 0.003 0.763 ± 0.001 0.802 ± 0.001 0.738 ± 0.001 0.920 ± 0.003 0.747 ± 0.028 
+
+FlexMoE 0.789 ± 0.009 0.817 ± 0.004 0.722 ± 0.001 0.849 ± 0.003 0.768 ± 0.003 0.809 ± 0.003 0.735 ± 0.003 0.925 ± 0.000 0.702 ± 0.025 
+
+FLAME 0.808 ± 0.001 0.816 ± 0.005 0.723 ± 0.001 0.846 ± 0.002 0.756 ± 0.006 0.813 ± 0.002 0.736 ± 0.001 0.926 ± 0.001 0.788 ± 0.023 
+
+Multitask (per dataset) FLAME 0.817 ± 0.005 0.821 ± 0.007 0.719 ± 0.012 0.843 ± 0.005 0.758 ± 0.001 0.811 ± 0.002 0.738 ± 0.005 0.927 ± 0.000 –Multitask (all datasets) FLAME 0.815 ± 0.002 0.821 ± 0.006 0.719 ± 0.006 0.835 ± 0.005 0.758 ± 0.001 0.791 ± 0.007 0.714 ± 0.011 0.915 ± 0.007 0.748 ± 0.006 
+
+AUPRC Single Task HighMMT 0.480 ± 0.019 0.748 ± 0.008 0.485 ± 0.004 0.300 ± 0.007 0.459 ± 0.003 0.563 ± 0.001 0.142 ± 0.002 0.765 ± 0.003 0.592 ± 0.028 
+
+FuseMoE 0.444 ± 0.014 0.737 ± 0.003 0.455 ± 0.003 0.293 ± 0.007 0.449 ± 0.003 0.550 ± 0.003 0.151 ± 0.008 0.755 ± 0.008 0.601 ± 0.040 
+
+FlexMoE 0.445 ± 0.020 0.726 ± 0.010 0.484 ± 0.002 0.300 ± 0.006 0.460 ± 0.003 0.567 ± 0.002 0.142 ± 0.003 0.756 ± 0.004 0.549 ± 0.022 
+
+FLAME 0.492 ± 0.009 0.731 ± 0.007 0.481 ± 0.002 0.293 ± 0.006 0.449 ± 0.011 0.564 ± 0.003 0.153 ± 0.010 0.758 ± 0.002 0.660 ± 0.039 
+
+Multitask (per dataset) FLAME 0.450 ± 0.023 0.731 ± 0.012 0.471 ± 0.016 0.279 ± 0.004 0.451 ± 0.003 0.560 ± 0.008 0.151 ± 0.005 0.764 ± 0.002 –Multitask (all datasets) FLAME 0.470 ± 0.018 0.743 ± 0.008 0.471 ± 0.004 0.271 ± 0.008 0.451 ± 0.001 0.542 ± 0.010 0.148 ± 0.012 0.743 ± 0.011 0.611 ± 0.018 
+
+F1 Single Task HighMMT 0.386 ± 0.078 0.722 ± 0.005 0.354 ± 0.013 0.310 ± 0.036 0.432 ± 0.043 0.501 ± 0.006 0.150 ± 0.039 0.700 ± 0.008 0.549 ± 0.014 
+
+FuseMoE 0.323 ± 0.053 0.733 ± 0.010 0.326 ± 0.002 0.304 ± 0.015 0.468 ± 0.006 0.518 ± 0.013 0.187 ± 0.035 0.694 ± 0.008 0.520 ± 0.031 
+
+FlexMoE 0.324 ± 0.103 0.702 ± 0.012 0.370 ± 0.013 0.188 ± 0.041 0.443 ± 0.027 0.510 ± 0.017 0.120 ± 0.015 0.702 ± 0.004 0.370 ± 0.123 
+
+FLAME 0.405 ± 0.028 0.710 ± 0.023 0.316 ± 0.017 0.229 ± 0.029 0.388 ± 0.035 0.506 ± 0.018 0.171 ± 0.009 0.704 ± 0.002 0.576 ± 0.026 
+
+Multitask (per dataset) FLAME 0.321 ± 0.106 0.717 ± 0.055 0.306 ± 0.008 0.147 ± 0.053 0.398 ± 0.028 0.533 ± 0.011 0.145 ± 0.009 0.701 ± 0.003 –Multitask (all datasets) FLAME 0.209 ± 0.050 0.704 ± 0.030 0.292 ± 0.001 0.164 ± 0.050 0.431 ± 0.012 0.489 ± 0.019 0.096 ± 0.014 0.677 ± 0.012 0.478 ± 0.065 
+
+Accuracy Single Task HighMMT 0.853 ± 0.008 0.753 ± 0.004 0.768 ± 0.008 0.954 ± 0.004 0.865 ± 0.001 0.729 ± 0.018 0.743 ± 0.145 0.760 ± 0.001 0.556 ± 0.015 
+
+FuseMoE 0.845 ± 0.003 0.738 ± 0.006 0.765 ± 0.004 0.954 ± 0.003 0.860 ± 0.002 0.702 ± 0.021 0.842 ± 0.075 0.734 ± 0.010 0.538 ± 0.037 
+
+FlexMoE 0.846 ± 0.002 0.739 ± 0.007 0.770 ± 0.001 0.959 ± 0.000 0.866 ± 0.002 0.737 ± 0.010 0.662 ± 0.071 0.756 ± 0.001 0.474 ± 0.048 
+
+FLAME 0.857 ± 0.001 0.723 ± 0.016 0.774 ± 0.000 0.958 ± 0.002 0.863 ± 0.001 0.736 ± 0.026 0.839 ± 0.013 0.757 ± 0.000 0.601 ± 0.022 
+
+Multitask (per dataset) FLAME 0.855 ± 0.011 0.749 ± 0.016 0.770 ± 0.004 0.958 ± 0.000 0.865 ± 0.002 0.734 ± 0.037 0.772 ± 0.027 0.758 ± 0.000 –Multitask (all datasets) FLAME 0.852 ± 0.005 0.743 ± 0.011 0.770 ± 0.006 0.959 ± 0.000 0.867 ± 0.000 0.666 ± 0.083 0.516 ± 0.153 0.729 ± 0.022 0.516 ± 0.049 
+
+well precisely when their per-modality routers (Sec. D.5.2) overlap; the heatmap therefore serves as a data-driven recommender for which task pairs should share a model. 
+
+(a) AUROC (b) AUPRC 
+
+Figure 6: Pairwise task performance. Left: AUROC, Right: AUPRC. Each row represents the focal task’s performance when trained jointly with the partner task on the column. 
+
+D.2.3 Number-of-Experts Ablation 
+
+We sweep the shared expert pool size N ∈ { 2, 4, 8, 16 , 32 } with FLAME jointly trained on all nine tasks at seed 42 . Fig. 7 shows the AUROC and AUPRC trajectories; Tabs. 4, 5 give the numbers per task. Performance is largely insensitive to N for N ≥ 4: per-task AUROC moves by less than 0.02 
+
+across the entire sweep on every task except 48-IHM (where N =16 regresses but N =32 recovers). The sweet spot is N ∈ { 4, 8}, balancing capacity against per-modality router collapse risk; all main-text experiments use N =5 . The flatness of the curve indicates that FLAME’s gains do not rest on a particular pool size: the per-modality dispatch already concentrates each modality on a small expert subset, so adding more experts saturates rather than shifts the routing. 
+
+D.2.4 Gating-Function Ablation 
+
+Tab. 6 compares Laplace [ 19 ], Gaussian, and Softmax [ 50 ] gating under three regimes (single-task, per-dataset multitask, all-nine-task multitask) at N =8 and seed 42 . The three gates are within 0.01 
+
+AUROC and 0.02 AUPRC of one another on every task and every regime, and no gate wins uniformly. The methodological implication is sharp: FLAME’s parameter-efficiency and continual-retention 21 Figure 7: Ablation over number of experts; Left: AUROC, Right: AUPRC. FLAME jointly trained on all 9 tasks. Multi-class/multi-label tasks use macro-averaged AUROC and AUPRC. Table 4: Ablation over number of experts (AUROC; seed=42; FLAME jointly trained on all 9 tasks). Multi-class/multi-label tasks use macro-averaged AUROC. # Experts MIMIC IV eICU EMBED ADNI 48-IHM LOS 25-PHENO MOR RAD BIRADS RISK DENSITY DIAG 2 0.787 0.814 0.723 0.843 0.759 0.785 0.690 0.917 0.751 4 0.809 0.821 0.718 0.835 0.758 0.802 0.727 0.917 0.788 8 0.811 0.813 0.716 0.831 0.760 0.770 0.680 0.909 0.774 16 0.760 0.791 0.710 0.834 0.754 0.783 0.672 0.904 0.782 32 0.812 0.814 0.710 0.842 0.759 0.798 0.714 0.900 0.725 gains do not come from the gating non-linearity but from the structural choices around it—per-modality routing, sample-level dispatch via TAP, and rank-reserved spectral compression. Replacing the gate is essentially a no-op; replacing any of the structural pieces is not. 
+
+D.3 Detailed Continual Learning Results D.3.1 Walkthrough Against Standard CL Baselines 
+
+This subsubsection unpacks the continual-learning headline of Sec. 3.2 into per-method and per-stage detail. 
+
+Setup. We compare FLAME-CL against simple fine-tuning (S IMPLE FT), Elastic Weight Consoli-dation (EWC), and Low-Rank Adaptation (L ORA) on four task sequences that span single-task and multitask stages over MIMIC-IV, eICU, and EMBED (Setups 1–4 in Fig. 5). S IMPLE FT updates the full encoder in place at every stage; EWC adds a Fisher-weighted regularizer; L ORA freezes the base and stacks a fresh low-rank adapter per stage; FLAME-CL trains a fresh additive component per stage and freezes a rank-r truncation of it on completion (Sec. 2.2). 
+
+Retention. On AUROC averaged over the final-stage evaluation of every introduced task, FLAME-CL is within 0.01 of L ORA on every sequence and beats S IMPLE FT and EWC by 0.02 –0.05 on the earliest tasks of every sequence (the tasks most exposed to forgetting). L ORA is competitive on retention only because its frozen base shields prior-task weights, a property FLAME-CL recovers structurally through frozen prior components and cursor-based inference at a fraction of the parameter cost. 
+
+Per-stage parameter footprint. The middle and right rows of Fig. 5 report the method-attributable encoder and MoE parameter count at the end of every stage. S IMPLE FT and EWC sit flat at 109 Mencoder parameters because they update the full encoder in place; L ORA grows from 109 .54 M at stage 1 to 125 .29 M by stage 3 of Setup 4, since each new stage stacks a fresh adapter on top of the 22 Table 5: Ablation over number of experts (AUPRC; seed=42; FLAME jointly trained on all 9 tasks). Multi-class/multi-label tasks use macro-averaged AUPRC. # Experts MIMIC IV eICU EMBED ADNI 48-IHM LOS 25-PHENO MOR RAD BIRADS RISK DENSITY DIAG 2 0.423 0.727 0.483 0.293 0.446 0.544 0.122 0.742 0.597 4 0.442 0.724 0.474 0.279 0.446 0.550 0.136 0.743 0.681 8 0.477 0.716 0.470 0.264 0.452 0.523 0.125 0.731 0.665 16 0.346 0.695 0.464 0.257 0.435 0.538 0.134 0.714 0.654 32 0.452 0.742 0.463 0.279 0.449 0.561 0.161 0.718 0.573 Table 6: Gating-style ablation (FLAME, 8 experts, seed=42). Rows are tasks grouped by training setup: Single Task trains IHM alone; Per-dataset (MIMIC IV) trains IHM, LOS, PHENO jointly; All Datasets trains all 9 tasks jointly. Multi-class/multi-label tasks (PHENO, BIRADS, DENSITY, DIAG) use macro-averaged AUROC/AUPRC. Setup Task AUROC AUPRC Laplace Gaussian Softmax Laplace Gaussian Softmax Single Task 48-IHM 0.794 0.797 0.802 0.442 0.461 0.433 Per-dataset (MIMIC IV) 48-IHM 0.805 0.804 0.810 0.419 0.426 0.443 LOS 0.819 0.806 0.809 0.719 0.709 0.714 25-PHENO 0.710 0.711 0.714 0.467 0.468 0.472 All Datasets 48-IHM 0.811 0.816 0.817 0.477 0.487 0.487 LOS 0.813 0.817 0.815 0.716 0.721 0.705 25-PHENO 0.716 0.717 0.719 0.470 0.472 0.475 RAD 0.760 0.759 0.758 0.452 0.453 0.455 MOR 0.831 0.841 0.843 0.264 0.274 0.271 BIRADS 0.770 0.779 0.792 0.523 0.519 0.551 RISK 0.680 0.732 0.729 0.125 0.126 0.143 DENSITY 0.909 0.914 0.900 0.731 0.739 0.711 DIAG 0.774 0.803 0.755 0.665 0.691 0.603 frozen base; FLAME-CL grows from 7.99 M to 23 .96 M, a five- to fifteen-fold reduction depending on the stage. The MoE budget shows the same shape ( 0.17 M to 0.50 M for FLAME-CL versus 
+
+0.41 M to 0.74 M for L ORA). 
+
+Spectral hypothesis link. Proposition 1 predicts this efficiency: a trained expert’s functional energy concentrates in a low-rank subspace because the routed-input distribution is itself low-rank. Sec. D.4 confirms it: across every task and every joint configuration the data-aware spectrum saturates well before rank 40 of an ambient 128 while the weight-only spectrum stays close to full rank. The compression in Eq. (3) therefore removes only directions that contribute negligibly to the expert’s output on the task it was trained for. 
+
+D.3.2 Comparison Against Lifelong-PT 
+
+Fig. 8 compares FLAME-CL against Lifelong-PT [ 6], an MoE-based CL method that grows the expert pool with each new task. We use the same four sequences and the same axes as Fig. 5 of the main text. FLAME-CL (red) matches Lifelong-PT (blue) on AUROC at every stage of every sequence, while keeping the encoder budget below the static base in Setups 1 and 4 and the MoE budget within 0.4M of the smallest method in every sequence. Lifelong-PT pays a constant per-task expert-addition cost that does not amortize across tasks; FLAME-CL’s rank-reserved stack reuses idle capacity inside a fixed-size pool and amortizes the budget over the entire stream. This experiment isolates the comparison to the “expand the pool” approach to MoE continual learning specifically, and shows that FLAME-CL delivers the same retention without paying its parameter price. 
+
+D.3.3 Comparison Against LoRA 
+
+Fig. 9 isolates the comparison from Sec. D.3.1 to FLAME-CL versus L ORA alone, using the same four sequences and the same three metric rows (AUROC, encoder params, MoE params) as Fig. 5. Among the standard CL baselines, L ORA is the only one that retains earlier-stage AUROC by freezing the base, so the relevant question is whether FLAME-CL can match L ORA’s retention at a smaller per-stage parameter cost. 23 Figure 8: Comparison against Lifelong-PT [ 6], an MoE-based continual-learning method that grows the expert pool with each new task. Per-stage trajectories for the four sequences (columns: Setup 1 to Setup 4) across three metrics (rows: AUROC, encoder parameter count in millions, MoE parameter count in millions). x-axis: training-stage checkpoint; within each stage, AUROC panels overlay one line per task seen so far. FLAME-CL (red) matches Lifelong-PT (blue) on AUROC at every stage of every sequence while keeping the encoder budget below the static base in Setups 1 and 4 and the MoE budget within 0.4M of the smallest method in every sequence; Lifelong-PT pays a constant per-task expert-addition cost that does not amortize. Same axes, sequences, and grouping as Fig. 5; replacing the four CL baselines (Simple FT, EWC, LoRA, FLAME-CL) with the two-method comparison FLAME-CL versus Lifelong-PT. The panels answer this. FLAME-CL’s AUROC trajectories track L ORA’s within 0.01 at every stage of every sequence, while the encoder-parameter and MoE-parameter rows are uniformly smaller per stage. Encoder parameters grow roughly linearly with stage in both methods, but FLAME-CL’s slope is below L ORA’s, with the gap widening as the task stream lengthens (Setup 4); the MoE-parameter row has the same shape, with both methods one to two orders of magnitude below the encoder count. The retention parity follows from the cursor-based inference of Sec. 2.2: FLAME-CL’s frozen prior components are inaccessible to the optimizer at later stages, mirroring the protection L ORA buys by freezing its base, but with each new component a rank-rt slice rather than a full-shape low-rank adapter. 
+
+D.3.4 Per-Stage AUPRC Trajectories 
+
+For completeness we report per-stage AUPRC trajectories complementing the AUROC panels of Fig. 5; axes, sequences (S1–S4), method ordering, and grouping are identical (Fig. 10). The trend mirrors the AUROC story: FLAME-CL stays close to or above the best baseline at every stage of every sequence, with the largest margins on the earliest tasks of each sequence (the tasks most exposed to forgetting). AUPRC is the more informative metric for the imbalanced binary tasks (48-IHM, RISK, MOR), and the absence of degradation there indicates that the structural no-forgetting guarantee from cursor-based inference protects positive recall, not only the operating threshold. 24 Figure 9: Comparison against L ORA [ 22 ], the strongest retention baseline among the standard CL methods. Per-stage trajectories for the four sequences (columns: Setup 1 to Setup 4) across three metrics (rows: AUROC, encoder parameter count in millions, MoE parameter count in millions). x-axis: training-stage checkpoint; within each stage, AUROC panels overlay one line per task seen so far. FLAME-CL (red) matches L ORA (green) on AUROC at every stage of every sequence while using fewer encoder and MoE parameters at every stage. Same axes, sequences, and grouping as Fig. 5; replacing the four CL baselines (Simple FT, EWC, LoRA, FLAME-CL) with the two-method comparison FLAME-CL versus LoRA. 
+
+D.4 Spectral Validation of Proposition 1 
+
+This section reports the empirical spectra that motivate the spectral-compression step of FLAME (Eq. (3) ) and validate Proposition 1 across every task and joint training configuration considered in our experiments. For each configuration we plot, in the first cross-modal MoE block, the cumulative top-K energy of all 10 expert sublayers (5 experts × {fc1 , fc2 }) under three lenses: • Input spectrum (Ci eigenvalues): the eigenvalue spectrum of the routed-input covariance 
+
+Ci = Ez [zz ⊤], estimated from the test-set tokens that each expert actually receives. • Weight-only (Frobenius): the singular-value energy {σ2
+
+> i,k
+
+} of the expert’s weight matrix 
+
+Wi, ignoring the input distribution. • Data-aware (test activations): the per-rank functional energy Ei,k = σ2
+
+> i,k
+
+v⊤
+
+> i,k
+
+Civi,k from Eq. (2), which couples weight and input geometry. The dashed red lines mark the 90% and 99% cumulative-energy thresholds. Across every benchmark, the input spectrum and the data-aware curve saturate by rank ≈20 –40 while the weight-only spectrum remains near full rank, exposing the idle capacity that FLAME’s continual-learning step reallocates. 
+
+D.4.1 Single-Task Pretraining Spectra 
+
+Figs. 11–14 show the three-lens spectra for each of the nine tasks individually trained. The pattern is consistent across modality types: time-series ICU tasks (Figs. 11, 12), high-resolution mammography views (Fig. 13), and multi-modal Alzheimer biomarkers (Fig. 14) all show data-aware energy curves that saturate well before the ambient rank, despite the wide variation in input statistics. This 25 stage 1 
+
+> pheno
+> stage 2
+> los
+> stage 3
+> ihm
+
+Training stage 
+
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> AUPRC
+
+AUPRC: pheno los ihm 
+
+> Method
+> Simple FT
+> EWC
+> Lifelong-PT
+> FLAME-CL
+> Task
+> pheno
+> los
+> ihm
+
+(a) S1. stage 1 
+
+> mortality
+> stage 2
+> readmission
+
+Training stage 
+
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> 0.40
+> 0.45
+> AUPRC
+
+AUPRC: mortality readmission  
+
+> Method
+> Simple FT
+> EWC
+> Lifelong-PT
+> FLAME-CL
+> Task
+> mortality
+> readmission
+
+(b) S2. stage 1 
+
+> density
+> stage 2
+> birads
+> stage 3
+> risk
+
+Training stage 
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> AUPRC
+
+AUPRC: density birads risk 
+
+> Method
+> Simple FT
+> EWC
+> Lifelong-PT
+> FLAME-CL
+> Task
+> density
+> birads
+> risk
+
+(c) S3. stage 1    
+
+> pheno
+> density
+> stage 2
+> los
+> birads
+> mortality
+> stage 3
+> ihm
+> risk
+> readmission
+> Training stage
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> AUPRC
+> AUPRC: pheno+density los+birads+mortality ihm+risk+readmission
+> Method
+> Simple FT
+> EWC
+> Lifelong-PT
+> FLAME-CL
+> Task
+> pheno
+> density
+> los
+> birads
+> mortality
+> ihm
+> risk
+> readmission
+
+(d) S4. 
+
+Figure 10: Per-stage AUPRC for the four continual-learning sequences (S1–S4); axes and grouping as in Fig. 5. consistency is what makes per-task rank reservation viable: the spectral-rank budget does not need to be re-tuned per modality, and the truncation step in Eq. (3) discards directions with negligible functional energy regardless of which clinical task contributes them. 
+
+D.4.2 Multi-Task Pretraining Spectra 
+
+Fig. 15 reports the same three-lens analysis under joint pretraining, both within MIMIC-IV ({IHM, LOS, PHENO}) and across all nine tasks (MIMIC-IV ∪ eICU ∪ EMBED ∪ ADNI). Even with a larger and more heterogeneous routed-input distribution, the data-aware functional energy still saturates well before the ambient rank—only marginally later than the single-task spectra above. Multitask routing therefore does not break the low-rank structure that Proposition 1 relies on; it preserves it. This is the empirical foundation for using a single rank budget rt during continual stages regardless of how many tasks were jointly pretrained at stage 0.
+
+D.5 Per-Modality Routing Distributions 
+
+This section reports the routing patterns learned by FLAME’s per-modality routers in the first cross-modal MoE block. For every configuration we plot, for each modality (and each task in the multi-task panels): • Activation ratio (left): the fraction of modality-m tokens for which expert e is among the top-K activated experts. • Mean gate weight (right): the average sparse gate weight assigned to expert e, conditioned on e being activated. Modality-specific routers concentrate each modality on a small subset of experts, while different modalities reuse overlapping experts only when their representations are complementary—the empir-ical basis for the per-modality routing design of Sec. 2.1. In the multi-task panels, comparing rows reveals which task pairs share modality-conditioned experts and which carve out disjoint capacity. 26 (a) 48-IHM (in-hospital mortality), MIMIC-IV. 
+
+> (b) LOS (length-of-stay), MIMIC-IV.
+> (c) 25-PHENO (phenotype classification), MIMIC-IV.
+
+Figure 11: Expert input spectra after single-task FLAME pretraining on the three MIMIC-IV tasks (modalities: time series, clinical text, chest X-ray). 
+
+D.5.1 Single-Task Routing 
+
+Figs. 16–19 show per-modality routing for each task trained individually. The MIMIC-IV triple (Fig. 16) gives a clear illustration of the design’s intent: chest X-ray, clinical text, and time series each concentrate on a distinct pair of experts, with mild reuse on a shared expert when the modalities are complementary for the task. The eICU pair (Fig. 17) follows the same structure on its two-modality input. EMBED’s four mammography views (Fig. 18) split cleanly between view-specific experts, confirming that the router exploits the same-modality-different-view signal supplied by breast laterality. ADNI’s five biomarker modalities (Fig. 19) occupy expert positions that are essentially disjoint from the other datasets’, reflecting its unique modality pool. 
+
+D.5.2 Multi-Task Routing 
+
+Figs. 20, 21 report the per-task, per-modality routing under joint training. Within MIMIC-IV (Fig. 20), IHM and LOS share an almost identical routing fingerprint—the structural reason their multitask AUROC reinforces—whereas 25-PHENO carves out a distinct subset via the cxr_pheno ,27 (a) MOR (mortality), eICU. 
+
+> (b) RAD (readmission), eICU.
+
+Figure 12: Expert input spectra after single-task FLAME pretraining on the two eICU tasks. 
+
+text_pheno , and ts_pheno per-task router heads. In the nine-task panel (Fig. 21), the EMBED triple BIRADS/DENSITY/RISK collapses onto two shared experts; the eICU pair MOR/RAD settles on another; ADNI’s biomarker tasks occupy expert positions that no other dataset reaches. This expert-level task clustering is the data-driven evidence behind FLAME’s joint-training pairing recommendations and reads consistently with the pairwise heatmap in Sec. D.2.2. 
+
+D.5.3 Continual-Stage Routing 
+
+This subsection extends the routing analysis from joint multi-task pretraining (Sec. D.5.2) to the continual-stage setting: Figs. 22–25 visualize how the per-stage router heads {G(k) 
+
+> m
+
+}m (Algorithm 1) deploy each modality across the shared expert pool at every stage of the four continual sequences from Sec. D.3. Each panel row corresponds to one stage with the tasks introduced at that stage labeled; columns within a row are the modalities used at that stage; the heatmap inside each block is the per-expert activation ratio. Two structural properties of FLAME-CL read directly off the panels. 
+
+Frozen prior fingerprints. Once stage k converges, the router heads {G(k) 
+
+> m
+
+}m and the rank-rk
+
+truncations {W (k) 
+
+> i
+
+} are frozen (Sec. 2.2); the routing fingerprints assigned at stage k therefore appear unchanged in every later stage’s panels — rows do not shift, swap experts, or reweight when subsequent tasks are added. This is the routing-level reading of the cursor identity in Eq. (4) : under cursor τ = k(t), task t at inference sees only its own stage’s router heads, and new stages cannot perturb them. 
+
+Within-dataset reuse vs. cross-dataset isolation. For sequences whose stages share modality semantics (S1: PHENO →LOS →IHM on MIMIC-IV in Fig. 22; S2: MOR →RAD on eICU in Fig. 23; S3: DENSITY →BIRADS →RISK on EMBED in Fig. 24), each new stage’s router lands on the same modality-conditioned experts that prior stages occupied, with at most mild reweighting — knowledge transfer at the architectural level rather than at the parameter level. In the mixed cross-dataset sequence (S4, Fig. 25), tasks from different datasets occupy disjoint expert subsets at every stage, mirroring the all-nine-task pretraining panel (Fig. 21); cross-dataset interference is bounded structurally, with no replay buffer or alignment loss. Together with the AUROC and 28 (a) BIRADS (breast density category), EMBED. 
+
+> (b) DENSITY (breast density score), EMBED.
+> (c) RISK (cancer risk), EMBED.
+
+Figure 13: Expert input spectra after single-task FLAME pretraining on the three EMBED breast-imaging tasks (modalities: 2D-CC, 2D-MLO, CC, MLO mammography views). parameter trajectories of Sec. D.3, these visualizations explain how FLAME-CL delivers within-
+
+0.01 AUROC retention at 5−15 × fewer encoder parameters: shared-modality stages share experts, disjoint-modality stages occupy disjoint experts, and prior fingerprints are never overwritten. 
+
+D.6 Extended Discussion of Research Questions 
+
+The brief RQ answers in Sec. 3.3 are summaries; below we restate the full long-form discussion, including interpretive framing that ties results back to the design choices of Sec. 2. Numerical detail referenced here lives in Secs. D.2.1, D.3.1, D.4, D.5. 
+
+(RQ1) Headline performance. FLAME’s per-modality router matches HighMMT and FlexMoE on AUROC across the standard single-task setting and overtakes them on AUPRC for the imbalanced binary tasks (IHM, RISK, DIAG), where modality-conditioned dispatch sharpens the boundary on rare positives. Joint training under the same routing helps when modality semantics align across tasks, with 48-IHM and LOS both gaining 0.01 AUROC under per-dataset multitask, and the cost is small when they do not, with a 0.04 AUROC drop on DIAG, the only task whose modality pool shares 29 (a) DIAG (Alzheimer’s diagnosis), ADNI. 
+
+Figure 14: Expert input spectra after single-task FLAME pretraining on ADNI (multi-modal tabular and imaging biomarkers).       
+
+> (a) Joint MIMIC-IV pretraining over {IHM, LOS, PHENO}.
+> (b) Joint pretraining over all 9 tasks (MIMIC-IV ∪eICU ∪EMBED ∪ADNI).
+
+Figure 15: Expert input spectra under joint FLAME pretraining. Despite the larger and more heterogeneous routed-input distribution, the data-aware functional energy still saturates well before the ambient rank, supporting per-task low-rank reservation in continual learning. no encoder with any other. The all-nine multitask FLAME run still trails the per-task baselines by less than 0.02 AUROC on every task while training a single shared backbone, which is the property that makes the framework usable in deployment: a single architecture that absorbs the modality gap typical of joint multimodal training instead of regressing onto a brittle joint-training optimum. 
+
+(RQ2) Task pairing and routing. The pairwise heatmap (Fig. 6) and the per-task routing visualiza-tions (Figs. 20, 21) agree on the same set of pairings. Tasks that route their tokens to overlapping expert subsets benefit from joint training: BIRADS, DENSITY, and RISK on EMBED all gain when co-trained; IHM and LOS share an almost identical routing fingerprint and reinforce each other; MOR and RAD on eICU collapse onto a single shared pair of experts. Tasks whose routing fingerprints occupy disjoint expert positions (most cross-dataset pairings) gain nothing from being co-trained, and the routing makes this visible without running the full pairwise grid. Because the 30 (a) 48-IHM, MIMIC-IV. (b) LOS, MIMIC-IV. 
+
+> (c) 25-PHENO, MIMIC-IV.
+
+Figure 16: Per-modality routing for the three MIMIC-IV tasks. Modalities: chest X-ray ( cxr ), clinical text ( text ), time series ( ts ). Each modality concentrates on a distinct pair of experts, with mild cross-modality reuse on the shared expert.  
+
+> (a) MOR (mortality), eICU. (b) RAD (readmission), eICU.
+
+Figure 17: Per-modality routing for the two eICU tasks. routing is observed without supervision, it doubles as a data-driven recommender for which task combinations should share a model. 
+
+(RQ3) Continual retention and per-stage trajectories. Across all four sequences, FLAME-CL holds its end-of-stage AUROC within 0.01 of the value at the task’s first introduction, while S IMPLE 
+
+FT drops by 0.03 to 0.05 on the earliest tasks of every sequence (Fig. 5, top row). EWC’s regularizer slows but does not stop the drift; L ORA matches FLAME-CL’s retention but only because it freezes prior weights and pays a parameter cost per stage. The retention is structural rather than statistical: frozen prior components plus cursor-based inference (Eqs. 3, 4) prevent any later stage from perturbing the forward pass of an earlier task, so the guarantee follows from the algorithm rather than from a regularizer that has to be tuned per sequence. Visually, Fig. 5 re-evaluates every task seen so far at every stage checkpoint, so each task gains a new bar at every stage after its introduction; shrinkage of an earlier task’s bar across stages directly reads as catastrophic forgetting, and growth of any method’s bar across stages reads as parameter inflation. FLAME-CL’s per-stage AUROC bars stay close to or above the baselines while its parameter bars (red) remain well below S IMPLE FT, EWC, and L ORA, confirming that the rank-reservation step preserves prior-task knowledge while adding only a small per-stage budget. Per-stage AUPRC trajectories (same trend) are reported in Sec. D.3.4, and the per-method walkthrough with all stage-by-stage parameter counts is in Sec. D.3.1. 
+
+(RQ4) Cost and the spectral hypothesis. FLAME-CL stores between five and fifteen times fewer encoder parameters than S IMPLE FT, EWC, and L ORA at the same retention level (Sec. D.3.1). The 31 (a) BIRADS, EMBED. (b) DENSITY, EMBED. 
+
+> (c) RISK, EMBED.
+
+Figure 18: Per-modality routing for the three EMBED breast-imaging tasks. Mammography views (2dcc , 2dmlo , cc , mlo ) split cleanly between view-specific experts. 
+
+> (a) DIAG, ADNI.
+
+Figure 19: Per-modality routing for ADNI Alzheimer’s diagnosis (T1–T5 imaging biomarkers). compression step is justified empirically by the spectra in Sec. D.4: the data-aware functional energy 
+
+Ei,k saturates by rank 20 to 40 across every task and every joint configuration, while the weight-only spectrum stays close to full rank. Most of the parameter capacity in a trained expert is therefore functionally idle, and FLAME-CL’s reservation step reuses that idle capacity to absorb new tasks instead of duplicating the entire weight matrix. This is the link from Proposition 1 to the parameter savings, and it is what allows a fixed-size MoE to absorb a stream of new tasks without exploding the parameter budget the way every alternative method does. 
+
+E Additional Methodological Details 
+
+Stage-t trainable and frozen parameter sets. At each continual stage t, the trainable parameters are: the additive expert components {fW (t) 
+
+> i
+
+}Ni=1 ; the analogous additive components on the variable-length attention layers inside each modality encoder ϕm, which are compressed and stacked under the same scheme as the experts; the new per-modality router heads {G(t) 
+
+> m
+
+}m∈M t ; the new task head h(t); and any genuinely new modality encoder instantiated at stage t. All other parameters are frozen: the multitask-pretrained base W (0)  
+
+> i
+
+, every prior reserved component (both expert and encoder), every 32 Figure 20: Per-task, per-modality routing under joint MIMIC-IV pretraining over {IHM, LOS, PHENO}. Each row corresponds to one task. IHM and LOS share an almost identical routing fingerprint, whereas PHENO carves out a distinct subset of experts via the cxr_pheno , text_pheno 
+
+and ts_pheno per-task router heads. prior router head {G(s) 
+
+> m
+
+}s<t , prior task heads, and the static parts of encoders for modalities already seen. After stage-t convergence we apply Eq. (3) to obtain W (t) 
+
+> i
+
+together with the analogous rank-rt
+
+truncations on the encoder attention layers, then freeze them along with G(t) 
+
+> m
+
+and h(t). The per-stage memory footprint is rt(p + d + 1) scalars per stacked weight (factored U, Σ, V ⊤ form) plus the fixed router and head overheads, so the cumulative reserved rank P 
+
+> t
+
+rt controls how many tasks fit within a fixed-size MoE. Algorithm 1 below describes the full procedure. 
+
+F Limitations 
+
+The evaluation is healthcare-specific; the per-modality routing design should generalize, but autonomous-driving and robotics benchmarks remain to be tested. Our continual-learning pro-tocol assumes task identity at inference (task-incremental rather than task-agnostic CL). Finally, the gating-style ablation (Tab. 6) shows softmax, Laplace, and Gaussian gates land within 0.01 
+
+AUROC of one another, indicating the gains come from per-modality sample-level routing and rank reservation rather than from the gating function itself; isolating the marginal contribution of each FLAME component (TAP pooling, divergence loss, spectral compression) is left to follow-up work. 
+
+G Broader Impact 
+
+FLAME’s flexi-modal multi-task and continual learning capabilities are well-suited to clinical settings, where modality availability differs across institutions and new prediction tasks emerge after deployment. By enabling a single shared backbone to absorb new tasks at 5–15 × fewer parameters than standard adaptation baselines, FLAME lowers the compute and validation overhead of maintaining multimodal clinical models. We caution, however, that healthcare deployment requires rigorous prospective validation, fairness auditing across patient subgroups, and institutional oversight; structural no-forgetting reduces but does not eliminate the risk of stale or miscalibrated predictions on shifting populations. 33 Algorithm 1 FLAME-CL: multi-task pretraining and continual adaptation. 
+
+Require: Stage data {D t}t≥0, with tasks Tt and modalities Mt at stage t; per-stage rank rt.
+
+Stage 0 — multi-task pretraining (Sec. 2.1).  
+
+> 1:
+
+Initialize full-shape experts {fW (0)  
+
+> i
+
+}Ni=1 , per-modality routers {G(0)  
+
+> m
+
+}m∈M 0 , encoders 
+
+{ϕm}m∈M 0 , and task heads {h(t)}t∈T 0 . 
+
+> 2:
+
+Train: minimize L0 on D0 over all of the above.  
+
+> 3:
+
+Compress & stack: take the SVD fW (0)  
+
+> i
+
+= U (0)  
+
+> i
+
+Σ(0)  
+
+> i
+
+V (0) ⊤ 
+
+> i
+
+and initialize the expert stack with its rank-r0 truncation, 
+
+W (0)  
+
+> i
+
+← U (0)   
+
+> i, 1: r0
+
+Σ(0)   
+
+> i, 1: r0
+
+V (0) ⊤  
+
+> i, 1: r0
+
+, Πi ← ( W (0)  
+
+> i
+
+) (Eq. 3) .
+
+Apply the same compress-and-init to the variable-length attention layers inside each ϕm. 
+
+> 4:
+
+Freeze: {W (0)  
+
+> i
+
+}, {G(0)  
+
+> m
+
+}, {h(t)}t∈T 0 , and {ϕm}m∈M 0 .
+
+Stage t ≥ 1 — continual adaptation (Sec. 2.2).  
+
+> 5:
+
+for t = 1 , 2, . . . do  
+
+> 6:
+
+Expand: for each expert i, attach a fresh zero-initialized fW (t) 
+
+> i
+
+of the same shape as Wi; add routers {G(t) 
+
+> m
+
+}m∈M t , task head h(t), and instantiate ϕm for any modality m ∈ M t \ S 
+
+> s<t
+
+Ms. 
+
+> 7:
+
+Train: minimize Lt on Dt over {fW (t) 
+
+> i
+
+}i ∪ { G(t) 
+
+> m
+
+}m∈M t ∪ { h(t)} and any newly instantiated 
+
+ϕm; all parameters from stages s < t are held fixed.  
+
+> 8:
+
+Compress & stack: take the SVD fW (t) 
+
+> i
+
+= U (t) 
+
+> i
+
+Σ(t) 
+
+> i
+
+V (t)⊤ 
+
+> i
+
+and append its rank-rt truncation to the expert stack, 
+
+W (t) 
+
+> i
+
+← U (t)  
+
+> i, 1: rt
+
+Σ(t)  
+
+> i, 1: rt
+
+V (t)⊤  
+
+> i, 1: rt
+
+, Πi ← Πi ∥ W (t) 
+
+> i
+
+(Eq. 3) .
+
+Apply the same compress-and-stack to the variable-length attention layers inside each ϕm. 
+
+> 9:
+
+Freeze: {W (t) 
+
+> i
+
+}, {G(t) 
+
+> m
+
+}m∈M t , h(t), and any newly added encoder weights.  
+
+> 10:
+
+end for Inference for task t first trained at stage τ = k(t). 
+
+> 11:
+
+Form the effective expert weights W eff  
+
+> i
+
+(τ ) = Pτj=0 W (j) 
+
+> i
+
+(Eq. 4).  
+
+> 12:
+
+Route with {G(τ ) 
+
+> m
+
+}m∈M t and predict through head h(t).34 Figure 21: Per-task, per-modality routing under joint pretraining over all 9 tasks across MIMIC-IV, eICU, EMBED, and ADNI. Rows correspond to tasks; columns are the same five experts. Tasks that share modality semantics (e.g., the EMBED triple BIRADS / DENSITY / RISK on mammography views, or the eICU pair MOR / RAD on time series and text) collapse onto overlapping expert subsets, while tasks with disjoint modality pools occupy disjoint experts. This expert-level task clustering provides the data-driven evidence behind FLAME’s joint-training pairing recommendations. 35 Figure 22: S1: per-modality, per-stage routing under MIMIC-IV continual learning PHENO →LOS →IHM. Modalities at every stage: time series ( TS ), clinical text ( Text ), chest X-ray ( CXR ). Each subsequent stage’s fingerprint overlaps heavily with stage 0’s, which is the struc-tural reason FLAME-CL retains prior-task AUROC within 0.01 on this sequence (Fig. 5, S1). 
+
+Figure 23: S2: per-modality, per-stage routing under eICU continual learning MOR →RAD. The two tasks share the same multivariate time-series modality bank ( T1 –T5 ), and the corresponding routing fingerprints overlap almost identically across stages. 36 Figure 24: S3: per-modality, per-stage routing under EMBED continual learning DEN-SITY →BIRADS →RISK. The four mammography views ( cc , mlo , 2dcc , 2dmlo ) keep their view-specific expert assignments across all three stages with negligible drift, providing the routing-level analogue to the multi-task panel of Fig. 18. 
+
+Figure 25: S4: per-modality, per-stage routing under the mixed cross-dataset continual se-quence {PHENO, DENSITY} →{LOS, BIRADS, MOR} →{IHM, RISK, RAD}. MIMIC-IV (TS /Text /CXR ), EMBED ( cc /mlo /2dcc /2dmlo ), and eICU ( T1 –T5 ) modalities occupy disjoint expert subsets that persist across stages; cross-dataset interference is therefore bounded structurally rather than by an auxiliary loss. 37

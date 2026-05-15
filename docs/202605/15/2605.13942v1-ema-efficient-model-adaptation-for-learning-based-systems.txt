@@ -1,0 +1,1257 @@
+Title: EMA: Efficient Model Adaptation for Learning-based Systems
+
+URL Source: https://arxiv.org/pdf/2605.13942v1
+
+Published Time: Fri, 15 May 2026 00:03:49 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# EMA: Efficient Model Adaptation for Learning-based Systems 
+
+# Daiyang Yu ∗
+
+University of Illinois Urbana-Champaign USA 
+
+# Xinyu Chen ∗
+
+University of Illinois Urbana-Champaign USA 
+
+# Yihan Zhang ∗
+
+University of Illinois Urbana-Champaign USA 
+
+# Yan Liang 
+
+The Hong Kong University of Science and Technology Hong Kong, China 
+
+# Yaqi Qiao 
+
+University of Illinois Urbana-Champaign USA 
+
+# Fan Lai 
+
+University of Illinois Urbana-Champaign USA 
+
+## Abstract 
+
+Machine learning (ML) is increasingly applied to optimize system performance in tasks such as resource management and network simulation. Unlike traditional ML tasks (e.g., image classification), networked systems often operate in het-erogeneous, long-running, and dynamic environment states, where input conditions (e.g., network loads) and operational objectives can shift over time and across settings. Existing learning-based systems offer little support for adaptation, resulting in costly model training, extensive data collection, degraded system performance, and slow responsiveness. This paper presents EMA, the first model adaptation sys-tem supporting learning-based systems to adapt to evolv-ing environments with minimal operational overhead. EMA takes a system-driven, data-centric approach that accommo-dates diverse system and model designs while addressing two key deployment challenges. First, it reduces expensive model training by introducing state transformers that align the input state of a new environment with previously similar states, allowing models to warm-start adaptation. Second, it addresses the often-overlooked yet costly process of data labeling—collecting ground truth for exploring and training on various system decisions—by prioritizing labeling high-utility data while balancing the tradeoff between training and labeling cost. Evaluations on eight representative learning-based systems show that EMA reduces adaptation costs (e.g., GPU training time) by 14.9–42.4% while improving system performance (e.g., network throughput) by 6.9–31.3%. 
+
+## 1 Introduction 
+
+Machine learning (ML) has been an increasingly powerful tool for optimizing systems and networks, with applica-tions spanning traffic engineering [ 22 , 34 ] and video stream-ing [ 17 , 35 ] over wide-area networks (WANs), flow sched-uling [ 12 , 29 , 30 ], network simulation [ 37 , 39 ], and resource management in the cloud [ 18 , 23 , 24 , 40 ]. These systems  
+
+> ∗Indicates equal contribution. Work done while at UIUC.
+
+employ a broad spectrum of learning techniques, from clas-sical models such as linear regression (LR) [ 40 ] and random forests [ 12 ], to deep learning (DL) approaches [ 22 ] including reinforcement learning (RL) [ 17 ] and even large language models (LLMs) [ 33 ]. By learning latent correlations from operational data, learning-based systems have demonstrated superior automation and decision quality over traditional hand-crafted heuristics. Despite their success, the effectiveness of these systems critically depends on how well their models align with the underlying environment state —the joint distribution of sys-tem inputs, workloads, and objectives. Unlike traditional ML tasks (e.g., image classification), system deployments span diverse and evolving environments. Variations may arise from differences in infrastructure (e.g., cluster sizes and hardware types [ 35 ]), supporting workloads (e.g., flow and job size distributions [ 29 ]), and operational objectives (e.g., service-level objectives across tenants [ 23 ]). Even within the same environment, its states can change over time (e.g., traf-fic dynamics, workload evolution, and machine upgrades). Without timely model adaptation, system performance can degrade sharply, sometimes by over 80% (§2), a fundamental challenge echoed in Microsoft’s operational experience [ 14 ]. However, existing learning-based systems have largely overlooked the design for their efficient (model) adaptation. Supporting each new environment often requires tuning on extensive system traces, which can take many hours [ 13 , 31 ]and cost thousands of dollars in GPU resources [ 33 ]. As a re-sult, adaptation is slow, expensive, and often impractical for production systems that demand rapid response to runtime dynamics (§2). Recent advances have explored plugin-based systems support [ 24 ], but most are ad-hoc and task-specific, such as normalizing network signals by bandwidth capac-ity [ 29 ]. Often, they require intrusive system modifications (e.g., inserting meta-learners into model architectures [24]). Worse still, real-world system adaptation often involves costly data labeling, a process that collects ground-truth feedback (i.e., label) for the model to explore the impact of 
+
+> 1
+> arXiv:2605.13942v1 [cs.LG] 13 May 2026
+
+various system decisions and converge (e.g., alternative net-work attack remediation strategies). These labels are highly environment-specific, often requiring replaying workloads in controlled deployments, building and running simulators, or soliciting expert annotation (e.g., from network opera-tors [ 38 ]). This has been largely overlooked in prior work yet can dominate end-to-end adaptation overhead (§2). This paper introduces EMA, a model adaptation system that takes a data-centric approach to automate the recurring, daunting task of adapting learning-based systems to diverse, evolving environments, with only a few lines of integration code (§3). EMA leverages the insight that systems are typ-ically long-running, accumulating a repository of trained models and operational data across deployments. When a new adaptation request arises, such as deploying a learned system in a new environment state, EMA identifies a prior environment with similar states and repurposes its model and data as operational knowledge to warm-start adaptation (e.g., training). During adaptation, it monitors system perfor-mance and selectively acquires new labels. EMA addresses two fundamental challenges in practi-cal deployments. First, it must enable efficient and gener-alizable transfer of operational knowledge across environ-ments to avoid “reinventing the wheel”, despite variations in tasks, model architectures, and telemetry. Unlike existing adaptation techniques that often require intrusive system changes [ 24 ], EMA applies a lightweight, one-shot transfor-mation to system input data entirely outside the model and system logic. It projects inputs into a latent state space, iden-tifies a prior environment with similar state distributions, and derives a transformation to align the new input distribu-tion to the source. Bridging this state discrepancy enables EMA to reuse trained model weights and data (§4.1). Second, achieving efficient adaptation requires tackling the inherent cost tension between model training and data labeling. Labeling a large volume of data inflates collection costs but can reduce training costs by exposing the model to broader data coverage, enabling faster convergence and better accuracy. Moreover, labeling costs vary across inputs (e.g., evaluating scheduling policies when allocating 2 × ver-sus 10 × more machines to a job), and the helpfulness of la-beled data to improve system performance shifts as training progresses. EMA introduces a cost-aware labeling agent that prioritizes labeling data expected to yield larger model per-formance improvement per unit cost (§4.2). At runtime, EMA orchestrates training and labeling through a cost-benefit lens, determining when and how much to label to maximize over-all cost-effectiveness. It further manages caching of model and state repository for future reuse across requests (§4.3). We evaluated EMA on seven representative systems from SIGCOMM, NSDI, and OSDI: Flux [ 30 ] for flow size predic-tion using LR models; DOTE [ 22 ] for WAN traffic engineer-ing using DL; MimicNet [ 39 ] for datacenter flow simulation using LSTMs; FIRM [ 23 ] for microservices resource manage-ment with RL; Pensieve [ 17 ] for adaptive bitrate streaming (ABR) with RL; and NetLLM [ 33 ] for ABR and cluster job scheduling with LLMs. Our evaluations (§6) show that, com-pared to state-of-the-art efforts [ 24 , 38 ], EMA cuts adaptation costs (e.g., GPU time) by 14.9–42.4% and accelerates system adaptation by 2.3–15.3 ×, while improving post-adaptation system performance, such as network throughput and user experience in video streaming, by 6.9–31.3%. In summary, we make the following contributions: 
+
+• We present the first general model adaptation system supporting diverse learning-based systems; 
+
+• We introduce a novel data-centric approach to repurpose operational knowledge while optimizing data efficiency; 
+
+• We evaluate EMA across seven learned systems, showing its substantial gains to augment practical deployments. 
+
+Ethics: This work does not raise any ethical issues. 
+
+## 2 Background and Motivation 
+
+Building a performant learning-based system is inherently iterative and labor-intensive [ 14 ]. Developers must curate large volumes of system inputs (e.g., job demands or network traces) and collect corresponding system feedback (e.g., task completion times under various schedules) as training labels, via replay runs in controlled deployments, simulations, or so-liciting expert annotations [ 38 ]. They then navigate a broad design space of models (e.g., LR, LSTMs, or LLMs) to balance system performance and runtime overhead. Even after careful design and tuning, operating conditions rarely remain stable. The input state of a learning-based sys-tem often varies across three key environmental dimensions: 
+
+infrastructure (e.g., network capacity or cluster size), work-loads (e.g., flow size or job arrival distributions), and opera-tional objectives (e.g., latency-throughput-fairness tradeoffs). Even within the same deployment, these states can shift over time, such as due to resource and workload changes [35]. 
+
+Environmental variations lead to performance drift. 
+
+To achieve high performance, learning-based systems typi-cally tune their ML models on environment-specific traces. This, however, comes with a double-edged cost: environmen-tal variations can easily render large system performance degradation. To illustrate, we analyze Sizeless [ 3 ], a DL-based system for predicting the execution time of serverless func-tions. Using real CloudBandit [ 10 ] production workloads, we evaluate its performance across three representative sce-narios: (i) deployment in the same environment as training, 20 1 2         
+
+> MAPE
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> CDF
+> Sizeless
+> New App
+> New Env (a) Sizeless [3]perfor-mance varies. 1357911
+> Cloud Application ID
+> 20
+> 30
+> 40
+> MAVG Reward
+> Continuous Learning
+> Global Model
+> Train From Scratch
+> (b) FIRM [ 23 ] performance varies across ap-plications.
+
+Figure 1: Deployments of learning-based systems of-ten face varying deployment environments and opera-tional objectives, demanding efficient adaptation. 0 200 400 600 800 1000 1200 1400 
+
+> Time (seconds)
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Norm. R2 Score
+> Oracle
+> Flux
+> Flux + CL
+
+Figure 2: In FLUX (flow size prediction for network scheduling), system performance varies as job arrivals (flow characteristics). Even with continuous learning (CL), the model performs far below the oracle setting. 1
+
+(ii) supporting new serverless functions, and (iii) supporting the same function on new infrastructure (e.g., hardware). Figure 1(a) shows the system performs well in its original environment, but its decision quality drops largely on new functions (i.e., “New App”) and collapses further under new infrastructure (i.e., “New Env”). We observe similar trends in FIRM [ 23 ], a learning-based microservice resource scheduler (Figure 1(b)): deploying a global model without application-specific adaptation de-grades system performance by 4.5–79.2% across applications. 
+
+System adaptation introduces efficiency and quality challenges. Mitigating performance drift requires model adaptation that is fast and cost-effective, as adaptation la-tency directly translates to degraded system turnaround, SLO violations, and revenue loss (§6.2). Recent systems, such as Caravan [ 38 ], explore online learning for in-network mod-els. However, even model fine-tuning, especially with the growing adoption of DL- or LLM-based AIOps [ 32 ], can take hours [ 33 ]. In latency-sensitive settings such as real-time net-work monitoring and attack response [ 6 ], adaptation must complete in minutes or even seconds (e.g., Figure 2 and more in Section 6.2) 1, creating a fundamental mismatch between tuning cost and operational timescales.        
+
+> 1The oracle represents a hypothetical system model trained with access to all future data. Detailed experiment settings are available in Section 6.1. Job Completion Pred.
+> WAN Engineering
+> DCN Traffic Sim.
+> Task Resource Pred.
+> Adaptive Bitrate 0
+> 25
+> 50
+> 75
+> 100
+> Cost Distribution (%)
+> Data Cost
+> Training Cost
+> (a) Data labeling and training cost. 10 310 210 110 0
+> Norm. Cost
+> 0.0
+> 0.5
+> 1.0
+> CDF
+> WAN Engineering
+> Job Completion Pred.
+> DCN Traffic Sim.
+> Task Resource Pred.
+> Adaptive Bitrate (b) Norm. data labeling cost.
+
+Figure 3: Data labeling is costly in learning-based sys-tems and can vary across samples (i.e., system inputs). 
+
+Moreover, practical deployments extend beyond the single-environment assumption of online learning and require effi-cient cross-environment adaptation. For example, due to the monolithic control logic (e.g., 1,034 service knobs), adapting cloud microservice management systems to new services can take 24 hours, during which system performance degrades by up to 26% [ 13 ]. At scale, where thousands of services undergo frequent software updates, hardware changes, and workload shifts, these adaptation costs accumulate rapidly. Even beyond efficiency concerns, adaptation poses fun-damental challenges to system performance. As shown in Figure 1(b), continuously fine-tuning the FIRM model for individual applications can improve performance in some cases, but is not consistently reliable: the resulting models can underperform those trained from scratch, and even the offline global model. This behavior reflects negative trans-fer [ 16 ], where operational knowledge learned from one environment misaligns with the state distribution of the tar-get environment. We observe similar phenomena in FLUX (Figure 2), and across many learning-based systems (§6.2). 
+
+Data labeling introduces new efficiency bottlenecks. 
+
+Beyond training overhead, data labeling emerges as another barrier to efficient adaptation. Learning-based systems are tightly coupled to environment-specific factors: while log-ging system input (e.g., job arrivals or resource demands) is cheap, obtaining corresponding performance feedback (la-bels) is not. Labels require executing system decisions to observe outcomes, which is often time-consuming (e.g., via simulation), resource-intensive (e.g., via controlled deploy-ments), and sometimes infeasible due to access constraints. To quantify this cost, we study five representative learning-based systems: DOTE [ 22 ] (WAN traffic engineering), Mim-icNet [ 39 ] (network simulation), Flash [ 24 ] and Sinan [ 40 ](QoS-aware cloud resource management), and NetLLM [ 33 ](adaptive bitrate streaming and cluster job scheduling). As shown in Figure 3(a), data labeling can account for a sub-stantial fraction, and in some cases the majority, of end-to-end adaptation cost. We quantify costs using equivalent 3New Application     
+
+> State Transformer §4.1 Labeling Agent §4.2
+> Adaptation Orchestrator §4.3 adaptation similar state
+> TransformState(state)
+> model
+
+EMA    
+
+> WAN TE (e.g., DOTE)
+> Flow Scheduling (e.g., Flux)
+> DCN Simulation (e.g., MimicNet)
+> ABR (e.g., Pensieve)
+> Diverse Environ, Dynamics Diverse Sys, Models, Users
+> Resource Scheduling (e.g., Firm) submit() submit(labeled_data) submit(trained_model)
+> simulator network operation deploy
+> train() label_selection()
+> {cpu_usage_info, num_containers, latency, }
+> {topology, traf fi c_matrix, objective }
+
+Figure 4: EMA repurposes operational knowledge of similar environments to optimize systems adaptation. 
+
+Google Cloud Platform instance hours. For example, label-ing 20,000 data points for adapting Sinan’s model consumed over 6 hours executing on VMs [ 31 ]. The imbalance is more pronounced for large models. Fine-tuning NetLLM for clus-ter job scheduling, even with low-rank adaptation and on a small TPC-H workload, requires roughly 340 A100 GPU hours (about $458), while data labeling—running jobs under different resource configurations to observe execution time— costs approximately 572 VM hours (about $476). Importantly, these costs are not one-time investments: they recur when the environment changes, such as under new workload dis-tributions, cluster reconfigurations, or shifts in operational objectives (e.g., efficiency-fairness tradeoffs). Moreover, data labeling costs are highly heterogeneous across input samples (Figure 3(b)), with some being orders of magnitude more expensive due to differences in simulation complexity or resource demands. For instance, evaluating the impact of allocating 10 × additional resources to a job incurs substantially higher cost than exploring a 2× allocation. 
+
+Limitations of existing advances for model adaptation. 
+
+Adaptation mechanisms in today’s learning-based systems remain fragmented and narrowly scoped. First, most ap-proaches are tightly coupled to specific tasks or model classes (§7), relying on ad hoc techniques such as manual systems feature normalization [ 29 ], intrusive model modifications (e.g., inserting meta-learners) [ 24 , 33 ], or continuous learn-ing strategies confined to a single deployment or environ-ment [ 38 ]. Second, existing efforts largely overlook the cost of data labeling and its interaction with model training. In practice, labeling is frequently the dominant and most hetero-geneous component of adaptation cost, yet current systems lack mechanisms to reason about when, what, and how much data to label under operational constraints. As a result, developers are forced to repeatedly engineer bespoke adaptation pipelines for each new system, work-load, or environment. This not only increases engineering complexity and prolongs system turnaround time, but also often leads to suboptimal post-adaptation performance (§6). 
+
+## 3 EMA Overview 
+
+This paper presents EMA, the first model adaptation system that enables efficient adaptation for diverse learning-based systems and model designs with minimal operational over-head. Our study of representative networked systems (§2 and §6) identifies three key requirements for practical adap-tation: (i) Computation-efficient : minimizing training time to preserve system responsiveness and control resource cost (e.g., GPU hours) for scaling to many environments; (ii) Data-efficient : reducing expensive data labeling while maintaining or improving model quality; and (iii) Generalizable and de-ployable : supporting a wide range of systems and models with minimal system changes and human intervention. EMA achieves these goals through a system-driven, data-centric approach that operates entirely outside the model or system logic, acting directly on system input state data as a complementary layer between learning-based systems and their underlying runtime (e.g., resource orchestrators for RL-based schedulers [ 23 ]). Appendix D details EMA’s interfaces, demonstrating that existing systems can be integrated with only a few lines of code changes. 
+
+System Components. As shown in Figure 4, EMA pro-cesses model adaptation requests online, such as those is-sued by performance monitoring systems like Caravan [ 38 ], whether for deployment in a new environment, serving new users, or addressing performance degradation. Upon receiv-ing an adaptation request: 1 The State Transformer locates a source environment with a similar state distribution and applies a transformation (e.g., via a distribution shift matrix) to bridge the new state’s input to the prior. 2 The Adapta-tion Orchestrator initializes the target model by transferring the learned model weights of the source environment and forwarding transformed inputs to the tuning backend (e.g., PyTorch), warm-starting both model and data. 3 During training, the orchestrator monitors progress and invokes the 
+
+Labeling Agent to select inputs for labeling (e.g., via interac-tions to online labeling systems like Caravan [ 38 ]), balancing training efficiency against labeling cost. 4 After training, the updated model and the metadata of request’s state (e.g., data distributions) are stored in the StateStore , enabling caching, reuse, and faster adaptation for future requests. 44 EMA Design 
+
+We now describe the design of EMA, a data-centric adap-tation system that jointly optimizes adaptation efficiency and quality for learning-based systems. Rather than treating adaptation as a monolithic procedure, EMA decomposes it into a coordinated pipeline with three phases: (1) pre-training state adaptation to reduce subsequent training computation (§4.1); (2) in-training adaptation to optimize the data effi-ciency in labeling (§4.2); and (3) cross-round orchestration to balance training (computation) and data costs while manag-ing adaptation states for future reuse at scale (§4.3). Together, these phases address the system-level tension between qual-ity (high post-adaptation model accuracy) and efficiency (low cost and latency), which prior adaptation systems [ 24 , 38 ]have largely treated in isolation. 
+
+## 4.1 State Transformer: Bridge State Gaps 
+
+Adapting ML models to diverse and evolving system states is essential for sustaining system performance. Relying on a global model degrades accuracy under state variations, while naive continuous learning or fine-tuning is resource-intensive, slow to react to runtime changes, prone to insta-bility, and confined to a single online deployment (§2). Our key insight is that learning-based systems are typi-cally long-running and deployed across correlated environ-ments. Over time, they naturally accumulate a repository of trained models and observed environment states, forming a reusable body of operational knowledge : a memory of how the system behaves under diverse conditions. Repurposing this knowledge provides a principled warm start for new envi-ronments, with the potential to enable faster adaptation and higher post-adaptation quality (e.g., by leveraging broader coverage from previously encountered, similar states). However, reusing such knowledge introduces three key deployment challenges. First, although conceptually related to transfer learning (TL) [ 16 ], existing TL techniques are largely designed for DL models. Yet, practical learning-based systems may rely on lightweight, non-DL models, where adaptation efficiency is still critical for real-time operations, cost savings, and scaling out (§6.2). Second, TL methods of-ten require intrusive changes to system pipelines or model architectures, or incur high runtime overhead, such as in-serting auxiliary meta-learners [ 24 ]. Finally, effective reuse hinges on selecting an appropriate source environment, but the diversity of features, workloads, and system tasks makes source selection highly challenging. Poor source selection can induce negative transfer, slowing convergence or even degrading performance (§2). 
+
+Regime-aware State Transformation. To address these challenges, EMA introduces a lightweight state transformer 
+
+that operates entirely at the system input boundary, without State 
+
+Mapper 
+
+> Source Env
+> New Env
+
+Model 
+
+Training   
+
+> Source
+> selection
+> State Repo.
+> State Transform
+> Transformed
+> env. state
+> Source
+> stat e
+> C1
+> C3
+> C2
+> New Env. State Sys. Input
+
+Figure 5: EMA identifies a source state from prior de-ployments, and then transforms the new environment state to closely align with it, enabling the previously learned system model to be effectively repurposed. 
+
+modifying models or systems. As shown in Figure 5, EMA identifies a promising source environment via state matching, then transforms the target environment’s input state to align with the source before feeding it to the model. EMA enables state transformation by aligning the input state distributions of a source environment S and a target environment T in a shared latent space (e.g., a Gaussian kernel space G). Specifically, EMA obtains a transformation matrix 𝑊 that maps raw system inputs into G such that the transformed source and target state distributions are closely aligned: min 𝑊 MMD  Φ(S),𝑊 Φ(T), where Φ(·) denotes the kernel-induced feature mapping into G, and MMD (· , ·) 
+
+measures the distributional discrepancy between two sets of states. Obtaining 𝑊 involves matrix transformation op-erations like transfer component analysis [ 20 ] and we add details in Appendix A. Our transformation allows a model trained under the source environment to interpret target inputs as if they originated from a familiar operating regime. As such, EMA loads the learned model weights of the source as the starting point for subsequent in-training adaptation on the transformed target states (§4.2). However, learning-based systems introduce another unique challenge: system states often follow highly skewed and regime-diverse distributions. For example, a small fraction of large jobs or elephant flows dominate resource consump-tion and system performance. A single global transformation risks collapsing these rare but performance-critical states into dominant regimes, obscuring precisely the behaviors that matter most for adaptation. To address this, EMA employs a regime-aware state trans-formation strategy. After projecting source and target states into the latent space G, EMA partitions each environment’s states into operational regimes via clustering, capturing dis-tinct system behaviors (e.g., short vs. long flows, latency-sensitive vs. throughput-oriented jobs). EMA then performs group-wise alignment: for each target regime, it identifies the most similar source regime with smallest 𝑀𝑀𝐷 and derives a regime-specific transformation. By aligning corresponding regions of the state space independently, EMA preserves rare but influential behaviors while avoiding distortion from dominant regimes. 51.0     
+
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Pearson(Sim, Speedup)
+> -0.30
+> -0.15
+> 0.07
+> 0.76
+> 0.29
+> 0.50
+> Higher
+> is better
+> L2 MMD
+> Flux
+> DOTE
+> FIRM (a) Adaptation Efficiency. 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Pearson(Sim, Acc)
+> 0.02
+> -0.23
+> -0.40
+> 0.35 0.38
+> 0.55
+> Higher
+> is better
+> L2 MMD
+> Flux
+> DOTE
+> FIRM (b) Post-adaptation Model Accuracy.
+
+Figure 6: MMD similarity exhibits a stronger positive Pearson correlation with improvements on adaptation efficiency and post-adaptation system performance, compared to feature-agnostic L2 distance. 
+
+Our state transformer yields three key system advantages. (1) Model independence : since alignment occurs solely at the input data layer, it requires no system changes and additional information. (2) Broad applicability : the same mechanism applies to diverse state representations, including numeric telemetry, time series, graphs, and embeddings, while sup-porting a wide range of models used in systems, from LR and LSTM to RL and LLMs (§6.2). (3) Principled source selection :
+
+𝑀𝑀𝐷 provides a task-agnostic, distributional similarity met-ric for selecting source environments. As shown in Figure 6, smaller 𝑀𝑀𝐷 strongly correlates with faster convergence and higher post-adaptation accuracy, while large discrepan-cies often lead to negative transfer. Accordingly, EMA selects the source environment with the minimum 𝑀𝑀𝐷 , outper-forming traditional distance metrics such as L2-distance. 
+
+Scaling State Transformation. While lightweight at run-time, state transformation incurs a one-time preprocessing overhead: (i) computing the transformation matrix 𝑊 that maps the target environment into the source environment, and (ii) selecting the most suitable source environment and the subsequent regime-aware transformation require calcu-lating and comparing pairwise MMD distances. Both opera-tions involve matrix computations whose cost grows with the volume of state data and the number of candidate envi-ronments. As shown in Figure 7, naively computing MMD over large traces can take minutes, and this overhead scales with the number of source candidates. To scale, EMA reduces (1) the per-comparison cost by sampled state transformation ,and (2) the number of comparisons by clustered matching .First, as shown in Figure 7, using excessive data points to compute the transformation matrix and 𝑀𝑀𝐷 significantly increases preprocessing cost while providing diminishing accuracy gains. Leveraging this insight, EMA performs sam-pled state transformation, computing 𝑀𝑀𝐷 and the trans-formation matrix by sampling only a small subset of source and target states. Specifically, let 𝐹 𝑚 (𝑥 ) denote the empir-ical distribution estimated from 𝑚 samples and 𝐹 𝑁 (𝑥 ) the 10 100 500 50k    
+
+> Sampling Data Size
+> 70
+> 80
+> 90
+> 100
+> Accuracy (%)
+> 0.3
+> 0.4
+> 0.5
+> Overhead (s) >100s
+> Accuracy
+> Overhead
+> (a) Overhead of DOTE. 10 100 500
+> Size of Env. Repo
+> 0
+> 1
+> 2
+> 3
+> 4
+> Overhead (s)  DOTE
+> FLUX (b) State transformer is efficient.
+
+Figure 7: EMA reduces transformation overhead through data sampling (a), and scales efficiently to hun-dreds of environment states in the repository (b). 
+
+true distribution over the full dataset of size 𝑁 . The con-centration theorem [ 36 ] bounds their maximum deviation 
+
+𝐷 = sup 𝑥 |𝐹 𝑚 (𝑥 ) − 𝐹 𝑁 (𝑥 )| .2 This yields only a few thousand samples, even for populations with millions, significantly cutting preprocessing cost while preserving fidelity. Second, to avoid enumerating all target-source candidate comparisons, EMA clusters candidate environments offline into groups using K-medoids [ 19 ] and incrementally updates the clustering online (§4.3). Unlike the widely used K-means, which requires embedding heterogeneous system features, our K-medoids design directly leverages the pairwise MMD distance to choose real environments as medoids (Figure 5), ensuring interpretability and generalizability. However, clus-tering into too few clusters creates large groups, increasing the number of intra-cluster comparisons, while too many clusters inflate the cost of identifying the closest medoid. Assuming a total of 𝑀 environment candidates, each request requires 𝐾 operations to identify the nearest cluster (i.e., matching to 𝐾 medoids), and then on average 𝑀 /𝐾 compar-isons within the chosen cluster. The total expected matching cost is thus 𝐶 (𝐾 ) = 𝐾 + 𝑀 /𝐾 . Minimizing 𝐶 (𝐾 ) yields the optimal number of clusters to use: 𝐾 = √𝑀 .As shown in Figure 7(b), these optimizations enable low-latency transformation (< 4 seconds) even under hundreds of environment states in the repository. We further show that EMA can achieve adaptation improvements with as few as a dozen candidate states in the repository (§6.4). 
+
+## 4.2 Labeling Agent: Optimize for Data 
+
+While state transformation provides a strong warm start that accelerates adaptation (§6.2), learning-based systems often require additional model tuning to capture environment-specific behaviors. In this in-training adaptation phase, the cost of labeling data can dominate adaptation (Figure 3). La-beling cost varies across deployment scenarios: real-world           
+
+> 2To guarantee 𝐷 ≤𝜖 with confidence 𝛿 (default 95%), it suffices to use
+> 𝑚 ≥ − 12𝜖 2ln
+> 1−𝛿
+> 2
+> 
+> .
+
+60.0 0.5 1.0 
+
+> Norm. Utility
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> CDF
+> MimicNet
+> MultiCloud
+> DOTE
+> Flux
+
+Figure 8: Data utility varies across inputs. 0 10 20 30 40 50 60 
+
+> Labeling Freq. (Epochs)
+> 0
+> 1
+> 2
+> Norm. Adaptation Cost
+> DOTE
+> FIRM
+
+Figure 9: Too frequently or infrequently collection incurs suboptimal costs. 
+
+feedback incurs resource usage and user experience penal-ties [ 17 , 23 ]; simulator-based feedback is limited by simula-tion latency [ 37 , 39 ]; and in some tasks, labels require costly human annotation [38]. EMA augments existing in-network learning systems like Caravan [ 38 ], which leverages different labeling agencies (e.g., combining LLMs and experts). EMA shifts the focus from how to acquire labels, to when and which inputs should be labeled by introducing a labeling agent . Thereof, we ad-dress the tradeoff between training and data labeling costs, including when to initiate a data labeling round in Section 4.3, to optimize both aspects for end-to-end adaptation efficiency. 
+
+Data Utility Proxy. Capturing the potential model im-provement after labeling and training on a data sample (i.e., its data utility) is challenging due to the diversity of learning-based systems, heterogeneous input states, and the evolv-ing nature of utility as training progresses. For example, in learned job scheduling [ 18 ], labeling a new job may yield little benefit if the model has already seen many similar re-source patterns, especially when we consider the prevalent long-tailed distributions in systems operational data, high-lighting the inefficiency of naive balanced-class or coverage-based labeling strategies adopted in prior systems [38]. Given that the system’s input state (e.g., job resource de-mands) is already available, EMA uses lightweight model prediction uncertainty on the input as the utility proxy. Intu-itively, the model learns most from inputs it is least confident about. In classification tasks (e.g., traffic classification [ 6]), uncertainty is measured as the confidence gap between the top two predicted classes. In regression and RL-based tasks (e.g., flow prediction [ 30 ], job scheduling [ 18 ]), uncertainty is quantified via the width of prediction intervals. We validate this approach across learning-based systems, including DOTE [ 22 ] (WAN traffic engineering), QCLIMB [ 12 ](flow prediction), and Mimicnet [ 39 ] (datacenter network simulation). Figure 8 shows that model prediction uncer-tainty varies across data points, with higher uncertainty (utility) suggesting that collecting the system feedback (la-bel) of that data input can provide more knowledge. 
+
+Cost-Aware Data Labeling. While the data utility proxy enables identifying high-utility data for labeling, naively prioritizing them can incur substantial costs due to heteroge-neous labeling costs. A strawman is to formulate the problem as a budgeted knapsack: each candidate input is treated as an item, where the value corresponds to its estimated utility and the weight corresponds to its labeling cost. An integer linear programming (ILP) solver can then select the optimal subset that maximizes total utility under the budget. However, learning-based systems introduce unique chal-lenges. First, practical deployments must contend with out-liers . For example, system errors or noisy features may cause inputs to appear anomalously high-utility, wasting budget on mislabeled priorities. Second, system inputs often fol-low long-tailed distributions (e.g., most network flows be-ing short [ 30 ]), so high-utility candidates may correspond to nearly identical inputs, leading to redundant labels yet limited knowledge gain. Third, utility estimates are non-stationary . As the model improves, the marginal benefit of labeling similar inputs evolves. EMA employs an opportunistic data-labeling strategy that samples inputs with probabilities proportional to their utility-to-cost ratio, moving beyond deterministic knapsack selec-tion to achieve better resilience while naturally smooth-ing out outliers. Sampling proceeds until the round’s label-ing budget is consumed, ensuring robustness against noisy spikes in estimated utility. To address evolving utility, EMA dynamically adjusts the per-round labeling budget in coor-dination with training progress, balancing the cost tradeoff between additional data collection and model refinement, which is further discussed in Adaptation Orchestrator (§4.3). 
+
+## 4.3 Adaptation Orchestrator: Manage States 
+
+The State Transformer reduces training costs by reusing sys-tem knowledge, while the Labeling Agent lowers data costs through selective acquisition. Both are essential to end-to-end efficiency (§2), yet together they create a fundamental tension: as shown in Figure 9, overly frequent collection inflates labeling costs, while infrequent collection slows con-vergence and wastes training cycles on diminishing-utility samples, both yielding suboptimal adaptation. As summarized in Algorithm 1, EMA introduces an Adap-tation Orchestrator to optimize end-to-end adaptation effi-ciency. The State Transformer reuses prior states to warm-start model fine-tuning (Line 2). During training, the Orches-trator continuously assesses whether to continue training or trigger new labeling based on marginal benefit-to-cost (Lines 3–8), with the labeling agent enforcing cost-aware selection (Line 5). Finally, after adaptation, the Orchestra-tor registers the adapted state into the StateStore , managing caching, eviction, and reuse in online deployments (Line 9). 7Algorithm 1: EMA Adaptation Runtime 
+
+Input: unlabeled_data, init_model 
+
+Output: trained_model, updated_labeled_data  
+
+> 1
+
+Function AdaptOrchestrator():  
+
+> // Pre-training: reuse prior states to warm start (§4.1)
+> 2
+
+model, trans_data ←
+
+StateTransform(unlabeled_data, init_model)  
+
+> // In-training: balance training and data labeling costs (§4.2–4.3)
+> 3
+
+for t in range(training_epochs) do  
+
+> // Use proxy data to estimate collection cost-to-benefit
+> 4
+
+(𝑏𝑒𝑛𝑒 𝑓 𝑖𝑡 𝑙𝑎𝑏𝑒𝑙 , 𝑏𝑒𝑛𝑒 𝑓 𝑖𝑡 𝑐𝑜𝑛𝑡 ) ← 
+
+EstimateBenefit(model, trans_data)  
+
+> 5
+
+if 𝑏𝑒𝑛𝑒 𝑓 𝑖𝑡 𝑙𝑎𝑏𝑒𝑙 > 𝑏𝑒𝑛𝑒 𝑓 𝑖𝑡 𝑐𝑜𝑛𝑡 then  
+
+> 6
+
+(new_labeled, budget) ←
+
+LabelingAgent(trans_data, model, budget)  
+
+> 7
+
+labeled_data.append(new_labeled)  
+
+> 8
+
+model ← TrainStep(model, labeled_data)  
+
+> // Post-adaptation: register the learnt model and metadata of environment state for future reuse (§4.3)
+> 9
+
+StateStore.Register(trained_model, trans_data)  
+
+> 10
+
+Function StateTransform(data, model):  
+
+> // Align unlabeled inputs to source state space
+> 11
+
+source_state ← IdentifySource(data, model)  
+
+> 12
+
+return Transform(data, model, source_state)  
+
+> 13
+
+Function LabelingAgent(data, model, budget):  
+
+> // Select samples by utility-per-cost under budget
+> 14
+
+data_util ← EstDataUtility(data, model)  
+
+> 15
+
+chosen ← ProbabilisticSelect(data_util, budget)  
+
+> 16
+
+(labeled, budget) ← Label(chosen)  
+
+> 17
+
+return (labeled, budget) 
+
+We next introduce how the Orchestrator coordinates training and data labeling over rounds. 
+
+Balancing Training and Labeling Costs. As data utility evolves over training, maximizing cost-effectiveness requires progressive labeling. Yet, two coupled decisions arise: when to initiate a new labeling round, and how much budget 𝐵 𝑡 
+
+to allocate at round 𝑡 . EMA resolves both decisions using a unified principle: compare the marginal utility per unit cost 
+
+of continued training (i.e., skip data labeling at 𝑡 ) with that of training on newly labeled data. Let U𝑡 denote the total model uncertainty at round 𝑡 , and 
+
+𝐶 𝑡 the training cost. Continued training yields utility gain 
+
+U𝑡 −1 − U 𝑡 at cost 𝐶 𝑡 , i.e., total reduction in model predic-tion uncertainties. To approximate the benefit (uncertainty reduction) of labeling, EMA maintains a small proxy dataset 
+
+(e.g., sampling 𝑝 = 1% of the unlabeled pool). By performing data labeling on the proxy with a scaled budget 𝑝 · 𝐵 𝑡 , EMA measures the uncertainty reduction on this proxy and scales it by 1/𝑝 to obtain an unbiased estimate of the benefit on the new labeled data: ΔUlabel  
+
+> 𝑡
+
+= (U prox   
+
+> 𝑡 −1
+
+− U prox  
+
+> 𝑡
+
+)/ 𝑝 . This es-timate, combined with the observed benefit on existing data, defines the projected uncertainty reduction that we could have achieved by performing one round of data collection: 
+
+U∗ 
+
+> 𝑡
+
+− U 𝑡 −1 = (U 𝑡 − U 𝑡 −1) + ΔUlabel  
+
+> 𝑡
+
+(1) Here, the projected cost must also be adjusted as incorpo-rating new data increases training costs. Let 𝑛 𝑡 denote the current number of trained samples and Δ𝑛 𝑡 the number of newly added samples, estimated by the number of labeled samples in the proxy data. Then, the training cost inflates to 
+
+𝐶 ∗ 
+
+> 𝑡
+
+= 𝐶 𝑡 ·
+
+
+
+1 + Δ𝑛 𝑡 
+
+𝑛 𝑡 
+
+
+
+, 𝑤ℎ𝑒𝑟𝑒 Δ𝑛 𝑡 = |selected_in_proxy |
+
+𝑝 
+
+(2) The orchestrator, therefore, triggers a new round only if the projected benefit-to-cost ratio of labeling surpasses that of continued training: 
+
+U∗ 
+
+> 𝑡
+
+− U 𝑡 −1
+
+𝐶 ∗ 
+
+> 𝑡
+
++ 𝐵 𝑡 
+
+> U𝑡 − U 𝑡 −1
+
+𝐶 𝑡 
+
+(3) Once triggered, the second decision is budget sizing. In-stead of reusing a fixed budget, EMA adapts 𝐵 𝑡 online using feedback. Specifically, it tracks the realized benefit-to-cost ratio in each round, U𝑡 −1 − U 𝑡 
+
+𝐶 𝑡 + 𝐵 𝑡 −1
+
+, and applies an additive-increase multiplicative-decrease (AIMD) update [ 2]: if the ratio drops, 𝐵 𝑡 is increased to label more data to speed up model convergence, thus reducing training cost; otherwise, 
+
+𝐵 𝑡 is decreased by half to avoid over-labeling. This feedback control complements the trigger condition, maximizing total adaptation cost-effectiveness with negligible overhead (§6.3). 
+
+Managing State Repository in the Wild. Practical de-ployment demands continuous tracking, reuse, and evolution of environment states (e.g., due to new users or workloads). EMA supports this by maintaining a lightweight state store 
+
+that caches trained models alongside a small subset of asso-ciated input data for each environment state. EMA’s state management is lightweight, storing a few hundred data samples per state (§4.1). Compared to model training, the storage cost is negligible—e.g., about $4/TB per month on Google Cloud Platform vs. $11 per H100 GPU train-ing hour, and a single state can be repurposed many times. To further control memory footprint, EMA employs a decay-aware Least Frequently Used (LFU) eviction policy, where access frequencies decay exponentially over time, such as by 0.9 daily, favoring states that are recently and frequently 8reused. When multiple cached states are similar (small MMD distance), EMA evicts the one that yields lower accuracy, pre-serving not only reuse but also effectiveness and resilience. Our evaluations show that EMA delivers consistently good performance under tight storage constraints (§6.4). Moreover, EMA offers stronger compliance with data gov-ernance than existing adaptation systems [ 24 ]. Whereas prior designs often require access to raw source and target data, EMA identifies state mappings using only small data subsets. Once the transformation matrix 𝑊 is computed, clients can apply it locally without server involvement. EMA further re-spects privacy by matching new requests to candidate states under configurable access control policies (e.g., restricting reuse to the same organization). Moreover, state transforma-tion operates on distributional statistics, inherently obfus-cating individual samples and enabling developers to inject local noise into individual data prior to transformation as in differential privacy designs [ 1]. Our analytical proof in Appendix A and empirical studies (§6.4) confirm that noise addition minimally impacts transformation precision while ensuring compliance with data governance. 
+
+## 5 Implementation 
+
+We have built a prototype of EMA in ∼3,200 lines of Python. The prototype provides user-friendly APIs and a plugin in-terface requiring only a few lines of integration code. 
+
+EMA Backends The EMA backend supports execution on CPUs, with the option to leverage GPU acceleration for enhanced performance. The State Transformer , which han-dles kernel-based state transformations and similarity mea-surements, utilizes GPUs to accelerate matrix operations. The Labeling Agent is integrated into the training loop as a pluggable data source, exposing APIs for sampling, label-ing, and budget allocation. It is implemented as a coroutine that can run asynchronously with training. EMA exposes model weights and dataset views through standardized Py-Torch APIs, enabling systems to reuse training infrastructure with minimal changes. Coordination between the local EMA agents and the central state repository uses gRPCs, ensuring scaling across machines. 
+
+EMA Interfaces. Appendix D details the APIs through which EMA complements existing learning-based systems. 
+
+## 6 Evaluation 
+
+We evaluate EMA on eight representative state-of-the-art learning-based network systems, including job scheduling, network simulation, and adaptive bitrate streaming. Our evaluation highlights the following key findings: 
+
+• EMA reduces adaptation costs (e.g., GPU compute time) by 14.9–42.4% and improves responsiveness to runtime                   
+
+> Sys. Name Task Model
+> DOTE [22] WAN traffic engineering optimization DNN FIRM [23] Resource management in microservices RL Flux [30] Flow size prediction for scheduling LR MimicNet [ 39 ]Traffic simulation in datacenter networks LSTM IDS-LSTM [28] Streaming network intrusion detection LSTM Pensieve [ 17 ]Video adaptive bitrate streaming RL NetLLM [33] Video adaptive bitrate streaming LLM NetLLM [33] Cluster job scheduling LLM
+
+Table 1: Our evaluations cover eight state-of-the-art learning-based networked systems. 
+
+dynamics by 2.3–15.3 ×, while boosting system perfor-mance (e.g., network throughput) by 6.9–31.3% (§6.2). 
+
+• EMA achieves effective adaptation by optimizing the sweet spot of training and data labeling efficiency (§6.3). 
+
+• EMA augments learning-based systems over a wide range of settings and outperforms its design counterparts (§6.4). 
+
+## 6.1 Methodology 
+
+Use Cases. We apply EMA to seven state-of-the-art learning-based networked systems spanning eight representative net-working and systems applications (Table 1): 
+
+• DOTE [22 ]: Predictive WAN traffic engineering with DL. 
+
+• FIRM [ 23 ]: SLO-aware microservice resource manage-ment with RL agents. 
+
+• Flux [30 ]: Flow size prediction for network scheduling using linear regression (LR), evaluated on PageRank, K-Means, and web server workloads. 
+
+• MimicNet [39 ]: Datacenter flow simulation with LSTMs on FatTree topologies. 
+
+• Pensieve [17 ]: RL-based adaptive bitrate (ABR) control for video streaming. 
+
+• NetLLM [ 33 ]: LLM-based scheduling for ABR and cluster job scheduling (CJS) tasks. We follow the task configurations and model choices from the original papers to ensure comparability. For example, in online Flux deployments, new jobs arrive while completed ones exit the platform. Each new job triggers an EMA agent for efficient adaptation, with the model used for predicting traffic sizes during job execution, and we report its online system performance (e.g., Figure 10) and average adaptation performance across jobs (e.g., Figure 12). 90 200 400 600 800 1000 1200 1400 
+
+> Time (seconds)
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Norm. R2 Score
+> Flux
+> + Caravan
+> + Caravan + EMA
+> Oracle
+
+Figure 10: In online FLUX deployments with job ar-rivals, EMA dynamically adapts prior models from similar states, sustaining high system performance. 
+
+We have added detailed descriptions of workload, online adaptation, and system setups in Appendix E. 
+
+Evaluation Platform. Because many of these systems involve resource-intensive training (e.g., NetLLM on Llama-2), we conduct experiments on a 30-node cluster designed for distributed training and online deployment. The clus-ter consists of 10 NVIDIA A100 GPUs (e.g., for distributed Llama-2 training) and 20 CPU nodes (e.g., for online job scheduling), each CPU node equipped with 20 cores and 192 GB DDR4 memory. We use traces (e.g., job resource demands and arrivals) from the original papers to preserve fidelity. 
+
+Baselines. To the best of our knowledge, EMA is the first system to jointly optimize training and data efficiency for model adaptation across diverse learning-based systems and models. We compare against three baselines: 
+
+• W/o EMA : We follow the default application setting to train their model (e.g., training from randomly initialized model weights). 
+
+• Caravan [ 38 ]: A state-of-the-art system for online learn-ing in in-network systems, which selectively triggers continuous learning to maximize system performance. 
+
+• Flash [ 24 ]: A meta-learning-based adaptation framework for cloud platforms, requiring intrusive model modifica-tions and limited to DL models. 
+
+Metrics. We evaluate EMA along three key dimensions: 
+
+• Adaptation Time : The latency to adapt to new environ-ments (e.g., model training), critical for online deploy-ments under dynamics. 
+
+• Adaptation Cost : The expense, including GPU time in training and data labeling (e.g., via simulation) costs, estimated using Google Cloud Platform (GCP) pricing. 
+
+• System Performance : The final system performance (e.g., model accuracy) achieved after adaptation. All results are averaged over five runs for reliability. 
+
+## 6.2 End-to-End Performance 
+
+EMA enables faster system adaptation to new envi-ronments and dynamics. Figures 10–12 show that EMA 480 780 1080 1380 1680 1980 2280 
+
+> Time (minutes)
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> F1 Score
+> Oracle
+> IDS-LSTM
+> + Caravan
+> + Caravan + EMA
+
+Figure 11: In streaming environments with dynamic attack arrivals, an IDS-LSTM adapts to distribution shifts in network traffic with EMA, achieving better online intrusion detection. 0 2 4 6 8         
+
+> Training Epoch
+> 60
+> 70
+> 80
+> Norm. Network Tpt.
+> DOTE
+> + Caravan
+> + Caravan + EMA
+> (a) Time to Accuracy on DOTE. 050 100
+> Training Epoch
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Flow Pred. R-Score  Flux
+> + Caravan
+> + Caravan + EMA (b) Time to Accuracy on Flux. 025 50 75
+> Training Epoch
+> 0
+> 10
+> 20
+> 30
+> Reward(SLO, Resource)
+> Firm
+> + Flash
+> + Flash + EMA
+> (c) Time to Accuracy on Firm. 040000 80000
+> Training Epoch
+> 0.5
+> 1.0
+> 1.5
+> QoE
+> Pensieve
+> + Caravan
+> + Caravan + EMA (d) Time to Accuracy on Pensieve.
+
+Figure 12: EMA enables faster adaptation and better post-adaptation system performance. 
+
+significantly accelerates adaptation across diverse learning-based systems and in online system deployments. Instead of restricting transfer to the latest global model as in Car-avan [ 38 ], EMA repurposes models trained on similar en-vironment states, achieving much better starting accuracy (i.e., training epoch=0 in Figure 12). Together with informed data labeling, EMA reduces the training required to reach target accuracy by 2.3–15.3 ×, consistently outperforming both Caravan (i.e., system+Caravan) and Flash [ 24 ] (i.e., system+Flash). Note that EMA can augment Caravan by kicking off adaptation and selective data labeling (i.e., sys-tem+Caravan+EMA). In online settings, EMA closely tracks oracle performance (Figures 10 and 11), where the oracle represents a hypotheti-cal system model trained with access to future data. These gains generalize across a wide spectrum of model families, including LR, DL, RL, and LLMs, demonstrating EMA’s ro-bustness across system designs. 10 0.0 0.5 1.0 
+
+> Norm. Cost
+> 0
+> 20
+> 40
+> 60
+> 80
+> Norm. Network Tpt.
+> DOTE
+> + Caravan
+> + Caravan + EMA
+
+(a) DOTE (WAN traffic engineering). 0.0 0.5 1.0  
+
+> Norm. Cost
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> R-Squared Score
+> Flux
+> + Caravan
+> + Caravan + EMA
+
+(b) Flux (Flow size prediction). 0.0 0.5 1.0 
+
+> Norm. Cost
+> 0.6
+> 0.7
+> 0.8
+> QoE
+> NetLLM
+> + Caravan
+> + Caravan + EMA
+
+(c) NetLLM (Bitrate streaming). 0.0 0.5 1.0  
+
+> Norm. Cost
+> 20
+> 0
+> 20
+> 40
+> Reward(SLO, Resource)
+> FIRM
+> + Caravan
+> + Caravan + EMA
+
+(d) FIRM (Microservices). 
+
+Figure 13: EMA reduces adaptation cost. EMA improves post-adaptation system performance. 
+
+In addition to faster adaptation, EMA improves the final sys-tem performance. As shown in Figure 12, when adaptation (i.e., model training) completes, EMA raises post-adaptation system performance by 6.9–31.3% across applications. For example, in Pensieve , EMA boosts user Quality of Experi-ence (QoE) in ABR tasks by 31.3%; in DOTE , it increases network throughput by 12.5%; and in FIRM , it improves com-pound reward—a metric capturing both SLO attainment and resource utilization—by 6.9%. These gains stem from trans-ferring richer, environment-specific knowledge from prior deployments. The benefit becomes more pronounced un-der runtime dynamics: as shown in Figure 10 and Figure 11, such as in online FLUX deployments where flow size dis-tributions shift due to job arrivals and completions, EMA repurposes prior similar environments as stronger starting points, thereby sustaining higher system performance. 
+
+EMA reduces adaptation costs for system deployments. 
+
+Figure 13 illustrates that EMA substantially lowers the to-tal cost of model adaptation. By reducing training time and labeling fewer data, EMA decreases the monetary cost of adaptation by 14.9–42.4% relative to Caravan, based on GCP pricing models. While EMA may require a brief warm-up phase as transformed data states stabilize, the overall adap-tation remains both faster and cheaper. This combination of reduced training overhead and data efficiency makes EMA especially attractive for large-scale and resource-constrained system deployments. Due to the space limit, we leave im-provements for NetLLM’s CJS task in Appendix C. 0.0 0.5 1.0 
+
+> Norm. Cost
+> 60
+> 70
+> 80
+> Norm. Network Tpt.
+> Caravan
+> EMA w/o ST
+> EMA w/o LA
+> EMA
+
+(a) Breakdown on DOTE Task. 0.0 0.5 1.0  
+
+> Norm. Cost
+> 20
+> 30
+> 40
+> 50
+> Reward(SLO, Resource)
+> Caravan
+> EMA w/o LA
+> EMA w/o ST
+> EMA
+
+(b) Break Down on Firm Task. 
+
+Figure 14: Performance breakdown of EMA design. DOTE MimicNet Flux FIRM  
+
+> 0
+> 1
+> 2
+> 3
+> Latency Overhead (%)  2.9
+> 1.4
+> 0.3 0.1
+
+Figure 15: EMA intro-duces little overhead. Flux MimicNet 
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> Cost Reduction (%)
+> 60.7
+> 10.7
+> 49.0
+> 7.5
+> Cost-aware LA
+> Cost-agnostic LA
+
+Figure 16: Accounting for heterogeneous data label-ing costs is important. 
+
+## 6.3 Performance Breakdown 
+
+Breakdown of system components. To assess individual components, we evaluate two key variants of EMA: (i) EMA w/o State Transformer (ST): This variant bypasses the State Transformer and starts tuning on the current global model. (ii) EMA w/o Labeling Agent (LA): This variant disables the Labeling Agent during adaptation, resorting to random data collection. Note that disabling either component automati-cally disables the Adaptation Orchestrator. Figure 14 shows that both pre-training (ST) and in-training (LA) adaptations are critical to efficiency, improving cost-to-accuracy by 10.7% and 45.1%, respectively. The State Trans-former (i.e., EMA w/o LA) effectively aligns system states, mitigating negative transfer and boosting post-adaptation system performance. Meanwhile, the Labeling Agent, to-gether with the Adaptation Orchestrator, balances training and data collection costs, enabling more efficient adaptation. 
+
+EMA introduces negligible system overhead. As shown in Figure 15, EMA adds only 0.3–2.9% runtime overhead, stemming from lightweight computations in the State Trans-former and Labeling Agent. This overhead is minor compared to the substantial improvements in end-to-end adaptation ef-ficiency. Unlike prior approaches (e.g., Flash) that require in-trusive modifications to model architectures, EMA applies a lightweight state transformation before adaptation. Further-more, the Labeling Agent selectively identifies high-value data while the Orchestrator minimizes collection frequency. 11 DOTE MimicNet FIRM   
+
+> 0
+> 15
+> 30
+> 45
+> 60
+> 75
+> 90
+> Cost Reduction (%)
+> 10.8 9.0
+> 32.4
+> 26.0
+> 14.9
+> 42.4 38.9
+> 25.2
+> 51.8
+> 46.6
+> 69.1 62.6
+> x0.5
+> x1.0
+> x5.0
+> x10.0
+
+Figure 17: EMA improves cost-effectiveness un-der different data labeling settings. 1.3 2.2 3.6 Full     
+
+> Sampling Size (×10 )
+> 0
+> 1
+> 2
+> 3
+> 4
+> Improvement Factor
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Flow Pred. R-Score
+> Improvement Factor
+> Flow Pred. R-Score
+> (a) Flux. 3.6 6.0 9.7 Full
+> Sampling Size (×10³)
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Improvement Factor
+> 0.8
+> 0.9
+> 1.0
+> Norm. Network Tpt.
+> Improvement Factor
+> Norm. Network Tpt. (b) DOTE.
+
+Figure 18: Light-weight data transformer samples data to achieve high efficiency without hurting quality. Importance of accounting for heterogeneous labeling costs. We further evaluate the impact of considering hetero-geneous data labeling costs. In this experiment, we disable cost-awareness in EMA’s Labeling Agent (LA), selecting data solely based on utility (i.e., a cost-agnostic LA that always chooses the highest-utility samples). Figure 16 demonstrates that the cost-aware LA consistently outperforms this base-line, highlighting the inefficiency of traditional active learn-ing approaches that ignore practical cost variations. 
+
+## 6.4 Sensitivity and Ablation Studies 
+
+Impact of data labeling costs. Figure 17 illustrates how EMA improves the cost-effectiveness of model adaptation to reach the same post-adaptation system performance under varying data collection cost scenarios, where the labeling cost of each system input in our realistic trace is scaled by 0.5 ×,1×, and 2 ×. When data collection costs are low (e.g., 0.5 ×), most savings come from reduced training costs through ef-fective state transformation. As labeling costs increase, the benefits of EMA become even more pronounced: its Label-ing Agent selectively prioritizes high-utility, low-cost data, striking a balance between labeling and training costs. 
+
+Impact of sampling size in state transformer. We eval-uated the effect of different sampling sizes for computing the transformation matrix 𝑊 . As illustrated in Figure 18, increas-ing the number of samples improves adaptation performance, but the gains plateau beyond a few thousand samples. This observation validates our lightweight sampling approach. 0 0.5 1 3
+
+> Noise Scale
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Flow Pred. R-Score
+> R-Score
+> 0
+> 1
+> 2
+> 3
+> Speedup
+> Speedup
+
+Figure 19: EMA respects data privacy without hurt-ing effectiveness. 1 5 10 100 500    
+
+> # of States in Repo.
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> 1.1
+> 1.2
+> Improve. Factor
+> 1.02
+> 1.11 1.14 1.14 1.14
+
+Figure 20: EMA achieves improvements even with a small state repository. Impact of privacy noise. We added Gaussian noise (mean 0) to individual source data points, testing noise levels of 0, 0.5, 1, and 3 (with 0 representing no noise). As shown in Figure 19, EMA’s adaptation performance remains largely unaffected even at higher noise levels, aligning with our the-oretical analysis in Appendix A, which guarantees that EMA maintains effective adaptation while respecting privacy. 
+
+Impact of repository size. We evaluate EMA with varying repository sizes (i.e., number of candidate parent states: 1, 5, 10, 100, 500) on the DOTE task. As shown in Figure 20, EMA maintains stable performance across this wide range, achieving near-optimal improvements even with a dozen parent candidates. This effectiveness stems from the state transformation module, which aligns system states without relying on highly similar states. 
+
+## 7 Related Work 
+
+Machine Learning for Networked Systems. ML tech-niques have been increasingly applied to system and network optimization, typically falling into three categories. (i) Statis-tical learning methods: QCLIMB [ 12 ] employs random-forest-based lower-bound predictions to improve flow scheduling, while Flux [ 30 ] predicts flow sizes to enhance network man-agement. (ii) Deep learning methods: More recent efforts lever-age DL for complex networking tasks, such as DOTE [ 22 ]for WAN traffic optimization. Caravan [ 38 ] demonstrates the potential of online learning to address non-stationary envi-ronments. (iii) Reinforcement learning methods: RL has also been adopted in systems, from Pensieve [ 17 ] to Astraea [ 15 ]for network control and adaptive video streaming. EMA complements these systems by providing a framework for efficient adaptation under diverse, evolving environments. 
+
+Domain Adaptation. Domain adaptation transfers model knowledge from source domains to a new target domain [ 4 ,16 ]. Mutant [ 21 ] leverages RL to adapt to diverse condi-tions by learning in real time from ongoing network inter-actions. AWARE [ 25 ] applies meta-learning to enable rapid adaptation to new workloads, while Flash [ 24 ] embeds a 12 meta-learner into DL architectures for cloud systems. Mod-elKeeper [ 8 ] warm-starts model training by referring to pre-viously trained model weights. However, they often require intrusive modifications, incur additional training overhead, and are primarily tailored to DL models. Instead, EMA gen-eralizes across models and systems. 
+
+Selective Data Labeling. Active learning (AL) aims to achieve high accuracy by selecting informative samples to an-notate [ 27 ], with methods that select samples that maximize a measure of model uncertainty, such as least confidence [ 11 ]and entropy [ 7 ]. Diversity-based methods [ 41 ] select a rep-resentative set of samples that span the entire feature space, using techniques such as minimum radius cover for uniform sampling [ 26 ], clustering data to select representative points based on their distance to other samples [ 5 ]. Oort [ 9] selects informative training data to accelerate training convergence. EMA extends existing AL methods to learning-based systems, optimizing for scalability, cost, and end-to-end efficiency. 
+
+## 8 Conclusion 
+
+This paper presents EMA, a model adaptation system de-signed to optimize adaptation efficiency in learning-based networked systems. EMA introduces a novel state trans-former to align deployment data distributions, enabling the reuse of previously trained models and substantially reduc-ing retraining requirements. It further prioritizes labeling high-utility, low-cost data to minimize end-to-end adaptation costs. Our evaluation across eight representative learning-based network systems shows that EMA reduces adaptation costs by 14.9–42.4% while improving system performance by 6.9–31.3%, supporting a broad range of ML models. 
+
+## References 
+
+[1] Martin Abadi, Andy Chu, Ian Goodfellow, H. Brendan McMahan, Ilya Mironov, Kunal Talwar, and Li Zhang. 2016. Deep Learning with Differential Privacy (CCS) .[2] Venkat Arun and Hari Balakrishnan. 2018. Copa: Practical Delay-Based Congestion Control for the Internet. In NSDI .[3] Simon Eismann, Long Bui, Johannes Grohmann, Cristina Abad, Nikolas Herbst, and Samuel Kounev. 2021. Sizeless: Predicting the optimal size of serverless functions. In Middleware . 248–259. [4] Xianghong Fang, Haoli Bai, Ziyi Guo, Bin Shen, Steven Hoi, and Zenglin Xu. 2020. DART: Domain-adversarial residual-transfer net-works for unsupervised cross-domain image classification. Neural Networks 127 (2020), 182–192. [5] Guy Hacohen, Avihu Dekel, and Daphna Weinshall. 2022. Active learning on a budget: Opposite strategies suit high and low budgets. 
+
+arXiv preprint arXiv:2202.02794 (2022). [6] Syed Usman Jafri, Sanjay Rao, Vishal Shrivastav, and Mohit Tawar-malani. 2024. Leo: Online ML-based Traffic Classification at Multi-Terabit Line Rate. In NSDI .[7] Ajay J Joshi, Fatih Porikli, and Nikolaos Papanikolopoulos. 2009. Multi-class active learning for image classification. In CVPR .[8] Fan Lai, Yinwei Dai, Harsha V. Madhyastha, and Mosharaf Chowd-hury. 2023. ModelKeeper: Accelerating DNN Training via Automated Training Warmup. In NSDI .[9] Fan Lai, Xiangfeng Zhu, Harsha V. Madhyastha, and Mosharaf Chowd-hury. 2021. Oort: Efficient Federated Learning via Guided Participant Selection. In OSDI .[10] Malgorzata Lazuka, Thomas P. Parnell, Andreea Anghel, and Haralam-pos Pozidis. 2022. Search-based Methods for Multi-Cloud Configura-tion. In CLOUD .[11] David D Lewis. 1995. A sequential algorithm for training text classifiers: Corrigendum and additional data. In Acm Sigir Forum , Vol. 29. ACM New York, NY, USA, 13–19. [12] Wenxin Li, Xin He, Yuan Liu, Keqiu Li, Kai Chen, Zhao Ge, Zewei Guan, Heng Qi, Song Zhang, and Guyue Liu. 2024. Flow scheduling with imprecise knowledge. In NSDI .[13] Chieh-Jan Mike Liang, Zilin Fang, Yuqing Xie, Fan Yang, Zhao Lucis Li, Li Lyna Zhang, Mao Yang, and Lidong Zhou. 2023. On Modular Learning of Distributed Systems for Predicting End-to-End Latency. In NSDI .[14] Chieh-Jan Mike Liang, Hui Xue, Mao Yang, Lidong Zhou, Lifei Zhu, Zhao Lucis Li, Zibo Wang, Qi Chen, Quanlu Zhang, Chuanjie Liu, and Wenjun Dai. 2020. AutoSys: The Design and Operation of Learning-Augmented Systems. In ATC .[15] Xudong Liao, Han Tian, Chaoliang Zeng, Xinchen Wan, and Kai Chen. 2024. Astraea: Towards Fair and Efficient Learning-based Congestion Control. In EuroSys .[16] Mingsheng Long, Yue Cao, Jianmin Wang, and Michael Jordan. 2015. Learning transferable features with deep adaptation networks. In 
+
+ICML .[17] Hongzi Mao, Ravi Netravali, and Mohammad Alizadeh. 2017. Neural Adaptive Video Streaming with Pensieve. In SIGCOMM .[18] Hongzi Mao, Malte Schwarzkopf, Shaileshh Bojja Venkatakrishnan, Zili Meng, and Mohammad Alizadeh. 2019. Learning scheduling algo-rithms for data processing clusters. In SIGCOMM .[19] James Newling and François Fleuret. 2017. K-Medoids For K-Means Seeding. In NIPS .[20] S. J. Pan, I. W. Tsang, J. T. Kwok, and Q. Yang. 2011. Domain Adapta-tion via Transfer Component Analysis. IEEE Transactions on Neural Networks 22, 2 (Feb. 2011), 199–210. [21] Lorenzo Pappone, Alessio Sacco, Flavio Esposito, et al . 2025. Mu-tant: Learning Congestion Control from Existing Protocols via Online Reinforcement Learning. In NSDI .[22] Yarin Perry, Felipe Vieira Frujeri, Chaim Hoch, Srikanth Kandula, Ishai Menache, Michael Schapira, and Aviv Tamar. 2023. DOTE: Rethinking (Predictive) WAN Traffic Engineering. In NSDI .[23] Haoran Qiu, Subho S. Banerjee, Saurabh Jha, Zbigniew T. Kalbarczyk, and Ravishankar K. Iyer. 2020. FIRM: An Intelligent Fine-grained Resource Management Framework for SLO-Oriented Microservices. In OSDI .[24] Haoran Qiu, Weichao Mao, Archit Patke, Shengkun Cui, Chen Wang, Hubertus Franke, Zbigniew Kalbarczyk, Tamer Basar, and Ravi K. Iyer. 2024. FLASH: Fast Model Adaptation in ML-Centric Cloud Platforms. In MLSys .[25] Haoran Qiu, Weichao Mao, Chen Wang, Hubertus Franke, Alaa Youssef, Zbigniew T Kalbarczyk, Tamer Başar, and Ravishankar K Iyer. 2023. AWARE: Automate workload autoscaling with reinforcement learning in production cloud systems. In ATC .[26] Ozan Sener and Silvio Savarese. 2017. Active learning for convolutional neural networks: A core-set approach. arXiv preprint arXiv:1708.00489 
+
+(2017). [27] Burr Settles. 2009. Active learning literature survey. University of Wisconsin-Madison Department of Computer Sciences. 
+
+13 [28] Iman Sharafaldin, Arash Habibi Lashkari, and Ali A. Ghorbani. 2018. Toward Generating a New Intrusion Detection Dataset and Intrusion Traffic Characterization. In International Conference on Information Systems Security and Privacy .[29] Han Tian, Xudong Liao, Decang Sun, Chaoliang Zeng, Yilun Jin, Junxue Zhang, Xinchen Wan, Zilong Wang, Yong Wang, and Kai Chen. 2025. Achieving Fairness Generalizability for Learning-based Congestion Control with Jury. In EuroSys .[30] Vojislav Ðukić, Sangeetha Abdu Jyothi, Bojan Karlaš, Muhsen Owaida, Ce Zhang, and Ankit Singla. 2019. Is advance knowledge of flow sizes a plausible assumption?. In NSDI .[31] Zibo Wang, Pinghe Li, Chieh-Jan Mike Liang, Feng Wu, and Francis Y. Yan. 2024. Autothrottle: A Practical Bi-Level Approach to Resource Management for SLO-Targeted Microservices. In NSDI .[32] Zhaodong Wang, Samuel Lin, Guanqing Yan, Soudeh Ghorbani, Min-lan Yu, Jiawei Zhou, Nathan Hu, Lopa Baruah, Sam Peters, Srikanth Kamath, Jerry Yang, and Ying Zhang. 2025. Intent-Driven Network Management with Multi-Agent LLMs: The Confucius Framework. In 
+
+SIGCOMM .[33] Duo Wu, Xianda Wang, Yaqi Qiao, Zhi Wang, Junchen Jiang, Shuguang Cui, and Fangxin Wang. 2024. NetLLM: Adapting Large Language Models for Networking. In SIGCOMM .[34] Zhiying Xu, Francis Y Yan, Rachee Singh, Justin T Chiu, Alexander M Rush, and Minlan Yu. 2023. Teal: Learning-accelerated optimization of WAN traffic engineering. In SIGCOMM .[35] Francis Y. Yan, Hudson Ayers, Chenzhi Zhu, Sadjad Fouladi, James Hong, Keyi Zhang, Philip Levis, and Keith Winstein. 2020. Learning in situ: a randomized experiment in video streaming. In NSDI .[36] Ying Yan, Liang Jeff Chen, and Zheng Zhang. 2014. Error-bounded sampling for analytics on big sparse data. VLDB 7, 13 (2014), 1508– 1519. [37] Qingqing Yang, Xi Peng, Li Chen, Libin Liu, Jingze Zhang, Hong Xu, Baochun Li, and Gong Zhang. 2022. Deepqueuenet: Towards scalable and generalized network performance estimation with packet-level visibility. In SIGCOMM .[38] Qizheng Zhang, Ali Imran, Enkeleda Bardhi, Tushar Swamy, Nathan Zhang, Muhammad Shahbaz, and Kunle Olukotun. 2024. Caravan: Practical Online Learning of In-Network ML Models with Labeling Agents. In OSDI .[39] Qizhen Zhang, Kelvin K. W. Ng, Charles Kazer, Shen Yan, João Sedoc, and Vincent Liu. 2021. MimicNet: fast performance estimates for data center networks with machine learning. In SIGCOMM .[40] Yanqi Zhang, Weizhe Hua, Zhuangzhuang Zhou, G. Edward Suh, and Christina Delimitrou. 2021. Sinan: ML-based and QoS-aware resource management for cloud microservices. In ASPLOS .[41] Haizhong Zheng, Rui Liu, Fan Lai, and Atul Prakash. 2023. Coverage-centric Coreset Selection for High Pruning Rates. In ICLR .
+
+14 A Privacy Concern in EMA 
+
+In this section, we prove that adding small noise to each data sample in the source dataset does not compromise the performance of TCA. Since TCA minimizes the Maximum Mean Discrepancy (MMD) between the source and target domains by aligning their distributions in a common feature latent space, TCA aims to make the source and target data look as similar as possible. Therefore, if adding noise to the source data does not significantly increase the MMD, it suggests that the noise has not disrupted the alignment and that TCA can still perform effectively. The MMD measures the difference between the source and target distributions by comparing their mean embeddings in a Reproducing Kernel Hilbert Space (RKHS). Given samples from a source domain S = {𝑥 (𝑠 ) 
+
+> 𝑖
+
+}𝑛 𝑠  
+
+> 𝑖 =1
+
+and a target domain 
+
+T = {𝑥 (𝑡 ) 
+
+> 𝑗
+
+}𝑛 𝑡 
+
+> 𝑗 =1
+
+, the MMD in an RKHS H with kernel function 
+
+𝑘 (𝑥, 𝑦 ) is defined as: MMD (S , T ) = 1
+
+𝑛 𝑠 𝑛 𝑠 ∑︁ 
+
+> 𝑖 =1
+
+𝐾 (𝑥 (𝑠 ) 
+
+> 𝑖
+
+) − 1
+
+𝑛 𝑡 𝑛 𝑡 ∑︁ 
+
+> 𝑗 =1
+
+𝐾 (𝑥 (𝑡 ) 
+
+> 𝑗
+
+)
+
+> H
+
+where: 
+
+• 𝐾 (𝑥 ) maps 𝑥 into the RKHS H ,
+
+• 𝑛 𝑠 is the number of samples in the source domain, 
+
+• 𝑛 𝑡 is the number of samples in the target domain. Suppose we add zero-mean noise 𝜂 𝑖 to each sample 𝑥 (𝑠 )
+
+> 𝑖
+
+in the source domain. Each noisy source sample becomes: 
+
+˜𝑥 (𝑠 ) 
+
+> 𝑖
+
+= 𝑥 (𝑠 ) 
+
+> 𝑖
+
++ 𝜂 𝑖 
+
+where 𝜂 𝑖 ∼ N ( 0, 𝜎 2) or follows a random distribution as long as it has a mean value of 0, and each sample should be in the range such that ∥𝜂 𝑖 ∥ ≤ 1.The noisy source domain ˜S can be written as: 
+
+˜S = { ˜𝑥 (𝑠 ) 
+
+> 𝑖
+
+= 𝑥 (𝑠 ) 
+
+> 𝑖
+
++ 𝜂 𝑖 }𝑛 𝑠 
+
+> 𝑖 =1
+
+.
+
+We aim to show that the MMD between the noisy source domain ˜S and the target domain T remains close to the original MMD between S and T by proving the following theorem: TCA Privacy Theorem 
+
+MMD ( ˜S, T ) − MMD (S , T ) ≤ 𝑂 (∥ 𝜂 max ∥) 2,
+
+where 𝜂 max is the maximum value of 𝜂 𝑖 .
+
+Proof. We compute the MMD ( ˜S, T ) with the noisy source data ˜S:                                                                            
+
+> =1
+> 𝑛 𝑠 𝑛 𝑠 ∑︁
+> 𝑖 =1
+> 
+> 𝐾 (𝑥 (𝑠 )
+> 𝑖 +𝜂 𝑖 )
+> 
+> −1
+> 𝑛 𝑡 𝑛 𝑡 ∑︁
+> 𝑗 =1
+> 𝐾 (𝑥 (𝑡 )
+> 𝑗 )
+> H
+> =1
+> 𝑛 𝑠 𝑛 𝑠 ∑︁
+> 𝑖 =1
+> 
+> 𝐾 (𝑥 (𝑠 )
+> 𝑖 ) + 𝐽 𝐾 (𝑥 (𝑠 )
+> 𝑖 )𝜂 𝑖 +𝑂 (∥ 𝜂 𝑖 ∥2)
+> 
+> −1
+> 𝑛 𝑡 𝑛 𝑡 ∑︁
+> 𝑗 =1
+> 𝐾 (𝑥 (𝑡 )
+> 𝑗 )
+> H
+> (1)
+> =1
+> 𝑛 𝑠 𝑛 𝑠 ∑︁
+> 𝑖 =1
+> 𝐾 (𝑥 (𝑠 )
+> 𝑖 ) − 1
+> 𝑛 𝑡 𝑛 𝑡 ∑︁
+> 𝑗 =1
+> 𝐾 (𝑥 (𝑡 )
+> 𝑗 ) + 1
+> 𝑛 𝑠 𝑛 𝑠 ∑︁
+> 𝑖 =1
+> 𝐽 𝐾 (𝑥 (𝑠 )
+> 𝑖 )𝜂 𝑖 +1
+> 𝑛 𝑠 𝑛 𝑠 ∑︁
+> 𝑖 =1
+> 𝑂 (∥ 𝜂 𝑖 ∥2)
+> H
+> ≤1
+> 𝑛 𝑠 𝑛 𝑠 ∑︁
+> 𝑖 =1
+> 𝐾 (𝑥 (𝑠 )
+> 𝑖 ) − 1
+> 𝑛 𝑡 𝑛 𝑡 ∑︁
+> 𝑗 =1
+> 𝐾 (𝑥 (𝑡 )
+> 𝑗 )
+> H
+> +1
+> 𝑛 𝑠 𝑛 𝑠 ∑︁
+> 𝑖 =1
+> 𝐽 𝐾 (𝑥 (𝑠 )
+> 𝑖 )𝜂 𝑖
+> H
+> +1
+> 𝑛 𝑠
+> 𝑛 𝑠 ∑︁
+> 𝑖 =1
+> 𝑂 (∥ 𝜂 max ∥2)
+> H
+> =MMD (S ,T ) + 0+𝑂 (∥ 𝜂 max ∥2)(2)
+
+Hence, we have: MMD ( ˜S, T ) − MMD (S , T ) ≤ 𝑂 (∥ 𝜂 max ∥2).
+
+For (1) here, we use the Taylor expansion to replace: 
+
+𝐾 (𝑥 (𝑠 ) 
+
+> 𝑖
+
++ 𝜂 𝑖 )
+
+with: 
+
+𝐾 (𝑥 (𝑠 ) 
+
+> 𝑖
+
+) + 𝐽 𝐾 (𝑥 (𝑠 ) 
+
+> 𝑖
+
+)𝜂 𝑖 + 𝑂 (∥ 𝜂 𝑖 ∥2),
+
+where 𝐽 𝐾 (𝑥 (𝑠 ) 
+
+> 𝑖
+
+) is the Jacobian matrix of the Kernel map 𝐾 
+
+at point 𝑥 𝑖 . For (2), since 𝜂 𝑖 is sampled from a distribution with mean value 0, we have: 
+
+1
+
+𝑛 𝑠 𝑛 𝑠 ∑︁ 
+
+> 𝑖 =1
+
+𝐽 𝐾 (𝑥 (𝑠 ) 
+
+> 𝑖
+
+)𝜂 𝑖 = 0,
+
+and 𝜂 max is also no larger than 1. Thus, we have shown that adding small noise to each data sample in the source dataset does not compromise the per-formance of TCA. Moreover, EMA can maintain user privacy by adding noise to the dataset without hurting performance. 
+
+## B Lightweight-EMA Sampling 
+
+In this section, we give proof that sampling a subset can be lightweight without the loss of representing the full dataset distribution in order to compute the TCA transformation matrix. Specifically, we aim to determine the minimum per-centage of the dataset required to ensure that the empir-ical cumulative distribution function (CDF) of the subset closely approximates the CDF of the full dataset within a small threshold, with high confidence. Following is a formal problem statement: 
+
+Problem Statement: Given a dataset of size 𝑁 with empir-ical cumulative distribution function (CDF) 𝐹 𝑁 (𝑥 ), we aim to sample a subset of size 𝑚 such that the empirical CDF of the subset, 𝐹 𝑚 (𝑥 ), differs from the CDF of the full dataset 
+
+𝐹 𝑁 (𝑥 ) by no more than a small threshold 𝜖 > 0 with high 15 confidence 1 − 𝛿 . We derive the minimum subset percentage 
+
+𝑝 = 𝑚 𝑁 required to achieve this. 
+
+Proof 
+
+Let 𝐹 𝑁 (𝑥 ) be the empirical CDF of the full dataset: 
+
+𝐹 𝑁 (𝑥 ) = 1
+
+𝑁 
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+1{𝑋 𝑖 ≤ 𝑥 },
+
+where 𝑋 1, . . . , 𝑋 𝑁 are the samples in the dataset, and 1 is the indicator function. Let 𝐹 𝑚 (𝑥 ) be the empirical CDF of a subset of size 𝑚 ≤ 𝑁 :
+
+𝐹 𝑚 (𝑥 ) = 1
+
+𝑚 
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+1{𝑌 𝑖 ≤ 𝑥 },
+
+where 𝑌 1, . . . , 𝑌 𝑚 are sampled independently and uniformly from 𝑋 1, . . . , 𝑋 𝑁 .Define the maximum absolute difference between the two CDFs: 
+
+𝐷 = sup 
+
+> 𝑥
+
+|𝐹 𝑚 (𝑥 ) − 𝐹 𝑁 (𝑥 )| .
+
+We aim to bound 𝐷 such that: 
+
+P(𝐷 ≥ 𝜖 ) ≤ 𝛿, 
+
+for a given threshold 𝜖 > 0 and confidence level 1 − 𝛿 .The Dvoretzky–Kiefer–Wolfowitz (DKW) inequality bounds the deviation between an empirical CDF and the true CDF. Applying it here, the inequality for 𝐹 𝑚 (𝑥 ) and 𝐹 𝑁 (𝑥 ) be-comes: 
+
+P
+
+
+
+𝐷 = sup 
+
+> 𝑥
+
+|𝐹 𝑚 (𝑥 ) − 𝐹 𝑁 (𝑥 )| ≥ 𝜖 
+
+
+
+≤ 2 exp −2𝑚𝜖 2
+
+,
+
+where 𝑚 is the size of the subset, and 𝜖 > 0 is the maximum allowable difference. Set 𝜖 = 𝛼 √𝑁 : Substituting 𝜖 into the inequality: 
+
+P
+
+
+
+sup 
+
+> 𝑥
+
+|𝐹 𝑚 (𝑥 ) − 𝐹 𝑁 (𝑥 )| ≥ 𝛼 
+
+√𝑁 
+
+
+
+≤ 2 exp 
+
+
+
+−2𝑚 · 𝛼 2
+
+𝑁 
+
+
+
+.
+
+To ensure the deviation is less than 𝜖 with confidence 1−𝛿 ,set: 
+
+2 exp 
+
+
+
+− 2𝑚𝛼 2
+
+𝑁 
+
+
+
+≤ 𝛿. 
+
+Taking the natural logarithm of both sides: 
+
+− 2𝑚𝛼 2
+
+𝑁 ≤ ln 
+
+ 𝛿 
+
+2
+
+
+
+.
+
+Solve for 𝑚 :
+
+𝑚 ≥ − 𝑁 
+
+2𝛼 2 ln 
+
+ 𝛿 
+
+2
+
+
+
+.
+
+Thus, we identify a subset of size m such that sampling from this subset closely approximates the distribution of the entire dataset, enabling a lightweight computation of TCA. 0.0 0.5 1.0 
+
+> Norm. Cost
+> 60
+> 70
+> 80
+> 90
+> Job Duration(s)  NetLLM
+> NetLLM + EMA
+
+Figure 21: EMA’s Training-Phase Adaptation Modules improve NetLLM’s performance under the same cost on the cluster job scheduling task.                                                                 
+
+> 1import EMA
+> 23def EMA_model_training ( model , state , task_config ):
+> 4#Create local EMA agent based on input task config and connect to the EMA Orchestrator
+> 5ema_agent =EMA . create_agent ( task_config )
+> 67#Transform state ( input data ) using EMA pre -training module
+> 8ema_data_loader , ema_model =ema_agent . transform_state ( model , state )
+> 910 for _in range ( num_iterations ):
+> 11 #EMA guides data labeling during training
+> 12 ema_model . train ( ema_data_loader , task_config )
+> 13 14 #Register learnt model to the Orchestrator for future reuse
+> 15 ema_agent . register ( ema_model , state , task_config )
+
+Figure 22: EMA offers friendly APIs to enable efficient model adaptation for learning-based systems with mi-nor changes. 
+
+## C Effectiveness of EMA’s Training-Phase Adaptation Modules 
+
+In this section, to evaluate the effectiveness of the EMA’s training-phase adaptation mechanisms, we examine the im-pact of integrating the Adaptation Orchestrator and Labeling Agent into the baseline system. We compare EMA-augmented NetLLM against the original system on the cluster job scheduling task. Figure 21 illus-trates that equipping NetLLM with the EMA training-phase adaptation part reduces the total monetary cost by 22.5% while achieving comparable training performance, based on execution time measured using the GCP pricing model. Moreover, at the same cost level, the EMA-augmented model consistently shows superior performance, scheduling shorter job durations. These findings highlight the essential role of adaptive data acquisition and orchestration in enabling cost-efficient adaptation in learning-based systems. 
+
+## D EMA Interfaces 
+
+Table 2 summarizes the EMA Orchestrator API. The system is initialized with init_ema() , which creates the orchestrator. 16 API Name Description          
+
+> init_service(args) Initialize the EMA orchestrator with configuration and resources.
+> create_agent(args) Users of the learning-based systems initiate a local client and connect to the remote EMA orchestrator.
+> transform_state(args) Return dataset transformed by a pre-trained model. args include the pretrained model and unlabeled data.
+> label_selection(args) Labeled data that is selected by Orchestrator. args including labeled information.
+> register(model, state) Register the current model and state snapshot into EMA.
+
+Table 2: EMA interfaces. 
+
+transform_state() processes current unlabeled data us-ing a pre-trained model to produce a transformed unlabeled dataset. train() advances model training under EMA’s con-trol. When the Orchestrator determines additional data is required, label_selection() labels the data with the pro-vided ground truth. Finally, register() records snapshots of the current model and state for versioning and reuse. Figure 22 shows an example of EMA’s usage, supporting existing learning-based systems with a few lines of code change. 
+
+## E Experiment Setup Details 
+
+For streaming network intrusion detection (IDS-LSTM task), we use the CIC-IDS2017 dataset [ 28 ], which contains real-istic enterprise traffic collected over five consecutive days, including benign traffic and a wide range of attacks such as brute-force, DoS/DDoS, botnet activity, and port scanning. Traffic is processed in chronological order to emulate an online deployment, and the task is multi-class attack clas-sification using an LSTM model. In the online evaluations, flow termination times are unknown at inference time. We therefore represent each flow using only its first 10 packets as input to the LSTM. Traffic is processed in consecutive batches, where the model is trained and evaluated per batch and continuously updated across batches to support online adaptation. Each packet is represented using packet-level features (e.g., payload length, TCP flags, and inter-arrival time), augmented with lightweight flow-level features avail-able early in the flow, such as the total length of forward packets and the maximum inter-arrival time. For NetLLM, we follow the experimental setup in the orig-inal paper [ 18 , 33 ]. Specifically, the LLM is initially trained for cluster job scheduling using TPC-DS workloads, where jobs are randomly sampled from six input sizes (2, 5, 10, 20, 50, and 100 GB) across all TPC-DS queries. This in fact leads to a heavy-tailed distribution: 23% of the jobs contain 82% of the total work. We then evaluate its system adaptation to the TPC-H workload, where we sample 1,000 TPC-H jobs of six different sizes uniformly at random, and model their arrival as a Poisson process. Note that both TPC-DS and TPC-H benchmarks are popular workloads in big data systems evaluations. For adaptive bitrate (ABR) video streaming, we use the real-world Puffer dataset [ 35 ] collected in 2025 January. We first develop the model on a subset of user network traces, and then evaluate adaptation by deploying the learned system to different users. 17
