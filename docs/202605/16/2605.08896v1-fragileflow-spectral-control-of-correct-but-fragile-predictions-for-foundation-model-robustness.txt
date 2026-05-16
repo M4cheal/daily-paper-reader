@@ -1,0 +1,1884 @@
+Title: FragileFlow: Spectral Control of Correct-but-Fragile Predictions for Foundation Model Robustness
+
+URL Source: https://arxiv.org/pdf/2605.08896v1
+
+Published Time: Tue, 12 May 2026 01:04:46 GMT
+
+Number of Pages: 28
+
+Markdown Content:
+# FragileFlow: Spectral Control of Correct-but-Fragile Predictions for Foundation Model Robustness 
+
+Zhuoyun Li, Boxuan Wang, Jinwei Hu, Xiaowei Huang, Yi Dong 
+
+School of Computer Science and Informatics, University of Liverpool, UK 
+
+Abstract 
+
+Robust adaptation of LLMs and VLMs is often evaluated by average accuracy or average consistency under perturbations. However, these averages can hide a struc-tured failure mode: a prediction may remain correct while probability mass already flows from particular true classes toward systematic wrong competitors near the decision boundary. In this paper, we formalize this phenomenon as margin-aware error flow and introduce FragileFlow , a plug-in regularizer that uses a calibrated margin buffer to identify correct-but-fragile predictions and organize their off-class probability mass into a class-wise vulnerable-risk matrix. Theoretically, we provide the first PAC-Bayes upper bound for this margin-aware error-flow object, showing how empirical spectral control yields a conservative route to deterministic worst-class robustness under a stability condition. Experiments on multiple-choice LLM benchmarks and few-shot CLIP adaptation show that FragileFlow consistently improves the proposed theory-facing risk measures over matched baselines, yields perturbed worst-class accuracy gains in most settings, and preserves clean accuracy across comparisons. 
+
+1 Introduction 
+
+Foundation models have evolved from simple text generators into central components of high-stakes decision-making [ 5, 6 , 40 , 17 ]. In these practical applications, robustness is an important requirement, as a minor visual distraction or a subtle linguistic perturbation can easily alter a critical recommendation [ 46 , 55 , 29 , 18 , 42 ]. Consequently, a reliable model must not only perform well on clean inputs but also remain stable under various perturbations. Existing robust adaptation methods have made important progress toward this goal. Adversarial training exposes models to difficult perturbations, while regularized fine-tuning methods encour-age local smoothness or consistency between clean and perturbed inputs [ 14 , 1 , 28 , 52 , 21 , 50 ]. In LLMs, this is often implemented through adversarial, KL-based, noise-based, or trust-region regularization [ 54 , 21 , 1]; in VLMs, robustness is commonly improved by perturbing visual inputs, tuning prompts, or adapting lightweight components [ 29 , 53 , 42 , 47 ]. However, gaps still remain. First, most objectives still optimize an average notion of robustness: they ask whether accuracy, loss, or consistency improves on average, but they do not track how probability mass moves among wrong options before the final prediction fails [51, 4, 45, 23]. This misses a fragile regime in which the predicted option remains correct, yet perturbations already push substantial probability toward systematic wrong competitors. Second, many practical robust adaptation methods are supported mainly by empirical improvements, while their objectives are not tied to a generalization bound for the specific fragile behavior they aim to reduce [ 34 , 26 , 19 , 22 ]. As a result, a model may look stable under standard aggregate metrics while hiding structured vulnerabilities. To address this empirical and theoretical gap, we study this correct-but-fragile regime through finite-option LLM and VLM tasks. This setting gives a controlled interface: the model’s distribution over candidate options is directly observable, and each wrong option has a clear semantic meaning. Instead 
+
+> Preprint.
+> arXiv:2605.08896v1 [cs.CL] 9 May 2026
+
+of asking only whether the final answer flips, we ask where the off-class probability goes, which true options are most vulnerable, and whether the resulting error pattern is scattered or structured. Based on this observation, we introduce FragileFlow , a lightweight plug-in regularizer for robust adaptation. FragileFlow constructs a margin-aware error-flow matrix under perturbation. The margin buffer focuses on examples that are already misclassified or still correct but close to the decision boundary, while the spectral penalty suppresses coherent probability flow from true options toward recurring wrong competitors. In this way, FragileFlow targets a failure pattern that average robustness objectives can easily miss. Crucially, we provide the theoretical foundation that existing empirical methods lack. While PAC-Bayes analysis has been used for standard generalization and begun to extend to modern neural networks and language models [ 22 , 33 ], we establish, to our knowledge, the first PAC-Bayes spectral control framework tailored for margin-aware error flow. Our bound rigorously connects the empirical spectral error-flow term to the population’s vulnerable worst-class risk. Under a stated logit-stability condition, this demonstrates that FragileFlow is not merely a heuristic add-on, but is mathematically aligned with deterministic worst-class robustness at test time, directly bridging the gap between empirical adaptation and provable generalization. Our main contributions are threefold: • We formalize the “correct-but-fragile” failure mode in robust adaptation, showing how models can silently leak probability mass toward systematic wrong competitors near the decision boundary before the final prediction fails. • We introduce FragileFlow , a margin-aware spectral plug-in regularizer that suppresses structured vulnerable probability flow and can be attached to existing adaptation objectives. • We bridge the theoretical gap in robust adaptation by establishing the first PAC-Bayes spec-tral control route for this error-flow object. We further show its connection to deterministic worst-class risk and validate its effectiveness across both LLM and VLM settings. 
+
+2 Methodology 
+
+2.1 Prediction and Perturbation Formulation 
+
+We now develop FragileFlow in the order shown in Fig. 1. First, we set up the notation for finite-option prediction and perturbations. Each input is assigned one label from a fixed set of K candidate options. We first define the prediction interface and the perturbation notation for a fixed adapted model θ. Randomized adaptation parameters are introduced later in Section 2.3. 
+
+Definition 2.1 (Finite-option prediction) . Let D be a distribution over input–label pairs (x, y ) with 
+
+y ∈ { 1, . . . , K } := [ K]. Let S = {(xr , y r )}mr=1 be a finite sample drawn from D. For a model θ,each input x induces a score vector sθ (x) ∈ RK , where sθ (x, k ) is the score assigned to option k.The induced option distribution is pθ (k | x) := exp( sθ (x,k ))    
+
+> PKk′=1 exp( sθ(x,k ′))
+
+. The deterministic predictor used for evaluation is ˆydet  
+
+> θ
+
+(x) := arg max k∈[K] sθ (x, k ).
+
+Definition 2.2 (Option margin) . For an example (x, y ), the option margin is ∆θ (x, y ) := sθ (x, y ) −
+
+max k̸ =y sθ (x, k ). A positive margin means that the correct option is selected by the deterministic predictor. A negative margin means the predictor selects a wrong option. A small positive margin means that the prediction is still correct, but a wrong option is close to overtaking the true one. 
+
+Definition 2.3 (Perturbed distribution and sample) . For each input x, let U(x) be the allowed perturbation set. A perturbation rule Π( · | x, y ) is supported on U(x) and may represent either random or adversarially selected perturbations. The perturbed distribution D′ is induced by drawing 
+
+(x, y ) ∼ D and then drawing x′ ∼ Π( · | x, y ). Given the finite sample S, the corresponding perturbed sample is S′ := {(x′ 
+
+> r
+
+, y r )}mr=1 , x′ 
+
+> r
+
+∼ Π( · | xr , y r ).
+
+2.2 Margin-aware Error Flow 
+
+Perturbations can change more than the final predicted option. They can also change where the model places probability among the wrong options. We first record this off-option allocation with an error-flow matrix. 2Even if  
+
+> Still correct
+> Perturbed  samples
+
+LLM Logits Options 
+
+probability     
+
+> …
+> …
+> Map
+> &
+> Softmax
+> 0
+> 0
+> 0
+> 0
+> Tru eoption
+> ABCD
+> ABCD
+> Predicted  option
+
+Error -flow matrix 
+
+> …
+> A
+> B
+> C
+> D
+> …
+
+…          
+
+> Margin
+> Easy -to -flip
+> True answer:
+> A: 0.46
+> Wrong answer:
+> B: 0.41
+> C: 0.12
+> …
+> 𝛾
+> Hard -to -flip
+> True answer:
+> A: 0.72
+> Wrong answer:
+> B: 0.14
+> C: 0.11
+
+… Margin 
+
+> 𝛾
+
+Safety buffer 𝛾   
+
+> Smooth gate 𝑔 !
+
+Margin -vulnerable structural risk                                                   
+
+> Average robust fine -tuning
+> Generalizatio n:
+> PAC -Bayes Bound
+> Sample adaptation parameters 𝑤 $∼𝑄 Trained/adapted model
+> Deterministic 𝜃 (𝜇 )
+> Randomized
+> Gibbs 𝜃 (𝑤 $)
+> Risk of stability
+> Risk of uneven error flow
+> Plugin
+> Principal singular
+> value 𝜎 "#$
+> Empirical
+> S’
+> 𝓡 𝒔𝒑𝒆𝒄
+> 𝓡 𝒔𝒕𝒂𝒃
+> Sec 2.5
+> VWRγ𝑄 ;𝐷’ ≤KVSRγ𝑄 ;𝑆’
+> +Complexity term
+> 0𝛾
+> Deterministic margin Δ,
+> 2𝛾
+> det. error stable safe
+> Not counted
+> fragile correct
+> conservative
+> count
+> 𝜌 :not
+> guaranteed
+> Counted by gate 𝑔 !
+> VSRγ𝑆’
+> Sec 2.1 Sec 2.2
+> Sec 2.2
+> Sec 2.3
+> Sec 2.4
+> From  empirical
+> S’  to  population
+> D’
+> 𝜃 (𝑤 $),𝑤 $∼𝑄
+> ≤𝛾
+> 𝜃 (𝜇 )
+> ΔShift
+> Δ
+> Δ
+> Δ-.−Δ,≤𝛾
+> 𝛾 ,𝜌 -Stable event
+
+Figure 1: Overview of FragileFlow. The figure summarizes the pipeline from finite-option prediction to margin-aware error flow, PAC-Bayes control, deterministic stability, and the final plug-in objective. Section tags indicate where each component is defined. 
+
+Definition 2.4 (Ungated error-flow matrix) . For a fixed model θ, the ungated population error-flow matrix under D′ is 
+
+(M D′ 
+
+> θ
+
+)ij := E(x′,y )∼D ′ [pθ (i | x′) | y = j] , i̸ = j, (M D′ 
+
+> θ
+
+)jj := 0 . (1) Rows index the receiving option i, and columns index the ground-truth option j. The zero diagonal removes probability mass assigned to the correct option. This matrix tells us where wrong-option probability goes, but not how dangerous that probability is. A wrong option receiving extra probability is less concerning when the true option is far ahead. It is more concerning when the true option is only slightly ahead, because a small additional shift can flip the prediction. 
+
+Definition 2.5 (Margin gate) . Given a safety buffer γ ≥ 0 and a temperature κ > 0, the smooth margin gate is 
+
+gθγ,κ (x′, j ) := σ
+
+ γ − ∆θ (x′, j )
+
+κ
+
+
+
+∈ (0 , 1) , (2) where σ(·) is the logistic sigmoid. This gate is a differentiable version of 1{∆θ (x′, j ) ≤ γ}. It is large when the perturbed example is already misclassified or lies inside the safety buffer, and small when the true option has a clear margin. Intuitively, γ draws a band around the decision boundary. Examples inside this band are not all wrong, but they are easy to flip. We therefore weight the off-option probability in Eq. 1 by this margin gate. 
+
+Definition 2.6 (Margin-aware error-flow matrix) . The margin-aware population error-flow matrix is 
+
+(M D′,γ θ )ij := E(x′,y )∼D ′
+
+gθγ,κ (x′, j )pθ (i | x′) | y = j , i̸ = j, (M D′,γ θ )jj := 0 . (3) Larger values of γ include a wider safety band, so the matrix becomes more conservative. We quantify the risk of the phenomenon: 
+
+Definition 2.7 (Vulnerable risks) . For a fixed model θ, the vulnerable worst-option risk is 
+
+VWR γ (θ; D′) := ∥M D′,γ θ ∥1. The vulnerable spectral risk is VSR γ (θ; D′) := ∥M D′,γ θ ∥2.Here ∥ · ∥ 1 denotes the induced matrix 1-norm, i.e., the maximum column sum, and ∥ · ∥ 2 denotes the spectral norm. The first quantity asks which ground-truth option leaks the most vulnerable 3probability mass to wrong options. The second asks whether this leakage is structured rather than scattered. For example, several true options may drift toward the same wrong option, or a group of options may become mutually confusable. The standard norm conversion gives VWR γ (θ; D′) ≤√K VSR γ (θ; D′) (see Appendix A.2). Thus, controlling the spectral risk gives a conservative way to reduce the worst-option vulnerable readout while also penalizing coherent error-flow patterns. 
+
+2.3 PAC-Bayes Spectral Control with Randomized Adaptation 
+
+The previous definitions describe the vulnerable error-flow object on the perturbed population D′.In practice, we only observe a finite perturbed sample S′. For generalization, we need to relate the empirical matrix on S′ to the population risk on D′. We use PAC-Bayes analysis because it gives a direct way to separate the observed empirical term from the complexity of the adapted model. 
+
+Definition 2.8 (Randomized adaptation) . Let w ∈ Rdtrain denote the trainable adaptation coordinates, and write θ(w) := T (θ0, w ), where θ0 is fixed and T specifies how w is inserted into the predictor. Let P be a prior over w chosen before observing the sample, and let Q be a posterior after observing the sample. We write μ := E ew∼Q[ ew], and the deterministic adapted model used for evaluation is 
+
+θ(μ).For the analysis, a sampled coordinate ew ∼ Q induces a model θ( ew). We use the corresponding option distribution pθ( ew)(· | x) to define a Gibbs predictor. This randomized predictor is only an analysis device; the empirical results still use the deterministic model θ(μ). The connection between these two predictors is handled in Section 2.4. 
+
+Definition 2.9 (Posterior-averaged vulnerable risks) . We fix the perturbation protocol before the PAC-Bayes analysis, so D′ and S′ are the population and empirical perturbed objects. The remaining randomness comes from ew ∼ Q. The posterior-averaged margin-aware matrices are ¯M Q 
+
+> D′,γ
+
+:= 
+
+E ew∼Q
+
+h
+
+M D′,γ θ( ew)
+
+i
+
+and ¯M QS′,γ := E ew∼Q
+
+h
+
+M S′,γ θ( ew)
+
+i
+
+. The posterior vulnerable worst-option risk and spectral risk are VWR γ (Q; D′) := ∥ ¯M Q 
+
+> D′,γ
+
+∥1 and VSR γ (Q; D′) := ∥ ¯M Q 
+
+> D′,γ
+
+∥2, respectively. We also write VSR γ (Q; S′) := ∥ ¯M QS′,γ ∥2 for the empirical posterior spectral risk. The following theorem gives the empirical-to-population step. It shows that a small empirical spectral error-flow signal on S′ controls the population vulnerable worst-option risk, up to an adaptation-complexity term. 
+
+Theorem 2.10 (PAC-Bayes control of margin-aware vulnerable risk) . Fix γ ≥ 0 and δ ∈ (0 , 1) .Let mj be the number of option-j samples used in the option-conditional empirical matrix, and let mmin := min j∈[K] mj ≥ 1. Condition on the realized option counts {mj }Kj=1 and on the perturbation protocol that induces D′ and S′. Then, with probability at least 1 − δ over the draw of 
+
+S and the induced perturbed sample S′, for all posteriors Q simultaneously, 
+
+VWR γ (Q; D′) ≤ √K VSR γ (Q; S′) + 2 
+
+s
+
+2K  KL( Q∥P ) + 2 K ln 9 + ln 2
+
+> δ
+
+
+
+mmin 
+
+. (4) The theorem gives the control chain used by our method. The first term is the empirical vulnerable spectral risk measured on S′, which is the quantity later targeted by the plug-in regularizer. The second term is the price of adaptation: it grows with KL( Q∥P ) and decreases with the smallest option-wise sample size mmin . The buffer γ changes which examples contribute to the vulnerable matrix, but it does not add a separate complexity term. The proof is given in Appendix A.3. 
+
+2.4 From Posterior Risk to Deterministic Worst-class Risk 
+
+Theorem 2.10 controls a posterior-averaged risk, while the model used at test time is the deterministic adapted model θ(μ). We now connect these two objects through a simple logit-stability condition. 
+
+Definition 2.11 (Deterministic worst-class risk) . For a deterministic model θ, the perturbed worst-class risk is WCR det (θ; D′) := max j∈[K] Pr (x′,y )∼D ′ (ˆ ydet  
+
+> θ
+
+(x′)̸ = j | y = j).This is the hard-error quantity used for downstream evaluation. It differs from VWR γ , which measures gated off-option probability mass rather than hard prediction errors. 4Definition 2.12 (Posterior logit stability) . For a posterior sample ew ∼ Q, define the largest option-score shift from the posterior mean model as 
+
+ΞQ(μ, ew) := sup 
+
+> (x′,y )∈supp( D′)
+
+max  
+
+> k∈[K]
+
+sθ( ew)(x′, k ) − sθ(μ)(x′, k ) . (5) We say that the posterior mean is (γ, ρ )-stable if Pr ew∼Q(Ξ Q(μ, ew) ≤ γ/ 2) ≥ 1 − ρ.The stability condition says that most posterior samples stay close to the mean model in option-score space. On the stable event ΞQ(μ, ew) ≤ γ/ 2, every option score changes by at most γ/ 2, so the margin changes by at most γ. The same buffer γ therefore has two roles: it defines the vulnerable band in the gate, and it also absorbs bounded posterior score fluctuations around the mean model. As a result, when the mean model makes a deterministic error on a perturbed example, every stable posterior sample remains inside the γ-vulnerable region counted by the gate. Only the unstable 
+
+ρ-probability event can escape this accounting. The detailed case analysis is shown in Appendix A.4. 
+
+Proposition 2.13 (Deterministic bridge under logit stability) . Suppose the posterior mean is (γ, ρ )-stable. Also suppose that the gate satisfies gθ( ew) 
+
+> γ,κ
+
+(x′, j ) ≥ η whenever ∆θ( ew)(x′, j ) ≤ γ, for some 
+
+η > 0. Then 
+
+WCR det (θ(μ); D′) ≤ η−1(1 + eγ )VWR γ (Q; D′) + ρ. 
+
+The proof is given in Appendix A.5-A.6. Together, Theorem 2.10 and Proposition 2.13 give the control route used in this paper. The empirical spectral term controls the posterior vulnerable risk, and logit stability transfers this control to the deterministic model evaluated at test time. In the experiments, perturbed worst-class accuracy is the downstream readout, while VWR γ and VSR γ are the theory-facing quantities. 
+
+2.5 Plug-in Spectral Safety Control 
+
+The theory suggests a direct plug-in principle: reduce the empirical vulnerable spectral risk, while encouraging local logit stability under input and coordinate perturbations. We use the same trainable coordinate notation w as in Definition 2.8. 
+
+Definition 2.14 (Plug-in objective) . Let w denote the current trainable coordinates, and let Lbase be a standard training objective. For a fixed safety buffer γ, we optimize 
+
+Ltotal (w) := Lbase (w) + αRspec (w; γ) + βRstab (w), (6) where α, β ≥ 0 are validation-selected weights. Here Rspec targets the empirical spectral term in The-orem 2.10, while Rstab is an output-level proxy for the logit-stability condition in Proposition 2.13. 
+
+Definition 2.15 (Mini-batch spectral regularizer) . Given a paired mini-batch, let Bj := {r ∈
+
+B : yr = j}. For every option j with |Bj | > 0, we form the batch margin-aware estimator 
+
+( fM B,γ w )ij := 1 
+
+> |Bj|
+
+P 
+
+> r∈Bj
+
+gθ(w) 
+
+> γ,κ
+
+(x′ 
+
+> r
+
+, j )pθ(w)(i | x′ 
+
+> r
+
+), i ̸ = j, ( fM B,γ w )jj := 0 . Then, 
+
+Rspec (w; γ) := [VSR γ (w; B) := fM B,γ w 2
+
+. (7) If option j is absent from the mini-batch, its column is skipped for that update. This term suppresses the dominant structured mode of vulnerable probability flow; implementation details are given in Appendix A.8. 
+
+Definition 2.16 (Local stability regularizer) . Let eQw be a local perturbation distribution centered at 
+
+w, and draw ˜w ∼ eQw. For the same paired mini-batch B, define 
+
+Rstab (w) := E ˜w∼ eQw
+
+"
+
+1
+
+|B|
+
+X
+
+> r∈B
+
+KL  sg pθ(w)(· | xr ) pθ( ˜ w)(· | x′ 
+
+> r
+
+)#
+
+, (8) where sg[ ·] denotes stop-gradient. This term penalizes prediction changes caused jointly by input perturbation and local coordinate noise. Its coordinate-noise component discourages large centered logit and margin shifts, making it a practical proxy for reducing the stability-failure probability ρ in Proposition 2.13. See Appendix A.10. 53 Experiments 
+
+3.1 Experimental setup 
+
+To validate the theoretical control route and test its practical effect, we evaluate FragileFlow under a unified finite-option prediction protocol across two perturbation channels. In LLM tasks, perturbations modify the question text; in VLM tasks, perturbations modify the image input. In both cases, the model produces a distribution over candidate options, so the same margin-aware error-flow matrix, calibrated buffer, and worst-class readouts can be used. This lets us test whether the proposed risk-control mechanism transfers across text-side and image-side robustness settings. 
+
+Models and tasks. For LLMs, we evaluate Qwen2.5-0.5B-Instruct and Qwen2.5-1.5B-Instruct [ 39 , 38 ], and Mistral-7B-Instruct-v0.2 [ 20 , 31 ] on ARC-Challenge [ 9] and CommonsenseQA [ 44 ]. These multiple-choice tasks expose the full verbalizer distribution, so the class-conditional error-flow matrix can be formed directly. We test three task-preserving perturbations: typo noise, distractor insertion, and format rewriting, following text robustness and behavioral testing protocols [ 32 , 41 ]. For VLMs, we evaluate CLIP ViT-B/32 [ 40 ] following [ 42 ] with LoRA adaptation [ 16 ] on DTD [ 8 ], OxfordPets [ 36 ], and Caltech101 [ 11 ]. Robustness is measured on PGD-perturbed test images [ 28 ], following the adversarial LoRA adaptation protocol of [13]. 
+
+Baselines and plug-in placement. For LLMs, we attach FragileFlow to cross-entropy training (CE) with augmentation [ 32 ], R3F [ 1], and SMART [ 21 ], covering data-level augmentation, randomized embedding smoothness, and local smoothness regularization. Plain CE is included as an unpaired reference. For VLMs, we apply the plug-in to the inner PGD step, the outer model update, or both ,separating whether the regularizer shapes adversarial-example construction, regularizes the adapted model, or combines the two effects. 
+
+Metrics and protocol. We report clean accuracy, perturbed worst-class accuracy, \VWR γ , and [VSR γ ;the VLM table additionally reports perturbed average accuracy and clean worst-class accuracy. Higher accuracy is better, while lower \VWR γ and [VSR γ indicate less margin-vulnerable probability flow. All paired comparisons use the same data split, perturbation, random seeds, and calibrated buffer. 
+
+3.2 Safety-buffer calibration 
+
+The buffer γ determines which perturbed examples are counted as margin-vulnerable by the error-flow matrix. Since raw logit margins vary across models and tasks, we do not fix γ as a global numeric value. Instead, for each setting, we compute margins on a held-out perturbed validation split and set 
+
+γ = γq , the q-th quantile of the validation-margin distribution. We sweep q ∈ { 0.10 , 0.25 , 0.50 } and compare each base learner with its plug-in counterpart under the same calibrated buffer. Figure 2 shows the calibration behavior on the LLM settings. The last two columns report \VWR γ and 
+
+σmax , where σmax = [VSR γ represents the empirical spectral norm of the margin-aware error-flow matrix. As q increases, the buffer covers a wider vulnerable region, so more perturbed examples and off-option probability mass are counted; the measured vulnerable risks therefore increase by design. The meaningful comparison is within the same q, where the plug-in consistently moves the operating point toward lower vulnerable flow. The intermediate choice q = 0 .25 gives the most stable trade-off: it preserves clean accuracy, maintains or improves perturbed worst-class accuracy, and reduces the two margin-aware risk measures. We therefore use γ25 , the 25th percentile of held-out perturbed validation margins, in all remaining experiments. 
+
+3.3 Main results: reducing vulnerable error flow 
+
+With the safety buffer fixed to γ25 , we evaluate whether the plug-in realizes the control mechanism predicted by the theory and whether this control translates into practical robustness gains. A limited sweep over (α, β ) is reported in Appendix D.4; in the main experiments, we use one shared default setting across models, datasets, and base learners. Table 1 reports the LLM results. Across the three models, two datasets, and three robust adaptation objectives, FragileFlow reduces both \VWR γ and [VSR γ in every paired comparison. This directly verifies the intended mechanism: under the same calibrated buffer, the plug-in compresses the 662   
+
+> 64
+> 66
+> 68
+> 70
+> ARC-Challenge
+> ↑better
+> Clean Accuracy (%)
+> 35
+> 40
+> 45
+> 50
+> 55
+> 60
+> ↑better
+> WC-Acc (perturbed, %)
+> 30
+> 40
+> 50
+
+̂                       
+
+> VWR γ
+> 20
+> 30
+> 40
+> 50
+> σmax
+> 0.10 0.25 0.50
+> safety buffer γ
+> 68
+> 69
+> 70
+> 71
+> CommonsenseQA
+> ↑better
+> 0.10 0.25 0.50
+> safety buffer γ
+> 40
+> 45
+> 50
+> 55
+> ↑better
+> 0.10 0.25 0.50
+> safety buffer γ
+> 20
+> 30
+> 40
+> 0.10 0.25 0.50
+> safety buffer γ
+> 20
+> 30
+> 40
+> Acc: \texttt{clean} only. WC-Acc / VWR / σmax : averaged over 3 perturbations (typo, distractor, format\_rewrite). Default γ= 0.25 . Models: Qwen-0.5B + Qwen-1.5B + Mistral-7B (beneficial regime).
+> CE+aug
+> R3F
+> SMART
+> base (no plug)
+> base +Plug (sweep over γ)
+> Plug improves over base
+> Plug hurts vs base
+
+Figure 2: Safety-buffer calibration for LLM robustness. Results are averaged over three LLMs and two datasets. Dashed lines are base learners, and solid curves are plug-in counterparts. Larger q
+
+widens the vulnerable region, so risk values increase by construction. dominant margin-vulnerable error-flow structure rather than merely changing average accuracy. The downstream metrics show the same trend in most cases. Perturbed worst-class accuracy improves in most paired comparisons, while clean accuracy remains comparable to the corresponding base learner. In the few cases where perturbed worst-class accuracy does not increase, we keep the results unfiltered and still observe lower values for both controlled risk quantities. This separation is expected: the plug-in directly targets vulnerable probability flow, while its conversion into deterministic worst-class accuracy also depends on the stability bridge in Proposition 2.13 and on the optimization behavior of the base learner. Table 1: Main LLM results at the calibrated buffer γ25 . Results are reported over three paired seeds. Perturbed-side metrics average over typo noise, distractor insertion, and format rewriting; clean accuracy is measured on the original test set. Lower is better for \VWR γ and [VSR γ ; higher is better for accuracy. Bold indicates improvement over the paired base learner. 
+
+Model Dataset Method \VWR γ ↓ [VSR γ ↓ Ptb WC Acc ↑ Clean Acc ↑
+
+base +plug base +plug base +plug base +plug Qwen-0.5B ARC-C CE 49.64 ± 1.73 – 45.06 ± 2.02 – 26.40 ± 2.17 – 52.33 ± 2.52 –CE+aug 48.07 ± 1.55 38.46 ± 1.42 43.34 ± 1.47 34.26 ± 2.15 38.58 ± 8.92 38.31 ± 8.00 54.20 ± 3.41 53.87 ± 3.19 R3F 49.68 ± 1.76 39.45 ± 1.07 45.00 ± 2.07 35.64 ± 0.54 26.40 ± 2.21 28.09 ± 3.34 52.13 ± 2.44 53.93 ± 1.89 
+
+SMART 53.70 ± 3.68 36.83 ± 4.00 46.85 ± 0.84 34.11 ± 2.55 22.04 ± 2.42 27.73 ± 2.82 52.00 ± 0.53 53.13 ± 0.61 
+
+Qwen-0.5B CSQA CE 40.85 ± 2.88 – 36.73 ± 0.70 – 28.56 ± 2.82 – 57.87 ± 2.32 –CE+aug 38.32 ± 3.46 29.30 ± 2.73 34.02 ± 2.17 25.79 ± 1.56 40.33 ± 6.61 43.22 ± 7.15 59.27 ± 1.92 59.73 ± 2.81 
+
+R3F 40.84 ± 2.46 32.03 ± 2.78 36.95 ± 1.13 28.59 ± 1.25 28.67 ± 2.56 28.22 ± 2.72 57.53 ± 2.55 57.73 ± 2.02 
+
+SMART 39.22 ± 2.83 31.47 ± 2.53 34.80 ± 1.60 27.45 ± 1.50 30.22 ± 2.37 32.89 ± 2.24 59.33 ± 2.60 60.80 ± 2.78 
+
+Qwen-1.5B ARC-C CE 30.87 ± 2.29 – 27.83 ± 2.57 – 48.98 ± 4.94 – 74.13 ± 2.39 –CE+aug 30.34 ± 4.12 26.46 ± 1.52 26.30 ± 1.58 23.77 ± 1.25 63.84 ± 4.07 68.62 ± 3.69 76.20 ± 1.71 76.93 ± 0.42 
+
+R3F 30.95 ± 2.19 28.43 ± 2.63 27.85 ± 2.57 26.33 ± 3.14 47.89 ± 5.03 48.80 ± 4.97 74.33 ± 2.25 74.20 ± 2.62 SMART 31.61 ± 1.04 29.09 ± 1.89 27.49 ± 0.45 25.40 ± 1.07 50.18 ± 5.91 52.71 ± 5.80 75.00 ± 0.53 74.93 ± 0.70 Qwen-1.5B CSQA CE 28.12 ± 1.39 – 24.92 ± 1.93 – 45.67 ± 6.16 – 73.20 ± 0.92 –CE+aug 25.20 ± 0.89 21.87 ± 1.25 21.84 ± 0.51 18.86 ± 0.93 62.22 ± 1.77 65.67 ± 1.80 75.40 ± 0.72 75.13 ± 0.76 R3F 27.82 ± 1.48 24.46 ± 1.60 24.71 ± 1.78 21.64 ± 2.17 44.67 ± 6.28 45.89 ± 6.44 73.53 ± 0.81 73.40 ± 1.06 SMART 27.57 ± 2.42 23.41 ± 1.78 24.25 ± 1.46 20.26 ± 1.18 49.78 ± 6.27 50.67 ± 5.52 74.80 ± 2.51 74.87 ± 2.91 
+
+Mistral-7B ARC-C CE 31.41 ± 4.52 – 27.13 ± 1.71 – 52.18 ± 4.97 – 75.33 ± 0.64 –CE+aug 32.91 ± 4.15 29.60 ± 4.76 28.09 ± 1.34 25.96 ± 2.01 61.18 ± 4.21 65.96 ± 6.26 75.80 ± 1.25 76.93 ± 3.56 
+
+R3F 31.32 ± 3.77 30.99 ± 2.81 26.99 ± 1.47 25.80 ± 1.12 50.73 ± 4.33 51.20 ± 4.34 75.20 ± 0.53 75.07 ± 0.46 SMART 52.44 ± 5.96 43.60 ± 5.65 41.88 ± 5.33 36.11 ± 5.93 26.67 ± 9.98 36.09 ± 8.82 68.67 ± 3.90 71.73 ± 4.32 
+
+Mistral-7B CSQA CE 26.56 ± 3.27 – 22.13 ± 0.50 – 51.89 ± 8.69 – 76.40 ± 0.92 –CE+aug 25.90 ± 2.06 23.34 ± 1.62 20.81 ± 0.51 18.57 ± 0.93 60.78 ± 4.81 64.33 ± 4.23 77.33 ± 1.51 77.67 ± 1.60 
+
+R3F 26.18 ± 3.92 24.04 ± 4.26 21.94 ± 1.13 20.02 ± 1.62 51.22 ± 8.55 52.00 ± 8.84 76.87 ± 0.76 76.67 ± 0.81 SMART 37.73 ± 3.25 30.37 ± 0.93 31.78 ± 2.00 26.21 ± 0.87 34.56 ± 6.84 38.89 ± 5.43 69.33 ± 0.31 70.67 ± 0.31 
+
+Table 2 provides a cross-modal test of the same mechanism. Here the perturbation acts on the image input through PGD, rather than on the text-side question or verbalizer interface. Despite this different perturbation channel, FragileFlow again lowers \VWR γ and [VSR γ across datasets and plug-in placements. Clean accuracy is largely preserved, and the additional VLM metrics show that the gains are not confined to the proposed risk scores: perturbed average accuracy and worst-class readouts remain stable or improve in most settings. 7Table 2: Cross-modal VLM results on CLIP ViT-B/32. Results are reported for 16-shot LoRA adversarial adaptation over three seeds, with robustness evaluated by 100-step PGD at ε = 1 .0/255 .
+
+Inner , outer , and both denote where the plug-in is applied during adaptation. Lower is better for 
+
+\VWR γ and [VSR γ ; higher is better for accuracy metrics. 
+
+Dataset Plugin type \VWR γ ↓ [VSR γ ↓ Clean Acc ↑ Ptb Acc ↑ Clean WC ↑ Ptb WC ↑
+
+DTD – 28 .33 ± 0.38 38 .97 ± 4.80 67 .57 ± 0.93 22 .66 ± 1.12 28 .70 ± 3.46 0.00 
+
+Inner 27 .22 ± 0.47 37 .47 ± 5.04 67 .53 ± 1.04 22 .73 ± 1.10 27 .78 ± 4.54 0.00 
+
+Outer 26 .91 ± 0.59 36 .25 ± 4.83 67 .55 ± 0.68 22 .56 ± 1.19 29 .63 ± 4.72 0.00 
+
+Both 26 .89 ± 0.56 36 .15 ± 4.34 67 .38 ± 0.43 22 .28 ± 1.07 29 .63 ± 3.46 0.00 
+
+OxfordPets – 63 .53 ± 2.09 58 .81 ± 5.48 89 .52 ± 0.08 20 .34 ± 1.14 54 .00 ± 2.45 0.00 
+
+Inner 63 .27 ± 2.15 58 .02 ± 5.94 89 .38 ± 0.19 20 .72 ± 1.15 54 .00 ± 2.94 0.33 ± 0.47 
+
+Outer 61 .60 ± 2.81 57 .12 ± 5.65 89 .79 ± 0.34 20 .70 ± 1.04 56 .67 ± 3.40 0.33 ± 0.47 
+
+Both 61 .53 ± 2.79 56 .82 ± 5.66 89 .82 ± 0.44 20 .82 ± 1.33 56 .33 ± 1.25 0.33 ± 0.47 
+
+Caltech101 – 47 .30 ± 8.61 22 .20 ± 3.74 95 .04 ± 0.25 64 .60 ± 2.72 42 .22 ± 3.14 5.19 ± 4.09 
+
+Inner 45 .40 ± 7.20 20 .79 ± 3.61 95 .06 ± 0.30 64 .72 ± 2.60 40 .00 ± 3.44 5.19 ± 4.09 
+
+Outer 46 .14 ± 9.77 20 .90 ± 4.31 94 .97 ± 0.32 64 .72 ± 2.96 42 .78 ± 2.83 5.00 ± 3.60 
+
+Both 45 .23 ± 8.80 20 .89 ± 4.14 94 .90 ± 0.26 64 .75 ± 2.99 42 .22 ± 3.14 5.19 ± 4.09 
+
+The placement results further clarify how the regularizer acts. Applying the plug-in to the inner PGD step shapes adversarial-example construction, whereas applying it to the outer update directly regularizes the adapted model. These placements lead to different downstream trade-offs, but the common pattern is stable: under a fixed calibrated buffer, FragileFlow reduces concentrated vulnerable error flow while preserving clean utility across both text-side and image-side robustness settings. 
+
+3.4 Mechanistic ablation: spectral compression and stability 
+
+Table 3: Compact stability-term ablation summary. 
+
+Values are average shifts relative to the corresponding non-plug reference. Risk changes are relative; accuracy changes are absolute percentage points. 
+
+Setting Objective ∆[VSR γ ↓ ∆ \VWR γ ↓ ∆WC ↑ ∆PtbAcc ↑ ∆CleanAcc ↑
+
+LLM Rspec only (β = 0) −13 .02% −13 .14% +0 .48 pp +0 .44 pp +0 .42 pp 
+
+Rspec + βR stab −13 .97% −14 .37% +1 .52 pp +0 .68 pp +0 .57 pp VLM Rspec only (β = 0) −5.21% −3.35% +0 .24 pp +0 .33 pp −0.08 pp 
+
+Rspec + βR stab −6.47% −4.35% +0 .28 pp +0 .28 pp +0 .02 pp 0 10 20 30 40 50                                                          
+
+> σmax
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30 ̂
+> VWR γ / √ K
+> base
+> centroid
+> +Plug
+> centroid
+> Pearson r: all +0.97 |+plug +0.97 |base +0.97
+> (a) LLM, Rspec only ( β= 0 )
+> Qwen-0.5B / 1.5B / Mistral-7B ×{ARC, CSQA}
+> CE+aug
+> R3F
+> SMART
+> base (no plug)
+> base + Plug
+> σmax
+> 010 20 30 40 50
+> σmax
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30 ̂
+> VWR γ / √ K
+> base
+> centroid
+> +Plug
+> centroid
+> Pearson r: all +0.97 |+plug +0.98 |base +0.97
+> (b) LLM, Composite ( β> 0 , main)
+> Rspec +βR stab
+> CE+aug
+> R3F
+> SMART
+> base (no plug)
+> base + Plug
+> σmax
+> 010 20 30 40 50 60 70
+> σmax
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12 ̂
+> VWR γ / √ K base
+> centroid
+> +Plug
+> centroid
+> Pearson r: all +0.90 |+plug +0.90 |base +0.89
+> (c) VLM, Rspec only ( β= 0 )
+> {4,16}-shot ×{DTD, Pets, Caltech101} ×{clean, PGD}
+> LoRA
+> LoRA-adv
+> base (no plug)
+> base + Plug
+> σmax
+> 010 20 30 40 50 60 70
+> σmax
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12 ̂
+> VWR γ / √ K base
+> centroid
+> +Plug
+> centroid
+> Pearson r: all +0.88 |+plug +0.88 |base +0.89
+> (d) VLM, Composite ( β> 0 , main)
+> Rspec +βR stab , clean + PGD eval
+> LoRA
+> LoRA-adv
+> base (no plug)
+> base + Plug
+> σmax
+
+Figure 3: Spectral compression with and without stability. Each panel plots σmax = [VSR γ against 
+
+\VWR γ /√K. Centroids summarize the base and plug-in runs under the spectral-only and composite objectives. We finally isolate the two components of FragileFlow. The spectral term Rspec di-rectly penalizes the dominant mode of the margin-aware error-flow matrix, measured by σmax = [VSR γ . The stability term 
+
+Rstab is not meant to replace this spec-tral mechanism; it is added to make the controlled risk less sensitive to local co-ordinate perturbations, which is the con-dition used by the deterministic bridge in Proposition 2.13. Figure 3 visualizes this mechanism. Each panel plots σmax against the normalized vulnerable worst-class mass \VWR γ /√K.In both LLM and VLM settings, the spectral-only objective ( β = 0 ) already moves the plug-in centroid toward the lower-left region, showing that Rspec 
+
+alone compresses the intended vulnerable-flow geometry. The composite objective 
+
+Rspec + βR stab preserves the same direc-tion rather than changing the mechanism, which supports the intended complemen-tary role of the stability term. Table 3 shows the aggregate shifts rela-tive to the corresponding non-plug refer-ence; risk metrics are reported as relative 
+
+changes, and accuracy metrics as absolute 
+
+percentage-point changes. Detailed per-setting LLM and VLM results are reported in Appendix Tables 7 and 8. On LLMs, Rspec alone substantially reduces the two risk measures, while the larger downstream worst-class gain appears after adding Rstab . On VLMs, both variants reduce the risk measures under PGD evaluation, with the composite objective giving the stronger risk 8reduction. These results show the intended functional separation: Rspec compresses the vulnerable error-flow structure, while Rstab improves the reliability of its transfer to evaluation accuracy. 
+
+Experiment summary. Taken together, the experiments support the proposed risk-control chain: the calibrated buffer defines a stable vulnerable region, the plug-in reduces the targeted error-flow risks, and the ablations confirm the complementary roles of Rspec and Rstab . This improves worst-class robustness while largely preserving clean utility. 
+
+4 Related Work 
+
+4.1 Robustness to Input Perturbations 
+
+Robustness to input perturbations is commonly studied through adversarial training, consistency regularization, and flatness-based objectives. Adversarial training improves worst-case robustness by training on perturbed examples [ 14 , 28 , 52 ], while SMART, R3F, adversarial weight pertur-bation, and sharpness-aware training stabilize predictions under input, embedding, or parameter perturbations [ 21 , 1, 50 , 12 ]. These objectives are effective, but they usually aggregate robustness across samples or losses. Recent work extends these ideas to LLMs and VLMs. For LLMs, prompt perturbations, distractors, typos, and instruction edits motivate perturbation-aware fine-tuning and prompt-consistency learning [ 37 , 15 , 2]. For VLMs, robust adaptation often perturbs visual in-puts while tuning lightweight components such as adapters, LoRA modules, or vision encoders [ 42 , 13 , 35 ]. A related line studies class-wise and worst-class robustness. Prior work shows that adversarial training can create large robustness disparities across classes [ 51 , 45 ]. BAT, CFA, and WAT reduce such disparities through class balancing, class-specific adversarial configurations, or direct worst-class optimization [ 43 , 49 , 23 ]. Confusional spectral regularization further regularizes hard adversarial confusion for worst-class robust fairness [ 22 ]. FragileFlow shares the weakest-class motivation, but controls a margin-aware probability-flow matrix in LLM/VLM adaptation, capturing where probability mass moves before a prediction fails. 
+
+4.2 PAC-Bayes for Neural Networks 
+
+PAC-Bayes theory is a classical framework for connecting empirical performance with population risk through a posterior–prior complexity term [ 30 , 7]. For neural networks, it has been used to analyze generalization through flatness, compression, margin-based complexity, and parameter perturbations [ 10 , 34 , 3 ]. Recent work has gradually extended this framework to larger models and robust learning. Compression-based analyses suggest that pretrained or adapted LLMs can have much smaller effective complexity than their raw parameter count [ 27 , 24 ]. PAC-driven fine-tuning further uses posterior perturbations to guide pretrained language model adaptation [ 25 ]. Robust PAC-Bayes analyses connect bound minimization to adversarial or certified robustness [ 48 , 22 ]. Our work is inspired by this line of analysis, but uses PAC-Bayes for a different purpose. Rather than bounding standard generalization error, compression behavior, fine-tuning performance, or average robust risk, we analyze the margin-aware error-flow matrix induced by finite-option LLM/VLM adaptation under perturbation. This lets us move beyond a purely empirical regularizer: the same object optimized by FragileFlow also appears in a PAC-Bayes control route for vulnerable worst-class risk. 
+
+5 Conclusion 
+
+In this paper, we identified a problem that is often missed by average robustness evaluation: under perturbation, some classes can become fragile by consistently leaking probability mass toward recurring wrong competitors. We introduced FragileFlow to capture and reduce this vulnerable error flow, and provided a PAC-Bayes control route to connet the empirical regularized object to worst-class behavior at the population level. Experiments on LLM and VLM adaptation validate this view. More broadly, our results suggest that robustness should be studied not only through final prediction errors, but also through the structure that emerges before those errors occur. The probability-flow view gives a natural way to inspect how fragility concentrates across classes and points toward more interpretable robustness analysis. An immediate next step, which we are currently pursuing, is to understand how this form of regularization acts inside the model, including whether it suppresses fragile representation directions, changes internal error-flow pathways, or extends from finite-option prediction to generated tokens and semantic decision states. 9References 
+
+[1] Armen Aghajanyan, Akshat Shrivastava, Anchit Gupta, Naman Goyal, Luke Zettlemoyer, and Sonal Gupta. Better fine-tuning by reducing representational collapse. In International Conference on Learning Representations , 2021. [2] Aryan Agrawal, Lisa Alazraki, Shahin Honarvar, Thomas Mensink, and Marek Rei. Enhancing LLM robustness to perturbed instructions: An empirical study. In ICLR 2025 Workshop on Building Trust in Language Models and Applications , 2025. [3] Sanjeev Arora, Rong Ge, Behnam Neyshabur, and Yi Zhang. Stronger generalization bounds for deep nets via a compression approach. In Proceedings of the 35th International Conference on Machine Learning , volume 80 of Proceedings of Machine Learning Research , pages 254–263. PMLR, 2018. [4] Philipp Benz, Chaoning Zhang, Adil Karjauv, and In So Kweon. Robustness may be at odds with fairness: An empirical study on class-wise accuracy. In Luca Bertinetto, João F. Henriques, Samuel Albanie, Michela Paganini, and Gül Varol, editors, NeurIPS 2020 Workshop on Pre-registration in Machine Learning , volume 148 of Proceedings of Machine Learning Research ,pages 325–342. PMLR, 11 Dec 2021. [5] Rishi Bommasani, Drew A. Hudson, Ehsan Adeli, Russ Altman, Simran Arora, Sydney von Arx, Michael S. Bernstein, Jeannette Bohg, Antoine Bosselut, Emma Brunskill, Erik Brynjolfsson, S. Buch, Dallas Card, Rodrigo Castellon, Niladri S. Chatterji, Annie S. Chen, Kathleen A. Creel, Jared Davis, Dora Demszky, Chris Donahue, Moussa Doumbouya, Esin Durmus, Stefano Ermon, John Etchemendy, Kawin Ethayarajh, Li Fei-Fei, Chelsea Finn, Trevor Gale, Lauren E. Gillespie, Karan Goel, Noah D. Goodman, Shelby Grossman, Neel Guha, Tatsunori Hashimoto, Peter Henderson, John Hewitt, Daniel E. Ho, Jenny Hong, Kyle Hsu, Jing Huang, Thomas F. Icard, Saahil Jain, Dan Jurafsky, Pratyusha Kalluri, Siddharth Karamcheti, Geoff Keeling, Fereshte Khani, O. Khattab, Pang Wei Koh, Mark S. Krass, Ranjay Krishna, Rohith Kuditipudi, Ananya Kumar, Faisal Ladhak, Mina Lee, Tony Lee, Jure Leskovec, Isabelle Levent, Xiang Lisa Li, Xuechen Li, Tengyu Ma, Ali Malik, Christopher D. Manning, Suvir P. Mirchandani, Eric Mitchell, Zanele Munyikwa, Suraj Nair, Avanika Narayan, Deepak Narayanan, Benjamin Newman, Allen Nie, Juan Carlos Niebles, Hamed Nilforoshan, J. F. Nyarko, Giray Ogut, Laurel Orr, Isabel Papadimitriou, Joon Sung Park, Chris Piech, Eva Portelance, Christopher Potts, Aditi Raghunathan, Robert Reich, Hongyu Ren, Frieda Rong, Yusuf H. Roohani, Camilo Ruiz, Jack Ryan, Christopher R’e, Dorsa Sadigh, Shiori Sagawa, Keshav Santhanam, Andy Shih, Krishna Parasuram Srinivasan, Alex Tamkin, Rohan Taori, Armin W. Thomas, Florian Tramèr, Rose E. Wang, William Wang, Bohan Wu, Jiajun Wu, Yuhuai Wu, Sang Michael Xie, Michihiro Yasunaga, Jiaxuan You, Matei A. Zaharia, Michael Zhang, Tianyi Zhang, Xikun Zhang, Yuhui Zhang, Lucia Zheng, Kaitlyn Zhou, and Percy Liang. On the opportunities and risks of foundation models. ArXiv , 2021. [6] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel Ziegler, Jeffrey Wu, Clemens Winter, Chris Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. Language models are few-shot learners. In H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin, editors, Advances in Neural Information Processing Systems , volume 33, pages 1877–1901. Curran Associates, Inc., 2020. [7] Olivier Catoni. PAC-Bayesian Supervised Classification: The Thermodynamics of Statistical Learning . Institute of Mathematical Statistics, Beachwood, Ohio, 2007. [8] Mircea Cimpoi, Subhransu Maji, Iasonas Kokkinos, Sammy Mohamed, and Andrea Vedaldi. Describing textures in the wild. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 3606–3613, 2014. [9] Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. Think you have solved question answering? try ARC, the AI2 reasoning challenge, 2018. 10 [10] Gintare Karolina Dziugaite and Daniel M. Roy. Computing nonvacuous generalization bounds for deep (stochastic) neural networks with many more parameters than training data. In 
+
+Proceedings of the Thirty-Third Conference on Uncertainty in Artificial Intelligence , 2017. [11] Li Fei-Fei, Rob Fergus, and Pietro Perona. Learning generative visual models from few training examples: An incremental bayesian approach tested on 101 object categories. Computer Vision and Image Understanding , 106(1):59–70, 2007. [12] Pierre Foret, Ariel Kleiner, Hossein Mobahi, and Behnam Neyshabur. Sharpness-aware min-imization for efficiently improving generalization. In International Conference on Learning Representations , 2021. [13] Sajjad Ghiasvand, Haniyeh Ehsani Oskouie, Mahnoosh Alizadeh, and Ramtin Pedarsani. Few-shot adversarial low-rank fine-tuning of vision-language models, 2025. [14] Ian J. Goodfellow, Jonathon Shlens, and Christian Szegedy. Explaining and harnessing adver-sarial examples. In Yoshua Bengio and Yann LeCun, editors, 3rd International Conference on Learning Representations, ICLR 2015, San Diego, CA, USA, May 7-9, 2015, Conference Track Proceedings , 2015. [15] Vatsal Gupta, Pranshu Pandya, Tushar Kataria, Vivek Gupta, and Dan Roth. Evaluating concurrent robustness of language models across diverse challenge sets. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 22162–22184, Miami, Florida, USA, 2024. Association for Computational Linguistics. [16] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. In 
+
+International Conference on Learning Representations , 2022. [17] Jinwei Hu, Yi Dong, Youcheng Sun, and Xiaowei Huang. Tapas are free! training-free adaptation of programmatic agents via llm-guided program synthesis in dynamic environments. 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , 40(35):29477–29485, Mar. 2026. [18] Jinwei Hu, Xinmiao Huang, Youcheng Sun, Yi Dong, and Xiaowei Huang. Lying with truths: Open-channel multi-agent collusion for belief manipulation via generative montage. arXiv preprint arXiv:2601.01685 , 2026. [19] Jinwei Hu, Zhenglin Huang, Xiangyu Yin, Wenjie Ruan, Guangliang Cheng, Yi Dong, and Xiaowei Huang. Falcon: Fine-grained activation manipulation by contrastive orthogonal unalignment for large language model. In D. Belgrave, C. Zhang, H. Lin, R. Pascanu, P. Koniusz, M. Ghassemi, and N. Chen, editors, Advances in Neural Information Processing Systems ,volume 38, pages 102210–102232. Curran Associates, Inc., 2025. [20] Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, Lélio Renard Lavaud, Marie-Anne Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril, Thomas Wang, Timothée Lacroix, and William El Sayed. Mistral 7b, 2023. [21] Haoming Jiang, Pengcheng He, Weizhu Chen, Xiaodong Liu, Jianfeng Gao, and Tuo Zhao. SMART: Robust and efficient fine-tuning for pre-trained natural language models through prin-cipled regularized optimization. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , pages 2177–2190. Association for Computational Linguistics, 2020. [22] Gaojie Jin, Sihao Wu, Jiaxu Liu, Tianjin Huang, and Ronghui Mu. Enhancing robust fairness via confusional spectral regularization. In The Thirteenth International Conference on Learning Representations , 2025. [23] Boqi Li and Weiwei Liu. Wat: improve the worst-class robustness in adversarial training. In 
+
+Proceedings of the Thirty-Seventh AAAI Conference on Artificial Intelligence and Thirty-Fifth Conference on Innovative Applications of Artificial Intelligence and Thirteenth Symposium on Educational Advances in Artificial Intelligence , AAAI’23/IAAI’23/EAAI’23. AAAI Press, 2023. 11 [24] Zhuoyun Li, Boxuan Wang, Jinwei Hu, Zhenglin Huang, Qisong He, Xinmiao Huang, Guan-gliang Cheng, Xiaowei Huang, and Yi Dong. Where do prompt perturbations break generation? a segment-level view of robustness in lora-tuned language models, 2026. [25] Guangliang Liu, Zhiyu Xue, Xitong Zhang, Kristen Johnson, and Rongrong Wang. PAC-tuning: Fine-tuning pre-trained language models with PAC-driven perturbed gradient descent. In Houda Bouamor, Juan Pino, and Kalika Bali, editors, Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 12178–12189, Singapore, December 2023. Association for Computational Linguistics. [26] Sanae Lotfi, Marc Anton Finzi, Sanyam Kapoor, Andres Potapczynski, Micah Goldblum, and Andrew Gordon Wilson. PAC-bayes compression bounds so tight that they can explain generalization. In Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and Kyunghyun Cho, editors, 
+
+Advances in Neural Information Processing Systems , 2022. [27] Sanae Lotfi, Marc Anton Finzi, Yilun Kuang, Tim G. J. Rudner, Micah Goldblum, and An-drew Gordon Wilson. Non-vacuous generalization bounds for large language models. In 
+
+Proceedings of the 41st International Conference on Machine Learning , volume 235 of Pro-ceedings of Machine Learning Research , pages 32801–32818. PMLR, 2024. [28] Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt, Dimitris Tsipras, and Adrian Vladu. Towards deep learning models resistant to adversarial attacks. In International Conference on Learning Representations , 2018. [29] Chengzhi Mao, Scott Geng, Junfeng Yang, Xin Wang, and Carl Vondrick. Understanding zero-shot adversarial robustness for large-scale models. In The Eleventh International Conference on Learning Representations , 2023. [30] David A. McAllester. PAC-bayesian model averaging. In Proceedings of the Twelfth Annual Conference on Computational Learning Theory , COLT ’99, pages 164–170, New York, NY, USA, 1999. ACM. [31] Mistral AI. Mistral-7B-Instruct-v0.2. https://huggingface.co/mistralai/ Mistral-7B-Instruct-v0.2 , 2023. Hugging Face model card. [32] John X. Morris, Eli Lifland, Jin Yong Yoo, Jake Grigsby, Di Jin, and Yanjun Qi. TextAttack: A framework for adversarial attacks, data augmentation, and adversarial training in NLP. In 
+
+Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations , pages 119–126. Association for Computational Linguistics, 2020. [33] Vaishnavh Nagarajan and Zico Kolter. Deterministic PAC-bayesian generalization bounds for deep networks via generalizing noise-resilience. In International Conference on Learning Representations , 2019. [34] Behnam Neyshabur, Srinadh Bhojanapalli, David McAllester, and Nathan Srebro. A PAC-bayesian approach to spectrally-normalized margin bounds for neural networks. In International Conference on Learning Representations , 2018. [35] Changdae Oh, Hyesu Lim, Mijoo Kim, Dongyoon Han, Sangdoo Yun, Jaegul Choo, Alexander Hauptmann, Zhi-Qi Cheng, and Kyungwoo Song. Towards calibrated robust fine-tuning of vision-language models. In Advances in Neural Information Processing Systems , volume 37, 2024. [36] Omkar M. Parkhi, Andrea Vedaldi, Andrew Zisserman, and C. V. Jawahar. Cats and dogs. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 3498–3505, 2012. [37] Yao Qiang, Subhrangshu Nandi, Ninareh Mehrabi, Greg Ver Steeg, Anoop Kumar, Anna Rumshisky, and Aram Galstyan. Prompt perturbation consistency learning for robust language models. In Findings of the Association for Computational Linguistics: EACL 2024 , pages 1357–1370, St. Julian’s, Malta, 2024. Association for Computational Linguistics. [38] Qwen Team. Qwen2.5-1.5B-Instruct. https://huggingface.co/Qwen/Qwen2.5-1. 5B-Instruct , 2024. Hugging Face model card. 12 [39] Qwen Team. Qwen2.5 technical report, 2025. [40] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agar-wal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In Proceed-ings of the 38th International Conference on Machine Learning , volume 139 of Proceedings of Machine Learning Research , pages 8748–8763. PMLR, 2021. [41] Marco Tulio Ribeiro, Tongshuang Wu, Carlos Guestrin, and Sameer Singh. Beyond accuracy: Behavioral testing of NLP models with CheckList. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , pages 4902–4912. Association for Computational Linguistics, 2020. [42] Christian Schlarmann, Naman Deep Singh, Francesco Croce, and Matthias Hein. Robust CLIP: Unsupervised adversarial fine-tuning of vision embeddings for robust large vision-language models. In Ruslan Salakhutdinov, Zico Kolter, Katherine Heller, Adrian Weller, Nuria Oliver, Jonathan Scarlett, and Felix Berkenkamp, editors, Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research ,pages 43685–43704. PMLR, 21–27 Jul 2024. [43] Chunyu Sun, Chenye Xu, Chengyuan Yao, Siyuan Liang, Yichao Wu, Ding Liang, Xianglong Liu, and Aishan Liu. Improving robust fairness via balance adversarial training. In Proceedings of the Thirty-Seventh AAAI Conference on Artificial Intelligence and Thirty-Fifth Conference on Innovative Applications of Artificial Intelligence and Thirteenth Symposium on Educational Advances in Artificial Intelligence , AAAI’23/IAAI’23/EAAI’23. AAAI Press, 2023. [44] Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. CommonsenseQA: A question answering challenge targeting commonsense knowledge. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguis-tics: Human Language Technologies, Volume 1 (Long and Short Papers) , pages 4149–4158. Association for Computational Linguistics, 2019. [45] Qi Tian, Kun Kuang, Kelu Jiang, Fei Wu, and Yisen Wang. Analysis and applications of class-wise robustness in adversarial training. In Proceedings of the 27th ACM SIGKDD Conference on Knowledge Discovery & Data Mining , KDD ’21, page 1561–1570, New York, NY, USA, 2021. Association for Computing Machinery. [46] Boxin Wang, Chejian Xu, Shuohang Wang, Shuohang Wang, Zhe Gan, Yu Cheng, Jianfeng Gao, Ahmed Awadallah, and Bo Li. Adversarial glue: A multi-task benchmark for robustness evaluation of language models. In J. Vanschoren and S. Yeung, editors, Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks , volume 1, 2021. [47] Xin Wang, Kai Chen, Jiaming Zhang, Jingjing Chen, and Xingjun Ma. Tapt: Test-time adversarial prompt tuning for robust inference in vision-language models. In 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 19910–19920, 2025. [48] Zifan Wang, Nan Ding, Tomer Levinboim, Xi Chen, and Radu Soricut. Improving robust generalization by direct PAC-bayesian bound minimization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16458–16468, 2023. [49] Zeming Wei, Yifei Wang, Yiwen Guo, and Yisen Wang. CFA: Class-wise calibrated fair adversarial training. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8193–8201, 2023. [50] Dongxian Wu, Shu-Tao Xia, and Yisen Wang. Adversarial weight perturbation helps robust generalization. In H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin, editors, 
+
+Advances in Neural Information Processing Systems , volume 33, pages 2958–2969. Curran Associates, Inc., 2020. [51] Han Xu, Xiaorui Liu, Yaxin Li, Anil K. Jain, and Jiliang Tang. To be robust or to be fair: Towards fairness in adversarial training. In Proceedings of the 38th International Conference on Machine Learning , volume 139 of Proceedings of Machine Learning Research , pages 11492–11501. PMLR, 2021. 13 [52] Hongyang Zhang, Yaodong Yu, Jiantao Jiao, Eric Xing, Laurent El Ghaoui, and Michael I. Jordan. Theoretically principled trade-off between robustness and accuracy. In Kamalika Chaudhuri and Ruslan Salakhutdinov, editors, Proceedings of the 36th International Conference on Machine Learning , volume 97 of Proceedings of Machine Learning Research , pages 7472– 7482. PMLR, 09–15 Jun 2019. [53] Jiaming Zhang, Xingjun Ma, Xin Wang, Lingyu Qiu, Jiaqi Wang, Yu-Gang Jiang, and Jitao Sang. Adversarial prompt tuning for&nbsp;vision-language models. In Computer Vision – ECCV 2024: 18th European Conference, Milan, Italy, September 29–October 4, 2024, Proceedings, Part XLV , page 56–72, Berlin, Heidelberg, 2024. Springer-Verlag. [54] Chen Zhu, Yu Cheng, Zhe Gan, Siqi Sun, Tom Goldstein, and Jingjing Liu. Freelb: Enhanced adversarial training for natural language understanding. In International Conference on Learning Representations , 2020. [55] Kaijie Zhu, Jindong Wang, Jiaheng Zhou, Zichen Wang, Hao Chen, Yidong Wang, Linyi Yang, Wei Ye, Yue Zhang, Neil Gong, and Xing Xie. Promptrobust: Towards evaluating the robustness of large language models on adversarial prompts. In Proceedings of the 1st ACM Workshop on Large AI Systems and Models with Privacy and Safety Analysis , LAMPS ’24, page 57–68, New York, NY, USA, 2024. Association for Computing Machinery. 14 A Proofs and Additional Details for Section 2 
+
+A.1 Proof of margin-stability 
+
+Proof. Let y ∈ [K] be the true class and define c(x) := max k̸ =y sθ (x, k ) and c(x′) := max k̸ =y sθ (x′, k ). By definition, ∆θ (x, y ) = sθ (x, y ) − c(x) and ∆θ (x′, y ) = sθ (x′, y ) − c(x′).Assume 
+
+max  
+
+> k∈[K]
+
+|sθ (x, k ) − sθ (x′, k )| ≤ ε. 
+
+Then |sθ (x, y ) − sθ (x′, y )| ≤ ε. Moreover, for every k̸ = y, we have sθ (x′, k ) ≤ sθ (x, k ) + ε, so taking the maximum over k̸ = y yields c(x′) ≤ c(x) + ε. Hence 
+
+∆θ (x′, y ) = sθ (x′, y ) − c(x′) ≥ (sθ (x, y ) − ε) − (c(x) + ε) = ∆ θ (x, y ) − 2ε, 
+
+. If ∆θ (x, y ) > γ and ε < γ/ 2, then ∆θ (x′, y ) > 0, and hence the true class is the unique maximizer among the verbalizer classes. Therefore ˆydet  
+
+> θ
+
+(x′) = y.This also lays the groundwork for the subsequent deterministic bridge. A later proposition demon-strates that when the logits of the posterior samples are sufficiently close to those of the mean model, the posterior vulnerable risk can be linked to the deterministic worst-class risk. This section clarifies in advance, under a fixed input perturbation, that the margin buffer can absorb a limited amount of logit deviation. 
+
+A.2 Proof of spectral norm control 
+
+Proof. Recall ∥A∥1 = max j
+
+P 
+
+> i
+
+|Aij | and ∥A∥2 = max ∥u∥2=1 ∥Au ∥2. Let ej be the j-th standard basis vector. Then 
+
+∥A∥1 = max  
+
+> j
+
+∥Ae j ∥1 ≤ max 
+
+> j
+
+√K ∥Ae j ∥2 ≤ √K ∥A∥2,
+
+where we used ∥z∥1 ≤ √K∥z∥2 for z ∈ RK .
+
+A.3 Proof of Theorem 2.10 
+
+Proof. We condition throughout on the realized class counts {mj }Kj=1 and on the perturbation protocol that induces D′ and S′. In particular, for this PAC-Bayes statement, the perturbed sample is treated as fixed with respect to the posterior Q being evaluated. This ensures that the quantities below are ordinary bounded statistics indexed by the trainable-coordinate random variable w.
+
+Step 1: Spectral norm as a bilinear form. For any matrix A ∈ RK×K ,
+
+∥A∥2 = sup 
+
+> ∥u∥2=1 ,∥v∥2=1
+
+u⊤Av .
+
+We apply this to 
+
+AQ := ¯M QD′,γ − ¯M QS′,γ .
+
+Step 2: Stratified bilinear statistic for fixed u, v . Fix unit vectors u, v ∈ RK . For each class 
+
+j ∈ [K], define 
+
+ℓu,j (w; x′) := X
+
+> i̸=j
+
+ui gθ(w) 
+
+> γ,κ
+
+(x′, j ) pθ(w)(i | x′).
+
+Let D′ 
+
+> j
+
+denote the class-j conditional distribution, and write the class-j sample in S′ as {x′ 
+
+> j,r
+
+}mj
+
+> r=1
+
+.For fixed w, define the stratified bilinear generalization gap 
+
+Zu,v (w; S′) := 
+
+> K
+
+X
+
+> j=1
+
+vj Ex′∼D′ 
+
+> j
+
+ℓu,j (w; x′) − 1
+
+mjmj
+
+X
+
+> r=1
+
+ℓu,j (w; x′ 
+
+> j,r
+
+)
+
+!
+
+.
+
+By expanding the bilinear form column by column, we have 
+
+u⊤  ¯M QD′,γ − ¯M QS′,γ 
+
+v = E ew∼Q [Zu,v ( ew; S′)] .
+
+15 Step 3: Boundedness. For fixed j, define 
+
+ai := gθ(w) 
+
+> γ,κ
+
+(x′, j ) pθ(w)(i | x′), i̸ = j. 
+
+Then ai ≥ 0 and X
+
+> i̸=j
+
+ai ≤ gθ(w) 
+
+> γ,κ
+
+(x′, j ) X
+
+> i̸=j
+
+pθ(w)(i | x′) ≤ 1.
+
+Since ∥u∥2 = 1 implies ∥u∥∞ ≤ 1, we obtain 
+
+|ℓu,j (w; x′)| = X
+
+> i̸=j
+
+uiai ≤ ∥ u∥∞
+
+X
+
+> i̸=j
+
+ai ≤ 1.
+
+Thus each class-conditional term is bounded in [−1, 1] .
+
+Step 4: PAC-Bayes bound for the stratified bilinear gap. For fixed u, v, w , the random variables in Zu,v (w; S′) are independent across the stratified class samples, conditional on the class counts. Since each ℓu,j (w; x′) ∈ [−1, 1] , Hoeffding’s lemma gives, for any λ > 0,
+
+ES′ exp ( λZ u,v (w; S′)) ≤ exp 
+
+ λ2
+
+2
+
+> K
+
+X
+
+> j=1
+
+v2
+
+> j
+
+mj
+
+ ,
+
+and the same bound holds for −Zu,v (w; S′). By the standard PAC-Bayes change-of-measure argu-ment, with probability at least 1 − δ0 over S′, simultaneously for all posteriors Q,
+
+|E ew∼QZu,v ( ew; S′)| ≤ 
+
+vuuut2
+
+
+
+> K
+
+X
+
+> j=1
+
+v2
+
+> j
+
+mj
+
+
+
+KL( Q∥P ) + ln 2
+
+δ0
+
+
+
+.
+
+Since mj ≥ mmin and ∥v∥2 = 1 ,
+
+> K
+
+X
+
+> j=1
+
+v2
+
+> j
+
+mj
+
+≤ 1
+
+mmin 
+
+.
+
+Therefore, for fixed u, v , with probability at least 1 − δ0, simultaneously for all Q,
+
+u⊤  ¯M QD′,γ − ¯M QS′,γ 
+
+v ≤
+
+vuut 2
+
+
+
+KL( Q∥P ) + ln 2
+
+> δ0
+
+
+
+mmin 
+
+.
+
+Step 5: Epsilon-net reduction. Let N1/4 be a 1/4-net of the Euclidean unit sphere in RK . We use the standard bound 
+
+|N 1/4| ≤ 9K ,
+
+and the standard net-to-spectrum reduction 
+
+∥A∥2 ≤ 2 max 
+
+> ˆu, ˆv∈N 1/4
+
+ˆu⊤Aˆv .
+
+Apply the fixed-(u, v ) bound to all pairs (ˆ u, ˆv) ∈ N 1/4 × N 1/4 with 
+
+δ0 := δ
+
+|N 1/4|2 .
+
+By a union bound, with probability at least 1 − δ, simultaneously for all posteriors Q and all net points, 
+
+ˆu⊤  ¯M QD′,γ − ¯M QS′,γ 
+
+ˆv ≤
+
+vuut 2
+
+
+
+KL( Q∥P ) + ln 2|N 1/4|2
+
+> δ
+
+
+
+mmin 
+
+.
+
+16 Using |N 1/4| ≤ 9K , we get 
+
+ln 2|N 1/4|2
+
+δ ≤ 2K ln 9 + ln 2
+
+δ .
+
+Thus, 
+
+¯M QD′,γ − ¯M QS′,γ 2
+
+≤ 2
+
+s
+
+2  KL( Q∥P ) + 2 K ln 9 + ln 2
+
+> δ
+
+
+
+mmin 
+
+.
+
+Step 6: From spectral deviation to vulnerable worst-class risk. By the norm conversion in Appendix A.2, 
+
+VWR γ (Q; D′) = ¯M QD′,γ 1
+
+≤ √K ¯M QD′,γ 2
+
+.
+
+Using the triangle inequality, 
+
+¯M QD′,γ 2
+
+≤ ¯M QS′,γ 2
+
++ ¯M QD′,γ − ¯M QS′,γ 2
+
+.
+
+Therefore, 
+
+VWR γ (Q; D′) ≤ √K VSR γ (Q; S′) + 2 
+
+s
+
+2K  KL( Q∥P ) + 2 K ln 9 + ln 2
+
+> δ
+
+
+
+mmin 
+
+.
+
+This completes the proof. 
+
+A.4 Case-wise view of the stability event 
+
+Let 
+
+∆μ := ∆ θ(μ)(x′, y ), e∆ := ∆ θ( ˜ w)(x′, y ),
+
+and define the stability event 
+
+Estab := {ΞQ(μ, ˜w) ≤ γ/ 2} .
+
+On Estab , every verbalizer score changes by at most γ/ 2. Since the margin is the difference between the true-class score and the largest wrong-class score, the margin can change by at most γ:
+
+| e∆ − ∆μ| ≤ γ. 
+
+Equivalently, 
+
+∆μ − γ ≤ e∆ ≤ ∆μ + γ. 
+
+We now spell out the implications case by case. 
+
+Case 1: ∆μ ≤ 0. The deterministic mean model makes an error. On Estab , the upper bound gives 
+
+e∆ ≤ ∆μ + γ ≤ γ. 
+
+Thus the posterior sample lies in the γ-vulnerable region { e∆ ≤ γ}. This is the only direction needed for Proposition 2.13: a deterministic error of the mean model is covered by the posterior vulnerable event, except when Estab fails. 
+
+Case 2: 0 < ∆μ ≤ γ. The mean model is correct but already near the decision boundary. On Estab ,
+
+∆μ − γ ≤ e∆ ≤ ∆μ + γ. 
+
+Since 0 < ∆μ ≤ γ, this implies 
+
+−γ < ∆μ − γ ≤ e∆ ≤ ∆μ + γ ≤ 2γ. 
+
+Hence the posterior sample may either remain correct, flip, or enter the γ-vulnerable region depending on the realized posterior shift. Counting such mean-correct but noise-sensitive examples in the posterior vulnerable risk is conservative and does not invalidate the upper bound on deterministic worst-class risk. 17 Case 3: ∆μ > γ . The mean model has a positive safety margin. On Estab , the lower bound gives 
+
+e∆ ≥ ∆μ − γ > 0,
+
+so posterior sampling cannot flip the prediction under the stable event. There are two subcases. If ∆μ > 2γ, then 
+
+e∆ ≥ ∆μ − γ > γ, 
+
+so the stable posterior sample stays outside the vulnerable region. If γ < ∆μ ≤ 2γ, then 
+
+0 < ∆μ − γ ≤ γ, 
+
+so a stable posterior sample may still enter the vulnerable region { e∆ ≤ γ}, reflecting local sensitivity around the mean model. Therefore, this conservative counting is harmless for the upper bound, while genuine large posterior-induced margin shifts are accounted for by the failure probability ρ.This unstable posterior-induced margin shifts are precisely the events accounted for by the failure probability ρ, and they motivate the stability regularizer used in the main method. 
+
+A.5 Risk-level Gibbs-to-deterministic bridge 
+
+For the bridge proof, define the posterior margin-failure risk 
+
+Rmf ,γ (Q; D′) := max  
+
+> j∈[K]
+
+Ex′∼D′
+
+> j
+
+
+
+Pr 
+
+> ew∼Q
+
+ ∆θ( ew)(x′, j ) ≤ γ
+
+, (9) where D′ 
+
+> j
+
+denotes the class-j conditional perturbed distribution. 
+
+Lemma A.1 (Risk-level bridge under logit stability) . Fix γ ≥ 0 and let Q be any posterior over trainable coordinates with finite mean μ = E ˜w∼Q[ ˜ w]. Assume 
+
+Pr 
+
+> ˜w∼Q
+
+ ΞQ(μ, ˜w) ≤ γ/ 2 ≥ 1 − ρ. 
+
+Then 
+
+WCR det (θ(μ); D′) ≤ Rmf ,γ (Q; D′) + ρ. 
+
+Proof. Fix (x′, y ) and define 
+
+E := {ˆydet 
+
+> θ(μ)
+
+(x′)̸ = y}, F ( ˜ w) := {∆θ( ˜ w)(x′, y ) ≤ γ},
+
+and the stability event 
+
+S( ˜ w) := {ΞQ(μ, ˜w) ≤ γ/ 2}.
+
+If E occurs, then ∆θ(μ)(x′, y ) ≤ 0. On S( ˜ w), the score perturbation between θ(μ) and θ( ˜ w) is bounded by γ/ 2 for every class. By the margin-stability argument in Appendix A.1, with the two score vectors swapped, we obtain 
+
+∆θ( ˜ w)(x′, y ) ≤ ∆θ(μ)(x′, y ) + γ ≤ γ. 
+
+Hence E ∩ S( ˜ w) ⊆ F ( ˜ w), so pointwise 
+
+1(E) ≤ 1(F ( ˜ w)) + 1(S( ˜ w)c).
+
+Taking expectation over ˜w ∼ Q gives 
+
+1(E) ≤ E ˜w∼Q
+
+1{∆θ( ˜ w)(x′, y ) ≤ γ} + ρ. 
+
+Now take conditional expectation over x′ ∼ D′ 
+
+> j
+
+for each class j, and then maximize over j ∈ [K].This yields the stated risk-level bridge. No entrywise matrix domination is claimed. 18 A.6 Margin failure is controlled by vulnerable mass 
+
+We now prove the second part of the deterministic-risk bridge used in the main text. 
+
+Lemma A.2 (Margin failure controlled by margin-aware vulnerable mass) . Fix γ ≥ 0. Suppose the gate satisfies 
+
+gθγ,κ (x′, j ) ≥ η whenever ∆θ (x′, j ) ≤ γ
+
+for some η > 0. Then 
+
+Rmf ,γ (Q; D′) ≤ η−1(1 + eγ ) VWR γ (Q; D′).
+
+For the sigmoid gate gθγ,κ (x′, j ) = σ(( γ − ∆θ (x′, j )) /κ ), one may take η = 1 /2.Proof. Fix a posterior sample ˜w ∼ Q, a perturbed example x′, and a class j. For brevity write 
+
+θ = θ( ˜ w). If ∆θ (x′, j ) ≤ γ, then by the definition of the margin there exists some competitor i̸ = j
+
+such that 
+
+sθ (x′, i ) ≥ sθ (x′, j ) − γ. 
+
+Therefore, 
+
+exp( sθ (x′, i )) ≥ e−γ exp( sθ (x′, j )) .
+
+Using only this competitor in the softmax denominator gives 
+
+pθ (j | x′) = exp( sθ (x′, j )) 
+
+PKk=1 exp( sθ (x′, k )) ≤ exp( sθ (x′, j )) exp( sθ (x′, j )) + exp( sθ (x′, i )) ≤ 11 + e−γ .
+
+Hence 
+
+1 − pθ (j | x′) ≥ 11 + eγ .
+
+Moreover, on the same event ∆θ (x′, j ) ≤ γ, the gate satisfies gθγ,κ (x′, j ) ≥ η. Thus, 
+
+gθγ,κ (x′, j ) 1 − pθ (j | x′) ≥ η
+
+1 + eγ .
+
+Equivalently, pointwise, 
+
+1{∆θ (x′, j ) ≤ γ} ≤ η−1(1 + eγ )gθγ,κ (x′, j ) 1 − pθ (j | x′).
+
+Taking expectation over ˜w ∼ Q and over the class-conditional distribution x′ ∼ D′ 
+
+> j
+
+, and then maximizing over j ∈ [K], gives 
+
+Rmf ,γ (Q; D′) ≤ η−1(1 + eγ )VWR γ (Q; D′).
+
+Combined consequence. Combining Lemma A.2 with the risk-level bridge in Lemma A.1 gives 
+
+WCR det (θ(μ); D′) ≤ η−1(1 + eγ )VWR γ (Q; D′) + ρ. 
+
+Combining this inequality with Theorem 2.10 further yields, with the same high-probability event as the theorem, 
+
+WCR det (θ(μ); D′) ≤ η−1(1+ eγ )
+
+√K VSR γ (Q; S′) + 2 
+
+s
+
+2K  KL( Q∥P ) + 2 K ln 9 + ln 2
+
+> δ
+
+
+
+mmin 
+
++ρ. 
+
+This is the conservative PAC-Bayes route from the empirical margin-aware spectral structure to deterministic worst-class risk. 
+
+A.7 Training algorithm (classification plug-in; experimental LoRA instantiation) 
+
+19 Algorithm 1 Plug-in spectral safety control for verbalizer classification 
+
+Require: Dataset S, perturbation mechanism U(·), safety buffer γ, gate temperature κ, base objective 
+
+Lbase , spectral weight α, stability weight β, power-iteration steps Tpi , refresh interval N ,numerical constant εspec , and local-coordinate perturbation scale σQ. 
+
+> 1:
+
+Initialize trainable coordinates ϕ and a unit vector v ∈ RK . 
+
+> 2:
+
+for each training step t do  
+
+> 3:
+
+Sample a mini-batch B = {(xq , y q )} from S. 
+
+> 4:
+
+Construct perturbed inputs x′ 
+
+> q
+
+∈ U (xq ) and form B′ = {(x′ 
+
+> q
+
+, y q )}. 
+
+> 5:
+
+Compute verbalizer probabilities pθ(ϕ)(· | x′ 
+
+> q
+
+), margins ∆θ(ϕ)(x′ 
+
+> q
+
+, y q ), and gates gθ(ϕ) 
+
+> γ,κ
+
+(x′ 
+
+> q
+
+, y q ). 
+
+> 6:
+
+Build the differentiable batch matrix fM batch ,γ ϕ via Eq. (7) . Columns whose classes are absent from B are masked out for this update; the matrix dimension remains K × K. 
+
+> 7:
+
+if t mod N = 0 then  
+
+> 8:
+
+Update v by Tpi steps of power iteration on ( fM batch ,γ ϕ )⊤ fM batch ,γ ϕ , and normalize v. 
+
+> 9:
+
+end if  
+
+> 10:
+
+Treat v as fixed within the current refresh window and estimate 
+
+Rspec =
+
+q
+
+v⊤( fM batch ,γ ϕ )⊤ fM batch ,γ ϕ v + εspec . 
+
+> 11:
+
+if β > 0 then  
+
+> 12:
+
+Sample a temporary local perturbation u ∼ N (0 , σ 2
+
+> Q
+
+I) on the trainable coordinates and set 
+
+eϕ = ϕ + u. 
+
+> 13:
+
+Compute the stability penalty Rstab via Eq. (8).  
+
+> 14:
+
+else  
+
+> 15:
+
+Set Rstab = 0 . 
+
+> 16:
+
+end if  
+
+> 17:
+
+Update ϕ by minimizing 
+
+Lbase + αRspec + βRstab . 
+
+> 18:
+
+end for A.8 Gradient estimator induced by power iteration 
+
+Let A = fM γϕ and define B = A⊤A. Power iteration produces a unit vector v approximating the top eigenvector of B, hence σmax (A) ≈ √v⊤Bv . If we treat v as fixed within a refresh window, then 
+
+bσ(A) := √v⊤A⊤Av ⇒ ∂bσ∂A = 1
+
+bσ(A) Avv ⊤. (10) In implementation, we use the stabilized estimator 
+
+bσε(A) = 
+
+q
+
+v⊤A⊤Av + εspec ,
+
+with a small εspec > 0. The corresponding gradient is 
+
+∂bσε
+
+∂A = Avv ⊤
+
+bσε(A) .
+
+A.9 Safety gate temperature 
+
+The temperature κ in Eq. (2) interpolates between a hard margin indicator and a smooth weighting. A smaller κ makes gθγ,κ closer to 1{∆ ≤ γ}, but may increase gradient variance. 
+
+A.10 Local Interpretation of the Joint Stability Regularizer 
+
+We provide a local interpretation of the stability regularizer in Eq. (8). For a mini-batch index q, let 
+
+zq := sθ(w)(xq ), z′ 
+
+> q,u
+
+:= sθ(w+u)(x′ 
+
+> q
+
+),
+
+20 where u denotes a temporary perturbation in the trainable-coordinate space. Let 
+
+pq := softmax( zq /T ), p′ 
+
+> q,u
+
+:= softmax( z′
+
+> q,u
+
+/T ).
+
+The consistency loss compares pq with p′
+
+> q,u
+
+. Since the softmax is invariant to adding the same constant to all logits, we consider the centered logit drift 
+
+∆zq (u) := Π  z′ 
+
+> q,u
+
+− zq
+
+ , Π := I − 1
+
+K 11 ⊤,
+
+where 1 ∈ RK is the all-one vector. The projection Π removes the common-shift direction, i.e., the component of the logits to which the softmax distribution is invariant. For small centered logit drift, the softmax KL admits the second-order expansion 
+
+KL( pq ∥p′
+
+> q,u
+
+) = 12T 2 ∆zq (u)⊤Fq ∆zq (u) + O(∥∆zq (u)∥3),
+
+where 
+
+Fq := Diag( pq ) − pq p⊤
+
+> q
+
+is the Fisher matrix of the categorical distribution induced by the clean branch. Thus the KL consistency term locally penalizes a Fisher-weighted centered logit drift. To separate the sources of this drift, assume ˜w = w + u with u ∼ N (0 , σ 2
+
+> Q
+
+I) and linearize the logits around w:
+
+sθ(w+u)(x′ 
+
+> q
+
+) ≈ sθ(w)(x′ 
+
+> q
+
+) + ∇wsθ(w)(x′ 
+
+> q
+
+)u. 
+
+Therefore, 
+
+∆zq (u) ≈ aq + Jq u, 
+
+where 
+
+aq := Π  sθ(w)(x′ 
+
+> q
+
+) − sθ(w)(xq )
+
+captures the clean-to-perturbed input drift, and 
+
+Jq := Π ∇wsθ(w)(x′ 
+
+> q
+
+)
+
+captures the local sensitivity of the logits to trainable-coordinate perturbations. Substituting this decomposition into the quadratic approximation gives 
+
+(aq + Jq u)⊤Fq (aq + Jq u) = a⊤ 
+
+> q
+
+Fq aq + 2 a⊤ 
+
+> q
+
+Fq Jq u + u⊤J⊤ 
+
+> q
+
+Fq Jq u. 
+
+Taking expectation over the zero-mean Gaussian perturbation eliminates the cross term: 
+
+Eu[2 a⊤ 
+
+> q
+
+Fq Jq u] = 2 a⊤ 
+
+> q
+
+Fq Jq E[u] = 0 .
+
+Moreover, using E[uu ⊤] = σ2
+
+> Q
+
+I, we have 
+
+Eu
+
+u⊤J⊤ 
+
+> q
+
+Fq Jq u = σ2
+
+> Q
+
+Tr( J⊤ 
+
+> q
+
+Fq Jq ).
+
+Hence, 
+
+Eu KL( pq ∥p′
+
+> q,u
+
+) ≈ 12T 2 a⊤ 
+
+> q
+
+Fq aq + σ2
+
+> Q
+
+2T 2 Tr( J⊤ 
+
+> q
+
+Fq Jq ).
+
+The first term penalizes clean-to-perturbed input drift, matching the consistency principle used in standard robust training. The second term penalizes the output effect of local perturbations in the trainable coordinates. This second term is the part directly related to the stability event used in Proposition 2.13: it discourages a posterior sample θ(w + u) from inducing a large centered logit drift relative to θ(w) on the perturbed input. To see the connection to margin stability, let dq (u) := Π( sθ(w+u)(x′ 
+
+> q
+
+) − sθ(w)(x′ 
+
+> q
+
+)) . Since margins are invariant to common logit shifts, only this centered drift matters. For any label y,
+
+∆θ(w+u)(x′ 
+
+> q
+
+, y ) − ∆θ(w)(x′ 
+
+> q
+
+, y ) ≤ 2∥dq (u)∥∞ ≤ 2∥dq (u)∥2.
+
+Thus, a posterior-induced margin shift larger than γ requires ∥dq (u)∥2 > γ/ 2. Under the local non-degeneracy condition that the Fisher matrix has eigenvalue at least λq > 0 on the relevant centered subspace, the quadratic term satisfies 
+
+dq (u)⊤Fq dq (u) ≥ λq ∥dq (u)∥22.
+
+21 Consequently, by Markov’s inequality, the probability of a large local margin shift in absolute value is controlled by the expected Fisher-weighted drift: 
+
+Pr 
+
+> u
+
+  ∆θ(w+u)(x′ 
+
+> q
+
+, y ) − ∆θ(w)(x′ 
+
+> q
+
+, y ) > γ  ≲ 4
+
+λq γ2 Eu
+
+dq (u)⊤Fq dq (u) ,
+
+up to the local second-order approximation above. Therefore, Rstab should be understood as a practical proxy for reducing the stability-failure probability ρ: it penalizes the input drift term and, more importantly for the deterministic bridge, the coordinate-noise sensitivity that can produce large margin shifts. The PAC-Bayes complexity term controls the size of the posterior in parameter space, while this Fisher-weighted term controls how such local perturbations affect the predictive distribution. 
+
+B Special Cases of the Trainable-Coordinate PAC-Bayes Setup 
+
+B.1 LoRA specialization 
+
+In the LoRA case, the trainable coordinates are exactly the LoRA parameters: 
+
+w = ϕLoRA ∈ Rdℓ , dtrain = dℓ, θ(w) = TLoRA (θ0, w ).
+
+Under the Gaussian family 
+
+P = N (0 , τ 2 
+
+> P
+
+I), Q = N (μ, σ 2
+
+> Q
+
+I), (11) the KL term becomes 
+
+KL( Q∥P ) = ∥μ∥22
+
+2τ 2
+
+> P
+
++ dℓ
+
+2
+
+σ2
+
+> Q
+
+τ 2
+
+> P
+
+− 1 − ln σ2
+
+> Q
+
+τ 2
+
+> P
+
+!
+
+. (12) This is the LoRA-dimensional specialization of the Gaussian KL( Q∥P ) term used in Theorem 2.10. The PAC-Bayes theorem itself is unchanged; only the instantiation of w and dtrain changes. 
+
+B.2 Full-parameter fine-tuning 
+
+For full fine-tuning, we take 
+
+w = θ − θ0 ∈ Rdfull , dtrain = dfull .
+
+The theorem in Section 2.3 again applies in exactly the same form. The main difference is quantitative: the complexity term is typically larger because the Gaussian KL now scales with dfull rather than 
+
+dℓ. The routes below are only sufficient ways to instantiate the stability condition 2.13; they are not automatic guarantees. 
+
+Setup. Let μ ∈ Rdfull denote the full fine-tuning displacement, so that the posterior mean corre-sponds to parameters θ(μ) = θ0 + μ. For u ∼ N (0 , σ 2
+
+> Q
+
+Idfull ), the sampled parameter vector is 
+
+θ(μ + u). We seek sufficient conditions implying 
+
+Pr   
+
+> u∼N (0 ,σ 2
+> QIdfull )
+
+ Ξ( μ, u ) ≤ γ/ 2 ≥ 1 − ρ. 
+
+Route 1: A Lipschitz-type bound (explicit but conservative) 
+
+Suppose one can bound the score perturbation by 
+
+Ξ( μ, u ) ≤ Lμ∥u∥2
+
+for some constant Lμ > 0. For Transformers, such a bound can be obtained conservatively by combining layerwise operator-norm perturbation bounds with bounded hidden representations. For example, if a pointwise nonlinearity ψ is Lψ -Lipschitz and the relevant linear maps admit perturbation bounds of the form 
+
+∥(W + ∆ W )h − W h ∥2 ≤ ∥ ∆W ∥2 ∥h∥2,
+
+then repeated application through the network yields a global constant Lμ. Combining this with Gaussian norm concentration, 
+
+Pr 
+
+
+
+∥u∥2 ≤ σQ
+
+ p dfull + p2 ln(1 /ρ )
+
+≥ 1 − ρ, 
+
+gives the sufficient condition 
+
+Lμ σQ
+
+ p dfull + p2 ln(1 /ρ ) ≤ γ/ 2.
+
+22 Route 2: Local (Jacobian-based) stability certificate 
+
+Alternatively, one can use local first-order sensitivity. If sθ(w)(x′, k ) is differentiable in w, then for u
+
+in a local neighborhood, 
+
+|sθ(μ+u)(x′, k ) − sθ(μ)(x′, k )| ≤ ∥∇ wsθ(μ)(x′, k )∥2 ∥u∥2 + H
+
+2 ∥u∥22,
+
+where H controls the local Hessian along the segment μ + tu . Ignoring or separately controlling the second-order term yields the practical approximation 
+
+Ξ( μ, u ) ≲ Gμ ∥u∥2, Gμ := sup 
+
+> (x′,y )∼D′
+
+max  
+
+> k∈[K]
+
+∥∇ wsθ(μ)(x′, k )∥2.
+
+Together with Gaussian norm concentration, a sufficient local condition is 
+
+Gμ σQ
+
+ p dfull + p2 ln(1 /ρ ) ≤ γ/ 2.
+
+Remark on complexity. Under a fully isotropic Gaussian posterior, the KL term scales with dfull .This is the main reason why the LoRA specialization is often more attractive in PAC-Bayes analyses, even though the theorem itself does not require parameter efficiency. 
+
+C Discussions and Limitations 
+
+Adaptive perturbation generation. Our PAC-Bayes analysis conditions on a fixed perturbed sample or a perturbation protocol independent of the learned posterior. This is appropriate for the LLM text-perturbation setting and for frozen or sample-split perturbation generators. The VLM PGD training loop is more adaptive: adversarial examples can depend on the current model parameters. We therefore interpret the VLM results as an empirical stress test of the FragileFlow regularizer rather than as a direct instantiation of the strict PAC-Bayes theorem. Extending the bound to fully model-dependent adversarial data generation, for example through data-dependent PAC-Bayes or algorithm-dependent perturbation kernels, is a direction for future work. 
+
+Trainable-coordinate choice and complexity. Our theory is stated over generic trainable coor-dinates and is not tied to LoRA. We use LoRA in the experiments mainly for resource efficiency and because it matches common adaptation practice for large models. Full-parameter fine-tuning is compatible with the same formal framework and may give the regularizer more freedom to reshape fragile error-flow patterns, but it also increases the PAC-Bayes complexity term and may require stronger control of the adapted parameters. In practice, this suggests a trade-off between adaptation capacity and complexity control; empirical parameter regularization, structured posteriors, or norm-constrained updates are natural ways to keep this trade-off stable. We leave a systematic comparison between LoRA and full-parameter adaptation to future work. 
+
+Calibration and tuning budget. Our experiments use a fixed calibration protocol for the safety buffer and a limited sensitivity sweep for the plug-in weights, rather than exhaustively tuning these choices for every model–dataset–learner combination. This makes the comparisons more conservative and avoids selecting hyperparameters directly to maximize each reported test metric, but it also means that the reported numbers should not be read as the best achievable performance of FragileFlow. The consistent reductions in vulnerable-flow measures under this restrained tuning protocol support the main theory-facing claim, while larger-scale calibration and task-specific tuning may further improve the robustness–utility trade-off. 
+
+Data scale and perturbation strength. We evaluate FragileFlow under fixed data budgets and fixed perturbation protocols in order to keep the comparison controlled across models, datasets, and base learners. We do not exhaustively study how the effect changes with larger adaptation sets, different calibration-set sizes, or stronger perturbation budgets. These factors may influence both the estimated vulnerable-flow matrix and the robustness–utility trade-off. A more systematic scaling study over data size and perturbation strength would be useful for understanding when spectral error-flow control is most beneficial. 23 Broader impacts. This work studies a general robustness objective and does not introduce a new deployment domain or user-facing system. Its positive impact is that worst-class-oriented robustness may help reduce concentrated failures in finite-option LLM and VLM applications, especially when errors repeatedly affect a small subset of classes or choices. At the same time, robustness methods are dual-use: stronger adaptation techniques could also make undesirable or poorly governed models more stable under perturbation, and improved robustness metrics may create overconfidence if used without task-specific safety evaluation. For this reason, FragileFlow should be viewed as a diagnostic and training tool to be combined with domain-specific validation, safety testing, and monitoring rather than as a standalone guarantee of safe deployment. 
+
+D Additional Experimental Results 
+
+D.1 LLM main results with per-cell standard deviations 
+
+Table 4: LLM main results (mean ± seed std): Clean Worst-Class Acc (%). This is the WC-Acc on clean data excluding the perturbation. Reported as mean ± seed standard deviation over three paired seeds. calibrated buffer γ25 , default (α, β ).                                                                                                                      
+
+> CE+aug R3F SMART Model Dataset CE base +plug base +plug base +plug Qwen-0.5B ARC-C 41.16 ±3.28 44.18 ±3.98 43.47 ±3.93 40.89 ±2.83 42.84 ±5.22 34.13 ±3.79 43.38 ±4.38 Qwen-0.5B CSQA 45.22 ±3.64 45.33 ±7.16 45.56 ±7.94 45.56 ±3.37 45.00 ±3.36 48.00 ±4.01 48.89 ±3.69 Qwen-1.5B ARC-C 66.84 ±2.85 68.27 ±5.43 70.67 ±2.49 66.67 ±3.01 66.67 ±2.89 66.49 ±3.18 66.76 ±4.36 Qwen-1.5B CSQA 61.67 ±2.79 67.56 ±2.10 67.33 ±1.80 61.78 ±2.72 61.67 ±2.87 63.22 ±3.19 63.33 ±3.87 Mistral-7B ARC-C 67.29 ±4.87 65.69 ±4.06 68.53 ±6.25 67.47 ±4.41 67.11 ±4.03 42.13 ±20.54 54.84 ±14.82 Mistral-7B CSQA 66.00 ±3.62 67.11 ±3.88 66.89 ±3.57 66.67 ±4.44 66.44 ±4.07 50.56 ±4.87 57.89 ±3.42
+
+Table 5: LLM main results (mean ± seed std): Accuracy on perturbation-only inputs (%). Each cell averages accuracy over {typo, distractor, format_rewrite }. calibrated buffer γ25 , default (α, β ).Reported as mean ± seed standard deviation over three paired seeds.                                                                                                             
+
+> CE+aug R3F SMART Model Dataset CE base +plug base +plug base +plug Qwen-0.5B ARC-C 41.44 ±1.80 49.16 ±6.02 49.47 ±5.50 41.53 ±1.97 42.40 ±2.36 42.16 ±1.28 42.11 ±0.99 Qwen-0.5B CSQA 42.82 ±1.77 53.60 ±2.53 54.36 ±2.68 42.67 ±1.64 42.73 ±1.50 44.67 ±2.08 44.16 ±2.31 Qwen-1.5B ARC-C 62.80 ±3.00 72.18 ±1.16 73.22 ±1.10 62.84 ±3.10 63.02 ±3.38 68.47 ±2.33 68.20 ±2.59 Qwen-1.5B CSQA 59.98 ±3.12 71.49 ±1.37 71.53 ±1.08 59.98 ±3.18 59.71 ±3.33 65.33 ±1.80 65.58 ±3.52 Mistral-7B ARC-C 66.78 ±2.12 72.42 ±2.85 73.04 ±4.04 66.36 ±2.34 66.07 ±2.45 55.51 ±5.35 56.98 ±4.78 Mistral-7B CSQA 66.42 ±3.44 74.11 ±2.42 74.60 ±2.19 66.47 ±2.96 66.11 ±3.10 51.96 ±4.03 52.89 ±4.34
+
+Discussion. These auxiliary metrics are reported mainly for completeness and as utility checks, aligning the LLM appendix with the additional metrics reported for VLMs. Clean worst-class accuracy shows mixed but generally small changes across base learners, while perturbation-only average accuracy is mostly stable. Thus, these results do not form a separate claim of uniform improvement; they simply indicate that the vulnerable-flow reductions reported in the main paper are not obtained by a clear degradation of standard utility metrics. 
+
+D.2 VLM 4-shot low-shot stress test Discussion. This 4-shot setting is included as a low-shot stress test and as the per-dataset detail behind the VLM ablation in Table 8. Because the adaptation set is very small, the results are naturally noisy and should not be read as a claim that every plug-in placement improves every metric. The main signal is that the outer and both variants often reduce the vulnerable-flow measures while keeping clean and PGD average accuracy close to the LoRA-adv baseline, whereas the inner-only variant is less stable. PGD worst-class accuracy is frequently floor-limited in this setting, so it provides limited resolution beyond showing the difficulty of the stress test. We therefore use this table as supporting evidence that FragileFlow remains useful in a harder low-shot protocol, rather than as a primary claim of uniform improvement. 24 Table 6: CLIP ViT-B/32 4-shot low-shot stress test. Same evaluation protocol as the main ViT table, but with shots = 4. Robustness is evaluated on test images using the default PGD setting of our ViT pipeline ( attack_type=PGD , ε = 1 .0/255 , 100 attack steps). PGD WC-Acc denotes worst-class accuracy on PGD-perturbed test images. Bold = best among LoRA-adv family rows , as in the main table. 
+
+Dataset Method Clean Acc ↑ PGD Acc ↑ Clean WC ↑ PGD WC ↑ [VSR γ (pgd) ↓ VWR γ (pgd) ↓ n
+
+DTD LoRA-adv 59 .54 ± 0.37 20 .23 ± 1.19 15 .74 ± 5.71 0.00 32 .19 ± 2.83 26 .92 ± 0.06 3LoRA-adv + plugin (inner) 59 .57 ± 0.49 20 .37 ± 1.24 15 .74 ± 5.71 0.00 32 .37 ± 3.03 27 .01 ± 0.12 3LoRA-adv + plugin (outer) 58 .94 ± 0.85 20 .41 ± 1.21 12 .96 ± 7.29 0.00 31 .21 ± 1.95 26 .66 ± 0.28 3LoRA-adv + plugin (both) 59 .06 ± 0.91 20 .29 ± 1.23 12 .04 ± 6.55 0.00 31 .18 ± 2.41 26 .61 ± 0.35 3OxfordPets LoRA-adv 86 .64 ± 0.44 19 .48 ± 0.72 54 .33 ± 9.29 0.67 ± 0.47 57 .09 ± 1.99 61 .77 ± 0.36 3LoRA-adv + plugin (inner) 86 .73 ± 0.53 19 .49 ± 0.70 54 .33 ± 10 .50 0.67 ± 0.47 57 .32 ± 2.41 61 .48 ± 0.48 3LoRA-adv + plugin (outer) 87 .27 20 .55 56 .00 1.01 53 .48 60 .84 1LoRA-adv + plugin (both) 86 .98 ± 0.42 19 .88 ± 0.78 53 .00 ± 11 .43 1.00 ± 0.82 55 .25 ± 1.80 60 .31 ± 0.24 3Caltech101 LoRA-adv 94 .04 ± 0.03 60 .97 ± 1.06 25 .16 ± 14 .13 1.28 ± 1.81 25 .71 ± 4.56 55 .83 ± 3.56 3LoRA-adv + plugin (inner) 94 .04 ± 0.10 60 .82 ± 1.06 26 .46 ± 13 .84 1.28 ± 1.81 25 .63 ± 4.62 56 .09 ± 3.45 3LoRA-adv + plugin (outer) 94 .08 ± 0.09 60 .85 ± 0.98 24 .23 ± 13 .07 0.00 24 .26 ± 4.03 54 .62 ± 3.15 3LoRA-adv + plugin (both) 93 .98 ± 0.11 60 .77 ± 0.89 24 .23 ± 13 .07 0.00 24 .04 ± 4.58 54 .45 ± 3.03 3
+
+D.3 β = 0 ablation: per-cell numeric breakdown 
+
+Table 7: LLM β = 0 ablation ( Rspec only vs. composite). This table is intended as a mechanism ablation for the stability term. The main comparison is between the spectral-only plug-in (β = 0) 
+
+and the composite objective (β > 0) . Base provides a non-plug scale reference averaged over four learners: base_clean (CE), base_aug , r3f , and smart . The +Plug rows are computed from the corresponding plug-in runs. Values in parentheses report changes relative to Base ; the bottom block averages these shifts over the six model–dataset cells. Lower is better for [VSR γ and \VWR γ , while higher is better for accuracy metrics. Bold marks the desired direction relative to Base .
+
+Model Dataset Config [VSR γ ↓ \VWR γ ↓ WC-Acc ↑ Ptb Acc ↑ Clean Acc ↑
+
+Qwen-0.5B ARC-C Base 45 .06 50 .27 40 .09 50 .01 52 .67 
+
++Plug ( β=0 ) 34 .88 (−10 .18 ) 38 .44 (−11 .83 ) 43 .69 (+ 3.60 ) 51 .47 (+ 1.46 ) 54 .30 (+ 1.63 )
+
++Plug ( β> 0) 34 .67 (−10 .39 ) 38 .25 (−12 .02 ) 43 .23 (+ 3.14 ) 50 .90 (+ 0.89 ) 53 .64 (+ 0.98 )
+
+Qwen-0.5B CSQA Base 35 .62 39 .81 46 .03 53 .10 58 .50 
+
++Plug ( β=0 ) 26 .79 (−8.84 ) 30 .42 (−9.39 ) 46 .09 (+ 0.06 ) 53 .84 (+ 0.74 ) 59 .32 (+ 0.82 )
+
++Plug ( β> 0) 27 .27 (−8.35 ) 30 .93 (−8.88 ) 46 .48 (+ 0.45 ) 53 .80 (+ 0.70 ) 59 .42 (+ 0.92 )
+
+Qwen-1.5B ARC-C Base 27 .37 30 .94 67 .07 71 .34 74 .92 
+
++Plug ( β=0 ) 25 .36 (−2.01 ) 28 .86 (−2.08 ) 66 .40( −0.67) 71 .73 (+ 0.39 ) 75 .00 (+ 0.08 )
+
++Plug ( β> 0) 25 .50 (−1.87 ) 28 .33 (−2.61 ) 68 .03 (+ 0.96 ) 71 .93 (+ 0.59 ) 75 .36 (+ 0.44 )
+
+Qwen-1.5B CSQA Base 23 .93 27 .18 63 .56 69 .22 74 .23 
+
++Plug ( β=0 ) 20 .52 (−3.41 ) 23 .13 (−4.04 ) 65 .22 (+ 1.67 ) 70 .05 (+ 0.83 ) 74 .96 (+ 0.72 )
+
++Plug ( β> 0) 20 .25 (−3.68 ) 23 .25 (−3.93 ) 64 .11 (+ 0.56 ) 69 .76 (+ 0.54 ) 74 .47 (+ 0.23 )
+
+Mistral-7B ARC-C Base 31 .02 37 .02 60 .64 70 .40 73 .75 
+
++Plug ( β=0 ) 30 .56 (−0.47 ) 35 .00 (−2.02 ) 60 .22( −0.42) 70 .08( −0.32) 73 .60( −0.15) 
+
++Plug ( β> 0) 29 .62 (−1.40 ) 34 .73 (−2.29 ) 63 .50 (+ 2.85 ) 71 .41 (+ 1.01 ) 74 .58 (+ 0.83 )
+
+Mistral-7B CSQA Base 24 .17 29 .09 62 .58 70 .82 74 .98 
+
++Plug ( β=0 ) 22 .32 (−1.85 ) 27 .73 (−1.36 ) 61 .24( −1.34) 70 .34( −0.48) 74 .41( −0.57) 
+
++Plug ( β> 0) 21 .60 (−2.57 ) 25 .91 (−3.18 ) 63 .74 (+ 1.16 ) 71 .19 (+ 0.37 ) 75 .00 (+ 0.02 )
+
+Averaged shift vs. Base (6 cells) ∆rel [VSR γ ∆rel \VWR γ ∆abs WC ∆abs PtbAcc ∆abs CleanAcc 
+
++Plug ( β = 0 ) −13 .02% −13 .14% +0 .48 pp +0 .44 pp +0 .42 pp +Plug ( β > 0) −13 .97% −14 .37% +1 .52 pp +0 .68 pp +0 .57 pp 
+
+Discussion. Table 7 and Table 8 shows the functional ablation of the two terms we designed. The ablation isolates the role of the stability term in the composite plug-in objective. The spectral-only variant already reduces the vulnerable-flow measures in both LLM and VLM settings, confirming that the main effect comes from controlling the class-structured error-flow matrix. Adding the stability term further improves the average LLM shifts and makes the accuracy-side gains more reliable, especially in cases where the spectral-only variant reduces risk but does not consistently improve worst-class or perturbation accuracy. For VLMs, the same pattern appears mainly through stronger vulnerable-risk compression and utility preservation, while PGD worst-class accuracy remains floor-limited and is therefore less informative. Thus, these tables support the intended mechanism: spectral control is the core driver of vulnerable-flow reduction, and the stability term helps this control translate more stably into downstream robustness and utility. 25 Table 8: VLM β = 0 ablation ( Rspec only vs. composite). This table reports a CLIP ViT-B/32 + LoRA mechanism ablation for the stability term. The main comparison is between the spectral-only plug-in (β = 0) and the composite objective (β > 0) . Base provides a non-plug scale reference averaged over lora and lora_adv ; the +Plug rows average the corresponding plug-in variants. Values in parentheses report changes relative to Base , and the bottom block averages these shifts over the six dataset–shot cells. Because PGD WC is often near the floor, this VLM ablation is mainly interpreted as evidence of vulnerable-risk compression and utility preservation. Lower is better for 
+
+[VSR γ and \VWR γ , while higher is better for accuracy metrics. Bold marks the desired direction relative to Base .                                                                                                                                                                                                                  
+
+> Dataset Shots Config [VSR γ↓\VWR γ↓Ptb WC ↑Ptb Acc ↑Clean Acc ↑
+> PGD evaluation (Ptb WC/Ptb Acc = PGD worst-class/accuracy; Clean Acc shown in the last column) DTD 4Base 30 .99 27 .05 0.00 20 .92 60 .76
+> DTD 4+Plug ( β=0 )30 .42 (−0.57 )26 .93 (−0.12 )0.00 (+0 .00) 21 .04 (+ 0.12 )60 .25 ( −0.51)
+> DTD 4+Plug ( β> 0)28 .76 (−2.23 )25 .78 (−1.28 )0.00 (+0 .00) 20 .54 ( −0.38) 60 .71 ( −0.05)
+> DTD 16 Base 49 .33 27 .82 0.00 21 .37 68 .62
+> DTD 16 +Plug ( β=0 )47 .10 (−2.22 )27 .74 (−0.08 )0.00 (+0 .00) 21 .25 ( −0.12) 68 .22 ( −0.40)
+> DTD 16 +Plug ( β> 0)46 .51 (−2.82 )27 .82 (−0.01 )0.00 (+0 .00) 21 .11 ( −0.25) 68 .31 ( −0.31)
+> OxfordPets 4Base 65 .86 64 .19 1.00 19 .34 86 .56
+> OxfordPets 4+Plug ( β=0 )58 .40 (−7.45 )62 .33 (−1.86 )1.01 (+ 0.01 )19 .78 (+ 0.44 )86 .87 (+ 0.31 )
+> OxfordPets 4+Plug ( β> 0)58 .11 (−7.75 )62 .07 (−2.12 )1.25 (+ 0.25 )19 .94 (+ 0.60 )86 .90 (+ 0.34 )
+> OxfordPets 16 Base 65 .61 67 .10 0.50 18 .70 88 .70
+> OxfordPets 16 +Plug ( β=0 )62 .56 (−3.05 )66 .18 (−0.93 )0.25 ( −0.25) 19 .01 (+ 0.31 )89 .03 (+ 0.33 )
+> OxfordPets 16 +Plug ( β> 0)62 .32 (−3.29 )65 .94 (−1.16 )0.25 ( −0.25) 19 .20 (+ 0.50 )88 .98 (+ 0.28 )
+> Caltech101 4Base 25 .83 55 .99 0.00 61 .89 94 .14
+> Caltech101 4+Plug ( β=0 )24 .72 (−1.10 )53 .33 (−2.66 )0.00 (+0 .00) 62 .11 (+ 0.22 )94 .13 ( −0.01)
+> Caltech101 4+Plug ( β> 0)24 .79 (−1.04 )53 .12 (−2.87 )0.00 (+0 .00) 62 .05 (+ 0.16 )94 .14 (+0 .00)
+> Caltech101 16 Base 19 .94 48 .44 5.00 65 .13 95 .09
+> Caltech101 16 +Plug ( β=0 )19 .02 (−0.93 )43 .44 (−5.00 )6.67 (+ 1.67 )66 .15 (+ 1.01 )94 .90 ( −0.19)
+> Caltech101 16 +Plug ( β> 0)18 .92 (−1.02 )43 .02 (−5.42 )6.67 (+ 1.67 )66 .20 (+ 1.06 )94 .95 ( −0.14)
+> Averaged shift vs. Base (6 dataset ×shot cells) ∆rel [VSR γ∆rel \VWR γ∆abs PtbWC ∆abs PtbAcc ∆abs CleanAcc
+> +Plug ( β= 0 )−5.21% −3.35% +0 .24 pp +0 .33 pp −0.08 pp +Plug ( β > 0)−6.47% −4.35% +0 .28 pp +0 .28 pp +0 .02 pp
+
+D.4 Plug-in strength sensitivity ( α, β sweep) 0 10 −2 10 −1 
+
+α (β≈α/2 )
+
+> 93.8
+> 94.0
+> 94.2
+> 94.4
+> 94.6
+> 94.8
+> 95.0
+> clean accuracy (\%)
+
+Clean utility is preserved   
+
+> Plugin outer
+> Plugin both
+> 010 −2 10 −1
+
+α (β≈α/2 )
+
+> 4.5
+> 5.0
+> 5.5
+> 6.0
+> 6.5 ̂
+> VWR γ (clean)
+
+Safety metric responds monotonically 
+
+Figure 4: Sensitivity of the plug-in to its strength on CLIP ViT-B/32, Caltech101. We sweep along the diagonal β ≈ α/ 2 for both Plugin outer and Plugin both . Left: clean accuracy remains nearly flat across α ∈ { 0, 0.03 , 0.1, 0.3, 1}, suggesting that the plug-in does not introduce a clear utility cost over this range. Right: the vulnerable-flow measure is generally lower for nonzero plug-in strengths than for α = 0 , although the response is not strictly monotonic. This suggests that the default setting is not an isolated tuned point, while also showing that very aggressive strength choices need not improve the safety metric further. 
+
+Discussion. This sweep is intended as a sensitivity check rather than a full hyperparameter search. The main observation is that clean accuracy stays stable across the tested range, while the vulnerable-flow measure is usually reduced once the plug-in is activated. The response is not strictly monotonic, so we do not claim that larger regularization strength is always better. Instead, the sweep supports the weaker and more relevant point that the default plug-in strength is not a fragile single-point choice and that the robustness gains do not come from an obvious clean-accuracy trade-off. 26 D.5 Additional VLM sanity checks 
+
+Table 9: Cross-model sanity on Qwen2.5-VL-3B-Instruct (4-shot, 3 seeds, PGD-10 at ε = 1 /255 ). Bold = best among LoRA-adv family rows (same convention as the main VLM table). Clean WC is uninformative on Qwen2.5-VL because the per-class evaluation uses only ∼ 10 samples per class; PGD WC-Acc is often identically 0 for the same reason. We therefore regard [VSR γ (pgd) and 
+
+VWR γ (pgd) as the primary safety signals here. 
+
+Dataset Method Clean Acc ↑ PGD Acc ↑ Clean WC ↑ PGD WC ↑ [VSR γ (pgd) ↓ VWR γ (pgd) ↓ n
+
+DTD ZeroShot 60 .00 3.20 0.00 0.00 19 .89 22 .25 1LoRA 68 .33 ± 3.90 14 .20 ± 0.82 0.00 0.00 20 .63 ± 3.22 27 .75 ± 0.44 3LoRA-adv 61 .47 ± 3.35 13 .60 ± 2.12 0.00 0.00 10 .18 ± 2.42 18 .65 ± 3.04 3LoRA-adv + plugin (outer) 61 .33 ± 3.73 14 .20 ± 1.07 0.00 0.00 8.07 ± 1.44 16 .15 ± 2.25 3LoRA-adv + plugin (both) 59 .20 ± 2.20 13 .40 ± 1.31 0.00 0.00 9.01 ± 1.68 17 .31 ± 2.27 3Clean Acc 
+
+PGD Acc  
+
+> max
+
+(pgd) 
+
+VWR (pgd) 
+
+2.5 
+
+2.0 
+
+1.5 
+
+1.0 
+
+0.5 
+
+0.0 
+
+0.5  
+
+> vs.\ LoRA-adv
+> -0.13
+> +0.60
+> -2.10
+> -2.50
+> -2.27
+> -0.20
+> -1.16 -1.33
+
+Qwen2.5-VL-3B DTD 
+
+helps hurts +plug (outer) +plug (both) 
+
+Figure 5: QwenVL cross-model summary on DTD. Delta bars of each LoRA-adv + plug-in variant relative to LoRA-adv on the four reported metrics. Both variants improve the class-structural safety metrics ( [VSR γ , \VWR γ ) with minimal utility cost, showing that the plug-in is not tied to CLIP ViT. Table 10: Weak-attack supplementary results on CLIP ViT-B/32 (4-shot) - smaller radius. Test robustness is evaluated with PGD at ε = 0 .5/255 for 100 steps. These results come from the dedicated weak-attack branch and are reported as point estimates from a single seed ( n = 1 for every row). Bold = best among LoRA-adv family rows .
+
+Dataset Method Clean Acc ↑ PGD Acc ↑ Clean WC ↑ PGD WC ↑ [VSR γ (pgd) ↓ VWR γ (pgd) ↓ n
+
+DTD ZeroShot 42 .79 19 .92 0.00 0.00 18 .38 21 .76 1LoRA-adv 59 .87 28 .43 16 .67 0.00 27 .73 26 .17 1LoRA-adv + plugin (inner) 60 .22 28 .43 16 .67 0.00 27 .96 26 .02 1LoRA-adv + plugin (outer) 59 .93 28 .07 16 .67 0.00 27 .33 25 .72 1LoRA-adv + plugin (both) 59 .87 28 .01 16 .67 0.00 27 .63 25 .50 1OxfordPets ZeroShot 85 .04 36 .74 0.00 0.00 46 .69 51 .86 1LoRA-adv 86 .18 34 .94 51 .00 4.00 49 .36 64 .42 1LoRA-adv + plugin (inner) 86 .21 34 .86 51 .00 4.00 49 .18 63 .93 1LoRA-adv + plugin (outer) 87 .33 35 .68 56 .00 5.00 46 .13 62 .30 1LoRA-adv + plugin (both) 87 .22 35 .90 56 .00 5.00 45 .88 61 .74 1Caltech101 ZeroShot 91 .40 66 .65 6.67 0.00 15 .78 38 .60 1LoRA-adv 94 .04 72 .66 26 .67 0.00 15 .32 29 .87 1LoRA-adv + plugin (inner) 94 .00 72 .74 33 .33 0.00 15 .51 30 .24 1LoRA-adv + plugin (outer) 94 .16 72 .70 33 .33 0.00 15 .29 29 .84 1LoRA-adv + plugin (both) 94 .08 72 .62 26 .67 0.00 15 .22 29 .74 1
+
+27 Table 11: Weak-attack supplementary results on CLIP ViT-B/32 (4-shot) - fewer steps. Test robustness is evaluated with PGD at ε = 1 .0/255 for 20 steps. These results come from the dedicated weak-attack branch and are reported as point estimates from a single seed ( n = 1 for every row). Caltech101 was not included in this branch. Bold = best among LoRA-adv family rows .                                                                                      
+
+> Dataset Method Clean Acc ↑PGD Acc ↑Clean WC ↑PGD WC ↑[VSR γ(pgd) ↓VWR γ(pgd) ↓n
+> DTD ZeroShot 42 .79 14 .72 0.00 0.00 19 .27 21 .78 1LoRA-adv 60 .05 21 .04 16 .67 0.00 29 .78 26 .83 1LoRA-adv + plugin (inner) 60 .22 21 .22 16 .67 0.00 29 .91 26 .76 1LoRA-adv + plugin (outer) 60 .05 21 .10 16 .67 0.00 29 .63 26 .30 1LoRA-adv + plugin (both) 60 .28 20 .98 16 .67 0.00 29 .05 26 .17 1OxfordPets ZeroShot 85 .04 21 .45 0.00 0.00 47 .68 50 .80 1LoRA-adv 86 .18 19 .41 51 .00 1.00 56 .04 62 .25 1LoRA-adv + plugin (inner) 86 .21 19 .54 49 .00 2.00 55 .82 62 .04 1LoRA-adv + plugin (outer) 87 .27 20 .55 56 .00 1.01 53 .37 60 .80 1LoRA-adv + plugin (both) 86 .70 20 .33 47 .00 2.00 53 .47 60 .71 1
+
+Discussion. These tables are intended as supplementary sanity checks rather than primary evidence. Table 9 shows that the plug-in can also reduce vulnerable-flow measures on Qwen2.5-VL, suggesting that the effect is not tied only to CLIP ViT-B/32. The weak-attack CLIP results in Tables 10 and 11 are single-seed point estimates, so we interpret them conservatively. Across these weaker PGD protocols, the outer and both variants usually reduce the vulnerable-flow measures with little change in clean accuracy, while inner-only placement is less stable. PGD worst-class accuracy remains floor-limited in several cells, so these tables are used mainly to check that the vulnerable-flow compression persists under alternative VLM evaluation protocols. 
+
+E Compute resources 
+
+All experiments are conducted in Python ® on a machine equipped with an AMD EPYC ® 7452 32-Core Processor, 128GB of RAM, and one A100 GPU with 40GB of VRAM. 28

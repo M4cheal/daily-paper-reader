@@ -1,0 +1,568 @@
+Title: Active Testing of Large Language Models via Approximate Neyman Allocation
+
+URL Source: https://arxiv.org/pdf/2605.10075v1
+
+Published Time: Tue, 12 May 2026 02:13:01 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Active Testing of Large Language Models via Approximate Neyman Allocation 
+
+# Zeli Liu University of California, Riverside 
+
+# zliu466@ucr.edu 
+
+# Jiancheng Zhang University of California, Riverside 
+
+# jzhan745@ucr.edu 
+
+# Cong Liu University of California, Riverside 
+
+# congl@ucr.edu 
+
+# Yinglun Zhu University of California, Riverside 
+
+# yzhu@ucr.edu 
+
+Abstract 
+
+Large language models (LLMs) require reliable evaluation from pre-training to test-time scaling, making evaluation a recurring rather than one-off cost. As model scales grow and target tasks increasingly demand expert annotators, both the compute and labeling costs needed for each evaluation rise rapidly. Active testing aims to alleviate this bottleneck by approximating the evaluation result from a small but informative subset of the evaluation pool. However, existing approaches primarily target classification and break down on generative tasks. We introduce a novel active testing algorithm tailored to generative tasks. Our method leverages semantic entropy from surrogate models to stratify the evaluation pool and then conducts approximate Neyman allocation based on signals extracted from these surrogates. Across multiple language and multimodal benchmarks and a range of surrogate-target model pairs, our method significantly improves on baselines and closely tracks Oracle-Neyman, delivering up to 28% MSE reduction over Uniform Sampling and an average of 22.9% budget savings. 
+
+# 1 Introduction 
+
+Large language models (LLMs) are increasingly deployed across diverse reasoning, multimodal, and agentic tasks (Wei et al., 2022; Liu et al., 2023; Zhu et al., 2025), often via API-based services. Reliable evaluation of these models is needed repeatedly throughout model development, including model selection during pre- and post-training, regression testing across successive releases, safety and quality monitoring after deployment, and coverage across the long tail of domains and sub-tasks each model is asked to handle. The per-evaluation cost is also growing rapidly along two axes. On the inference side, four layers of scaling—pre-training, post-training, test-time, and agentic paradigms (Hoffmann et al., 2022; Ouyang et al., 2022; Snell et al., 2024; Yao et al., 2022; Zuo and Zhu, 2025; Zuo et al., 2026)—substantially increase the compute spent on every input. On the annotation side, many target tasks extend beyond the capabilities of standard annotators, since, in the absence of established benchmarks for niche or real-world inputs, grading frequently requires costly domain experts. Active testing has been proposed as a principled approach to this regime, selecting a small but informative subset for labeling and using an estimator to recover full-pool performance (Kossen et al., 2021; Farquhar et al., 2021; Berrada et al., 2025). Existing pipelines, however, fall short of the requirements of modern generative LLM evaluation: they are designed for classification rather than for multi-token generation, often require retraining a data selector, or depend on internal activations and logits that black-box API services generally do not provide. We analyze the underlying failure modes in Section 4.1. In this paper, we extend active testing to generative tasks and propose a training-free and theoretically unbiased active-testing method applicable to both large language and multimodal models. Our central insight is that uncertainty in generative outputs is fundamentally a property of meaning rather than tokens, and 1
+
+> arXiv:2605.10075v1 [cs.AI] 11 May 2026
+
+Figure 1: Performance comparison across four benchmarks with labeling budget M =70 ( MSE; lower is better ). Our method outperforms the Uniform Sampling baseline and closely approaches the Oracle-Neyman (theoretical optimum), yielding consistent gains across different modalities, multiple benchmarks, and both representative Qwen and state-of-the-art GPT models. therefore cannot be adequately captured by classification-style entropy measures. Our method leverages 
+
+semantic entropy (Kuhn et al., 2023; Farquhar et al., 2024) as a meaning-level uncertainty signal that reflects generative ambiguity in model outputs. Building on this signal, our method constructs a stratified estimator equipped with a surrogate-driven Neyman-style allocation (Neyman, 1992), while remaining fully training-free and requiring neither selector optimization nor access to internal activations or logits. As shown in Fig. 1, our method closely tracks Oracle-Neyman across several language and multimodal benchmarks. 
+
+Our contributions. Our main contributions are as follows: (i) To the best of our knowledge, our method is the first active-testing pipeline that provides a theo-retically unbiased, label-efficient estimator for generative language and multimodal evaluation while simultaneously supporting training-free operation and API-only deployment. (ii) We develop a new algorithm that leverages surrogate-driven semantic entropy to structure the sampling process, couples this signal with a Neyman-style allocation strategy, and yields a training-free, unbiased estimator for evaluating both language and multimodal models. (iii) We conduct extensive experiments across multiple language and multimodal benchmarks with both open-source and advanced proprietary models. Our method delivers consistent variance reduction over Uniform Sampling across labeling budgets, reduces MSE by up to 28% in the representative M = 70 setting in Fig. 1, and achieves an average of 22 .9% budget savings on expert annotations at matched precision. 
+
+Paper organization. The remainder of the paper is organized as follows. Section 2 reviews related work. Section 3 introduces the problem formulation. Section 4 presents our method along with its theoretical analysis. Section 5 reports the main experimental results and additional analyses. Section 6 concludes the paper. Proofs, implementation details, and additional experimental results are deferred to the Appendix. 
+
+# 2 Related Work 
+
+Active testing. Active testing was introduced by Kossen et al. (2021) for label-efficient model evaluation, using a surrogate-driven acquisition function debiased by the LURE estimator (Kossen et al., 2022; Farquhar et al., 2021), and later extended to LLMs by Berrada et al. (2025) via a frozen in-context surrogate that 2removes the retraining loop. Both methods are tied to the classification setting, which mismatches the generative deployment of modern LLMs. AcTracer (Huang et al., 2026) performs multi-stage sampling which relies on hidden states unavailable in black-box APIs, and its confidence-matching proxy does not yield a theoretically unbiased estimator. GAT (Ramakrishnan et al., 2026) retains the LURE estimator but rewrites each input into a True/False proxy task with first-token acquisition, again mismatched with multi-token generative evaluation. Zhou et al. (2025) study efficient pairwise win-rate estimation between two LLMs via control variates, whereas we target single-model evaluation. 
+
+Sampling, stratification, and budget allocation. Sampling theory provides classical tools for estimating population quantities from a small queried subset (Cochran, 1977; Lohr, 2021). Variance-reducing designs include stratified sampling (Neyman, 1992; Dalenius and Hodges Jr, 1959), unequal-probability sampling (Hansen and Hurwitz, 1943), systematic sampling (Madow and Madow, 1944), cluster and multi-stage sampling, and adaptive designs (Thompson, 1990). The companion question of budget allocation across strata determines how labels are distributed, ranging from equal allocation and proportional allocation to variance-optimal Neyman allocation under known stratum standard deviations (Neyman, 1992). Such designs admit unbiased finite-population estimation through inverse-probability weighting (Horvitz and Thompson, 1952). 
+
+Active learning. Efficient utilization of labeling resources is also a central objective in model training, alongside broader efficiency considerations (Wang et al., 2024a, 2025; Li et al., 2025). Active learning aims to select the most informative subset from an unlabeled pool for annotation, thereby reducing labeling costs (Settles, 2009). Traditional active learning methods are typically based on either diversity (Sener and Savarese, 2017; Agarwal et al., 2020) or uncertainty (Tong and Koller, 2001; Scheffer et al., 2001). It has been shown to improve data efficiency from both theoretical perspectives (Krishnamurthy et al., 2019; Puchkin and Zhivotovskiy, 2021; Zhu and Nowak, 2022a,b) and empirical studies (Saran et al., 2023; Zhang et al., 2023). Recently, active learning has also emerged as a common strategy for improving data efficiency in large pretrained models (Bhatt et al., 2024; Yuan et al., 2024; Zhang and Zhu, 2025). 
+
+# 3 Problem Setting 
+
+Active testing. We study active testing for large language and multimodal models. We denote f as the target model and let D = {xi}Ni=1 be a finite pool of unlabeled test inputs drawn from an evaluation distribution peval . We denote ℓ as the loss function of predictive errors. Following Berrada et al. (2025), the ideal population risk of interest is: 
+
+R = E(x,y )∼peval [ℓ(f (x), y )] .
+
+Since peval and the labels of all possible test inputs are unknown, we condition on the fixed pool D and instead estimate the finite-pool risk: 
+
+RD = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+ℓ f (xi), y i
+
+.
+
+Active testing avoids labeling the full pool by selecting a subset S ⊂ D of size M ≪ N and constructing an estimator bR for RD from the labeled subset (Kossen et al., 2021). The objective is to minimize the estimation error of bR under a fixed labeling budget while preserving unbiasedness with respect to the full-pool risk, 
+
+E[ bR] = RD.
+
+Evaluation metrics. Following Berrada et al. (2025), we evaluate a testing method by the squared error of its risk estimate against the ground-truth finite-pool risk RD, where RD is obtained by labeling the entire pool. For a fixed labeling budget M , let bR(t) denote the estimate produced by estimator bR in Monte Carlo 3Figure 2: Comparison with adapted LURE variants. We report the relative MSE (lower is better) of SE-LURE, PE-LURE, and our method against Uniform Sampling across four benchmarks and model pairs at budget M = 100. trial t, and let T = 3 ,000 be the number of trials. We compute the mean squared error (MSE) MSE( bR) = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+ bR(t) − RD
+
+2
+
+.
+
+To enable comparisons across different benchmarks, we also follow Berrada et al. (2025) and report the error relative to the Uniform Sampling baseline. Let bRunif denote the estimator induced by Uniform Sampling. We report the relative-MSE ratio r( bR) = MSE( bR)MSE( bRunif ) .
+
+# 4 Method 
+
+In this section, we first present the motivation of our approach in Section 4.1. Building on this, we introduce the proposed method and provide its unbiasedness guarantee in Section 4.3. 
+
+# 4.1 Motivation 
+
+A natural way to extend the method of Berrada et al. (2025), which provides an effective solution for active testing in classification tasks, to generative settings is to retain their LURE estimator and replace first-token predictive entropy (PE) with token-averaged PE computed over multi-token generations from a surrogate model. However, this straightforward PE-based adaptation does not outperform Uniform Sampling, as shown in Fig. 2. We identify two factors underlying this failure. First, token-level PE entangles semantic uncertainty with surface-form variation : semantically equivalent generations with different phrasings induce different token-level logit sequences, causing PE to be inflated by paraphrastic diversity rather than genuine difficulty (Kuhn et al., 2023; Farquhar et al., 2024). Second, modern LLMs are systematically overconfident , collapsing PE into a narrow low-entropy band and weakening the acquisition signal; surrogate and target PE remain only moderately correlated in our analysis, yielding a substantial mass of instances with systematic disagreement, where surrogate and target confidence sharply diverge (Farquhar et al., 2024). Based on the analysis of the failure factors, we further consider replacing PE with semantic entropy (SE), a meaning-level uncertainty signal that we introduce in Section 4.2. However, this SE-LURE estimator also fails across various datasets, as shown in Fig. 2. This suggests that the failure is not due to the uncertainty signal, but to the LURE estimator itself. In particular, LURE applies per-sample importance weights (vm ∝ 1/a m(im)) (Berrada et al., 2025), which amplify surrogate–target mismatches. When the surrogate 4Algorithm 1 Active Testing via Approximate Neyman Allocation 
+
+Input: Pool set D, target model f , surrogate model g, label budget M .
+
+Output: Estimate of full-pool performance bR. 
+
+> 1:
+
+Signal generation. Compute semantic entropy SE (g(xi)) and calculate self-consistency score SC (g(xi)) for all xi ∈ D , respectively: SE( g(xi)) = − X
+
+> c∈C i
+
+X
+
+> s∈c
+
+p(s | g(xi)) 
+
+!
+
+log X
+
+> s∈c
+
+p(s | g(xi)) 
+
+!
+
+, (1) SC( g(xi)) = 1
+
+k max 
+
+> c∈C i
+> k
+
+X
+
+> j=1
+
+I[g(xi)(j) = c]. (2)  
+
+> 2:
+
+Stratification on semantic entropy. Partition D into H strata D0, . . . , DH−1 by binning instances according to their semantic entropy SE (g(xi)), set Nh = |D h|, and compute the mean self-consistency score in each stratum: 
+
+ph = 1
+
+Nh
+
+X
+
+> xi∈D h
+
+SC( g(xi)) . 
+
+> 3:
+
+Budget allocation. Allocate mh labels per stratum: 
+
+mh ∝ Nh ·
+
+p ph(1 − ph) + δ
+
+
+
+, X
+
+> h
+
+mh = M, 1 ≤ mh ≤ Nh. (3)  
+
+> 4:
+
+Estimation. Sample Sh ⊂ D h uniformly without replacement with |S h| = mh, and estimate full-pool performance: 
+
+bR = 1
+
+N
+
+> H−1
+
+X
+
+> h=0
+
+Nh ¯ℓh, ¯ℓh = 1
+
+mh
+
+X
+
+> xi∈S h
+
+ℓ(f (xi), y i). (4) assigns low acquisition probability to instances that the target is actually uncertain about, these weights dominate the estimator. Since such mismatches are systematic rather than rare, improving the entropy signal alone does not reduce variance but instead exposes this instability. This observation indicates that the core issue lies in the importance-reweighting mechanism, suggesting the need for an alternative estimation strategy that avoids such variance amplification. Motivated by this, we turn to a Neyman-style stratified estimator, which allocates the labeling budget in a variance-aware but unbiased manner. 
+
+# 4.2 Our Method 
+
+We present our method in Algorithm 1, a training-free and theoretically unbiased active testing framework. The proposed estimator constructs SE-based strata from surrogate-derived uncertainty signals, performs a proxy Neyman-style allocation of the labeling budget across strata, and aggregates the per-stratum target losses with a Horvitz–Thompson estimator. We next explain the details of each of the four steps in Algorithm 1. 
+
+Signal generation. This step generates uncertainty signals by running the surrogate model g on the evaluation pool D to produce k generations per input ( k = 10 throughout). The generations are used to calculate semantic entropy and self-consistency scores. This surrogate pass incurs only modest overhead, as g is substantially smaller than the target model f , and the k generations share a single prefill through KV-cache reuse supported by modern inference frameworks (Kwon et al., 2023). 5Semantic entropy addresses the fact that token-level predictive entropy in generative models can conflate uncertainty over meaning with uncertainty over surface form (Kuhn et al., 2023; Farquhar et al., 2024). For each input xi, it clusters generations into meaning-equivalence classes Ci and computes entropy over the induced class probabilities, as in Eq. (1). When the answer space is closed, as in our benchmarks after parsing, the equivalence classes coincide with distinct parsed answers and Eq. (1) reduces to the Shannon entropy over parsed-answer frequencies. Based on the generated samples, we construct two training-free uncertainty signals: the per-sample semantic entropy SE (g(xi)) and the self-consistency score (Wang et al., 2022), defined as in Eq. (2). Here g(xi)(j) is the j-th surrogate generation for input xi. Per-sample semantic entropy captures the surrogate’s uncertainty on sample xi, while the self-consistency score measures agreement among surrogate generations (higher values indicate stronger consensus and easier instances). It is used to construct the Bernoulli proxy for Neyman allocation described below. 
+
+Stratification on semantic entropy. We partition D into H strata D0, . . . , DH−1 of sizes Nh = |D h|
+
+based on semantic entropy. In practice, a non-trivial fraction of samples satisfy SE( g(xi)) = 0, so we assign them to a base stratum D0 = {xi ∈ D : SE (g(xi)) = 0 } and apply equal-quantile binning to the remaining samples {xi ∈ D : SE (g(xi)) > 0}. We set H = 5 throughout and provide an ablation over H in Section 5.3. 
+
+Budget allocation. Given a fixed stratification, classical Neyman allocation m∗ 
+
+> h
+
+∝ Nhσh provides a theoretical optimum that minimizes the estimation variance (Neyman, 1992). However, this optimum depends on the within-stratum standard deviation σh of the target loss, which is not directly accessible without labeling the entire pool. To address this, we replace σh with a smoothed Bernoulli proxy pph(1 − ph) + δ, where 
+
+ph = 1
+
+> Nh
+
+P 
+
+> i∈D h
+
+SC (g(xi)) denotes the mean surrogate self-consistency within stratum Dh. The resulting allocation is defined as in Eq. (3). The offset δ > 0 prevents mh from collapsing when ph approaches 1 in the base stratum. We use δ = 0 .75 and report an ablation study in Section 5.3. 
+
+Estimation. Within each stratum Dh, we draw mh samples uniformly without replacement and obtain their labels. Let Sh ⊂ D h denote the selected subset, and define the within-stratum empirical loss mean ¯ℓh = 1
+
+mh
+
+X
+
+> i∈S h
+
+ℓ(f (xi), y i).
+
+Since each sample in stratum Dh is selected with equal inclusion probability πh = mh/N h, we can write the Horvitz–Thompson form of bR over the globally selected set S = SH−1 
+
+> h=0
+
+Sh:
+
+bR = 1
+
+N
+
+X
+
+> i∈S
+
+ℓ(f (xi), y i)
+
+πi
+
+.
+
+Under stratified simple random sampling, where πi = πh for all xi ∈ D h, this expression simplifies to Eq. (4), which is a theoretically unbiased estimator for the finite-pool risk RD, as we discuss next. 
+
+# 4.3 Theoretical Analysis 
+
+We establish the following theorem to formalize the theoretical unbiasedness of our method. 
+
+Theorem 1. Our method yields an unbiased estimator of the finite-pool risk: 
+
+E
+
+h bR
+
+i
+
+= RD,
+
+for any stratification {D h}H−1 
+
+> h=0
+
+of D and any allocation {mh}H−1 
+
+> h=0
+
+satisfying 1 ≤ mh ≤ Nh and PH−1 
+
+> h=0
+
+mh = M .The result follows from (i) unbiasedness of within-stratum uniform sampling without replacement, and (ii) linearity of expectation for the stratified Horvitz–Thompson estimator. 
+
+We defer the formal proof to Appendix A. 65 Empirical Results 
+
+We conduct comprehensive experiments to examine the effectiveness of our method. We describe the experimental setup in Section 5.1, present the main results in Section 5.2, and provide analyses and ablations in Section 5.3. Table 1: Benchmarks used in our experiments.                
+
+> Benchmark Task type Knowledge range Pool size MMLU-Redux (Gema et al., 2025) Language 57 academic subjects (cleaned MMLU) 3,000 MMLU-Pro (Wang et al., 2024b) Language STEM-heavy multi-domain reasoning 12 ,032 GPQA-Diamond (Rein et al., 2023) Language Graduate-level science reasoning 198 MMBench (Liu et al., 2024) Vision-language Multimodal perception and reasoning 4,329
+
+# 5.1 Experimental setup 
+
+Datasets. We evaluate on multiple benchmarks spanning advanced reasoning and perception tasks for modern large language and multimodal models. MMLU-Redux (Gema et al., 2025) and MMLU-Pro (Wang et al., 2024b) assess broad academic knowledge and chain-of-thought reasoning, GPQA-Diamond (Rein et al., 2023) targets graduate-level “Google-proof” science questions, and MMBench (Liu et al., 2024) evaluates vision-language perception and reasoning. Since open-ended generation evaluation remains an open problem, we focus on benchmarks with verifiable ground-truth answers, ensuring that estimation error reflects the active testing pipeline rather than metric noise. Table 1 summarizes the task type, knowledge domain, and pool size of each benchmark. 
+
+Models. We study both large language and multimodal settings using the open-source Qwen-3.5 series (Qwen Team, 2026), Qwen-3-VL series (Bai et al., 2025), and advanced API-based GPT-5.4 series (OpenAI, 2026). These model families cover both controlled open-weight scaling and frontier API deployment settings. For each surrogate-target pair, the weaker or smaller model is used as the surrogate g, while the stronger or larger model serves as the target f . All models generate free-form text, which is subsequently mapped to canonical answers via a parser for evaluation; we do not restrict the target to first-token-only decoding. 
+
+Baselines. As shown in Fig. 2, both PE-LURE and SE-LURE fail to outperform Uniform Sampling across all evaluated benchmarks. We therefore exclude them from the main comparison and focus on baselines that can plausibly improve over Uniform Sampling. We use the MSE and relative MSE defined in Section 3 as the evaluation metrics, and compare our method against three estimators: Uniform Sampling , Proportional Allocation , and Oracle-Neyman .Uniform Sampling selects M samples uniformly without replacement for labeling. Proportional Allocation uses the same SE-based stratification as our method, but allocates the labeling budget proportionally to stratum size, i.e., mh ∝ Nh. This baseline serves as a within-framework reference: the gap between Uniform Sampling and Proportional Allocation isolates the effect of semantic-entropy-based stratification, while the additional gap between Proportional Allocation and our method captures the benefit of our proxy-Neyman allocation in Eq. (3). Oracle-Neyman allocates the budget according to the oracle target-side within-stratum standard deviation, i.e., mh ∝ Nhσh. As it relies on inaccessible target statistics, it is infeasible in practice and serves only as a theoretical upper bound on the best achievable allocation under the given stratification. 7Figure 3: Results of active testing across four benchmarks with various surrogate-target model pairs. We report relative MSE ( lower is better ) as annotation budget M increases. Our method consistently achieves better performance while closely matching the Oracle-Neyman (theoretical optimum). Each curve is averaged over 3 ,000 Monte Carlo trials, with shaded bands indicating ±1 standard error of the mean. 
+
+# 5.2 Main results 
+
+Our method achieves consistent performance gains. We compare our method with all baselines across extensive benchmarks covering multiple domains and target model variants. As shown in Fig. 3, our method consistently reduces estimation error over Uniform Sampling across all evaluated benchmarks, surrogate-target pairs, and labeling budgets. At the representative M = 70 setting in Fig. 1, our method reduces MSE by up to 28% relative to Uniform Sampling. The gains are most pronounced in the small-budget regime, where active evaluation is practically most useful and each additional label has the highest marginal cost. Across both language and vision-language benchmarks, our method remains below Uniform Sampling 
+
+throughout the budget sweep and closely follows the infeasible Oracle-Neyman optimum, indicating that the proposed training-free pipeline captures much of the attainable variance reduction without target-side full-pool labels. Table 2: Label savings across all benchmarks with different model pairs. We report the labeling budget required by Uniform Sampling and by our method to reach the same MSE, along with the resulting label savings.                                
+
+> Benchmark Surrogate →Target Uniform Sampling Our method Our savings
+> MMLU-Redux Qwen-3.5 4B →9B 200 144 28 .0% MMLU-Pro Qwen-3.5 2B →4B 340 266 21 .8% GPQA-Diamond GPT-5.4 Nano →GPT-5.4 30 22 26 .7% MMBench Qwen-3-VL 2B →4B 80 68 15 .0% Average 22 .9%
+
+8Our method yields noticeable label savings. To quantify the label savings achieved by our method, we report the savings at matched MSE in Table 2. We reframe the precision gains in terms of expert labeling cost, the key bottleneck in evaluation practice. As shown in Table 2, our method saves 15 .0%–28 .0% of expert annotations across all four benchmarks. These savings are especially meaningful on reasoning benchmarks like GPQA-Diamond, where each science question typically requires co-verification by multiple domain experts. 
+
+# 5.3 Analyses and Ablations 
+
+We ablate the two central design choices of our method in the main text: the stratification method that maps surrogate semantic entropy onto bin boundaries, and the allocation rule that distributes the budget across strata. Two additional ablations, on the number of strata H and on the offset δ in the proxy-Neyman allocation, are deferred to Appendix B; both confirm that our default configuration ( H = 5, δ = 0 .75) is at or near the optimum across budgets. All ablations are conducted on MMLU-Redux with the Qwen-3.5 2B surrogate against the Qwen-3.5 9B target, and we report relative MSE (%) versus Uniform Sampling so that lower is better and 100% corresponds to no improvement over Uniform Sampling .
+
+Selection of stratification method. To evaluate the effectiveness of our stratification strategy, we conduct additional experiments by replacing it with other stratification methods: Equal-width , k-means , and Quantile ,where Equal-width bins partition the SE range into equal-width intervals; k-means performs data-adaptive 1-D clustering on SE values; Quantile binning produces equal-frequency strata. We observe two main findings in Table 3. First, Equal-width binning performs the worst (86.1% on average), as it over-concentrates samples near zero SE and under-represents high-SE regions. Second, data-adaptive methods such as k-means and Quantile binning perform similarly on average (84.8% and 84.7%, respectively), while Adaptive SE (Ours) achieves the best average performance (83.7%), improving over them by isolating the zero-SE cluster where within-stratum variance is negligible. Based on these results, we adopt Adaptive SE stratification as the default strategy. Table 3: Ablation study of Algorithm 1 with different stratification methods (when H=5). We conduct experiments on the MMLU-Redux dataset, using Qwen-3.5 9B as the target model and Qwen-3.5 2B as the surrogate model. We report relative MSE (%, lower is better ) versus Uniform Sampling and the best performance in each row is highlighted in bold.                               
+
+> Budget MEqual-width k-means Quantile Adaptive SE (Ours) ↓
+> 50 89 .987 .086 .185 .7
+> 100 89 .382 .087 .780 .7
+> 200 84 .184 .881 .882 .5400 84 .584 .684 .786 .9800 82 .785 .683 .382 .5
+> Average 86 .184 .884 .783 .7
+
+Effectiveness of allocation strategy. We assess the effectiveness of our allocation strategy on MMLU-Redux using the Qwen-3.5 2B surrogate against the Qwen-3.5 9B target. As shown in Table 4, we fix SE-based stratification and compare five allocation strategies: Equal Allocation (mh = M/H ), Proportional Allocation 
+
+(mh ∝ Nh), Power Allocation (mh ∝ √Nh), our method from Eq. (3), and Oracle-Neyman (mh ∝ Nhσh)which serves as an infeasible upper bound under the fixed stratification. Two findings emerge here. First, size-only heuristics are weak: Equal (90.9%) and Proportional Allocation (91.4%) retain about 90% of the Uniform Sampling MSE, showing that stratification without variance information yields limited gains. Second, proxy-Neyman performs best at nearly all budgets and closely matches Oracle-Neyman on average (83.7% vs. 82.8%), while Power lies in between (86.3%), indicating that the surrogate captures variance information beyond size alone. 9Table 4: Ablation study of our method varying the allocation strategy on MMLU-Redux dataset with Qwen-3.5 2B (surrogate) and Qwen-3.5 9B (target) model pairs. We report the relative MSE (%, lower is better ) versus Uniform Sampling as the annotation budget increases. Oracle-Neyman (gray column) is infeasible in practice and serves as the theoretical optimum given the stratification; it is excluded from the per-row best-value comparison. The best value among feasible rules in each row is shown in bold.                                      
+
+> Budget MEqual Proportional Power Proxy-Neyman (Ours) ↓Oracle-Neyman 50 95 .092 .689 .385 .784 .3100 95 .191 .985 .480 .785 .7200 86 .986 .684 .982 .582 .0400 90 .092 .386 .286 .981 .2800 87 .493 .485 .682 .580 .7Average 90 .991 .486 .383 .782 .8
+
+# 6 Conclusion and Limitations 
+
+We studied active testing for advanced generative language and multimodal models, where each label usually requires costly expert annotation and classification-oriented LURE estimators fail to outperform Uniform Sampling once the target model is evaluated through multi-token generation. We introduced a training-free and theoretically unbiased active-testing method that lifts the difficulty signal from tokens to meaning via semantic entropy, partitions the evaluation pool according to this signal, and allocates the label budget using a surrogate-driven proxy for Neyman allocation. Across language and vision-language reasoning benchmarks with both open-source and frontier proprietary surrogate–target pairs, our method consistently reduces estimation error relative to Uniform Sampling, closely tracks the infeasible Oracle-Neyman reference, and reaches matched precision with substantially fewer expert labels. Our study also has some scope limitations. First, our experiments focus on closed or parseable answer spaces where generations can be mapped to canonical answers; extending active testing to open-ended generation remains challenging because evaluation noise can obscure estimator error. Second, the method assumes access to a surrogate model that is substantially cheaper than the target while still correlated with target-side difficulty, which may constrain deployment in some API-only scenarios. Future work can extend this framework by developing modality-aware surrogate signals and allocation rules for richer vision–language, interactive, and open-ended evaluation tasks. 10 References 
+
+Sharat Agarwal, Himanshu Arora, Saket Anand, and Chetan Arora. Contextual diversity for active learning. In European Conference on Computer Vision , pages 137–153. Springer, 2020. Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, et al. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 , 2025. Gabrielle Berrada, Jannik Kossen, Freddie Bickford Smith, Muhammed Razzak, Yarin Gal, and Tom Rainforth. Scaling up active testing to large language models. arXiv preprint arXiv:2508.09093 , 2025. Gantavya Bhatt, Yifang Chen, Arnav Das, Jifan Zhang, Sang Truong, Stephen Mussmann, Yinglun Zhu, Jeff Bilmes, Simon Du, Kevin Jamieson, et al. An experimental design framework for label-efficient supervised finetuning of large language models. In Findings of the Association for Computational Linguistics: ACL 2024 , pages 6549–6560, 2024. William G Cochran. Sampling techniques. Johan Wiley & Sons Inc , 1977. Tore Dalenius and Joseph L Hodges Jr. Minimum variance stratification. Journal of the American Statistical Association , 54(285):88–101, 1959. Sebastian Farquhar, Yarin Gal, and Tom Rainforth. On statistical bias in active learning: How and when to fix it. arXiv preprint arXiv:2101.11665 , 2021. Sebastian Farquhar, Jannik Kossen, Lorenz Kuhn, and Yarin Gal. Detecting hallucinations in large language models using semantic entropy. Nature , 630(8017):625–630, 2024. Aryo Pradipta Gema, Joshua Ong Jun Leang, Giwon Hong, Alessio Devoto, Alberto Carlo Maria Mancino, Rohit Saxena, Xuanli He, Yu Zhao, Xiaotang Du, Mohammad Reza Ghasemi Madani, et al. Are we done with mmlu? In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 5069–5096, 2025. Morris H Hansen and William N Hurwitz. On the theory of sampling from finite populations. The Annals of Mathematical Statistics , 14(4):333–362, 1943. Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, DDL Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. arXiv preprint arXiv:2203.15556 , 10, 2022. Daniel G Horvitz and Donovan J Thompson. A generalization of sampling without replacement from a finite universe. Journal of the American statistical Association , 47(260):663–685, 1952. Yuheng Huang, Jiayang Song, Qiang Hu, Felix Juefei-Xu, and Lei Ma. Actracer: Active testing of large language model via multi-stage sampling. ACM Transactions on Software Engineering and Methodology ,35(3):1–30, 2026. Jannik Kossen, Sebastian Farquhar, Yarin Gal, and Tom Rainforth. Active testing: Sample-efficient model evaluation. In International Conference on Machine Learning , pages 5753–5763. PMLR, 2021. Jannik Kossen, Sebastian Farquhar, Yarin Gal, and Thomas Rainforth. Active surrogate estimators: An active learning approach to label-efficient model evaluation. Advances in Neural Information Processing Systems , 35:24557–24570, 2022. Akshay Krishnamurthy, Alekh Agarwal, Tzu-Kuo Huang, Hal Daum´ e III, and John Langford. Active learning for cost-sensitive classification. Journal of Machine Learning Research , 20(65):1–50, 2019. Lorenz Kuhn, Yarin Gal, and Sebastian Farquhar. Semantic uncertainty: Linguistic invariances for uncertainty estimation in natural language generation. arXiv preprint arXiv:2302.09664 , 2023. 11 Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang, and Ion Stoica. Efficient memory management for large language model serving with pagedattention. In Proceedings of the 29th symposium on operating systems principles , pages 611–626, 2023. Zexin Li, Jiancheng Zhang, Yufei Li, Yinglun Zhu, and Cong Liu. Mixtraining: A better trade-off between compute and performance. arXiv preprint arXiv:2502.19513 , 2025. Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. Visual instruction tuning. Advances in neural information processing systems , 36:34892–34916, 2023. Yuan Liu, Haodong Duan, Yuanhan Zhang, Bo Li, Songyang Zhang, Wangbo Zhao, Yike Yuan, Jiaqi Wang, Conghui He, Ziwei Liu, et al. Mmbench: Is your multi-modal model an all-around player? In European conference on computer vision , pages 216–233. Springer, 2024. Sharon L Lohr. Sampling: design and analysis . Chapman and Hall/CRC, 2021. William G Madow and Lillian H Madow. On the theory of systematic sampling, i. The Annals of Mathematical Statistics , 15(1):1–24, 1944. Jerzy Neyman. On the two different aspects of the representative method: the method of stratified sampling and the method of purposive selection. In Breakthroughs in statistics: Methodology and distribution , pages 123–150. Springer, 1992. OpenAI. Introducing GPT-5.4, March 2026. URL https://openai.com/index/introducing-gpt-5-4/ .Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. Advances in neural information processing systems , 35:27730–27744, 2022. Nikita Puchkin and Nikita Zhivotovskiy. Exponential savings in agnostic active learning through abstention. In Conference on learning theory , pages 3806–3832. PMLR, 2021. Qwen Team. Qwen3.5: Towards native multimodal agents, February 2026. URL https://qwen.ai/blog?id= qwen3.5 .Aashish Anantha Ramakrishnan, Ardavan Saeedi, Hamid Reza Hassanzadeh, Fazlolah Mohaghegh, and Dongwon Lee. Generative active testing: Efficient llm evaluation via proxy task adaptation. arXiv preprint arXiv:2603.19264 , 2026. David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard Yuanzhe Pang, Julien Dirani, Julian Michael, and Samuel R Bowman. Gpqa: A graduate-level google-proof q&a benchmark. arXiv preprint arXiv:2311.12022 , 2023. Akanksha Saran, Safoora Yousefi, Akshay Krishnamurthy, John Langford, and Jordan T Ash. Streaming active learning with deep neural networks. In International Conference on Machine Learning , pages 30005–30021. PMLR, 2023. Tobias Scheffer, Christian Decomain, and Stefan Wrobel. Active hidden markov models for information extraction. In International symposium on intelligent data analysis , pages 309–318. Springer, 2001. Ozan Sener and Silvio Savarese. Active learning for convolutional neural networks: A core-set approach. 
+
+arXiv preprint arXiv:1708.00489 , 2017. Burr Settles. Active learning literature survey. 2009. Charlie Snell, Jaehoon Lee, Kelvin Xu, and Aviral Kumar. Scaling llm test-time compute optimally can be more effective than scaling model parameters. arXiv preprint arXiv:2408.03314 , 2024. Steven K Thompson. Adaptive cluster sampling. Journal of the american statistical association , 85(412): 1050–1059, 1990. 12 Simon Tong and Daphne Koller. Support vector machine active learning with applications to text classification. 
+
+Journal of machine learning research , 2(Nov):45–66, 2001. Haonan Wang, Zeli Liu, Chao Fang, John Paul Walters, and Stephen P Crago. Moq: mixture-of-format activation quantization for communication-efficient ai inference system. In NeurIPS 2024 Workshop Machine Learning with new Compute Paradigms , 2024a. Haonan Wang, Zeli Liu, Kajimusugura Hoshino, Tuo Zhang, John Paul Walters, and Stephen Crago. Fedpai: Achieving extreme sparsity in federated learning via pruning at initialization. In International Conference on Intelligent Computing , pages 350–364. Springer, 2025. Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. arXiv preprint arXiv:2203.11171 , 2022. Yubo Wang, Xueguang Ma, Ge Zhang, Yuansheng Ni, Abhranil Chandra, Shiguang Guo, Weiming Ren, Aaran Arulraj, Xuan He, Ziyan Jiang, et al. Mmlu-pro: A more robust and challenging multi-task language understanding benchmark. Advances in Neural Information Processing Systems , 37:95266–95290, 2024b. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. Advances in neural information processing systems , 35:24824–24837, 2022. Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. React: Synergizing reasoning and acting in language models. arXiv preprint arXiv:2210.03629 , 2022. Bo Yuan, Yulin Chen, Yin Zhang, and Wei Jiang. Hide and seek in noise labels: Noise-robust collaborative active learning with llms-powered assistance. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 10977–11011, 2024. Jiancheng Zhang and Yinglun Zhu. Towards multimodal active learning: Efficient learning with limited paired data. arXiv preprint arXiv:2510.03247 , 2025. Jifan Zhang, Yifang Chen, Gregory Canal, Stephen Mussmann, Arnav M Das, Gantavya Bhatt, Yinglun Zhu, Jeffrey Bilmes, Simon Shaolei Du, Kevin Jamieson, et al. Labelbench: A comprehensive framework for benchmarking adaptive label-efficient learning. arXiv preprint arXiv:2306.09910 , 2023. Zhaoyi Zhou, Yuda Song, and Andrea Zanette. Accelerating unbiased llm evaluation via synthetic feedback. 
+
+arXiv preprint arXiv:2502.10563 , 2025. Yinglun Zhu and Robert Nowak. Active learning with neural networks: Insights from nonparametric statistics. 
+
+Advances in Neural Information Processing Systems , 35:142–155, 2022a. Yinglun Zhu and Robert Nowak. Efficient active learning with abstention. Advances in Neural Information Processing Systems , 35:35379–35391, 2022b. Yinglun Zhu, Jiancheng Zhang, and Fuzhi Tang. Test-time matching: Unlocking compositional reasoning in multimodal models. arXiv preprint arXiv:2510.07632 , 2025. Bowen Zuo and Yinglun Zhu. Strategic scaling of test-time compute: A bandit learning approach. arXiv preprint arXiv:2506.12721 , 2025. Bowen Zuo, Dongruo Zhou, and Yinglun Zhu. Adaptive test-time compute allocation with evolving in-context demonstrations. arXiv preprint arXiv:2604.21018 , 2026. 13 A Proof of the unbiasedness guarantee for our method 
+
+Theorem 1. Our method yields an unbiased estimator of the finite-pool risk: 
+
+E
+
+h bR
+
+i
+
+= RD,
+
+for any stratification {D h}H−1 
+
+> h=0
+
+of D and any allocation {mh}H−1 
+
+> h=0
+
+satisfying 1 ≤ mh ≤ Nh and PH−1 
+
+> h=0
+
+mh = M .The result follows from (i) unbiasedness of within-stratum uniform sampling without replacement, and (ii) linearity of expectation for the stratified Horvitz–Thompson estimator. Proof. Write ℓi = ℓ(f (xi), y i) for brevity. Fix a stratification {D h}H−1 
+
+> h=0
+
+of D and an allocation {mh}H−1 
+
+> h=0
+
+with 1 ≤ mh ≤ Nh and PH−1 
+
+> h=0
+
+mh = M . Within each stratum Dh, let Sh be a uniform sample without replacement of size mh drawn from Dh, and let ¯ℓh = 1
+
+> mh
+
+P 
+
+> i∈S h
+
+ℓi. Since Sh is sampled uniformly from all size-mh subsets of Dh, each such subset has probability 1 / Nh
+
+> mh
+
+. For any fixed example i ∈ D h, exactly  Nh−1
+
+> mh−1
+
+ of these subsets contain i, so Pr[ i ∈ S h] = 
+
+ Nh−1
+
+> mh−1
+
+ Nh
+
+> mh
+
+ = mh
+
+Nh
+
+, for every i ∈ D h.
+
+Rewriting the sample mean as a sum over the full stratum, mh ¯ℓh = P 
+
+> i∈D h
+
+I[i ∈ S h] ℓi, and applying linearity of expectation yields 
+
+E[¯ℓh] = 1
+
+mh
+
+X
+
+> i∈D h
+
+E[I[i ∈ S h]] ℓi = 1
+
+mh
+
+X
+
+> i∈D h
+
+mh
+
+Nh
+
+ℓi = 1
+
+Nh
+
+X
+
+> i∈D h
+
+ℓi = Rh,
+
+the within-stratum risk. Because {D h}H−1 
+
+> h=0
+
+partitions D and PH−1 
+
+> h=0
+
+Nh = N , a second application of linearity gives 
+
+E[ bR] = E
+
+"
+
+1
+
+N
+
+> H−1
+
+X
+
+> h=0
+
+Nh ¯ℓh
+
+#
+
+= 1
+
+N
+
+> H−1
+
+X
+
+> h=0
+
+NhRh = 1
+
+N
+
+> H−1
+
+X
+
+> h=0
+
+X
+
+> i∈D h
+
+ℓi = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+ℓi = RD,
+
+which establishes the unbiasedness claim. This is the usual Horvitz–Thompson inclusion-probability argument specialized to uniform sampling within each stratum. 
+
+# B Additional ablations 
+
+We present two additional ablations that are deferred from the main text to keep the experiments section focused. As in Section 5.3, all runs use MMLU-Redux with the Qwen-3.5 2B surrogate against the Qwen-3.5 9B target, and we report relative MSE (%) versus Uniform Sampling (lower is better). 
+
+Effect of H. To study the impact of the number of SE-based strata H, we vary H from 2 to 8; results are shown in Table 5. We observe a non-monotonic trend in relative MSE: smaller values of H (e.g., H = 2) fail to adequately separate easy and hard instances, leading to high within-stratum variance, while overly large values (e.g., H = 8) result in insufficient samples per stratum for reliable estimation. The best performance is achieved at H = 5, which attains the lowest average MSE (83.7% relative to Uniform Sampling). Based on this result, we use H = 5 as the default setting in all main experiments. 
+
+Impact of offset δ. To evaluate the impact of the offset δ in the proxy-Neyman allocation mh ∝
+
+Nh
+
+pph(1 − ph) + δ
+
+
+
+, we sweep δ ∈ { 0.5, 0.75 , 1, 2, 5}. As shown in Table 6, the sweep reveals a broad optimum: δ ∈ [0 .5, 1] achieves similar performance, with average relative MSE between 83 .7% and 84 .0%, while performance degrades to 86 .2% at δ = 2 and 87 .6% at δ = 5. This trend reflects a trade-off in the surrogate-side proxy: small δ amplifies noise in pph(1 − ph) by approaching pure proxy-Neyman allocation, while large δ flattens the allocation toward Proportional Allocation and weakens the variance signal. We adopt δ = 0 .75 as the default, which achieves the lowest average relative MSE in the sweep. 14 Table 5: Ablation on the number of strata H. Relative MSE (%, lower is better) versus Uniform Sampling on MMLU-Redux, Qwen-3.5 2B surrogate → Qwen-3.5 9B target. Best value per row in bold. 
+
+Budget M H = 2 H = 3 H = 5 (Ours) ↓ H = 8 50 90 .3 87 .6 85 .7 89 .3100 91 .3 86 .3 80 .7 83 .9200 86 .5 85 .5 82 .5 83 .4400 91 .7 85 .4 86 .9 86 .9800 82 .6 84 .2 82 .5 83 .7Average ( ↓) 88 .5 85 .8 83 .7 85 .5
+
+Table 6: Ablation on the offset δ in the proxy-Neyman allocation. Relative MSE (%, lower is better) versus Uniform Sampling on MMLU-Redux, Qwen-3.5 2B surrogate → Qwen-3.5 9B target. Best value per row in bold. 
+
+Budget M δ = 0 .5 δ = 0 .75 (Ours) ↓ δ = 1 δ = 2 δ = 5 50 86 .0 85 .7 85 .8 89 .0 89 .8100 82 .2 80 .7 80 .6 82 .3 83 .5200 83 .8 82 .5 82 .9 85 .3 87 .1400 86 .3 86 .9 87 .1 89 .7 90 .2800 81 .9 82 .5 83 .2 84 .6 87 .4Average 84 .0 83 .7 83 .9 86 .2 87 .6
+
+Table 7: Hyperparameters used in our experiments. Top block: decoding configuration for model inference. Bottom block: active-testing hyperparameters of our method. 
+
+Model inference 
+
+Parameter Value Description 
+
+k 10 Number of generations per input 
+
+temperature 0.7 Sampling temperature 
+
+top p 0.8 Nucleus sampling threshold 
+
+top k 20 Top-k sampling cutoff 
+
+presence penalty 1.5 Presence penalty 
+
+repetition penalty 1.0 Repetition penalty 
+
+max new tokens model-max Maximum supported by each model 
+
+Active testing (our method) 
+
+Parameter Value Description 
+
+H 5 Number of semantic-entropy strata 
+
+δ 0.75 Proxy-Neyman allocation offset (Eq. (3)) 
+
+T 3,000 Monte Carlo trials per labeling budget 
+
+15 C Reproducibility and compute 
+
+Models, data, and code. All datasets are downloaded from Hugging Face using the public benchmark releases listed in Table 1. For open-weight experiments, we download the official Qwen family from Hugging Face. For API-based experiments, we use the official OpenAI API service. We provide full algorithmic details, hyperparameters, and generation/parsing protocols in this appendix to support reproduction without released code. 
+
+Generation and parsing details. Each GPU is used independently for inference with the vLLM framework on NVIDIA RTX 6000 Ada hardware. Surrogate signals are generated with the vLLM decoding configuration listed in Table 7. We parse model generations with the official standard parser script released by each benchmark. This benchmark-official parsing protocol may differ from model-official self-reporting pipelines, which may add an LLM judge as a final fallback after rule-based parsing. Parsing failures account for less than 1% in every pool in our experiments and have minimal impact on the reported experimental precision. 
+
+Active-testing hyperparameters. Unless otherwise stated, our method uses the hyperparameters sum-marized in Table 7. We describe the parameter-selection process in Section 5.3. 16

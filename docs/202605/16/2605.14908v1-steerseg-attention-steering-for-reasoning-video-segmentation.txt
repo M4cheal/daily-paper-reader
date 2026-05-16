@@ -1,0 +1,493 @@
+Title: SteerSeg: Attention Steering for Reasoning Video Segmentation
+
+URL Source: https://arxiv.org/pdf/2605.14908v1
+
+Published Time: Fri, 15 May 2026 01:15:23 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# SteerSeg: Attention Steering for Reasoning Video Segmentation 
+
+Ali Cheraghian 1,∗ Hamidreza Dastmalchi 2,∗ Abdelwahed Khamis 3 Morteza Saberi 4
+
+Aijun An 2 Lars Petersson 31Macquarie University 2York University 3CSIRO Data61 4UTS 
+
+ali.cheraghian@mq.edu.au hrd@yorku.ca abdelwahed.khamis@data61.csiro.au 
+
+morteza.saberi@uts.edu.au aan@yorku.ca lars.petersson@data61.csiro.au 
+
+Abstract 
+
+Video reasoning segmentation requires localizing objects across video frames from natural language expressions, often involving spatial reasoning and implicit refer-ences. Recent approaches leverage frozen large vision-language models (LVLMs) by extracting attention maps and using them as spatial priors for segmentation, enabling training-free grounding. However, these attention maps are optimized for text generation rather than spatial localization, often resulting in diffuse and ambiguous grounding signals. In this work, we introduce SteerSeg , a lightweight framework that identifies attention misalignment as the key bottleneck in attention-based grounding and proposes to steer attention at its source through input-level conditioning. SteerSeg combines learnable soft prompts with reasoning-guided Chain-of-Thought (CoT) prompting. The soft prompts reshape the attention distri-bution to produce more spatially concentrated maps, while CoT-derived attributes resolve ambiguity among similar objects by guiding attention toward the correct instance. The resulting attention maps are converted into point prompts across keyframes to guide a segmentation model, while candidate tracklets are ranked and selected using correlation-based scoring. Our approach freezes the LVLM and segmentation model parameters and learns only a small set of soft prompts, preserving the model’s pretrained reasoning capabilities while significantly im-proving grounding. Despite being trained only on Ref-YouTube-VOS, SteerSeg generalizes well across diverse benchmarks, significantly improving the spatial grounding capability of LVLMs. Project page: https://steerseg.github.io/. 
+
+1 Introduction 
+
+Video reasoning segmentation aims to localize and segment objects in video frames given natural language queries requiring reasoning over spatial, temporal, and semantic relationships. While some queries can be resolved from direct visual cues, more complex expressions, such as “the object the child is reaching for” , require understanding interactions and intent over time. These scenarios demand models that can both interpret language and reason about visual content consistently across frames, making video reasoning segmentation a challenging testbed for evaluating visual reasoning capabilities. Addressing this problem naturally calls for large vision-language models (LVLMs), which capture rich semantic and contextual relationships across modalities [19, 36, 9, 44, 5]. A common approach couples LVLMs with segmentation foundation models such as SAM [ 20 ] in a cascaded framework, where the LVLM provides semantic guidance and the segmentation model predicts pixel-level masks. Methods such as LISA [ 21 ], VISA [ 44 ], and VideoLISA [ 5] train   
+
+> *Equal contribution Preprint.
+> arXiv:2605.14908v1 [cs.CV] 14 May 2026 Expression: “a white dog with gray patches”
+> (b1) Raw Attention (b2) Contrast Attention
+> (b4) Raw + Soft Prompt (b5) Raw + Soft Prompt + CoT
+> (b3) Incorrect Masking
+> (b6) Correct Masking
+> Effect of Attention Refinement on Masking Diagnosis Study
+> Reasoning vs. Masking Performance
+
+(a)  (b)  
+
+> Succes
+> s
+> Failure Success
+> Failure
+> Correct
+> Reasoning
+> Diffuse
+> Attention
+> Incorrect
+> Masking
+> 50
+> 100
+
+Figure 1: (a) Diagnostic study on reasoning and grounding. While the LVLM often identifies the correct target object, the corresponding attention remains poorly localized, leading to inaccurate masks. (b) Effect of attention refinement on segmentation. Raw and contrast-based attention produce ambiguous localization, while soft prompts and CoT reasoning progressively improve attention quality and segmentation accuracy. these cascaded pipelines end-to-end using large-scale annotated datasets. Although effective, such approaches require expensive supervised optimization, substantial labeled data, and re-training for each LVLM, even with parameter-efficient tuning methods such as LoRA [14]. Recent advances in LVLMs [ 27 , 4 , 7] have shown that their reasoning capabilities implicitly encode localization cues within attention maps. Emerging training-free approaches [ 13 , 16 ] leverage these attention maps as grounding signals to generate spatial prompts for segmentation models such as SAM2 [ 34 ]. However, LVLM attention maps are not optimized for precise localization and are often diffuse, noisy, and affected by attention sinks [ 17 ], leading to ambiguous grounding (Fig. 1(b1)). Although prior methods attempt to mitigate this issue through contrastive prompting [ 13 ], the resulting attention often remains imprecise and produces inaccurate masks (Fig. 1(b2)). To better understand this gap, we conduct a diagnostic study on 132 samples randomly selected from the ReasonVOS [ 5] dataset. For each query, we prompt Qwen2.5-VL [ 4] to generate distinguishing attributes describing the referred object. We then evaluate the responses through human annotation using a custom-designed GUI interface (see Appendix A). The evaluation shows that the model correctly identifies the target object in 115 cases (87.1%), indicating strong semantic reasoning capability (Fig. 1 (a)). However, when applying the state-of-the-art attention-based segmentation method DecAF [ 13 ], only 55.7% of these correctly understood cases produce accurate masks, while only 2 out of 17 incorrectly reasoned cases are successfully segmented. These results reveal a clear discrepancy between reasoning and grounding: correct reasoning is necessary but not sufficient for accurate localization. These results suggest that the main limitation lies in attention localization, motivating the need for explicit attention steering. To this end, we adopt an input-level attention steering strategy that operates directly at the source of attention formation. Specifically, we prepend a small set of learnable soft prompts to a frozen LVLM, allowing them to participate in self-attention at every layer. By influencing attention throughout the network, these prompts reshape how the generated response token attends to visual tokens, yielding more concentrated and spatially aligned attention maps (Fig. 1(b4)). To further resolve ambiguity among visually similar objects, we incorporate a lightweight single-step Chain-of-Thought (CoT) reasoning module. Given the input query, the model first generates discriminative attributes (e.g., color, position, motion), which are appended to the original prompt. This attribute-augmented prompt guides attention toward the correct instance through explicit semantic cues, producing more discriminative attention maps (Fig. 1(b5)). Finally, from the refined attention maps, we generate point prompts by selecting high-confidence locations across sampled keyframes. These points are fed to a segmentation model to produce candidate masks, which are propagated into tracklets. We then introduce a correlation-based scoring mechanism that measures consistency between each candidate and the attention signals, enabling robust tracklet selection under challenging conditions. 2Importantly, our approach requires no fine-tuning of the LVLM and preserves its pretrained reasoning capabilities, while effectively adapting its attention for accurate and reliable grounding. Building upon these insights, we summarize the primary contributions of our work as follows. First , we identify attention misalignment as the primary bottleneck in attention-based grounding and show that attention rollout [ 1], traditionally used as a post-hoc visualization tool, can be effectively controlled through input-level conditioning. Second , we propose a principled attention steering framework that combines learnable soft prompts for spatial attention concentration with Chain-of-Thought (CoT) reasoning for ambiguity resolution, enabling accurate grounding without modifying LVLM parameters. Third ,we show that explicit attention steering enables transferable object-centric grounding in LVLMs, yielding consistent cross-dataset generalization without task-specific fine-tuning. 
+
+2 Related work 
+
+Large Vision-Language Models. LLMs have demonstrated powerful reasoning and cognition capabilities [ 6 , 10 , 45 ], motivating their extension to vision through Large vision-language models (LVLMs). Early LVLMs such as Flamingo [ 2], BLIP-2 [ 23 ], and LLaVA [ 27 ] established the standard paradigm of connecting a frozen vision encoder [ 32 ] to an LLM through a lightweight projection module. This design was later refined by models such as LLaVA-1.5 [ 28 ], InternVL [ 7], Cambrian-1 [ 39 ], Molmo [ 8], and InternVL3 [ 48 ]. These models are built on the Transformer architecture [ 40 ]and rely on the self-attention mechanism, whose quadratic cost is prohibitive for video inputs. To mitigate this, many video LVLMs compress visual tokens into fixed-length representations via lightweight aggregation modules [ 31 , 15 , 24 , 38 , 37 , 30 ]. Such compression discards fine-grained spatial cues, unlike LLaVA-style designs [ 27 , 47 ] that retain dense patch features through a simple linear projector. More recently, Qwen2-VL [ 41 ], Qwen2.5-VL [ 4], and Oryx [ 29 ] further advance this direction through improved high-resolution processing while preserving fine-grained spatial details. In this work, we build on these models and explore the localization capability of LVLMs. 
+
+Attention-Guided Grounding in LVLMs. A growing body of work observes that self-attention maps inside LVLMs encode rich visual-textual correspondences and can support downstream ground-ing tasks without retraining. Building on attention rollout [ 1], VL-SAM [ 26 ] aggregates attention across heads and layers and uses the resulting maps as prompts for SAM to enable open-ended detection and segmentation, while Loc-Head [ 16 ] shows that only a few frozen attention heads suffice for competitive visual grounding. F-LMM [ 43 ] converts word–pixel correspondences from frozen LVLM attention into segmentation masks, and ControlMLLM [ 42 ] guides attention via test-time optimization for training-free visual prompting. “LVLMs Know Where to Look” [ 46 ] further shows that internal attention can reliably localize objects even when the generated textual answer is incorrect. 
+
+Video Reasoning Segmentation. Video reasoning segmentation aims to localize and track ob-jects given complex, world-knowledge-dependent text queries [ 44 , 5], going beyond traditional referring video object segmentation [ 19 , 36 , 9]. Existing approaches fall into two broad categories. 
+
+Training-based methods couple LVLMs with mask decoders and fine-tune the joint model on large-scale segmentation data: LISA [ 21 ] introduces a <SEG> token bridging an LVLM with SAM [ 20 ], GLaMM [ 33 ] and PixelLM [ 35 ] extend it to grounded conversation and multi-target segmenta-tion, while VISA [ 44 ], VideoLISA [ 5 ], VRS-HQ [ 12 ], and GLUS [ 25 ] adapt this paradigm to videos with temporal tokens, keyframe selection, and global–local reasoning. Training-free methods 
+
+instead exploit intrinsic localization signals in frozen LVLMs: VL-SAM [ 26 ], Loc-Head [ 16 ], and F-LMM [ 43 ] convert LVLM attention into prompts or masks in the image domain, while CoT-RVS [ 18 ], SDAM [ 49 ], PARSE-VOS [ 3 ], and DecAF [ 13 ] extend this idea to videos via chain-of-thought prompting, spatio-temporal decoupling, hierarchical LLM reasoning, and decomposed attention fusion, respectively. Our approach sits between these two regimes: rather than fully fine-tuning the LVLM or remaining entirely training-free, we perform lightweight training on a limited amount of data to steer the LVLM’s attention toward referenced objects, preserving its pretrained reasoning ability while delivering accuracy competitive with fully trained systems. 
+
+3 Method 
+
+Problem Formulation. We study video reasoning segmentation , where the goal is to localize and segment a target object across video frames given a natural language query that may require reasoning. Formally, we are given a video V = {It}Tt=1 , where each frame It ∈ RH×W ×3, and a 3Reasons 
+
+…                            
+
+> “If you had to choose the
+> more serene and subdued
+> cat between my two, which
+> would it be?”
+> Expression (𝜺 )
+> LVLM
+> CoT Reasoning
+> Attributes
+> “Gray -and -white”
+> “On the left”
+> “Small”
+> “What is the main
+> object mentioned in
+> the given expression
+> using the attributes
+> above? ”
+> LVLM
+> Learnable
+> Tokens
+> Rollout (Eq. 2,3)
+> Reshape
+> Vision Text
+> 𝐒 q
+> frm 𝐒 q
+> vid
+> SAM
+> …
+> Tracklet k
+> Tracklet 1
+> Tracklet Ranking
+> 𝓛 𝑩𝑪𝑬 +𝓛 𝑫𝒊𝒄𝒆 Segmentation 𝑡 1
+> 𝑡 2
+> 𝑡 3
+> 𝑡 4
+
+Figure 2: Given a referring expression and video frames, the frozen LVLM first performs CoT reasoning to extract discriminative attributes of the target object. These attributes are incorporated into a prompt for response-token generation, together with learnable soft prompts. Attention rollout from the response token produces spatial attention maps, which are reshaped into frame-level and video-level localization cues. The resulting attention maps are used to guide SAM for mask propagation and candidate tracklet generation, followed by tracklet ranking to obtain the final segmentation mask. natural language expression E (e.g., “the person who served the ball”). The objective is to predict a sequence of segmentation masks: 
+
+M = {Mt}Tt=1 , Mt ∈ [0 , 1] H×W , (1) where Mt denotes the spatial extent of the target object at frame t. Unlike standard referring seg-mentation, the expression E may require multi-step reasoning, temporal understanding, or relational inference. We assume access to a pretrained large vision-language model (LVLM) and a segmentation foundation model (e.g., SAM2 [ 34 ]), both kept frozen. Our goal is to exploit the intrinsic cross-modal attention of the LVLM to derive spatio-temporal grounding signals for accurate segmentation. 
+
+3.1 Response-Token Attention Extraction 
+
+Given a video-expression pair (V, E), we prompt the frozen LVLM with a concise instruction to identify the main object referred to in E and respond with a single-word descriptor, which we denote by q. We treat this token as the query and analyze its attention over the token sequence to understand how the model grounds the target concept in the visual input. At transformer layer ℓ, let A(ℓ) ∈ RH×N ×N denote the attention tensor, where H is the number of heads and N = Nv + Nt is the total number of tokens, consisting of Nv visual tokens and Nt
+
+non-visual tokens. Each slice A(ℓ) 
+
+> h
+
+∈ RN ×N represents the pairwise attention weights between tokens for head h. Following [ 1], we first average across heads and incorporate residual connections and compute the attention rollout from layer L0 to L as: 
+
+R =
+
+> L
+
+Y
+
+> ℓ=L0
+
+˜A(ℓ), ˜A(ℓ) = 12
+
+> 1
+> HH
+
+X
+
+> h=1
+
+A(ℓ) 
+
+> h
+
++ I
+
+!
+
+. (2) where R ∈ RN ×N captures the aggregated token-to-token influence across layers. Given the response token q, let iq denote its index in the token sequence. The attention corresponding to q is obtained from the rollout matrix R as: 
+
+rq = R[iq , :] ∈ R1×N , rvis  
+
+> q
+
+= rq [: , Ivis ] ∈ R1×Nv , (3) where Ivis denotes the index set of visual tokens. This provides a generic query-conditioned visual attention vector, which can be reshaped according to the visual-token layout to form a spatial grounding map. 
+
+Dual-Granularity Rollout Attention. The rollout formulation above is agnostic to the visual-token layout. We therefore instantiate it at two complementary granularities to balance spatial precision and temporal context. For the frame modality , we uniformly sample Tf = 16 key frames and compute rollout attention independently for each frame, yielding attention maps {S(t) 
+
+> q
+
+}Tf
+
+> t=1
+
+, where 4S(t) 
+
+> q
+
+∈ RHv ×Wv . We denote their stack by Sfrm  
+
+> q
+
+∈ RTf ×Hv ×Wv . This modality preserves high spatial resolution and provides precise localization cues. For the video modality , we process Tv = 8 
+
+key frames jointly to capture temporal consistency across the sequence. To reduce the computational cost of 3D attention, we apply token merging and spatial downsampling by a factor of 2, producing a video-level rollout tensor Svid  
+
+> q
+
+∈ RTv × ˜Hv × ˜Wv , where ˜Hv = Hv /2 and ˜Wv = Wv /2.
+
+3.2 Attention Steering 
+
+The rollout map provides grounding cues but is often diffuse, noisy, and prone to attention sinks [ 17 ], reflecting coarse semantic relevance rather than precise localization (Fig. 1 (b1)). To address this, we keep the model fixed and steer attention through input-level conditioning, aiming to align attention directly to the target object and obtain more focused and discriminative attention (Fig. 1(b4–b5)). Specifically, we introduce two complementary mechanisms: (1) prompt-based steering to concentrate attention, and (2) reasoning-based steering to resolve ambiguity. 
+
+Prompt-Based Steering. We introduce a set of learnable prompt tokens to guide the attention formation process while keeping the LVLM frozen. Let P ∈ RNp×d denote the Np learnable prompt embeddings, where d is the embedding dimension. These prompt tokens are appended to the input sequence used for generating the response token. Consequently, the sequence length increases from 
+
+N to N + Np. This also changes the attention tensors at layer ℓ to A(ℓ) ∈ RH×(N +Np)×(N +Np).The resulting attention rollout matrix is therefore given by R ∈ R(N +Np)×(N +Np).Since the grounding map Sq is obtained from the rollout matrix R, optimizing the soft prompts P
+
+directly influences Sq . We therefore train P to make Sq align with the target object. To this end, we supervise the rollout-based attention ( Sq ) using ground-truth segmentation masks. We train the soft prompts P on the training set of Ref-YouTube-VOS dataset [ 36 ], which provides pixel-level annotations for referred objects in videos. Let ˆG ∈ [0 , 1] Hv ×Wv denote the resized ground-truth mask, and let Sq ∈ [0 , 1] Hv ×Wv denote the normalized rollout attention map for the query token q.We optimize the soft prompts using a combination of binary cross-entropy and Dice loss: 
+
+L = LBCE (Sq , ˆG) + LDice (Sq , ˆG). (4) The binary cross-entropy term enforces pixel-wise alignment, while the Dice loss encourages overlap between the predicted attention map and the ground-truth mask, improving robustness to class imbalance. Together, these losses guide the soft prompts to produce attention maps that are both localized and structurally consistent with the target object. 
+
+Reasoning-Guided Steering . Despite the attention concentration achieved by soft prompts, ambiguity remains a challenge for expressions requiring deeper reasoning. As shown in Fig. 1(b4), when multiple objects share similar appearance, the attention map may localize an incorrect instance. This typically occurs when the model fails to reason correctly about the expression, indicating that accurate reasoning is necessary for reliable grounding. To address this, we incorporate a lightweight, single-round CoT reasoning step to guide attention. Given the expression E, we prompt the LVLM (without soft prompts) to briefly reason about the target object and output a small set of distinguishing attributes a = {a1, . . . , a K } (e.g., color, position, motion) that help disambiguate it from similar instances; the full prompt template is provided in Appendix B. We append these attributes to the original prompt used for response token generation, forming an attribute-augmented prompt (the full prompt template is provided in Appendix C). The input sequence is further prepended with the soft prompts P, resulting in a unified prompt that combines E, a, and P (see Fig. 2). Intuitively, this design improves grounding in two complementary ways. First, the model performs an explicit reasoning step that extracts attributes capturing distinguishing properties of the target object. Second, these attribute tokens are jointly processed with visual tokens and soft prompts, enabling richer interactions across tokens. This enriched context reduces ambiguity by guiding the attention of the query token toward the correct instance, resulting in more accurate and reliable grounding. 
+
+3.3 Mask Tracklets Generation and Selection 
+
+We use the frame-level attention maps to generate candidate masks, as they provide higher spatial resolution and more precise localization cues compared to the video-level maps. For each key frame 5t, we select the location with the maximum attention value, 
+
+(xt, y t) = arg max  
+
+> (x,y )
+
+S(t) 
+
+> q
+
+(x, y ), (5) as a point prompt and feed it to the segmentation model (SAM2 [ 34 ]), producing one mask per frame. This results in Tf candidate masks. To remove redundant or overlapping predictions, we apply non-maximum suppression (NMS) with an IoU threshold of 0.7. Finally, we construct tracklets by propagating the selected masks forward and backward across frames using the segmentation model, producing temporally consistent object tracks. 
+
+Best Tracklet Selection. Given a set of Nc candidate tracklets, we select the most reliable one by measuring their consistency with the attention signals. Intuitively, a correct tracklet should align well with the rollout attention maps, both spatially (frame-level) and temporally (video-level). For each candidate tracklet, we first sample its predicted masks at the selected key frames and stack them into a tensor M ∈ RTf ×Hv ×Wv . We transform these masks into the logit space to better capture correlation in a continuous domain. We then compute the Pearson correlation between M and the rollout attention tensors. For the frame modality, we directly compare M with the frame-level rollout tensor Sfrm  
+
+> q
+
+∈ RTf ×Hv ×Wv . For the video modality, let Svid  
+
+> q
+
+∈ RTv × ˜Hv × ˜Wv denote the video-level rollout tensor. We spatially and temporally align the the candidate mask volume M
+
+to the resolution of the video-level attention map using an alignment operator Avid (·), yielding 
+
+Mvid = Avid (M) ∈ RTv × ˜Hv × ˜Wv . The two agreement scores are computed as 
+
+sfrm = corr( M, Sfrm  
+
+> q
+
+), svid = corr( Mvid , Svid  
+
+> q
+
+), (6) where corr( ·, ·) denotes the Pearson correlation computed over all elements. We combine the two scores as s = αs frm + (1 − α)svid and select the tracklet with the highest score. The selected tracklet is then propagated over all frames and resized to the original image resolution to obtain the predicted mask sequence M. This design leverages the complementary strengths of the two modalities: frame-level attention provides fine-grained spatial alignment, while video-level attention captures temporal consistency. 
+
+4 Experiments 
+
+Datasets and Evaluation Metrics. We evaluate on five referring video object segmentation benchmarks, including three conventional referring VOS datasets: Ref-DAVIS [ 19 ], Ref-YouTube-VOS [ 36 ], and MeViS [ 9], as well as two reasoning-intensive datasets: ReasonVOS [ 5] and ReVOS [ 44 ]. ReasonVOS mainly focuses on complex reasoning and compositional understanding, while ReVOS additionally contains challenging reasoning-based referring expressions. Following prior works, we report the standard video object segmentation metrics: region similarity ( J ), contour accuracy ( F), and their average ( J &F). 
+
+Implementation Details. We use publicly available LVLM checkpoints, including LLaVA-OV-7B [ 22 ], InternVL3-8B [ 48 ], Qwen2VL-7B [ 41 ], and Qwen2.5VL-7B [ 4]. SAM2-hiera-large [ 34 ] is employed as the segmentation model. Attention rollout starts from the middle transformer layers ( L0
+
+for Qwen2.5VL-7B; more details are provided in the Appendix D). We use 64 learnable soft prompt tokens. The soft prompts are trained only on the training split of Ref-YouTube-VOS [ 36 ] using supervision from ground-truth masks with BCE and Dice losses, while all LVLM parameters remain frozen during both training and inference. We train the soft prompts using a learning rate of 5 × 10 −4
+
+for 6500 steps with an effective batch size of 4 on two NVIDIA A6000 GPUs. The soft prompts are initialized from token embeddings of fixed natural-language seed prompts for the frame and video branches using a repeat-and-truncate strategy, rather than random initialization. Unless otherwise stated, we use α = 0 .3 for combining frame-level and video-level Pearson correlation scores during tracklet ranking, which is selected based on hyperparameter analysis in the ablation study. 
+
+4.1 Results Comparison with Existing Methods. Tab. 1 compares SteerSeg with both fully trained and frozen-LVLM text-conditioned VOS approaches across multiple LVLM backbones and benchmarks. The upper gray rows (LISA [ 21 ], VISA [ 44 ], VideoLISA [ 5], GLUS [ 25 ], VRS-HQ [ 12 ], Veason-R1 [ 11 ]) correspond to methods that jointly optimize the LVLM and segmentation model in an end-to-end 6Table 1: Comparison of LVLM-based text-conditioned VOS methods on Ref-DAVIS [19 ], Rea-sonVOS [ 5 ], and ReVOS [ 44 ] benchmarks. The upper gray rows correspond to methods trained end-to-end jointly with the LVLM and segmentation model, while the lower colored rows use frozen LVLMs. Methods marked with ⋆ are fully training-free. Method LVLM Ref-DAVIS ReasonVOS ReVOS (Overall) ReVOS (Referring) ReVOS (Reasoning)                                                                                                                                                                                                                                                                                                                    
+
+> J&FJFJ&FJFJ&FJFJ&FJFJ&FJF
+> Fully Trained Methods
+> LISA [CVPR’24] LLaVA-7B 64.8 62.2 67.3 31.1 29.1 33.1 40.9 39.1 42.7 45.7 44.3 47.1 36.1 33.8 38.4 VISA [ECCV’24] ChatUniVi-7B 69.4 66.3 72.5 –––46.9 44.9 49.0 50.9 49.2 52.6 43.0 40.6 45.4 VideoLISA [NeurIPS’24] LLaVA-Phi-3-V 68.8 64.9 72.7 47.5 45.1 49.9 –––––––––GLUS [CVPR’25] LLaVA-7B –––49.9 47.5 52.4 54.9 52.4 57.3 58.3 56.0 60.7 51.4 48.8 53.9 VRS-HQ [CVPR’25] ChatUniVi-7B 76.0 72.6 79.4 –––59.1 56.6 61.6 62.1 59.8 64.5 56.1 53.5 58.7 Veason-R1 [arxiv’25.08] Qwen2.5VL-7B –––59.9 56.0 63.8 61.3 58.2 64.4 63.6 60.7 66.5 59.0 55.8 62.2
+> Frozen-LVLM Methods
+> Loc-Head* [CVPR’25] LLaVA-7B 56.3 52.1 60.5 33.6 29.3 38.0 32.5 28.2 36.9 36.9 32.5 41.3 28.1 23.8 32.5 DecAF* [ICLR’26] LLaVA-OV-7B 59.4 54.8 64.0 52.8 49.3 56.3 40.0 35.8 44.1 43.4 39.1 47.6 36.6 32.6 40.7 SteerSeg [Ours] LLaVA-OV-7B 70.0 65.7 74.3 58.6 55.7 61.5 49.2 45.6 52.8 51.9 48.4 55.5 47.0 43.4 50.6
+> Loc-Head* [CVPR’25] InternVL3-8B 66.3 62.4 70.2 44.3 41.0 47.5 43.7 39.9 47.5 46.7 42.9 50.6 43.2 39.5 46.8 DecAF* [ICLR’26] InternVL3-8B 62.8 56.9 68.6 58.9 55.1 62.7 47.4 43.7 51.2 51.7 47.9 55.5 43.2 39.5 46.8 SteerSeg [Ours] InternVL3-8B 66.1 62.0 70.1 63.3 60.6 66.1 52.5 48.8 56.2 55.6 51.9 59.3 49.5 45.8 53.1
+> Loc-Head* [CVPR’25] Qwen2VL-7B 61.9 58.0 65.8 34.0 31.8 36.2 44.0 40.8 47.2 52.7 49.1 56.2 35.4 32.6 38.2 DecAF* [ICLR’26] Qwen2VL-7B 64.1 59.4 68.9 52.5 49.0 56.0 45.3 41.6 49.0 52.7 48.9 56.4 37.9 34.3 41.5 SteerSeg [Ours] Qwen2VL-7B 77.8 74.2 81.4 63.6 60.8 66.4 53.8 50.4 57.1 59.2 56.2 62.3 48.3 44.6 52.0
+> Loc-Head* [CVPR’25] Qwen2.5VL-7B 64.6 60.2 68.9 41.1 37.9 44.3 47.0 43.3 50.7 53.1 49.3 56.9 40.8 37.2 44.4 DecAF* [ICLR’26] Qwen2.5VL-7B 75.2 70.9 79.5 63.9 60.5 67.2 54.2 50.1 58.2 58.7 54.8 62.6 49.7 45.4 53.9 SteerSeg [Ours] Qwen2.5VL-7B 81.4 78.0 84.8 65.9 63.1 68.7 56.6 53.5 59.8 61.1 58.2 63.9 52.4 48.9 55.9
+
+cascade training pipeline, typically requiring extensive training on large-scale datasets. In contrast, the lower rows use frozen LVLMs, where methods marked with ⋆ are fully training-free. Our method occupies a lightweight middle ground: both the LVLM and SAM2 remain completely frozen, and only a small set of soft prompt tokens is learned. Compared with frozen-LVLM methods such as Loc-Head ⋆ [16 ] and DecAF ⋆ [13 ], SteerSeg consis-tently achieves strong improvements across datasets and backbones. The gains are especially notable on reasoning-intensive benchmarks such as ReasonVOS and ReVOS (Reasoning), demonstrating the effectiveness of attention steering and CoT-guided attribute conditioning for resolving ambiguity among visually similar objects. For instance, with Qwen2.5VL-7B, SteerSeg improves over DecAF ⋆
+
+by 6.2 points on Ref-DAVIS, 2.0 points on ReasonVOS, and 2.7 points on ReVOS (Reasoning) in terms of J &F.Despite freezing both the LVLM and segmentation model, SteerSeg also achieves performance competitive with or superior to fully trained approaches. On Ref-DAVIS, SteerSeg with Qwen2.5VL-7B achieves 81 .4 J &F, surpassing VRS-HQ by a large margin. Similar trends are observed on ReasonVOS and ReVOS, suggesting that improving attention alignment can be more effective than expensive end-to-end cascade training. Another key observation is the strong consistency across different LVLM backbones. SteerSeg consistently improves localization quality for LLaVA-OV, InternVL3, Qwen2VL, and Qwen2.5VL. Moreover, although the soft prompts are trained only on Ref-YouTube-VOS, the method generalizes well to unseen datasets and reasoning-intensive benchmarks, indicating that the proposed attention steering mechanism learns transferable alignment behavior rather than dataset-specific heuristics. 
+
+Generalization to Additional Datasets. Tab. 2 further evaluates SteerSeg on MeViS [9 ] and Ref-YouTube-VOS [ 36 ] to study its generalization across datasets and LVLM backbones. Similar to previous experiments, the upper rows correspond to fully trained approaches, while the lower rows correspond to frozen-LVLM methods. Compared with existing frozen-LVLM methods such as Loc-Head ⋆ and DecAF ⋆, SteerSeg consis-tently achieves substantial improvements on both datasets. The best SteerSeg variant achieves 53 .1
+
+J &F on MeViS and 67 .9 on Ref-YouTube-VOS, exceeding DecAF ⋆ by 5.0 and 8.0 points, respec-tively. These results further validate the effectiveness of the proposed attention steering mechanism for improving localization quality. Despite freezing both the LVLM and SAM2, SteerSeg also achieves performance competitive with or superior to several fully trained approaches. On MeViS, SteerSeg with Qwen2VL-7B achieves the 7Table 2: Comparison on additional datasets.                                                                                          
+
+> Method LVLM MeViS Ref-YouTube-VOS
+> J&FJFJ&FJF
+> VISA [ECCV’24] Chat-UniVi-7B 44.5 41.8 47.1 61.5 59.8 63.2 VideoLISA [NeurIPS’24] LLaVA-Phi-3-V 44.4 41.3 47.6 63.7 61.7 65.7 GLUS [CVPR’25] LLaVA-7B 51.3 48.5 54.2 67.3 65.5 69.0 VRS-HQ [CVPR’25] Chat-UniVi-7B 50.6 47.6 53.7 70.4 68.3 72.5
+> Veason-R1 [arxiv’25.08] Qwen2.5VL-7B 52.2 48.4 56.0 –––Loc-Head* [CVPR’25] Qwen2.5VL-7B 39.4 35.2 43.6 51.0 46.8 55.2 DecAF* [ICLR’26] Qwen2.5VL-7B 48.1 44.0 52.1 59.9 56.2 63.5 SteerSeg [Ours] LLaVA-OV-7B 47.8 43.8 51.9 58.0 55.4 60.6 SteerSeg [Ours] InternVL3-8B 48.2 43.8 52.5 56.4 53.4 59.4 SteerSeg [Ours] Qwen2VL-7B 53.1 49.4 56.8 67.9 65.9 70.0
+> SteerSeg [Ours] Qwen2.5VL-7B 51.5 47.8 55.2 67.2 65.3 69.1 Training Loss
+> Beginning of Training After 4600 Steps
+> Steps
+
+Figure 3: Attention alignment and training loss evolution. Video        
+
+> Frames
+> Frame
+> Attention
+> Text Tokens Visual Tokens
+> High Attention
+> Medium Attention
+> Low Attention
+> High Attention Low Attention
+> 𝑓 𝑡 𝑓 𝑡 +∆𝑡
+> Segmentation Mask
+> Frame Attention
+> Video Attention
+> (a) (b)
+> Expression: “What kind of vehicle has the most spacious interior for transporting bulky items?”
+> v1v2v3v4v6v5
+
+Figure 4: Qualitative visualization of the proposed framework. (a) Video-level attention, frame-level attention, and the resulting segmentation masks across sampled frames. (b) Response-token attention visualization showing interactions between visual tokens and CoT-derived attributes, where red indicates higher attention weights. best overall performance, while on Ref-YouTube-VOS it remains competitive with recent end-to-end trained methods without requiring expensive cascade optimization. 
+
+4.2 Qualitative Analysis 
+
+Fig. 3 qualitatively illustrates the training dynamics of the proposed attention steering mechanism through both the training loss evolution and the resulting attention maps. As training progresses, the loss steadily decreases while the attention becomes significantly more focused and aligned with the target object. Notably, this example is drawn from a cross-dataset setting, demonstrating that the learned soft prompts generalize beyond the training distribution and still produce coherent object-centric grounding. Fig. 4(a) presents qualitative examples of the proposed framework. The video-level branch provides temporally consistent localization, while the frame-level branch preserves finer spatial details. Their combination produces accurate and stable segmentation masks under challenging appearance and motion variations. Furthermore, Fig. 4(b) visualizes the response-token attention mechanism, where the response query attends jointly to visual tokens and CoT-derived attributes. Higher attention weights are highlighted in red, showing that the response token increasingly focuses on semantically relevant attributes and object-centric visual cues. 
+
+5 Ablation Study 
+
+Effect of Individual Components. Table 3 analyzes the contribution of CoT-derived attributes and learnable soft prompts. Using CoT alone provides only a modest improvement over the raw attention baseline, suggesting that reasoning alone is not the primary bottleneck in grounding quality. This observation is consistent with our earlier diagnostic analysis, which indicated that the main limitation arises from weak attention alignment rather than missing semantic reasoning. In contrast, introducing learnable soft prompts leads to a significant improvement in both segmentation performance and attention alignment. Specifically, we report the average Pearson correlation between the rollout attention tensors and the resized ground-truth masks across key frames for both the frame-level and video-level modalities over the entire dataset. Combining both components yields the best 8Components J&F Correlation Soft CoT DAVIS ReasonVOS DAVIS ReasonVOS                     
+
+> ✗✗65.7 60.6 0.19 0.25
+> ✗✓66.6 63.6 0.21 0.30
+> ✓✗80.9 64.1 0.41 0.44
+> ✓✓81.4 65.9 0.47 0.45
+
+Table 3: Effect of different components on segmentation performance and attention alignment.               
+
+> NpDAVIS ReasonVOS
+> 478.3 63.8 880.4 65.1 16 80.6 65.4 32 80.8 65.5
+> 64 81.4 65.9
+> 128 81.3 65.9
+
+Table 4: Effect of the number of soft prompt tokens Np.
+
+Figure 5: Effect of fusion weight α on ReVOS. Frame-only attention ( α = 1 ) is better for referring queries, while video-only ( α = 0 ) benefits reasoning tasks requiring temporal context. Performance peaks at α ≈ 0.3, showing the advantage of combining both. performance across all datasets and metrics, with the correlation trends remaining consistent with the segmentation results. Overall, the results suggest that CoT guidance is beneficial but not sufficient by itself, while attention steering through soft prompts plays the dominant role. 
+
+Effect of the Number of Soft Prompt Tokens. We analyze the effect of the number of learnable soft prompt tokens Np on segmentation performance. As shown in Table 4, increasing the number of soft tokens leads to consistent but relatively modest improvements on both DAVIS and ReasonVOS. Performance saturates quickly after small prompt sizes, indicating that the proposed attention steering mechanism is not highly sensitive to the exact number of soft tokens. The best performance is achieved at Np = 64 , which is used in all experiments. 
+
+Effect of fusion weight α on different query types. We further analyze the effect of the fusion weight α on different query types in ReVOS. Comparing the two extremes, frame-only attention (α = 1 ) performs better on referring queries, highlighting the importance of spatial precision, whereas video-only attention ( α = 0 ) performs better on reasoning queries, emphasizing the role of temporal context. Nevertheless, the best performance is consistently achieved at an intermediate value ( α ≈ 0.3), showing that neither modality alone is sufficient. Combining frame-level precision with video-level temporal consistency yields the most effective grounding across all query types. 
+
+6 Conclusion 
+
+We presented SteerSeg, a lightweight attention steering framework for text-conditioned video object segmentation using frozen LVLMs. We showed that the main limitation of attention-based grounding is not the lack of semantic understanding, but the misalignment and diffusion of attention maps. To address this, SteerSeg combines learnable soft prompts for attention concentration with a lightweight CoT-guided attribute extraction mechanism for ambiguity resolution. The resulting attention maps provide more accurate and discriminative localization cues, which are further integrated with SAM2 for robust tracklet generation and segmentation. Extensive experiments across multiple benchmarks and LVLM backbones demonstrate that SteerSeg consistently improves grounding quality and achieves performance competitive with or superior to fully trained approaches, despite freezing both the LVLM and segmentation model. Moreover, the strong cross-dataset generalization suggests that the proposed attention steering mechanism learns transferable attention alignment behavior rather than dataset-specific heuristics. 97 Limitations 
+
+A limitation of our method is that objects appearing only briefly may be missed if they are not included in the sampled key frames, which could be alleviated by adaptive temporal sampling strategies. A further limitation is that the fusion weight is selected empirically and may vary across datasets and LVLM backbones. 
+
+References 
+
+[1] S. Abnar and W. Zuidema. Quantifying attention flow in transformers. In Annual Meeting of the Association for Computational Linguistics (ACL) , 2020. [2] J.-B. Alayrac, J. Donahue, P. Luc, A. Miech, I. Barr, Y. Hasson, K. Lenc, A. Mensch, K. Millican, M. Reynolds, et al. Flamingo: A visual language model for few-shot learning. In Advances in Neural Information Processing Systems (NeurIPS) , 2022. [3] Anonymous. Unleashing hierarchical reasoning: An LLM-driven framework for training-free referring video object segmentation. In AAAI Conference on Artificial Intelligence (AAAI) ,2026. [4] S. Bai, K. Chen, X. Liu, J. Wang, W. Ge, S. Song, K. Dang, P. Wang, S. Wang, J. Tang, et al. Qwen2.5-VL technical report. arXiv preprint arXiv:2502.13923 , 2025. [5] Z. Bai, T. He, H. Mei, P. Wang, Z. Gao, J. Chen, L. Liu, Z. Zhang, and M. Z. Shou. One token to seg them all: Language instructed reasoning segmentation in videos. Advances in Neural Information Processing Systems , 37:6833–6859, 2024. [6] T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P. Dhariwal, A. Neelakantan, et al. Language models are few-shot learners. In Advances in Neural Information Processing Systems (NeurIPS) , 2020. [7] Z. Chen, J. Wu, W. Wang, W. Su, G. Chen, S. Xing, M. Zhong, Q. Zhang, X. Zhu, L. Lu, B. Li, P. Luo, T. Lu, Y. Qiao, and J. Dai. InternVL: Scaling up vision foundation models and aligning for generic visual-linguistic tasks. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [8] M. Deitke, C. Clark, S. Lee, R. Tripathi, Y. Yang, J. S. Park, M. Salehi, N. Muennighoff, K. Lo, L. Soldaini, et al. Molmo and PixMo: Open weights and open data for state-of-the-art vision-language models. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [9] H. Ding, C. Liu, S. He, X. Jiang, and C. C. Loy. Mevis: A large-scale benchmark for video segmentation with motion expressions. In Proceedings of the IEEE/CVF international conference on computer vision , pages 2694–2703, 2023. [10] A. Dubey, A. Jauhri, A. Pandey, et al. The Llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. [11] S. Gong, L. Zhang, Y. Zhuge, X. Jia, P. Zhang, and H. Lu. Reinforcing video reasoning segmentation to think before it segments. arXiv preprint arXiv:2508.11538 , 2025. [12] S. Gong, Y. Zhuge, L. Zhang, Z. Yang, P. Zhang, and H. Lu. The devil is in temporal token: High quality video reasoning segmentation. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [13] S. H. Han, J. Hyun, P. Lee, M. Shim, D. Wee, and S. J. Kim. Decomposed attention fusion in MLLMs for training-free video reasoning segmentation. In International Conference on Learning Representations (ICLR) , 2026. [14] E. J. Hu, yelong shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen. LoRA: Low-rank adaptation of large language models. In International Conference on Learning Representations , 2022. URL https://openreview.net/forum?id=nZeVKeeFYf9 .10 [15] P. Jin, R. Takanobu, W. Zhang, X. Cao, and L. Yuan. Chat-UniVi: Unified visual representation empowers large language models with image and video understanding. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [16] S. Kang, J. Kim, J. Kim, and S. J. Hwang. Your large vision-language model only needs a few attention heads for visual grounding. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [17] S. Kang, J. Kim, J. Kim, and S. J. Hwang. See what you are told: Visual attention sink in large multimodal models. In The Thirteenth International Conference on Learning Representations ,2025. URL https://openreview.net/forum?id=7uDI7w5RQA .[18] S.-h. Kao, Y.-W. Tai, and C.-K. Tang. CoT-RVS: Zero-shot chain-of-thought reasoning segmen-tation for videos. In International Conference on Learning Representations (ICLR) , 2026. [19] A. Khoreva, A. Rohrbach, and B. Schiele. Video object segmentation with language referring expressions. In Asian conference on computer vision , pages 123–141. Springer, 2018. [20] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo, P. Dollár, and R. Girshick. Segment anything. In IEEE/CVF International Conference on Computer Vision (ICCV) , 2023. [21] X. Lai, Z. Tian, Y. Chen, Y. Li, Y. Yuan, S. Liu, and J. Jia. LISA: Reasoning segmentation via large language model. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [22] B. Li, Y. Zhang, D. Guo, R. Zhang, F. Li, H. Zhang, K. Zhang, P. Zhang, Y. Li, Z. Liu, et al. Llava-onevision: Easy visual task transfer. arXiv preprint arXiv:2408.03326 , 2024. [23] J. Li, D. Li, S. Savarese, and S. Hoi. BLIP-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In International Conference on Machine Learning (ICML) , 2023. [24] Y. Li, C. Wang, and J. Jia. LLaMA-VID: An image is worth 2 tokens in large language models. In European Conference on Computer Vision (ECCV) , 2024. [25] L. Lin, X. Yu, Z. Pang, and Y.-X. Wang. GLUS: Global-local reasoning unified into a single large language model for video segmentation. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [26] Z. Lin, Y. Wang, and Z. Tang. Training-free open-ended object detection and segmentation via attention as prompts. In Advances in Neural Information Processing Systems (NeurIPS) , 2024. [27] H. Liu, C. Li, Q. Wu, and Y. J. Lee. Visual instruction tuning. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. [28] H. Liu, C. Li, Y. Li, and Y. J. Lee. Improved baselines with visual instruction tuning. In 
+
+IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [29] Z. Liu, Y. Dong, Z. Liu, W. Hu, J. Lu, and Y. Rao. Oryx MLLM: On-demand spatial-temporal understanding at arbitrary resolution. In International Conference on Learning Representations (ICLR) , 2025. [30] S. Ma, Q. Fang, S. Guo, Y. Zhang, and Y. Feng. LLaVA-Mini: Efficient image and video large multimodal models with one vision token. In International Conference on Learning Representations (ICLR) , 2025. [31] M. Maaz, H. Rasheed, S. Khan, and F. S. Khan. Video-ChatGPT: Towards detailed video understanding via large vision and language models. In Annual Meeting of the Association for Computational Linguistics (ACL) , 2024. [32] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark, G. Krueger, and I. Sutskever. Learning transferable visual models from natural language supervision. In International Conference on Machine Learning (ICML) , 2021. 11 [33] H. Rasheed, M. Maaz, S. Shaji, A. Shaker, S. Khan, H. Cholakkal, R. M. Anwer, E. Xing, M.-H. Yang, and F. S. Khan. GLaMM: Pixel grounding large multimodal model. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [34] N. Ravi, V. Gabeur, Y.-T. Hu, R. Hu, C. Ryali, T. Ma, H. Khedr, R. Rädle, C. Rolland, L. Gustafson, E. Mintun, J. Pan, K. V. Alwala, N. Carion, C.-Y. Wu, R. Girshick, P. Dollar, and C. Feichtenhofer. SAM 2: Segment anything in images and videos. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview. net/forum?id=Ha6RTeWMd0 .[35] Z. Ren, Z. Huang, Y. Wei, Y. Zhao, D. Fu, J. Feng, and X. Jin. PixelLM: Pixel reasoning with large multimodal model. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [36] S. Seo, J.-Y. Lee, and B. Han. Urvos: Unified referring video object segmentation network with a large-scale benchmark. In European conference on computer vision , pages 208–223. Springer, 2020. [37] X. Shen, Y. Xiong, C. Zhao, L. Wu, J. Chen, C. Zhu, Z. Liu, F. Xiao, B. Varadarajan, F. Bordes, Z. Liu, H. Xu, H. J. Kim, B. Soran, R. Krishnamoorthi, M. Elhoseiny, and V. Chandra. LongVU: Spatiotemporal adaptive compression for long video-language understanding. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [38] E. Song, W. Chai, G. Wang, Y. Zhang, H. Zhou, F. Wu, H. Chi, X. Guo, T. Ye, Y. Zhang, Y. Lu, J.-N. Hwang, and G. Wang. MovieChat: From dense token to sparse memory for long video understanding. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2024. [39] S. Tong, E. Brown, P. Wu, S. Woo, M. Middepogu, S. C. Akula, J. Yang, S. Yang, A. Iyer, X. Pan, A. Wang, R. Fergus, Y. LeCun, and S. Xie. Cambrian-1: A fully open, vision-centric exploration of multimodal LLMs. In Advances in Neural Information Processing Systems (NeurIPS) , 2024. [40] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin. Attention is all you need. In Advances in Neural Information Processing Systems (NeurIPS) , 2017. [41] P. Wang, S. Bai, S. Tan, S. Wang, Z. Fan, J. Bai, K. Chen, X. Liu, J. Wang, W. Ge, Y. Fan, K. Dang, M. Du, X. Ren, R. Men, D. Liu, C. Zhou, J. Zhou, and J. Lin. Qwen2-VL: En-hancing vision-language model’s perception of the world at any resolution. arXiv preprint arXiv:2409.12191 , 2024. [42] M. Wu, X. Cai, J. Ji, J. Li, O. Huang, G. Luo, H. Fei, G. Jiang, X. Sun, and R. Ji. ControlMLLM: Training-free visual prompt learning for multimodal large language models. In Advances in Neural Information Processing Systems (NeurIPS) , 2024. [43] S. Wu, S. Jin, W. Zhang, L. Xu, W. Liu, W. Li, and C. C. Loy. F-LMM: Grounding frozen large multimodal models. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [44] C. Yan, H. Wang, S. Yan, X. Jiang, Y. Hu, G. Kang, W. Xie, and E. Gavves. Visa: Reasoning video object segmentation via large language models. In European Conference on Computer Vision , pages 98–115. Springer, 2024. [45] A. Yang, B. Yang, B. Hui, et al. Qwen2 technical report. arXiv preprint arXiv:2407.10671 ,2024. [46] J. Zhang, M. Khayatkhoei, P. Chhikara, and F. Ilievski. MLLMs know where to look: Training-free perception of small visual details with multimodal LLMs. In International Conference on Learning Representations (ICLR) , 2025. [47] Y. Zhang, J. Wu, W. Li, B. Li, Z. Ma, Z. Liu, and C. Li. Video instruction tuning with synthetic data. In International Conference on Learning Representations (ICLR) , 2025. 12 [48] J. Zhu, W. Wang, Z. Chen, Z. Liu, S. Ye, L. Gu, H. Tian, Y. Duan, W. Su, J. Shao, et al. InternVL3: Exploring advanced training and test-time recipes for open-source multimodal models. arXiv preprint arXiv:2504.10479 , 2025. [49] Z. Zhu, J. Fan, Z. Liu, and F. Li. Training-free spatio-temporal decoupled reasoning video segmentation with adaptive object memory. In AAAI Conference on Artificial Intelligence (AAAI) , 2026. 13 Appendix 
+
+A Diagnostic Study and Annotation Interface 
+
+To better understand the relationship between semantic reasoning and spatial grounding in LVLMs, we conducted a diagnostic study on the ReasonVOS [ 5] dataset. The goal of this study was to evaluate whether the LVLM can correctly identify the referred object at a semantic level, independent of the quality of the resulting attention maps or segmentation masks. For each sampled video-expression pair, we prompted Qwen2.5VL-7B [ 4] to generate a set of distinguishing attributes describing the referred object, including appearance, position, and motion-related cues. We then manually evaluated whether the generated attributes correctly corresponded to the target object referred to in the expression. To facilitate efficient and consistent annotation, we developed a lightweight graphical user interface, shown in Fig. 6. The interface displays the sampled video clip as an animated GIF together with the referring expression and the attributes generated by the LVLM. Annotators were asked to mark each sample as True if the generated attributes correctly identified the referred object, or False otherwise. A Skip option was also provided for ambiguous cases. The GUI additionally tracks annotation progress and allows rapid navigation between samples. Using this interface, we annotated 132 randomly sampled examples from ReasonVOS, which formed the basis of the diagnostic analysis presented in the main paper. 
+
+Figure 6: GUI interface used for human evaluation of the generated reasoning attributes on Reason-VOS samples. 14 B CoT Prompt for Attribute Extraction 
+
+CoT Prompt for Attribute Extraction     
+
+> Expression: {sent} First, briefly reason about which object in the scene best satisfies this expression — consider the role, function, or intent the expression implies, not just visual similarity to the words. Then list distinguishing attributes (color, size, position, shape, motion) of THAT object only.
+> Respond in EXACTLY this format, nothing else: Reasoning: <one or two short sentences>
+> Attributes: <comma-separated list, max ∼10 words, e.g., ‘large, white, on the right, parked’>
+
+During inference, we employ a lightweight Chain-of-Thought (CoT) prompting step to extract discriminative attributes that guide attention. Given an input expression E, the LVLM is prompted to first reason about the target object and then produce a concise set of attributes describing it. The prompt is designed to encourage the model to move beyond superficial keyword matching and instead identify the target object based on its semantic role and context within the scene. This is particularly important for reasoning-based queries, where the correct object may not be directly described by appearance alone. The extracted attributes serve as a compact and structured representation of the target, which is appended to the original expression and used together with learnable soft prompts to steer attention. Enforcing a strict output format improves the stability of the extracted attributes and reduces noisy or irrelevant responses, leading to more reliable attention guidance. 
+
+C Query Prompt for Attention Extraction 
+
+Query Token Extraction Prompt  
+
+> Expression: {sent} Distinguishing attributes of the target: {attrs}. What is the main object (or objects) referred to in the given expression or question? Use the attributes above to disambiguate from other similar objects. Respond with a single word (e.g., ‘cat’, ‘person’, ‘dog’) that best describes the target object(s).
+
+After obtaining discriminative attributes via the CoT stage (Sec. B), we prompt the LVLM to generate a single query token that represents the target object. This token is subsequently used to extract attention maps via attention rollout. This prompt is designed to produce a concise semantic representation of the target object in the form of a single word. By incorporating the CoT-derived attributes, the model is encouraged to resolve ambiguities and select the correct object category even in the presence of visually similar instances. The generated token serves as the query in the cross-modal attention mechanism. Specifically, we extract the attention between this token and all visual tokens, and propagate it through attention rollout to obtain a spatio-temporal attention map. This design ensures that the attention map is explicitly grounded in the model’s semantic understanding of the target. Constraining the output to a single word improves stability and consistency across samples, and prevents the model from generating verbose or ambiguous descriptions that would degrade the quality of the extracted attention. 
+
+D Implementation Details 
+
+Table 5 summarizes the main hyperparameters used for soft-prompt training, attention-rollout ex-traction, and SAM2-based mask propagation. Unless otherwise stated, all settings are shared across different LVLM backbones. 15 Hyperparameter Value 
+
+Soft prompt tokens Np 64 (canonical) Soft prompt learning rate 5 × 10 −4
+
+Training steps 6500 Effective batch size 4Optimizer AdamW Learning-rate schedule Cosine + warmup Training loss BCE + Dice Input frames 16 Rollout layers 14–27 Video rollout frames Tv 8Frame selection strategy Uniform sampling Point selection strategy Argmax SAM2 backbone sam2_hiera_large 
+
+Fusion metric Pearson correlation Best fusion weight α 0.3 (default) 
+
+Table 5: Hyperparameters used for soft-prompt training, rollout extraction, and SAM2 propagation. 
+
+E Qualitative results Input  
+
+> GT
+> Frame attn
+> Video attn
+> SAM pred
+> Frame attn
+> Video attn
+> SAM pred
+> Expression: a black swan.
+> Raw attention SteerSeg
+
+16 Input 
+
+GT 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Expression: a cow with a bell around its neck. 
+
+> Raw attention SteerSeg
+
+Input 
+
+GT 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Expression: a golden retriever walking in the grass. 
+
+> Raw attention SteerSeg
+
+17 Input 
+
+GT 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Expression: a brown camel in the front. 
+
+> Raw attention SteerSeg
+
+Input 
+
+GT 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Expression: the moving object that is always on the right side of the field of view 
+
+> Raw attention SteerSeg
+
+18 Input 
+
+GT 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Expression: If one accidentally enters the territory of an animal, which one in the video is the most dangerous for the intruder? 
+
+> Raw attention SteerSeg
+
+Input 
+
+GT 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Frame attn 
+
+Video attn 
+
+SAM pred 
+
+Expression: a vehicle moving in the opposite direction to all other vehicles 
+
+> Raw attention SteerSeg
+
+19
