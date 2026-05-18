@@ -6,64 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-16
-- 运行时间：2026-05-16 20:28:26 UTC
+- 最新运行日期：2026-05-18
+- 运行时间：2026-05-18 21:16:55 UTC
 - 运行状态：成功
-- 本次总论文数：14
-- 精读区：3
+- 本次总论文数：17
+- 精读区：6
 - 速读区：11
 
 ### 今日简报（AI）
-今日精选 14 篇前沿论文，重点聚焦测试时计算（Test-Time Compute）在检索增强与机器人策略优化中的突破。
-核心结论指出，通过 Agent 生成程序可显著提升冻结嵌入模型的检索效能，而恢复驱动策略（RePO）则为 VLA 模型带来了更强的容错力。
-建议开发者关注“推理侧计算”对传统任务的重塑，尝试将 Agent 逻辑引入现有的检索或控制工作流中。
-- 详情：[/202605/16/README](/202605/16/README)
+今日深度解析 17 篇 AI 论文，重点攻克扩散策略的精准引导与 VLA 模型的推理加速。
+满分研究通过反馈世界模型强化了扩散策略的导航精度，而 BlockVLA 则实现了自回归模型的高效微调。
+推荐关注具身智能领域中“扩散模型+世界模型”的融合趋势，这是提升机器人作业性能的核心路径。
+- 详情：[/202605/18/README](/202605/18/README)
 
 ### 精读区论文标签
-1. [Test-Time Compute for Dense Retrieval: Agentic Program Generation with Frozen Embedding Models](/202605/16/2605.11374v2-test-time-compute-for-dense-retrieval-agentic-program-generation-with-frozen-embedding-models)  
-   标签：评分：8.5/10、query:tta
-   evidence：无需重训练的冻结嵌入模型测试时间计算
-2. [RePO-VLA: Recovery-Driven Policy Optimization for Vision-Language-Action Models](/202605/16/2605.09410v1-repo-vla-recovery-driven-policy-optimization-for-vision-language-action-models)  
+1. [Feedback World Model Enables Precise Guidance of Diffusion Policy](/202605/18/2605.15705v1-feedback-world-model-enables-precise-guidance-of-diffusion-policy)  
+   标签：评分：10.0/10、query:tta
+   evidence：在推理阶段闭环的反馈世界模型，用于机器人决策
+2. [BlockVLA: Accelerating Autoregressive VLA via Block Diffusion Finetuning](/202605/18/2605.13382v1-blockvla-accelerating-autoregressive-vla-via-block-diffusion-finetuning)  
+   标签：评分：9.0/10、query:tta
+   evidence：通过块扩散微调自适应VLA模型
+3. [COPRA: Conditional Parameter Adaptation with Reinforcement Learning for Video Anomaly Detection](/202605/18/2605.15325v1-copra-conditional-parameter-adaptation-with-reinforcement-learning-for-video-anomaly-detection)  
+   标签：评分：9.0/10、query:tta
+   evidence：视觉语言模型在推理时的条件参数自适应
+4. [Dynamic Execution Commitment of Vision-Language-Action Models](/202605/18/2605.11567v1-dynamic-execution-commitment-of-vision-language-action-models)  
    标签：评分：8.0/10、query:tta
-   evidence：视觉-语言-动作（VLA）模型的策略优化与自适应
-3. [Delta Forcing: Trust Region Steering for Interactive Autoregressive Video Generation](/202605/16/2605.14382v1-delta-forcing-trust-region-steering-for-interactive-autoregressive-video-generation)  
+   evidence：VLA模型在动态或分布外设置下的自适应动作接受机制
+5. [Seg-Agent: Test-Time Multimodal Reasoning for Training-Free Language-Guided Segmentation](/202605/18/2605.12953v1-seg-agent-test-time-multimodal-reasoning-for-training-free-language-guided-segmentation)  
    标签：评分：8.0/10、query:tta
-   evidence：世界模型对动态演变事件条件的自适应
+   evidence：免训练语言引导分割的测试时间多模态推理
+6. [Compositional Video Generation via Inference-Time Guidance](/202605/18/2605.14988v1-compositional-video-generation-via-inference-time-guidance)  
+   标签：评分：8.0/10、query:tta
+   evidence：无需重新训练的冻结模型推理阶段引导
 
 ### 速读区论文标签
-1. [Multi-scale Coarse-to-fine Modeling for Test-time Human Motion Control](/202605/16/2605.14935v1-multi-scale-coarse-to-fine-modeling-for-test-time-human-motion-control)  
-   标签：评分：7.5/10、query:tta
-   evidence：测试时间人体动作合成与控制
-2. [Self-Consolidating Language Models: Continual Knowledge Incorporation from Context](/202605/16/2605.07076v2-self-consolidating-language-models-continual-knowledge-incorporation-from-context)  
+1. [DORA: Dynamic Online Reinforcement Agent for Token Merging in Vision Transformers](/202605/18/2605.11683v1-dora-dynamic-online-reinforcement-agent-for-token-merging-in-vision-transformers)  
    标签：评分：7.0/10、query:tta
-   evidence：将当前上下文写入模型权重的持续上下文整合
-3. [FragileFlow: Spectral Control of Correct-but-Fragile Predictions for Foundation Model Robustness](/202605/16/2605.08896v1-fragileflow-spectral-control-of-correct-but-fragile-predictions-for-foundation-model-robustness)  
+   evidence：ViT中动态标记合并的在线推理框架
+2. [Cluster-Aware Neural Collapse Prompt Tuning for Long-Tailed Generalization of Vision-Language Models](/202605/18/2605.11939v1-cluster-aware-neural-collapse-prompt-tuning-for-long-tailed-generalization-of-vision-language-models)  
    标签：评分：7.0/10、query:tta
-   evidence：大模型鲁棒自适应的理论PAC-Bayes上界
-4. [MIST: Reliable Streaming Decision Trees for Online Class-Incremental Learning via McDiarmid Bound](/202605/16/2605.11617v1-mist-reliable-streaming-decision-trees-for-online-class-incremental-learning-via-mcdiarmid-bound)  
+   evidence：使视觉语言模型自适应类别不平衡的数据集
+3. [Octopus: History-Free Gradient Orthogonalization for Continual Learning in Multimodal Large Language Models](/202605/18/2605.14938v1-octopus-history-free-gradient-orthogonalization-for-continual-learning-in-multimodal-large-language-models)  
    标签：评分：7.0/10、query:tta
-   evidence：用于在线类增量学习的流式决策树
-5. [MMCL-Bench: Multimodal Context Learning from Visual Rules, Procedures, and Evidence](/202605/16/2605.12703v1-mmcl-bench-multimodal-context-learning-from-visual-rules-procedures-and-evidence)  
+   evidence：多模态大语言模型的持续学习与自适应
+4. [Always Learning, Always Mixing: Efficient and Simple Data Mixing All The Time](/202605/18/2605.15220v1-always-learning-always-mixing-efficient-and-simple-data-mixing-all-the-time)  
    标签：评分：7.0/10、query:tta
-   evidence：多模态上下文学习及视觉证据推理的基准测试
-6. [Ergodic Imitation for Adaptive Exploration around Demonstrations](/202605/16/2605.13996v1-ergodic-imitation-for-adaptive-exploration-around-demonstrations)  
+   evidence：自适应过程中数据混合的在线决策
+5. [Is One Score Enough? Rethinking the Evaluation of Sequentially Evolving LLM Memory](/202605/18/2605.15384v1-is-one-score-enough-rethinking-the-evaluation-of-sequentially-evolving-llm-memory)  
    标签：评分：7.0/10、query:tta
-   evidence：针对训练与部署不匹配的自适应在线探索策略
-7. [Is the Future Compatible? Diagnosing Dynamic Consistency in World Action Models](/202605/16/2605.07514v1-is-the-future-compatible-diagnosing-dynamic-consistency-in-world-action-models)  
+   evidence：针对测试时间设置，在不修改模型参数的情况下更新内存
+6. [Think When Needed: Adaptive Reasoning-Driven Multimodal Embeddings with a Dual-LoRA Architecture](/202605/18/2605.14448v1-think-when-needed-adaptive-reasoning-driven-multimodal-embeddings-with-a-dual-lora-architecture)  
    标签：评分：6.5/10、query:tta
-   evidence：诊断世界动作模型中的动态一致性
-8. [Breaking Dual Bottlenecks: Evolving Unified Multimodal Models into Self-Adaptive Interleaved Visual Reasoners](/202605/16/2605.14709v1-breaking-dual-bottlenecks-evolving-unified-multimodal-models-into-self-adaptive-interleaved-visual-reasoners)  
-   标签：评分：6.5/10、query:tta
-   evidence：多模态模型的自适应交织视觉推理器
-9. [SteerSeg: Attention Steering for Reasoning Video Segmentation](/202605/16/2605.14908v1-steerseg-attention-steering-for-reasoning-video-segmentation)  
-   标签：评分：6.5/10、query:tta
-   evidence：使用冻结LVLM进行视频推理分割的免训练接地技术
-10. [Active Testing of Large Language Models via Approximate Neyman Allocation](/202605/16/2605.10075v1-active-testing-of-large-language-models-via-approximate-neyman-allocation)  
+   evidence：多模态大语言模型的自适应推理驱动嵌入
+7. [Empowering VLMs for Few-Shot Multimodal Time Series Classification via Tailored Agentic Reasoning](/202605/18/2605.09395v1-empowering-vlms-for-few-shot-multimodal-time-series-classification-via-tailored-agentic-reasoning)  
    标签：评分：6.0/10、query:tta
-   evidence：从预训练到测试时间缩放的可靠评估
-11. [V-ABS: Action-Observer Driven Beam Search for Dynamic Visual Reasoning](/202605/16/2605.10172v1-v-abs-action-observer-driven-beam-search-for-dynamic-visual-reasoning)  
+   evidence：通过VLM的反射代理推理精炼自进化知识库
+8. [SWIFT: Prompt-Adaptive Memory for Efficient Interactive Long Video Generation](/202605/18/2605.09442v1-swift-prompt-adaptive-memory-for-efficient-interactive-long-video-generation)  
    标签：评分：6.0/10、query:tta
-   evidence：多模态大模型动态视觉推理的自适应加权算法
+   evidence：流式长视频生成的提示自适应记忆
+9. [TB-AVA: Text as a Semantic Bridge for Audio-Visual Parameter Efficient Finetuning](/202605/18/2605.11572v1-tb-ava-text-as-a-semantic-bridge-for-audio-visual-parameter-efficient-finetuning)  
+   标签：评分：6.0/10、query:tta
+   evidence：音视频模型的参数高效自适应框架
+10. [A$_3$B$_2$: Adaptive Asymmetric Adapter for Alleviating Branch Bias in Vision-Language Image Classification with Few-Shot Learning](/202605/18/2605.13161v1-a3b2-adaptive-asymmetric-adapter-for-alleviating-branch-bias-in-vision-language-image-classification-with-few-shot-learning)  
+   标签：评分：6.0/10、query:tta
+   evidence：针对分布外设置下视觉语言模型的自适应非对称适配器
+11. [Continual Fine-Tuning of Large Language Models via Program Memory](/202605/18/2605.13162v1-continual-fine-tuning-of-large-language-models-via-program-memory)  
+   标签：评分：6.0/10、query:tta
+   evidence：通过程序记忆实现大语言模型的持续微调与自适应
 
 
 <div class="dpr-home-promo-card">

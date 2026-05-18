@@ -1,0 +1,248 @@
+Title: DORA: Dynamic Online Reinforcement Agent for Token Merging in Vision Transformers
+
+URL Source: https://arxiv.org/pdf/2605.11683v1
+
+Published Time: Wed, 13 May 2026 01:00:11 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# DORA: Dynamic Online Reinforcement Agent for Token Merging in Vision Transformers 
+
+Kaixuan He 
+
+University of Science and Technology of China, Hefei, China Institute of Artificial Intelligence, Hefei Comprehensive National Science Center 
+
+hekaix@mail.ustc.edu.cn 
+
+Song Chen 
+
+University of Science and Technology of China, Hefei, China 
+
+songch@ustc.edu.cn 
+
+Yi Kang ∗
+
+University of Science and Technology of China, Hefei, China 
+
+ykang@ustc.edu.cn 
+
+## Abstract 
+
+Vision Transformers (ViTs) incur significant computational overhead due to the quadratic complexity of self-attention relative to the token sequence length. While existing token reduction methods mitigate this issue, they predominantly rely on fixed heuristic metrics, predefined ratios, or static offline masks, which lack the adaptability to capture input-dependent redundancy during inference. In this paper, we propose DORA (Dynamic Online Reinforcement Agent), the first reinforcement learning (RL)-driven online inference framework for dynamic token merging in ViTs. We formulate the merging process as a sequential Markov Decision Process (MDP), where a lightweight RL agent determines the merging strategy for each Transformer block based on the current feature state and layer-specific context. To balance computational efficiency and feature fidelity, the agent is optimized via a dense reward function incorporating a non-linear distillation-based penalty. We implement an asymmetric Actor-Critic architecture that utilizes a high-capacity Critic for stable offline training while retaining a minimal Actor head for low-computation online inference. Evaluations across multiple ViT scales (Tiny to Large) demonstrate that DORA improves the accuracy-efficiency Pareto front compared to current baselines. Under strict negligible accuracy-drop constraints (≤ 0.05% ), DORA achieves up to a 12.66% token merging rate, and delivers up to a 569.7% relative improvement over the most efficient baseline. On ImageNet-1K, under aligned accuracy constraints, DORA achieves up to a 76% relative improvement in computational savings compared to state-of-the-art methods. Furthermore, on out-of-distribution (OOD) benchmarks such as ImageNet-A and ImageNet-C, DORA attains a relative efficiency advantage of over 430% .
+
+## 1 Introduction 
+
+Vision Transformers (ViTs)[ 1][ 2][ 3] are widely used in computer vision tasks, but their self-attention mechanism scales quadratically with the number of visual tokens, resulting in high computational 
+
+> ∗Corresponding author. Preprint.
+> arXiv:2605.11683v1 [cs.CV] 12 May 2026
+
+complexity. Processing high-resolution inputs and dense token sequences presents challenges for deployment on resource-constrained devices and in real-time applications. Token pruning and merging methods aim to reduce the number of tokens during the inference process. Existing approaches typically apply static budgeting or fixed heuristics . For example, methods using cosine similarity matching [ 4][ 5] or attention-based scoring [ 6][ 7] execute token reduction under predefined computational budgets, such as fixed keep-ratios or constant layer-wise targets. More recently, offline reinforcement learning strategies [ 8] have emerged that learn pruning masks during the training phase and subsequently apply these static masks during inference; however, this approach lacks the ability to adapt dynamically to the varying characteristics of input data. Applying a uniform reduction intensity assumes constant redundancy across instances. When evaluated on out-of-distribution (OOD) shifts or image corruptions, these static methods exhibit performance drops, as the fixed reduction budget forces the discard of semantic features regardless of the input noise level. In this paper, we propose DORA (Dynamic Online Reinforcement Agent) for dynamic token merging. DORA treats token reduction as an online sequential decision-making process, where the RL agent observes the state of the token sequence and dynamically generates a binary mask to execute token merging actions. The policy in DORA agent is optimized using a reward function that incorporates a non-linear fidelity penalty based on knowledge distillation from an unpruned teacher model, constraining semantic divergence while maximizing token reduction. We evaluate DORA on standard benchmarks as well as OOD datasets. On ImageNet-1K, DORA achieves a 76% relative improvement in computational savings and a significantly higher token merg-ing rate compared to SOTA baselines like ToMe [ 4] under aligned accuracy constraints. Furthermore, on out-of-distribution (OOD) benchmarks such as ImageNet-A and ImageNet-C, DORA expands the relative efficiency advantage to over 430% compared to heuristic methods, which fail to maintain effective reduction under environmental noise. Our primary contributions are summarized as follows: • We propose DORA, the first framework of the online execution of a reinforcement learning agent that can perform dynamic instance-by-instance token merging for vision transformers like ViT without predefined masks or thresholds. • We model token reduction as a sequential decision-making process, and formulate the reduction process as a sequential Markov Decision Process where a lightweight RL agent determines the merging strategy for each Transformer block based on the current feature state. • We evaluate token merging under more complex scenarios including not only standard image datasets but also those involving in distribution shifts and image corruptions. The evaluation shows that DORA makes significant improvements over SOTA on token reduction rate, has higher robustness while incurring a negligible overhead. 
+
+## 2 Related Work 
+
+2.1 Token Reduction in Vision Transformers 
+
+The global self-attention mechanism in Vision Transformers scales quadratically with the number of input tokens. Token reduction techniques address this computational bottleneck through either pruning or merging. Pruning methods identify and discard uninformative patches [ 6, 9]. Merging approaches combine redundant tokens into unified representations to preserve the global information layout [ 4 , 7]. Both paradigms reduce theoretical FLOPs. Their reliance on static assumptions, such as fixed targets or local heuristics, restricts adaptability to varied input distributions. 
+
+2.2 Heuristic and Budget-Constrained Compression 
+
+Existing token reduction methods mostly rely on either fixed heuristics or predefined computational budgets, which significantly constrains their dynamic capacity. 2Heuristic Merging. Methods such as ToMe [ 4] and AdapTiV [ 5] based on cosine similarity to fuse tokens, where AdapTiV [5] utilizes local matching and a simplified sign similarity metric, lowering the computational overhead of the matching process itself. This similarity metric evaluates local feature distances. It does not account for the layer-specific semantic evolution of the network, which can result in sub-optimal token fusion in deeper blocks containing highly abstracted representations. PiToMe [ 10 ] introduces an "energy score" to prioritize the preservation of informative tokens prior to merging, thereby offering enhanced protection for critical features in subsequent layers. DTEM [ 11 ] learns a decoupled token embedding specifically for merging decisions, rather than relying directly on intermediate ViT features, which allows the merging strategy to be individually tailored and optimized. 
+
+Budget-Constrained Dynamic Pruning. Dynamic scoring mechanisms incorporate auxiliary MLP predictors [ 6 ], attention-guided sorting [ 7 ], or zero-shot adaptive thresholding [ 12 ] to evaluate tokens. While these generated scores are input-dependent, the subsequent reduction process inherently relies on a predefined computational budget or keep ratio ( ρ) applied uniformly across all inputs. Aconstant reduction rate assumes identical informational density across different images. Under out-of-distribution (OOD) shifts or image corruptions, enforcing a strict keep ratio causes the inadvertent removal of structural semantic features alongside noise, leading to measured accuracy degradation. 
+
+2.3 Reinforcement Learning for Network Compression 
+
+Recently, V-Pruner [ 8] introduced RL to ViT token reduction. However, this approach is fundamen-tally offline . It utilizes RL merely as an optimization tool during the training phase—based on a small batch of data—to search for a fixed token mask. Once deployed for inference, this static mask is rigidly applied, rendering the reduction strategy entirely input-independent. Unlike this offline method, our proposed DORA introduces an RL-driven online merging paradigm. DORA eliminates the reliance on rigid predefined keep ratios for token selection. During online inference, the RL agent observes the state of the token sequence at each block to generate a binary mask for the specific input. This input-dependent masking provides an adaptive mechanism for balancing computational efficiency with feature integrity. 
+
+## 3 Methodology 
+
+3.1 Problem Formulation and Motivation 
+
+Consider a Vision Transformer (ViT) consisting of L sequential Transformer blocks. The input image is initialized as a sequence of N visual tokens X0 = {x0,1, x 0,2, . . . , x 0,N }, where x0,i ∈ Rd. The self-attention mechanism processes these tokens with a computational complexity of O(N 2 · d),which becomes the primary bottleneck for real-time inference. Traditional token reduction methods typically simplify this as a static selection problem, where a fixed number of tokens are removed based on a predefined budget or heuristic metrics. Formally, they define a mapping f : Xl → X l+1 such that |X l+1 | = ⌊ρ · |X l|⌋ or |X l+1 | = |X l| − r, where ρ and r
+
+are constant hyper-parameters. However, such static paradigms ignore the fact that the optimal token density is highly dependent on the complexity of the input instance and the semantic stage of the network. To overcome these limitations, we formulate the dynamic token merging process as a Sequential Markov Decision Process (MDP) , defined by the tuple (S, A, P, R, γ ). In our framework, DORA functions as an RL agent interacting with the ViT environment across L decision steps: • State Space S: At each block l, the state sl ∈ S encapsulates the global semantic informa-tion of the current token sequence Xl, augmented with the layer-specific context to capture the depth-wise evolution of features. • Action Space A: The action al ∈ A is a binary decision vector M ∈ { 0, 1}N , where each element indicates whether a token should be merged or preserved. Unlike static methods, the cardinality of the merged set is determined dynamically by the agent. 3• Transition Probability P: P(sl+1 |sl, a l) represents the environment’s transition to the next block after performing the merging operation. This transition is deterministic in our setting, governed by the Transformer’s forward pass. • Reward Function R: The reward Rl(sl, a l) is designed to encourage maximal token reduction while minimizing the information loss relative to the original unpruned model’s feature representations. The objective of DORA is to learn an optimal policy π(al|sl) that maximises the expected cumulative reward G = PLl=1 γl−1Rl. By modeling pruning as a sequential decision-making task, DORA can identify the "critical layers" for information aggregation and adapt its reduction intensity to the unique characteristics of each input instance. 
+
+Figure 1: Overall architecture of the proposed DORA framework. The framework employs a decoupled design, consisting of an offline training phase and an online inference phase. During the online phase, a pre-trained lightweight Actor network dynamically generates token merging masks, enabling input-adaptive acceleration for Transformers. In the offline phase, a high-capacity Critic network assists in training and optimizing the Actor’s policy via the PPO algorithm [ 13 ] and a reward based on knowledge distillation. The Critic is discarded after training. 
+
+3.2 State and Action Representation 
+
+To enable input-dependent and layer-adaptive decision-making, we design the state and action representations to balance computational efficiency with representational richness. 
+
+3.2.1 Depth-Aware State Representation 
+
+In our framework, the RL agent does not directly operate on the raw high-dimensional tokens. Instead, it extracts a context-aware state representation Sl to inform its merging decisions. Given the input token sequence Xl ∈ RN ×d, we first apply a linear projection Proj (Xl) to reduce the feature dimension, filtering redundant information. A learnable layer embedding Emb (l) is added to the projected sequence to encode the block index: Emb (l) = E[l, :] (1) where E ∈ RL×d′
+
+is a learnable embedding matrix encompassing all L Transformer blocks, and 
+
+E[l, :] extracts the specific d′-dimensional positional vector for the l-th block. 4The final state Sl is obtained by passing this augmented sequence through a lightweight Transformer encoder: 
+
+Sl = TransformerEncoder (Proj (Xl) + Emb (l)) (2) where Sl ∈ RN ×d′
+
+represents the extracted state at block l. This design ensures that Sl not only captures the unique characteristics of the current instance through Proj (Xl) but also encodes the semantic stage of the network via Emb (l). Consequently, the Actor head can generate precise, input-dependent merging actions based on this refined state representation. This depth-aware representation enables layer-adaptive token reduction. By explicitly conditioning on the layer index l, the policy adapts to the non-uniform distribution of token redundancy across the network. Experimental results show a depth-dependent reduction pattern. While the policy retains a larger number of tokens in the earlier layers, the merging rate increases in the deeper blocks, a shift that correlates with the aggregation of global features. For example, ViT-Tiny exhibits peak merging activity at blocks 6, 8, and 9. The layer embedding provides the necessary positional signal for such layer-adaptive temporal specialization. 
+
+3.2.2 Dynamic Token Merging Action 
+
+For each token xl,i ∈ X l, the Actor network within DORA outputs a binary decision mi ∈ { 0, 1},forming an input-dependent mask M = {m1, m 2, . . . , m N }. Unlike prior works that rely on a fixed budget ρ, the density of M in DORA is entirely determined by the policy π(al|sl) in response to the specific input image. The merging process is then executed via an asymmetric many-to-one aggregation mechanism. Specifically, we partition the current token set into a source set Isrc = {i | mi = 1 } (tokens to be merged) and a destination set Idst = {j | mj = 0 } (tokens to be preserved). For each source token 
+
+i ∈ I src , the agent identifies its most semantically similar counterpart in the destination set based on cosine similarity: 
+
+j∗ = arg max 
+
+> j∈I dst
+
+xl,i · xl,j 
+
+∥xl,i ∥∥ xl,j ∥ (3) The features of the source token xl,i are then aggregated into xl,j ∗ via a weighted average. Unlike strict bipartite matching which enforces one-to-one constraints, our asymmetric formulation allows multiple redundant tokens (e.g., from extensive background regions) to be concurrently fused into a single representative destination token. This asymmetric mapping aggregates all source features into the destination set, avoiding explicit token deletion. This mechanism enables variable reduction rates across different spatial regions. 
+
+3.3 Dense Reward Shaping for Dynamic Pruning 
+
+Formulating the reward function is a critical factor in RL-based token reduction. Sparse reward signals frequently trigger policy collapse, resulting in boundary behaviors such as complete sequence preservation or maximum token removal. To stabilize policy optimization, DORA implements a step-wise reward mechanism. This reward is regularized by a Knowledge Distillation (KD) [ 14 ]constraint, utilizing feature representations from a frozen, unpruned teacher model. At each Transformer block l, the agent receives a step-wise reward Rstep,l . The reward is defined by the number of successfully merged tokens, encouraging the agent to sparsify the sequence. To prevent excessive feature divergence, we introduce a non-linear fidelity penalty: 
+
+Rstep,l = α · nmerge,l − β · max(0 , ∆LKD,l )2 (4) where nmerge,l denotes the number of tokens merged at block l, and ∆LKD,l represents the incre-mental KD loss (feature divergence) induced by the current merging action compared to the teacher model. α and β are scaling factors. The squared penalty term, max(0 , ∆LKD,l )2, functions as a non-linear constraint on the action space. Minor feature deviations yield minimal scalar penalties, permitting higher reduction rates in regions with low representation variance. Conversely, significant deviations from the teacher model incur a quadratic penalty. This mechanism regularizes the policy, preventing actions that heavily alter the original feature structure. 53.4 Asymmetric Actor-Critic Architecture 
+
+DORA employs a decoupled, Asymmetric Actor-Critic [15] architecture. The framework implements an asymmetric parameter allocation between the Actor and Critic net-works. During offline training, the Critic utilizes expanded projection dimensions to compute advantage estimations. It is discarded post-training and excluded from inference. The Actor network is the sole RL component retained for online deployment. Independent of the base ViT architecture size, the Actor projects the input tokens into a 64-dimensional latent space. This state is subsequently processed by a single-layer Transformer encoder. To address the structural discrepancy between the two networks, the Actor and Critic are optimized using decoupled learning rates. This configuration restricts runtime computational overhead to the Actor head while leveraging the larger parameter space of the Critic to stabilize policy gradient updates. 
+
+## 4 Experimental Results 
+
+4.1 Experimental Setup Datasets and Evaluation Metrics. We evaluate the performance of DORA on the standard ImageNet-1K classification benchmark [ 16 ]. To further assess the dynamic adaptation and robustness of our reinforcement learning agent, we conduct comprehensive testing on multiple out-of-distribution (OOD) benchmarks. These include ImageNet-A [ 17 ], which contains natural adversarial examples; 
+
+ImageNet-R [18 ], which features various artistic renditions and stylized images; and three macro-categories ( Weather , Blur , and Digital ) of ImageNet-C [19 ], which encompass a wide range of algorithmic and environmental image corruptions. The primary evaluation metrics are Top-1 accuracy, the absolute FLOPs of the pruned models, and the average token reduction rate per block. 
+
+Model Architectures and Pre-trained Weights. We evaluate two architectures: the ViT [ 1] (Tiny, Small, Base, Large) using AugReg pre-trained weights [ 20 ], and the DeiT [ 2] (Tiny, Small, Base) using hard-distillation variants .
+
+Baselines. We benchmark DORA against established token reduction baselines, categorized into heuristic matching approaches (ToMe [ 4]), learned dynamic pruning methods (ZeroTPrune [ 12 ]), and offline RL strategies (V-Pruner [ 8 ]). All baselines are re-implemented under a unified setup to ensure fair comparison. 
+
+4.2 Main Results on ImageNet-1K 
+
+On the ImageNet-1K validation set, we adjust baseline hyperparameters to align with DORA’s Top-1 accuracy ( ±0.05% ), isolating token compression as the primary metric under equivalent performance constraints. 
+
+Average Token Reduction Rate. Table 1 reports the absolute GFLOPS and token compression metrics. The Tokens Reduction (%) column indicates the average block-wise token reduction rate, defined as the proportion of reduced tokens across all Transformer layers relative to the unpruned sequence length. Under aligned accuracy constraints, DORA achieves the highest token reduction rates across all evaluated architectures. 
+
+Normalized FLOPs and Relative Savings. Figure 2 reports the normalized FLOPs of each method relative to the unpruned baselines. To quantify comparative efficiency, the figure annotates the 
+
+additional relative savings (denoted as +XX% Savings ) of DORA over the most efficient baseline at each model scale. These savings are derived from net FLOPs, incorporating the computational overhead of both the DORA method and the baseline matching algorithms. For the ViT architectures, DORA yields an additional 10% to 14% relative reduction in computational cost. On the DeiT variants, these relative savings expand to a range of 32% to 76% .
+
+Performance under Negligible Accuracy-Drop Constraints. Under a strict maximum accuracy degradation constraint of 0.05% (Table 2), heuristic and fixed-budget methods yield minimal token reduction. Their static reduction mechanisms fuse target-class feature vectors even at low reduction intensities, causing immediate accuracy drops. DORA maintains baseline accuracy while achieving a maximum token reduction rate of 12.66% . On the ViT-Tiny architecture, it delivers a maximum 6Table 1: Quantitative comparison of token reduction methods on ImageNet-1K. We align the Top-1 accuracy of all methods to ensure a fair comparison of computational efficiency. The highest token reduction rate and lowest GFLOPS under identical accuracy constraints are highlighted in bold .
+
+Scale Method ViT DeiT Acc (%) GFLOPS Tokens Red. (%) Acc (%) GFLOPS Tokens Red. (%) Tiny 
+
+Base (Unpruned) 75.5 1.25 0.0 74.5 1.25 0.0 V-Pruner [8] 74.9 1.22 3.1 74.2 1.21 3.6 ZeroTPrune [12] 74.9 1.06 15.4 74.2 1.13 10.1 ToMe [4] 74.9 0.97 23.2 74.2 1.05 16.6 
+
+DORA (Ours) 74.9 0.93 28.5 74.2 0.95 26.6 Small 
+
+Base (Unpruned) 81.4 4.60 0.0 81.2 4.60 0.0 V-Pruner [8] 81.0 4.37 5.1 81.0 4.49 2.5 ZeroTPrune [12] 81.0 3.66 20.4 81.0 3.90 15.3 ToMe [4] 81.0 3.69 19.9 81.0 3.85 16.6 
+
+DORA (Ours) 81.0 3.53 24.1 81.0 3.27 29.7 Base 
+
+Base (Unpruned) 84.6 17.58 0.0 83.3 17.58 0.0 V-Pruner [8] 84.0 16.78 4.6 83.1 16.96 3.6 ZeroTPrune [12] 84.0 13.10 25.5 83.1 14.01 20.3 ToMe [4] 84.0 13.51 23.2 83.1 14.67 16.6 
+
+DORA (Ours) 84.0 12.64 28.4 83.1 12.85 27.2 Large 
+
+Base (Unpruned) 85.8 61.61 0.0 - - -V-Pruner [8] 85.6 59.73 3.1 - - -ZeroTPrune [12] 85.6 49.02 20.4 - - -ToMe [4] 85.6 49.84 19.1 - - -
+
+DORA (Ours) 85.6 47.74 22.7 - - -Tiny Small Base Large   
+
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Normalized FLOPs
+> +14%
+> Savings
+> +14%
+> Savings
+> +10%
+> Savings
+> +10%
+> Savings
+> (a) ViT Models
+> Unpruned
+> V-Pruner
+> ZeroTPrune
+> TOME
+> DORA (Ours)
+> Tiny Small Base
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> +49%
+> Savings
+> +76%
+> Savings
+> +32%
+> Savings
+> (b) DeiT Models
+
+Figure 2: Computational savings comparison of token reduction methods under strictly aligned Top-1 accuracy constraints. (a) Normalized FLOPs results on the ViT architectures. (b) Normalized FLOPs results on the DeiT architectures. Table 2: Token reduction performance under negligible accuracy-drop constraints. We report the average token reduction rate (%) achieved by each method while maintaining a strict accuracy drop constraint ( ∆Top-1 Acc ≤ 0.05% ). The last column denotes the relative gain of DORA compared to the highest-performing baseline. The best results under this negligible-degradation setting are highlighted in bold .
+
+Architecture Model Scale Tokens Reduction (%) ZeroTPrune [12] ToMe [4] DORA (Ours) Rel. Gain ViT 
+
+Tiny 1.52% 0.00% 10.18% +569.7% 
+
+Small 5.33% 3.32% 10.26% +92.5% 
+
+Base 5.33% 6.63% 9.09% +37.1% 
+
+Large 4.57% 6.38% 7.94% +24.5% DeiT 
+
+Tiny 3.05% 6.63% 11.14% +68.0% 
+
+Small 3.05% 3.32% 12.66% +281.3% 
+
+Base 3.81% 6.63% 12.13% +83.0% 
+
+7relative improvement of +569.7% over the strongest competing baseline.This indicates that the input-dependent policy isolates and merges regions of homogeneous backgrounds without altering the structural features required for high-fidelity inference. 
+
+4.3 Robustness to Out-of-Distribution Data 
+
+The robustness of the RL-driven framework is evaluated on multiple OOD datasets: ImageNet-A 
+
+[17 ], ImageNet-R [ 18 ], and ImageNet-C [ 19 ]. Evaluations are conducted under two comparative constraints: aligned token reduction rates and aligned Top-1 accuracy. Table 3: Comprehensive robustness evaluation on Out-of-Distribution (OOD) datasets. We evaluate the methods across natural adversarial examples (ImageNet-A), renditions (ImageNet-R), and three macro-categories of corruptions (ImageNet-C). Under equivalent token reduction rates, DORA consistently maintains higher accuracy. When constrained to match DORA’s accuracy, the heuristic baseline (ToMe[4]) suffers severe degradation in its token reduction capabilities.                                                              
+
+> OOD Benchmark Method Similar Reduction Rate Aligned Accuracy Tokens Red. (%) Acc (%) Acc (%) Tokens Red. (%)
+> Adversarial & Stylized Datasets
+> ImageNet-A ToMe [4] 33.16 8.44 8.99 0.00
+> DORA (Ours) 32.86 9.51 (↑)9.51 32.86 (↑)
+> ImageNet-R ToMe [4] 23.21 31.66 31.74 0.00
+> DORA (Ours) 25.25 32.03 (↑)32.03 25.25 (↑)
+> ImageNet-C Corruptions (Macro-Averages)
+> IN-C (Weather) ToMe [4] 37.81 40.65 42.63 7.30
+> DORA (Ours) 38.98 43.33 (↑)43.33 38.98 (↑)
+> IN-C (Blur) ToMe [4] 39.80 33.91 36.19 18.57
+> DORA (Ours) 40.68 36.22 (↑)36.22 40.68 (↑)
+> IN-C (Digital) ToMe [4] 39.80 46.49 48.59 20.73
+> DORA (Ours) 40.73 48.48 (↑)48.48 40.73 (↑)
+
+Performance under Similar Reduction Rates. Table 3 reports the evaluation results. Under constrained token reduction rates, DORA maintains higher Top-1 accuracy compared to the heuristic baseline across the tested corruption types. This performance indicates that the learned policy filters tokens based on input-dependent structural features rather than relying on standard dataset background patterns. In the presence of input corruption, the agent isolates noise-induced tokens for reduction while preserving the feature vectors of the target class. 
+
+Performance under Aligned Accuracy. The disparity in token selection efficiency becomes apparent when baseline methods are constrained to match the Top-1 accuracy of DORA. To maintain equivalent accuracy on ImageNet-C, the token reduction rate of ToMe decreases to between 7.3% and 20.73%. In contrast, DORA sustains an approximately 38% to 40% token reduction rate. Specifically, on the ImageNet-C (Weather) subset, DORA’s 38.98% reduction rate compared to ToMe’s 7.30% translates to a 434% relative improvement in compression efficiency. Furthermore, on the ImageNet-A and ImageNet-R datasets, the baseline does not attain DORA’s accuracy levels (9.51% and 32.03%, respectively) even when token reduction is completely disabled (0.0% merged). Conversely, the RL policy achieves these accuracies while discarding 32.86% and 25.25% of the tokens, respectively. These results demonstrate that dynamic token merging functions as an effective noise-filtering mechanism for processing OOD data. 
+
+4.4 Visualization and Behavioral Patterns 
+
+Figure 3 visualizes the token merging process across multiple Transformer blocks for the ViT-Tiny, Small, Base, and Large architectures. The sequential sub-images record the spatial distribution of the retained tokens after each block. The visualizations indicate a layer-adaptive merging pattern. Token retention is maximized in the early blocks, corresponding to the processing of local geometric features. Higher merging rates occur in specific deeper blocks, aligning with the network’s transition toward global semantic representations. For instance, the agent actively triggers merging at blocks 6, 8Figure 3: Visualization of the dynamic merging process. Red bounding boxes indicate the specific Transformer blocks where the RL agent executes token merging, with the corresponding block index annotated in the top-right corner. Unmarked images represent blocks where the agent opted for zero-merging actions (bypassing the reduction step). 8, and 9 for ViT-Tiny, and at blocks 3, 5, 6, and 15 for ViT-Large. This non-uniform distribution of merging actions supports the formulation of token merging as a sequential Markov Decision Process (MDP) rather than a constant-ratio schedule. 
+
+4.5 Computational Overhead Analysis 
+
+The layer-wise sparsity mentioned in Section 4.4 facilitates inference acceleration. As evidenced by the unmarked blocks in Figure 3, the policy frequently generates zero-merging actions. At these stages, the Actor network’s forward pass can be completely bypassed to reduce computational overhead. Table 4 details the computational overhead of the DORA method relative to the unpruned backbones. DORA accounts for less than 1% of the total FLOPS for the Small, Base, and Large models, and 2.59% for the Tiny baseline. The FLOPs reported in Section 4.2 incorporate this internal decision-making cost. Table 4: Inference overhead analysis of the DORA method. We report the additional GFLOPS and the percentage relative to the original models.                
+
+> Model Scale Original GFLOPS Overhead (GFLOPS) Overhead Ratio (%)
+> Tiny 1.25 0.032 2.59% Small 4.60 0.038 0.83% Base 17.58 0.050 0.28% Large 61.61 0.097 0.16%
+
+## 5 Conclusion and Future Work 
+
+This paper presents DORA , an online reinforcement learning framework designed for input-dependent token merging in Vision Transformers. By modeling the merging process as a sequential decision-making task, DORA replaces static heuristics with a policy that adapts to the informational density of individual inputs. Experimental results on ImageNet-1K show that DORA achieves up to a 76% relative improvement in computational savings under aligned accuracy constraints. Furthermore, DORA maintains its merging rate under distribution shifts; on multiple out-of-distribution (OOD) benchmarks, the framework sustains high merging rates where heuristic baselines require significant reduction in pruning to preserve accuracy. These findings demonstrate that dynamic, learned token merging effectively balances computational efficiency with model robustness. Future research will focus on extending the RL-driven merging paradigm to Video Transformers 
+
+[21 ][ 22 ] to evaluate its performance on structured, long-range dependencies. Additionally, we plan 9to investigate multi-agent reinforcement learning configurations to jointly optimize pruning and merging operations across different network stages, aiming to further refine the efficiency-accuracy trade-offs in dynamic neural architectures. 
+
+## References 
+
+[1] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale. In International Conference on Learning Representations , 2021. [2] Hugo Touvron, Matthieu Cord, Matthijs Douze, Francisco Massa, Alexandre Sablayrolles, and Hervé Jégou. Training data-efficient Image Transformers & distillation through attention. In 
+
+Proceedings of the International Conference on Machine Learning , pages 10347–10357, 2021. [3] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. Swin Transformer: Hierarchical Vision Transformer using shifted windows. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 10012–10022, 2021. [4] Daniel Bolya, Cheng-Yang Fu, Xiaoliang Dai, Peizhao Zhang, Christoph Feichtenhofer, and Judy Hoffman. Token merging: Your ViT but faster. In International Conference on Learning Representations , 2023. [5] Seungjae Yoo, Hangyeol Kim, and Joo-Young Kim. AdapTiV: Sign-similarity based image-adaptive token merging for Vision Transformer acceleration. In Proceedings of the IEEE/ACM International Symposium on Microarchitecture , pages 64–75, 2024. [6] Yongming Rao, Wenliang Zhao, Benlin Liu, Jiwen Lu, Jie Zhou, and Cho-Jui Hsieh. Dynam-icViT: Efficient Vision Transformers with dynamic token sparsification. In Advances in Neural Information Processing Systems , volume 34, pages 13937–13949, 2021. [7] Youwei Liang, Chongjian Ge, Zhan Tong, Yibing Song, Jue Wang, and Pengtao Xie. Not all patches are what you need: Expediting Vision Transformers via token reorganizations. In 
+
+International Conference on Learning Representations , 2022. [8] Guangzhen Yao, Jiayun Zheng, Zezhou Wang, Wenxin Zhang, Renda Han, Chuangxin Zhao, Zeyu Zhang, and Runhao Liu. V-Pruner: A fast and globally-informed token pruning framework for Vision Transformer. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 34396–34404, 2026. [9] Hongxu Yin, Arash Vahdat, Jose M Alvarez, Arun Mallya, Jan Kautz, and Pavlo Molchanov. A-ViT: Adaptive tokens for efficient Vision Transformer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10809–10818, 2022. [10] Hoai-Chau Tran, Duy M. H. Nguyen, Duy M. Nguyen, Trung Tin Nguyen, Ngan Le, Peng-tao Xie, Daniel Sonntag, James Zou, Binh T. Nguyen, and Mathias Niepert. Accelerating Transformers with spectrum-preserving token merging. In Advances in Neural Information Processing Systems , volume 37, 2024. [11] Dong Hoon Lee and Seunghoon Hong. Learning to merge tokens via decoupled embedding for efficient Vision Transformers. In Advances in Neural Information Processing Systems ,volume 37, 2024. [12] Hongjie Wang, Bhishma Dedhia, and Niraj K. Jha. Zero-TPrune: Zero-shot token pruning through leveraging of the attention graph in pre-trained Transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16070–16079, 2024. [13] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. In Proceedings of the International Conference on Machine Learning , 2017. [14] Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. Distilling the knowledge in a neural network. 
+
+arXiv preprint arXiv:1503.02531 , 2015. 10 [15] Shuli Jiang, Zhaoyang Zhang, Yi Zhang, Shuo Yang, Wei Xia, and Stefano Soatto. Asymmetric actor-critic for multi-turn LLM agents. arXiv preprint arXiv:2604.00304 , 2026. [16] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. ImageNet: A large-scale hierarchical image database. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 248–255, 2009. [17] Dan Hendrycks, Kevin Zhao, Steven Basart, Jacob Steinhardt, and Dawn Song. Natural adversarial examples. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 15262–15271, 2021. [18] Dan Hendrycks, Steven Basart, Norman Mu, Saurav Kadavath, Frank Wang, Evan Dorando, Rahul Desai, Tyler Dymull, Sean Michaels, Maximilian Hunter, et al. The many faces of robustness: A critical analysis of Out-of-Distribution generalization. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 8340–8349, 2021. [19] Dan Hendrycks and Thomas Dietterich. Benchmarking neural network robustness to common corruptions and perturbations. In International Conference on Learning Representations , 2019. [20] Andreas Steiner, Alexander Kolesnikov, Xiaohua Zhai, Ross Wightman, Jakob Uszkoreit, and Lucas Beyer. How to train your ViT? data, augmentation, and regularization in Vision Transformers. Transactions on Machine Learning Research , 2022. [21] Gedas Bertasius, Heng Wang, and Lorenzo Torresani. Is space-time attention all you need for video understanding? In Proceedings of the International Conference on Machine Learning ,pages 813–824, 2021. [22] Ze Liu, Jia Ning, Yue Cao, Yixuan Wei, Zheng Zhang, Stephen Lin, and Han Hu. Video Swin Transformer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 3192–3201, 2022. 11
