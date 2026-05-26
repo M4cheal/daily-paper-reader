@@ -1,0 +1,3258 @@
+Title: Test-Time Training Provably Improves  Transformers as In-context Learners
+
+URL Source: https://openreview.net/pdf?id=bma2FB5MNs
+
+Number of Pages: 30
+
+Markdown Content:
+# Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Halil Alperen Gozeten * 1 Emrullah Ildiz * 1 Xuechen Zhang 1 Mahdi Soltanolkotabi 2 Marco Mondelli 3
+
+Samet Oymak 1
+
+## Abstract 
+
+Test-time training (TTT) methods explicitly up-date the weights of a model to adapt to the spe-cific test instance, and they have found success in a variety of settings, including most recently language modeling and reasoning. To demystify this success, we investigate a gradient-based TTT algorithm for in-context learning, where we train a transformer model on the in-context demonstra-tions provided in the test prompt. Specifically, we provide a comprehensive theoretical characteriza-tion of linear transformers when the update rule is a single gradient step. Our theory (i) delineates the role of alignment between pretraining distri-bution and target task, (ii) demystifies how TTT can alleviate distribution shift, and (iii) quantifies the sample complexity of TTT including how it can significantly reduce the eventual sample size required for in-context learning. As our empirical contribution, we study the benefits of TTT for TabPFN, a tabular foundation model. In line with our theory, we demonstrate that TTT significantly reduces the required sample size for tabular clas-sification (3 to 5 times fewer) unlocking substan-tial inference e ffi ciency with a negligible training cost. 
+
+## 1. Introduction 
+
+Modern language models can be viewed as general-purpose, addressing a diverse range of user queries in a zero-shot fash-ion (Kojima et al., 2022; Wei et al., 2022). However, as the complexity or novelty of the query increases, such as in com-plex multi-step reasoning scenarios, the pretrained model       
+
+> *Equal contribution 1University of Michigan, Ann Arbor
+> 2University of Southern California 3Institute of Science and Tech-nology Austria. Correspondence to: Halil Alperen Gozeten
+> <alperen@umich.edu >.
+> Proceedings of the 42 nd International Conference on Machine Learning , Vancouver, Canada. PMLR 267, 2025. Copyright 2025 by the author(s).
+
+may falter. This has motivated two popular approaches: in-context learning and test-time computation. In-context learning (ICL) incorporates demonstrations related to the query as part of the prompt facilitating better inference by the model (Brown et al., 2020; Min et al., 2022). Test-time computation methods explicitly increase the inference-time compute to elicit higher quality responses (Snell et al., 2024; Jaech et al., 2024). An important instance of test-time com-putation is test-time training (TTT) where the weights of a model are explicitly updated to adapt to specific test in-stances (Sun et al., 2020; Liu et al., 2021). A gradient-based TTT approach can be described as follows: Given a test prompt and a pretrained sequence model, we update the pretrained weights by performing a few gradient iterations on a suitable self-supervised objective (e.g. next-token pre-diction objective). We can then use the resulting model to perform the inference on the test prompt. This procedure is applicable beyond language models, and it is conceptually similar to meta-learning approaches such as model-agnostic meta-learning (Finn et al., 2017). Recently, TTT has found significant success in the context of language modeling by boosting the accuracy and rea-soning capability of state-of-the-art models (Akyürek et al., 2024; Sun et al., 2024). This success is in part due to the fact that TTT can be naturally integrated within in-context learning: We can fine-tune the transformer model to fit to the labels or chain-of-thought rationales provided as part of the in-context demonstrations, and then re-apply ICL on the adapted model. In fact, recent work (Akyürek et al., 2024) utilizes a variation of this procedure and additional data augmentation to obtain remarkable improvements in the ARC reasoning benchmark. This motivates the central question of our work: 
+
+What are the provable benefits of test-time train-ing of transformers, specifically, for enhancing in-context learning? 
+
+Contributions. As our central contribution, we address this question by providing a comprehensive theoretical study of test-time training for one-layer linear transformers. Focus-ing on prompts following a linear dataset model, we provide 1Test-Time Training Provably Improves Transformers as In-context Learners 
+
+a precise risk characterization of TTT with one gradient step update rule . This characterization is established in terms of three ingredients: (i) context length (number of in-context examples during inference) , (ii) target sample size available for TTT in Section 4, and (iii) alignment between the pre-trained model and target task in Section 5. We show that, as sample size increases, TTT can alleviate the distribution shift bottlenecks that arise in standard ICL. This also re-veals regimes where TTT with zero or small initialization is preferable to TTT with the pre-trained model (i.e. cold vs. warm start). Interestingly, our experiments with the GPT2 architecture (Radford et al., 2019) show that multi-layer transformers exhibit behavior in line with our theory. Our theory and experiments demonstrate that one step of TTT yields significant performance gains with less computa-tion, consistent with recent empirical observations (Akyürek et al., 2024) that only a few gradient steps o ff er substantial test-time improvements. Additionally, while standard ICL requires Ω(d) context length under an isotropic task prior, with d denoting feature dimension, we prove that TTT can succeed with o(d) context length by e ff ectively memorizing the target task. Our technical novelty stems from accurately capturing the statistical benefit of TTT during in-context learning. Specifically, while the transformer is trained on a single prompt, we characterize how the sample complex-ity benefit of TTT is proportional to the number of target examples within the prompt. As empirical corroboration of our theory, we explore tab-ular learning and TabPFN (Hollmann et al., 2023; 2025) – a state-of-the-art tabular foundation model pretrained with structural causal model priors. TabPFN is well-aligned with our theoretical setting with similar token encodings but di ff erent prior distributions. An important drawback of TabPFN lies in its inference cost, as it uses a full tab-ular dataset as context during inference. In line with our theory, we demonstrate that TTT can convert TabPFN into a task-specific tabular model that works equally well with significantly less data (up to 5 times fewer). This in turn implies substantial inference gains given that the complexity of softmax-attention is quadratic in the sequence length. 
+
+## 2. Related Work 
+
+We organize our discussion of related work into two main areas: in-context learning and test-time training. 
+
+In-context learning. In-context learning has received sig-nificant interest during the past few years (Brown et al., 2020; Liu et al., 2023; Agarwal et al., 2024). This has also motivated works toward a stronger theoretical under-standing of ICL (Zhang et al., 2024; Mahankali et al., 2024; Ahn et al., 2023b; Xie et al., 2022; Garg et al., 2022; Li et al., 2023). Closer to us, Mahankali et al. (2024); Ahn et al. (2023b); Zhang et al. (2024) study the optimization landscape of a one-layer linear attention model and show that the optimized model implements a single step of pro-jected gradient descent over the in-context demonstrations. More recent works (Lu et al., 2024; Wu et al., 2023) extend these to characterize the pretraining task sample complexity of ICL. While these works focus on pretraining capabili-ties, we focus on the adaptation of the pretrained model to the target task. Additionally, rather than empirical risk minimization, we use gradient descent for adaptation and characterize its risk when the sample size is determined by the target prompt length. In our theoretical model, each to-ken represents a data point containing input features and the target label. Remarkably, TabPFN (Hollmann et al., 2023; 2025) shows that, using this simple encoding and pretrain-ing the model with su ffi ciently rich data priors, transform-ers can accomplish state-of-the-art classification on tabular datasets via in-context learning. There have been also e ff orts (Thomas et al., 2024) to fine-tune in-context tabular models like TabPFN at the dataset level using retrieval-based local context selection. 
+
+Test-time training. Test-time training (Sun et al., 2020; Liu et al., 2021; Gandelsman et al., 2022) and related test-time adaptation (Wang et al., 2021; Niu et al., 2022; Yuan et al., 2023) methods aim to overcome distribution shift bottlenecks. This is typically accomplished by adapting the model with the test example using self-supervised or unsupervised objectives. These methods can work with just a single text example or admit a minibatch of examples. For sequence /language modeling tasks, one can utilize TTT on the test sequence via the next-token prediction objec-tive (Sun et al., 2024; Hardt & Sun, 2024; Hübotter et al., 2025). Specifically, during in-context learning, the query is unlabeled (e.g. math problem to solve), but we are provided with related examples and associated labels (e.g. through retrieval). Thus, we can fit to these labels as the source of supervision (essentially fine-tuning the model on the dataset of in-context examples). For instance, the training objective in Akyürek et al. (2024) utilizes this approach boosted by additional data augmentation. Finally, the computational effi ciency of TTT is an important consideration which moti-vates our investigation of TTT with a single gradient update. 
+
+## 3. Problem Setup 
+
+Notation. Let [ n] denote the set {1, · · · , n} for an integer n ≥
+
+1. We denote vectors and matrices using bold lower-case and upper-case letters, respectively, such as x for vectors and X for matrices. The element xi refers to the i-th entry of the vector x. We represent the zero vector of size n by 0n and the zero matrix of size m × n by 0m×n. The operator 
+
+tr (X) represents the trace of X, X† is its Moore–Penrose pseudoinverse, and ∥X∥2 denotes the spectral norm of X.Given x, y ∈ Rd, the notation [ x y ] ∈ Rd×2 represents the 2Test-Time Training Provably Improves Transformers as In-context Learners 
+
+row-wise concatenation, while [ x; y] ∈ R2d represents the column-wise concatenation. 
+
+In-context learning and test-time training. In-context learning is the ability of the model to learn from demon-strations in the prompt, i.e. in-context . Specifically, given a sequence of demonstrations of desired input /output pairs (x1, y1), (x2, y2), . . . , (xn, yn) ∈ Rd × R followed by a query input x in the prompt, the model can guess the correspond-ing output query y. Concretely, we can define the context tokens zi = [xi; yi] ∈ Rd+1 for i ∈ [n] and the query token 
+
+z = [x; 0] ∈ Rd+1. Then the input prompt can be written in the form 
+
+Z = [z1 · · · zn z]⊤ =
+
+"x1 x2 · · · xn x
+
+y1 y2 · · · yn 0
+
+#⊤
+
+∈ R(n+1) ×(d+1) .
+
+To estimate the output query y, we focus on a se-quence model SM (Z, W) with Z the input prompt and 
+
+W the model parameters. We assume that the sequence model is pre-trained with a token distribution DPT z where (zi)ni=1, [x; y] i.i.d. 
+
+∼ DPT z with the corresponding optimal pa-rameters given by 
+
+W∗ = arg min  
+
+> W
+
+E(zi)ni=1,[x;y]∼D PT z
+
+h(y − SM( Z, W)) 2i . (1) During inference, we test the sequence model on another dis-tribution DTT z and observe k samples of this test distribution 
+
+STT = {(Z j, y j)}kj=1 where y j is the label of the query token inside Z j. The main idea behind Test-Time Training (TTT) is to refine the model’s parameters using the test data STT 
+
+before performing inference. Concretely, the empirical loss of the sequence model on the test set STT with an arbitrary model parameter W is given by ˆLSTT (W) =
+
+> k
+
+X
+
+> j=1
+
+(y j − SM( Z j, W)) 2. (2) One can thus refine W∗ by optimizing the above test-time empirical loss. In this paper, we focus on a TTT strat-egy involving a single gradient descent step over ˆLSTT ,i.e. WTT := W∗ − η∇ ˆLSTT (W∗). The error incurred by the model can then be calculated using the population loss via 
+
+L(W) = E(zi)ni=1,[x;y]∼D TT z
+
+h(y − SM( Z, W)) 2i . (3) Now, we will define the expected loss of the weights WTT 
+
+we achieve after test-time training over all test-time training sets STT :
+
+LT T (WTT ) : = ESTT [L(WTT )] . (4) Our goal is to characterize the loss LT T (WTT ) obtained after test-time training as a function of the number of context samples n, the number of data points in test-time training 
+
+k, the distributions ( DPT z , DTT z ), and the pretrained starting point W∗.
+
+Architecture. We study the one-layer linear attention model as the sequence model: SM( Z, W) = hZW QW⊤ 
+
+> K
+
+Z⊤ ZW V
+
+i 
+
+> n+1,d+1
+
+= x⊤WX ⊤ y, (5) where [ ·]n+1,d+1 denotes the entry ( n + 1, d + 1) of the corre-sponding matrix. Here, the query, key, and value matrices 
+
+WQ, WK , WV ∈ R(d+1) ×(d+1) are defined as 
+
+WQW⊤ 
+
+> K
+
+=
+
+" W 0d×1
+
+01×d 0
+
+#
+
+WV =
+
+"0d×d 0d×1
+
+01×d 1
+
+#
+
+,
+
+and we set the data matrix X ∈ Rn×d and the corresponding labels y ∈ Rn to be: 
+
+X = hx1 . . . xn
+
+i⊤
+
+y = hy1 . . . yn
+
+i⊤
+
+.
+
+Here, we collapse the query and key matrices by identifying the top-left d×d block of WQW⊤ 
+
+> K
+
+∈ R(d+1) ×(d+1) with a single matrix W ∈ Rd×d, and choose the value matrix to retrieve the output of the query token with one-layer linear attention. We note that similar models have been used in prior work (Zhang et al., 2023; Mahankali et al., 2023; Ahn et al., 2023a; Li et al., 2024; 2025) for the theoretical analysis of a variety of phenomena, albeit not for characterizing the benefits of TTT. 
+
+Data model. We consider a linear model with Gaussian data. Specifically, during pre-training, we assume the context tokens zi = [xi; yi] and the query input /output vector [ x; y] to be sampled i.i.d. from the distribution DPT z (Σβ). Concretely, the outputs are generated according to the linear model 
+
+yi = x⊤ 
+
+> i
+
+βPT + ξi, with task parameter βPT ∼ N (0, Σβ), input features xi ∼ N (0, Σx), and noise terms ξi ∼ N (0 , σ 2) for 
+
+i ∈ [n]. During inference, we test the sequence model on a new task parameter βTT with the input prompts generated following the test-time distribution DTT z (βTT ). This test-time distri-bution is governed by a similar linear setting. Concretely, the outputs are generated according to the linear model 
+
+yi = x⊤ 
+
+> i
+
+βTT + ξi, where the input features xi are sampled i.i.d. from the same feature distribution N(0, Σx) and the noise terms are sampled i.i.d. from the same distribution 
+
+N(0 , σ 2). We construct the test-time set STT = {(Z j, y j)}kj=1 by fol-lowing the test-time distribution DTT z (βTT ). We first sample (n + k) query input /output pairs {( ¯xi, ¯yi)}(n+k)
+
+> i=1i.i.d.
+
+∼ D TT z (βTT ). Then, we designate the first n samples as fixed context to-kens across the set, whereas we use the latter k samples as queries in the set. In formulas, 
+
+Z j =
+
+" ¯x1 ¯x2 · · · ¯xn ¯x j+n
+
+¯y1 ¯y2 · · · ¯yn 0 j+n
+
+#⊤
+
+, y j = ¯y j+n ∀ j ∈ [k]. (6) 3Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Remark: Our procedure can be implemented using a single forward-backward pass by putting all examples within the prompt and using a suitable attention mask to ensure that only the first n examples (context examples with labels) attend the last k examples (query examples without labels) and vice versa. This allows for e ffi cient parallel training. This also means that we use a fixed context-query split where the same n examples are used as context during TTT. This can be generalized to a K-fold procedure where all examples are used as both context and query during TTT (as in Akyürek et al. (2024)); however, we opted for the 1-fold option, which is more amenable to a precise statistical analysis. 
+
+Single-step GD for TTT. We now turn our attention to deriving the single-step gradient update over the test set STT .To this aim, we denote by Xcontext and ycontext the context inputs and their outputs, whereas we denote by Xtrain and 
+
+ytrain the training query inputs and their outputs: 
+
+Xcontext = h ¯x1 . . . ¯xn
+
+i⊤
+
+, ycontext = h¯y1 . . . ¯yn
+
+i⊤
+
+,
+
+Xtrain = h ¯xn+1 . . . ¯xn+k
+
+i⊤
+
+, ytrain = h¯yn+1 . . . ¯yn+k
+
+i⊤
+
+.
+
+The following proposition (proved in Appendix A) charac-terizes the single-step GD TTT update. 
+
+Proposition 3.1. Consider the linear attention model with parameters W ∈ Rd×d. Suppose the test-time training loss function is defined as in (2) and define ucontext :=
+
+Xcontext ⊤ ycontext ∈ Rd. Then, for any step size η > 0, the new parameter WTT after one gradient-descent step from W
+
+is given by the rank-1 update 
+
+WTT = W + 2 η Xtrain ⊤ (ytrain − Xtrain W u context ) ucontext ⊤.
+
+In the coming sections, we will start our analysis when the covariance matrices ( Σβ, Σx) are isotropic (Section 4), and then we provide an extension to more general covariance matrices (Section 5). Finally, we corroborate our theoretical results with empirical evidence (Section 6). 
+
+## 4. Analysis for Isotropic Covariances 
+
+In this section, we study the loss LT T (WTT ) induced by a single-step gradient update in the isotropic scenario (Σβ, Σx) = (I, I), for an arbitrary test-time parameter βTT .The assumption of isotropic covariance matrices enables us to explicitly characterize the behavior of the loss as a func-tion of n, d, and k. We first analyze how LT T (WTT ) varies with the number of in-context examples ( n) and the embed-ding dimension ( d). We then compare two distinct choices of W∗, as a function of the test-time training set size k: (i) 
+
+W∗ is obtained from (1) , and (ii) W∗ = 0d×d. The former represents a test-time training approach, whereas the latter corresponds to training from scratch with the single-step gradient update. We start with the characterization of W∗ and its loss L(W∗). 
+
+Proposition 4.1. Let Σβ, Σx = I, σ 2 = 0 and let βTT be an arbitrary new task parameter. Then, the optimal pre-trained model’s parameter W∗ and its population loss are given by 
+
+W∗ = 1
+
+n + d + 1 I, L(W∗) = ∥βTT ∥2 d + 1
+
+n + d + 1 .
+
+The characterization of W∗ is obtained from Li et al. (2024, Corollary 1) and its loss with respect to the new task param-eter βTT is provided in Appendix B for the more general setting with noise term σ2. Due to the technical di ffi culty of analyzing the single-step gradient in the noisy setting and to have manageable expressions, we will focus on the noiseless setting. Given k, n, and d, the loss of the pre-trained parameters, ˆLSTT (W∗), is a random variable with respect to the test-time set STT . Consequently, the loss L(WTT ) is also a random variable dependent on STT . When applying a single-step update to the pre-trained model’s parameters, we define the expectation of the loss L(WTT ) with respect to STT in (4) ,treating it as a function of the step size η. The optimal step size is then selected to minimize the expected test-time training loss. In the following theorem (proved in Appendix B), we present the optimal learning rate and the corresponding improvement in the loss induced by test-time training. 
+
+Theorem 4.2. Let n/d = Θ (1) . Recall the definition of the expected loss LT T (WTT ) with respect to STT in (4) . In the isotropic covariance and noiseless setting ( σ2 = 0), the optimal step-size that minimizes LT T (WTT ) is 
+
+η∗ ≈ d
+
+2( k + d) n2 (n + d) ∥βTT ∥22
+
+.
+
+With this optimal step-size η∗, the improvement in the loss due to the test-time training is 
+
+L(W∗) − L T T (WTT ) ≈ kk + dd3
+
+(n + d)3 ∥βTT ∥22.
+
+Remark 4.3 . We note that in the proportional n, d regime, the Gaussian approximation in Lemma B.1, which is uti-lized in the proof of Theorem 4.2, introduces an error of 
+
+O(n−1). Additionally, during the derivation, we omit lower-order terms (such as 2 n in n2 + 2n), which introduces errors of one degree lower relative to the leading terms. Conse-quently, after carrying these approximations through the entire derivation, the overall approximation error remains at most O(n−1), since the final loss expression is zeroth-order in n, d. Hence, our result is robust to these errors as 
+
+n, d → ∞ while maintaining the ratio α = n/d. The same reasoning also applies to the non-isotropic covariance case, which will be discussed in Section 5. 4Test-Time Training Provably Improves Transformers as In-context Learners 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0        
+
+> =n/d
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Population Loss (Normalized)  Empirical Loss ( = 1)
+> Theoretical Loss ( = 1)
+> Empirical Loss ( = 2)
+> Theoretical Loss ( = 2)
+> Empirical Loss ( = 100)
+> Theoretical Loss ( = 100)
+> Initial Loss
+
+(a) Non-monotonic behavior of the loss L(WTT ) after the test-time-training update with respect to α = n/d for various γ = k/d values. 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00               
+
+> =k/d
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Population Loss (Normalized)  Theoretical Loss ( W*=opt )
+> Empirical Loss ( W*=opt )
+> Theoretical Loss ( W*= 0)
+> Empirical Loss ( W*= 0)
+> Initial Loss ( W*=opt )
+
+(b) Losses L(WTT ) after the test-time-training update as a function of γ = k/d when using optimal pre-trained weights vs. 0d×d (null). 
+
+Figure 1. Plot of the normalized population losses after test-time training when Σx = Σβ = I, σ2 = 0, and the new task is βTT = 1d . Solid lines denote theoretical predictions which match the empirical (markers) results. (a): The figure illustrates a non-monotonic trend as the ratio nd shifts, see Corollary 4.4. Setting: n = 300; the ratio nd changes between 0 .1 and 4; the three lines depict γ = 1, γ = 2, and γ = 100 where γ = k/d; the step size η is selected optimally as per Theorem 4.2. (b): The figure reveals a threshold in k at which the preferable initialization switches from the optimal pre-trained W∗ to the null model 0d×d as k increases. The transition threshold k aligns well with Corollary 4.6. Setting: n = 200; d = 400; k changing between 0 and 4 n with equal increments. 
+
+Theorem 4.2 establishes the improvement produced by the test-time training as a function of k, n, and d. When n and d
+
+are fixed, such improvement is proportional to kk+d . Addi-tionally, if k/d = γ is fixed, the loss LT T (WTT ) exhibits an intriguing behavior as a function of n/d = α, as described by the next corollary (proved in Appendix B). 
+
+Corollary 4.4. Recall the definitions of γ = k/d , α = n/d ,and consider the loss LT T (WTT ) as a function of α in the isotropic covariance and noiseless setting. If γ > 12 , then the loss LT T (WTT ) is non-monotonic in α. Specifically, the loss 
+
+LT T (WTT ) is increasing for α < 
+
+q 3γγ+1 − 1 and decreasing for α > 
+
+q 3γγ+1 − 1. Conversely, if γ < 12 , then LT T (WTT ) is monotonic in α.
+
+The phase transition points described in Corollary 4.4 are approximate but become exact as k, n, and d approach in-finity while maintaining the ratios γ = k/d and α = n/d.The non-monotonic behavior identified in Corollary 4.4 is observed as a result of two opposing e ff ects, which are the initial loss and the improvement by TTT. As n grows against 
+
+d (i.e. α increases), the pre-trained model does better ini-tially and already has a lower loss before TTT, which makes it harder to be further reduced by TTT as the rank-1 update is unable to correct all directions. On the other hand, when 
+
+d grows against n (α decreases), the initial loss is high, pro-viding more room (error) to be corrected by rank-1 update, and thus, the improvement by TTT is larger. This intuition aligns with Theorem 4.2, which establishes that the TTT improvement scales as ( dn+d )3. Together, these two trends result in the non-monotonic behavior. We plot the behavior of the loss LT T (WTT ) as a function of α = n/d for various values of γ = k/d in Figure 1a, making the following three observations: (i) As stated in Theorem 4.2, the improvement achieved through test-time training is approximately proportional to 1 /(α + 1) 3 for large n and d. This behavior is evident in Figure 1a, which shows that for every value of γ, the improvement diminishes as α = n/d increases. (ii) The non-monotonic behavior described Corollary 4.4 is clearly observed in Figure 1a. The increasing /decreasing regions in the loss as a function of α
+
+for di ff erent values of γ are consistent with the theoretical results. (iii) As γ increases, the improvement from the gray curve by test-time training is proportional to the ratio 
+
+γ/ (γ + 1) for a fixed α = n/d. This observation aligns with Theorem 4.2. In addition to the scenario where we begin from an optimally pre-trained model W∗, a natural question is how much im-provement can be achieved when the initial weight matrix 
+
+W∗ = 0d×d (zero initialization). This initialization corre-sponds to training the model from scratch using a single-step gradient descent. In the following theorem, we quantify the improvement gained by applying a single-step gradient descent from this initialization. 
+
+Theorem 4.5. Consider the isotropic covariance and noise-less setting (σ2 = 0) . Suppose the initial weight matrix is W∗ = 0d×d. Then, the optimal step-size that minimizes 
+
+LT T (WTT ) is 
+
+η∗ = 12( k + d + 1) ( n2 + 4n + 3 + d) ∥βTT ∥22
+
+.
+
+With this optimal step-size η∗, the improvement in the loss 
+
+5Test-Time Training Provably Improves Transformers as In-context Learners 
+
+due to test-time training is 
+
+L(W∗) − L T T (WTT ) = kk + d + 1
+
+n2
+
+n2 + 4n + 3 + d ∥βTT ∥22,
+
+where L(W∗) = ∥βTT ∥22.
+
+We provide the proof of Theorem 4.5 in Appendix B, where we also solve the more general noisy setting with initial weight W∗ = 0d×d. If σ2 = O ∥βTT ∥22
+
+ and k grows suf-ficiently faster than d (e.g., k/d → ∞ ), then the test-time training update can reduce the loss to near 0 as k, n, d → ∞ 
+
+with α = n/d = Θ (1). Armed with Theorem 4.2 and 4.5, we can now establish when it is better to initialize with the pre-trained W∗, as opposed to the zero (null) initialization, as the size k of the test-time training set varies. 
+
+Corollary 4.6. Recall the definitions of α = n/d and 
+
+γ = k/d . Consider the setting in Theorem 4.2 and test-time training described in Proposition 3.1 with both pre-trained and zero initializations. Then, under the isotropic covari-ance and noiseless setting, there exists a threshold γ⋆ given by γ ⋆ ≈ (α + 1) 2
+
+(α + 2) such that γ < γ ⋆ if and only if it is better to utilize the pre-trained initialization over the zero initialization 0d×d.
+
+Corollary 4.6 identifies a phase transition point as a function of γ and α that distinguishes the region where test-time training outperforms training from scratch. In Figure 1b, we illustrate the loss LT T (WTT ) as a function of γ = k/d for pre-trained and zero initializations, with a fixed α = n/d = 1/2. Based on Corollary 4.6, the phase transition point for γ is  
+
+> (3 /2) 2
+> 5/2
+
+= 9/10, which aligns with the empirical results. The pre-trained initialization provides a significant advan-tage when the test-time training set is small, as it introduces a strong prior that facilitates better performance. How-ever, as the test-time training set grows, this initialization becomes a limitation because the rank-one update to the pre-trained matrix is insu ffi cient to achieve a near-zero loss. In contrast, with zero initialization, the rank-one update becomes highly e ff ective when the test-time training set is su ffi ciently large, enabling it to achieve near-zero error. This demonstrates that while pre-trained initialization is bene-ficial in data-scarce scenarios, zero initialization is better suited for scenarios with su ffi cient test-time training data. 
+
+## 5. Analysis for General Covariance 
+
+In this section, we extend the previous analysis to the gen-eral case where Σx and Σβ are any jointly diagonalizable covariances. Specifically, we assume the task covariance 
+
+Σβ to be a non-isotropic diagonal matrix while keeping the feature covariance matrix Σx isotropic. 1 This assumption enables us to characterize the loss function LT T (WTT ) with respect to the alignment between the pre-trained initializa-tion matrix W∗ and the new task parameter βTT .We start with the definition of two quantities, which will be used to express the optimal step size and the loss improve-ment via the test-time training. 
+
+Definition 5.1. For an arbitrary W ∈ Rd×d, define A =
+
+βTT ⊤(I − nW)2βTT and B = n ∥βTT ∥22 ∥W∥2 
+
+> F
+
+.Here, the term A represents the misalignment between the test-time task parameter βTT and the initial parameter W,whereas the term B represents the total signal power of the one-layer linear attention system with parameter W.Note that the terms A and B are a function of the new task parameter βTT and the initial weight parameter W.Using the definitions of A and B, we are ready to general-ize Proposition 4.1 to the non-isotropic and rank-deficient covariance matrices. Note that for the rank-deficient co-variance matrix, we take the optimal W∗ as the minimum Frobenius-norm matrix that minimizes the loss in (1). 
+
+Proposition 5.2. Let Σx = I, σ 2 = 0 and suppose Σβ is an arbitrary diagonal covariance matrix with the first rdiagonal entries being non-zero. Then, the minimizer W∗ of the pre-training loss (1) that has minimal Frobenius norm and its population loss are given by 
+
+W∗ = (n + 1) I′ + tr (Σβ)Σ†
+
+> β
+
+†
+
+, L(W∗) ≈ A + B,
+
+where I′ = diag (1r, 0d−r).
+
+We generalize the characterization of W∗ obtained from Li et al. (2024, Corollary 1) to rank-deficient covariance matrices, and its loss with respect to the new task parameter 
+
+βTT is provided in Appendix C. Note that the eigenvalues of W∗ are smaller than 1 /(n + 1) as 
+
+Σβ is a positive semi-definite matrix. This condition ensures the stability of the linear attention model described in (5) as the magnitude of the SM output scales with the context length n when W is fixed. Assuming a similar criterion for the set of W, we provide the optimal step size parameter and the corresponding test-time training loss. 
+
+Theorem 5.3. Let n/d = Θ (1) , Σx = I, and σ2 = 0. Sup-pose that the initial weight matrix W is a diagonal matrix whose eigenvalues are in the interval [0 , 1 
+
+> n+1
+
+].2 Then, the                         
+
+> 1This assumption is equivalent to a more general case where Σx
+> and Σβare jointly diagonalizable, as proved in Appendix C. Joint diagonalizability refers to the case where there exists a unitary matrix Q∈Rd×dsuch that the covariance matrices Σβ=QΛβQ⊤
+> and Σx=QΛxQ⊤can be expressed with diagonal Λβand Λx
+> matrices.
+> 2In the joint diagonalizability case, the restriction on Wcovers the space of Wthat is jointly diagonal with Σβand Σx.
+
+6Test-Time Training Provably Improves Transformers as In-context Learners 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00                                          
+
+> =k/d
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Population Loss (Normalized)  Theoretical Loss ( , 1 ;W*=opt )
+> Empirical Loss ( , 1 ;W*=opt )
+> Theoretical Loss ( , 2 ;W*=opt )
+> Empirical Loss ( , 2 ;W*=opt )
+> Theoretical Loss ( W*= 0)
+> Empirical Loss ( W*= 0)
+> Initial Loss ( , 1 ;W*=opt )
+> Initial Loss ( , 2 ;W*=opt )
+
+(a) Losses after test-time-training as a func-tion of γ = k/d for optimal weights W∗
+
+based on two covariances and also 0d×d .0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00                                          
+
+> =k/d
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> Population Loss (Normalized)  Theoretical Loss ( , 1 ;W*=opt )
+> Empirical Loss ( , 1 ;W*=opt )
+> Theoretical Loss ( , 2 ;W*=opt )
+> Empirical Loss ( , 2 ;W*=opt )
+> Theoretical Loss ( W*= 0)
+> Empirical Loss ( W*= 0)
+> Initial Loss ( , 1 ;W*=opt )
+> Initial Loss ( , 2 ;W*=opt )
+
+(b) Losses after test-time-training vs. γ for optimal weights W∗ with worst /best aligned covariances and 0d×d .0 2 4 6 8 10 
+
+> Gradient Descent Step #
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> Population Loss (Normalized)
+> 1st step
+> Subsequent steps
+> rf=0.2
+> rf=0.4
+> rf=0.6
+> rf=0.8
+> Initial Loss
+
+(c) Comparison of losses after single and multiple steps of gradient descent at test time for di ff erent step size decays. 
+
+Figure 2. Population losses in single and multi-step update scenarios. Σx = I, σ2 = 0 and step sizes are optimal based on the formula in Theorem 5.3. W∗ = opt and W∗ = 0 represent the pre-trained matrix in (1) and zero (null) initialization, respectively. (a): Setting: 
+
+n = 300; d = 600; k changing between 0 and 4 n with equal increments; Σβ,1 = diag (I250 , 0.5 · I250 ); Σβ,2 = diag (0 .5 · I250 , I250 ); 
+
+βTT = h1250 ; 0 .5 · 1250 
+
+i. Solid lines denote theoretical predictions which match the empirical (markers) results. (b): Setting: n = 250; 
+
+d = 500; k changing between 0 and 4 n with equal increments; Σβ,1 = diag (1 , 0499 ); Σβ,2 = diag (0 , I499 ); βTT = h1 ; 0499 
+
+i. (c): The figure illustrates the empirical results, which imply that with the initially optimal step size, a significant improvement can be gained by a single gradient step. Each line depicts a di ff erent reduce factor on the step size η after each gradient step. Setting: n = 50; d = 100; k = 50 × d;
+
+Σβ = I; βTT = 1100 ; W∗ is optimal. 
+
+optimal step size that minimizes the population loss given in (3) after the test-time training update is 
+
+η∗ ≈ A
+
+2( k + d) n2 ∥βTT ∥22 (A + B) .
+
+With this optimal step-size η∗, the improvement in the loss due to test-time training and the initial loss are approxi-mately 
+
+L(W) − L T T (WTT ) ≈ kk + dA2
+
+A + B , L(W) ≈ A + B.
+
+A more general and equivalent version of this result, which applies to any pair of jointly diagonalizable (not necessarily diagonal) covariance matrices Σx and Σβ and to any W that is also jointly diagonalizable with them, can be found in Appendix C. The above approximations are robust and be-come exact as n, d → ∞ while having a fixed ratio n/d; see Remark 4.3. Theorem 5.3 characterizes the improvement due to test-time training for a rather general class of W. It shows that, for fixed ∥W∥2
+
+F , the loss improvement increases monotonically with A. In other words, when the misalign-ment measure A is larger, test-time training achieves greater performance gains. Consequently, considering the optimal pre-trained W∗, if the eigenvalue spectrum of Σβ aligns with the entries of the task βTT (i.e., larger eigenvalues match larger entries), then A is larger and thus yields a bigger improvement. Furthermore, we note that the optimal L(W) over all W ∈
+
+Rd×d is O(n−1) by Lemma C.1. This optimal loss behavior can be achieved through test-time training with the initial parameter satisfying n∥W∥2 < 1 − δ(n, d) for some fixed 
+
+δ(n, d) > 0 as k/d approaches infinity by Theorem 5.3. This means that test-time training achieves the optimal solution when we have zero or small initialization of W as k/d → ∞ .For the remainder of this section, we focus on the op-timal pre-trained W∗ constructed in Proposition 5.2, i.e. the minimum-Frobenius-norm solution of the pre-training loss (1) . When we initialize the pre-trained model weight as W∗, the loss LT T (WTT ) can be computed by combining Proposition 5.2 and Theorem 5.3. When we initialize the weights as W = 0d×d, then the loss LT T (WTT ) is obtained by using the fact that L(0d×d) = ∥βTT ∥22. By combining these results, we identify the phase transition point in the non-isotropic task covariance setting, which determines when test-time training outperforms training from scratch. 
+
+Corollary 5.4. Consider the setting in Theorem 5.3. Recall the definitions of α = n/d and γ = k/d and define c1 =
+
+A
+
+∥βTT ∥22
+
+, c2 = B
+
+∥βTT ∥22
+
+. Then, there exists a phase transition point γ⋆ ≈ (c1 + c2) − (c1 + c2)2
+
+c2 (2 c1 + c2) such that γ < γ ⋆ if and only if it is better to utilize the pre-trained W∗ over the null initialization 0d×d.
+
+In a similar way as Corollary 4.4, the phase transition point mentioned above is approximate for finite k, n, and d, and it becomes exact when k, n, and d approach infinity while keeping the ratios α and γ fixed. We illustrate the findings of Corollary 5.4 in Figures 2a and 2b and make the following three observations: (i) The 7Test-Time Training Provably Improves Transformers as In-context Learners 0 200 400 600 800 1000  
+
+> n(Context length)
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> Accuracy
+
+TabPFN 
+
+TabPFN + TTT 
+
+(a) Accuracy of TabPFN v2 model with and without test-time-training as a function of number of in-context samples n.10 26 × 10 1 2 × 10 2 3 × 10 2 4 × 10 2 
+
+> k(test-time train set size)
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Loss (Normalized)
+
+Scratch 
+
+Pre-train 
+
+(b) Losses after test-time-training for GPT2 comparing pre-trained and scratch models as a function of test-time training set size k.
+
+Figure 3. (a): Accuracy of TabPFN v2 with and without test-time training. Setting: k = 1000; n changing between 1 and 1000. (b): 
+
+Normalized loss after test-time-training with pre-training and zero initialization. Setting: d = 60; n = 40; k changing between 64 and 512 in increments of 64; σ2 = 0.01; Σβ = diag (0 .1 · I25 , 0.5 · I10 , I25 ); Σx = I. We sample βTT from the distribution N(0, ΣβTT ) where 
+
+ΣβTT = diag( I25 , 0.5 · I10 , 0.1 · I25 ). 
+
+phase transition point is monotonic as a function of c1, while keeping c2 fixed, which implies that it is monotonic as a function of the misalignment term A. This means that, as we increase the alignment between the task covariance Σβ
+
+and the new task parameter βTT , the crossing point of the green and blue curves occurs later than that of the green and orange curves, as observed in Figure 2a. (ii) The worst-aligned case over the set of all possible ( Σβ, βTT ) pairs is the one that satisfies βTT ⊤ΣββTT = 0. In this case, the corresponding c1 is equal to 1, which implies that the phase transition point in Corollary 5.4 is less than 0 as c2 > 0. This means that training from scratch is always better than utilizing the test-time training for the worst-aligned case, which is depicted in Figure 2b as the orange curve. (iii) The best-aligned case over the set of all possible ( Σβ, βTT ) pairs is the one that satisfies βTT ⊤ΣββTT /tr (Σβ) = ∥βTT ∥22. In this case, the corresponding c1 scales on the order of n−2
+
+and c2 on the order of n−1, which in turn makes the phase transition point from Corollary 5.4 approximately n. When 
+
+k, n, and d all grow while maintaining the ratios α = n/d and 
+
+γ = k/d fixed, this phase transition point approaches infinity. As a result, test-time training is always better than training from scratch in the best-aligned case, which is depicted in Figure 2b as the blue curve. 
+
+## 6. Experiments 
+
+In this section, we provide empirical results in light of our theoretical insights from previous sections. The first discus-sion of this section focuses on whether further computation via multi-step gradient descent at test time yields significant improvements beyond a single-step update. Then, we focus on tabular learning by demonstrating how test-time training reduces context length for in-context learning on TabPFN. Finally, we demonstrate how the pre-trained model behaves against the scratch model under the test-time-training update for the GPT-2 model in the presence of a distribution shift. 
+
+6.1. Multi-Step Gradient Updates 
+
+In Figure 2c, we investigate the benefits of multiple gradient steps by choosing the optimal single-step size η based on Theorem 4.2, and then applying di ff erent decay factors on step size after each subsequent step. We note that reducing the step size each time is necessary to ensure continued im-provement of the loss. The results in Figure 2c confirm that a single-step test-time-training update can capture signifi-cant improvement, whereas additional steps yield diminish-ing returns compared to the initial step. Consequently, the single-step gradient update o ff ers a favorable trade-o ff with less computation yet with the performance near multi-step finetuning. 
+
+6.2. Experiments on TabPFN 
+
+We demonstrate that test-time training (TTT) can signifi-cantly reduce the context length required for a given per-formance on TabPFN v2 (Hollmann et al., 2025). Specifi-cally, we evaluate the TabPFN v2 model on the The Tremen-dous TabLib Trawl (T4) dataset (Gardner et al., 2024) for a more comprehensive evaluation, which is a large-scale high-quality collection of tabular benchmarks. Following the o ffi cial TabPFN v2 implementation and our theoretical setup, we select the datasets containing at least 1,250 sam-ples (with 1,000 for training, using an 80–20 split), limit 8Test-Time Training Provably Improves Transformers as In-context Learners 
+
+the number of classes to 10 by choosing the most frequent ones, and restrict datasets to 100 randomly selected features. We also convert regression tasks into 10-class classifica-tion tasks based on quantiles to maintain consistency across training and evaluation. For each selected dataset from T4, we evaluate TabPFN v2 with context length n varying from 1 to 1000. For the TabPFN (blue curve in Figure 3a), we directly load the pre-trained model and vary the context win-dow length during evaluation. In contrast, for TabPFN +TTT (orange curve in Figure 3a), we finetune the model using di ff erent context lengths with k = 1000 samples. As the con-text length n decreases, the samples are divided into 1000 /n
+
+groups, where each group undergoes 50 training iterations. We then report the average performance across all datasets with enough training samples. In the previous sections, we have theoretically shown that TTT reduces the required in-context sample size for queries from a new task by performing only a single adaptation step, thus enhancing the e ffi ciency of inference. As empiri-cal corroboration of this, Figure 3a illustrates that TabPFN with test-time-training allows the model with 200 in-context samples to almost match the performance of the TabPFN without test-time-training with 1000 in-context samples. This means that test-time training reduces the number of required samples for tabular classification by about 5 times. It is worth emphasizing that the sample complexity benefit is more evident near the zero-shot regime as TTT helps the model memorize new task dynamics by improving the ac-curacy from 0.2 to 0.45. A log-scaled version of Figure 3a is provided in Appendix D (Figure 4) for a clearer view of performance gains across di ff erent scales of n.
+
+6.3. Experiments on GPT-2 
+
+We demonstrate how the pre-trained model compares against the scratch model under test-time training with distri-bution shift using GPT-2 architecture (Radford et al., 2019), as shown in Figure 3b. Our results are in agreement with Figure 1b. Throughout the experiments, we consider the linear model with Gaussian data following Section 3. In order to obtain a pre-trained model, we sample multiple tasks from the distribution with task covariance Σβ and train the model from scratch on these tasks until convergence. In contrast, in the scratch setting, the model is initialized randomly using the GPT-2 architecture without any pre-training. During test-time training, we evaluate the model on new task parameters sampled from the distribution ΣβTT , where the covariance structure is provided in the caption of Figure 3b. We then apply test-time training to both models by varying the test-time training set size and updating all parameters of the GPT-2 model. The results are averaged over all the new tasks sampled from ΣβTT . Finally, we repeat the entire procedure three times using di ff erent random seeds and report the averaged results. The results in Figure 3b show that using a pre-trained model with TTT is more advantageous when the test-time training set size is small. However, as the training set size increases, training from scratch outperforms the pre-trained model, aligning with Figure 1b. 
+
+## 7. Discussion 
+
+We have developed a theoretical framework to character-ize how a single-step gradient update at test time enhances in-context learning. In the case of an isotropic covariance matrix, we analyzed the improvement in loss under test-time training as a function of the number of in-context samples (n), embedding dimension ( d), and test-time training set size ( k). We then extended our analysis to the non-isotropic covariance case, examining how the alignment between the new task parameter ( βTT ) and the task covariance ma-trix ( Σβ) a ff ects performance. Our results reveal a phase-transition threshold on k in both isotropic and non-isotropic settings, beyond which zero initialization (training from scratch) can outperform pre-trained initialization. Empirical results align well with our theoretical findings, and together they underscore that single-step test-time training o ff ers sig-nificant performance improvements at low computational costs. Overall, our findings highlight test-time training as a lightweight, supervised enhancement to standard in-context learning. As a future direction, one can investigate the analysis of TTT under a more general architecture and data model. Possible extensions to the architecture model might be to analyze the TTT with softmax attention or multilayer atten-tion, whereas possible extensions to the data model might be to analyze K-Fold cross-validation instead of the cur-rent 1-Fold validation approach. Additionally, investigating TTT in unsupervised or semi-supervised in-context learn-ing (ICL) settings presents another promising direction for extending this work. We hope that our results will serve as a foundation for future research on the interaction of TTT and ICL methods. 
+
+## Impact Statement 
+
+This paper presents work on test-time training to provide a stronger understanding of the principles of modern AI mod-els. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 9Test-Time Training Provably Improves Transformers as In-context Learners 
+
+## Acknowledgements 
+
+H.A.G., M.E.I., X.Z., and S.O. were supported in part by the NSF grants CCF2046816, CCF-2403075, CCF-2008020, and the O ffi ce of Naval Research grant N000142412289. M. M. is funded by the European Union (ERC, INF 2, project number 101161364). Views and opinions expressed are, however, those of the author(s) only and do not necessarily reflect those of the European Union or the European Re-search Council Executive Agency. Neither the European Union nor the granting authority can be held responsible for them. M.S. is supported by the Packard Fellowship in Sci-ence and Engineering, a Sloan Research Fellowship in Math-ematics, an NSF-CAREER under award #1846369, DARPA FastNICS program, and NSF-CIF awards #1813877 and #2008443, and NIH DP2LM014564-01. The authors also acknowledge further support from Open Philanthropy, Ope-nAI, Amazon Research, Google Research, and Microsoft Research. 
+
+## References 
+
+Agarwal, R., Singh, A., Zhang, L. M., Bohnet, B., Rosias, L., Chan, S., Zhang, B., Anand, A., Abbas, Z., Nova, A., et al. Many-shot in-context learning. arXiv preprint arXiv:2404.11018 , 2024. Ahn, K., Cheng, X., Daneshmand, H., and Sra, S. Trans-formers learn to implement preconditioned gradient de-scent for in-context learning, 2023a. URL https: //arxiv.org/abs/2306.00297 .Ahn, K., Cheng, X., Daneshmand, H., and Sra, S. Trans-formers learn to implement preconditioned gradient de-scent for in-context learning. Advances in Neural Infor-mation Processing Systems , 36, 2023b. Akyürek, E., Damani, M., Qiu, L., Guo, H., Kim, Y., and An-dreas, J. The surprising e ff ectiveness of test-time training for abstract reasoning. arXiv preprint arXiv:2411.07279 ,2024. Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., et al. Language models are few-shot learners. 
+
+Advances in neural information processing systems , 33: 1877–1901, 2020. Chandrasekaran, V., Recht, B., Parrilo, P. A., and Will-sky, A. S. The convex geometry of linear inverse prob-lems. Foundations of Computational Mathematics , 12 (6):805–849, October 2012. ISSN 1615-3383. doi: 10.1007 /s10208-012-9135-7. URL http://dx.d oi.org/10.1007/s10208-012-9135-7 .Finn, C., Abbeel, P., and Levine, S. Model-agnostic meta-learning for fast adaptation of deep networks. In Interna-tional conference on machine learning , pp. 1126–1135. PMLR, 2017. Gandelsman, Y., Sun, Y., Chen, X., and Efros, A. Test-time training with masked autoencoders. Advances in Neural Information Processing Systems , 35:29374–29385, 2022. Gardner, J., Perdomo, J. C., and Schmidt, L. Large scale transfer learning for tabular data via language modeling. 
+
+arXiv preprint arXiv:2406.12031 , 2024. Garg, S., Tsipras, D., Liang, P. S., and Valiant, G. What can transformers learn in-context? a case study of sim-ple function classes. Advances in Neural Information Processing Systems , 35:30583–30598, 2022. Hardt, M. and Sun, Y. Test-time training on nearest neigh-bors for large language models, 2024. URL https: //arxiv.org/abs/2305.18466 .Hollmann, N., Müller, S., Eggensperger, K., and Hut-ter, F. Tabpfn: A transformer that solves small tab-ular classification problems in a second, 2023. URL 
+
+https://arxiv.org/abs/2207.01848 .Hollmann, N., Müller, S., Purucker, L., Krishnakumar, A., Körfer, M., Hoo, S. B., Schirrmeister, R. T., and Hutter, F. Accurate predictions on small data with a tabular foundation model. Nature , 637(8045):319–326, 2025. doi: 10.1038 /s41586- 024- 08328-6. URL https: //doi.org/10.1038/s41586-024-08328-6 .Hübotter, J., Bongni, S., Hakimi, I., and Krause, A. E ffi -ciently learning at test-time: Active fine-tuning of llms, 2025. URL https://arxiv.org/abs/2410.08020 .Jaech, A., Kalai, A., Lerer, A., Richardson, A., El-Kishky, A., Low, A., Helyar, A., Madry, A., Beutel, A., Car-ney, A., et al. Openai o1 system card. arXiv preprint arXiv:2412.16720 , 2024. Kojima, T., Gu, S. S., Reid, M., Matsuo, Y., and Iwasawa, Y. Large language models are zero-shot reasoners. Ad-vances in neural information processing systems , 35: 22199–22213, 2022. Li, Y., Ildiz, M. E., Papailiopoulos, D., and Oymak, S. Transformers as algorithms: Generalization and stabil-ity in in-context learning. In Proceedings of the 40th International Conference on Machine Learning , volume 202 of Proceedings of Machine Learning Research , pp. 19565–19594. PMLR, 23–29 Jul 2023. URL https: //proceedings.mlr.press/v202/li23l.html .Li, Y., Rawat, A. S., and Oymak, S. Fine-grained analysis of in-context linear estimation: Data, architecture, and beyond. In Globerson, A., Mackey, L., Belgrave, D., Fan, A., Paquet, U., Tomczak, J., and Zhang, C. (eds.), 10 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Advances in Neural Information Processing Systems , vol-ume 37, pp. 138324–138364. Curran Associates, Inc., 2024. URL https://proceedings.neurips.cc/p aper_files/paper/2024/file/f9dc462382fef56 d58279e75de2438f3-Paper-Conference.pdf .Li, Y., Tarzanagh, D. A., Rawat, A. S., Fazel, M., and Oymak, S. Gating is weighting: Understanding gated lin-ear attention through in-context learning. arXiv preprint arXiv:2504.04308 , 2025. Liu, P., Yuan, W., Fu, J., Jiang, Z., Hayashi, H., and Neubig, G. Pre-train, prompt, and predict: A systematic survey of prompting methods in natural language processing. ACM Computing Surveys , 55(9):1–35, 2023. Liu, Y., Kothari, P., Van Delft, B., Bellot-Gurlet, B., Mordan, T., and Alahi, A. Ttt ++ : When does self-supervised test-time training fail or thrive? Advances in Neural Information Processing Systems , 34:21808–21820, 2021. Lu, Y., Letey, M., Zavatone-Veth, J. A., Maiti, A., and Pehle-van, C. In-context learning by linear attention: Exact asymptotics and experiments. In NeurIPS 2024 Workshop on Mathematics of Modern Machine Learning , 2024. Mahankali, A., Hashimoto, T. B., and Ma, T. One step of gradient descent is provably the optimal in-context learner with one layer of linear self-attention, 2023. URL 
+
+https://arxiv.org/abs/2307.03576 .Mahankali, A. V., Hashimoto, T., and Ma, T. One step of gradient descent is provably the optimal in-context learner with one layer of linear self-attention. In The Twelfth International Conference on Learning Representations ,2024. URL https://openreview.net/forum?id= 8p3fu56lKc .Min, S., Lyu, X., Holtzman, A., Artetxe, M., Lewis, M., Hajishirzi, H., and Zettlemoyer, L. Rethinking the role of demonstrations: What makes in-context learning work? 
+
+arXiv preprint arXiv:2202.12837 , 2022. Niu, S., Wu, J., Zhang, Y., Chen, Y., Zheng, S., Zhao, P., and Tan, M. E ffi cient test-time model adaptation with-out forgetting. In International conference on machine learning , pp. 16888–16905. PMLR, 2022. Petersen, K. B. and Pedersen, M. S. The matrix cookbook, nov 2012. URL http://www2.compute.dtu.dk/pu bdb/pubs/3274-full.html . Version 20121115. Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., and Sutskever, I. Language models are unsupervised multitask learners. OpenAI Technical Report , 2019. URL https: //cdn.openai.com/better-language-models/la nguage_models_are_unsupervised_multitask_l earners.pdf .Snell, C., Lee, J., Xu, K., and Kumar, A. Scaling llm test-time compute optimally can be more e ff ective than scal-ing model parameters. arXiv preprint arXiv:2408.03314 ,2024. Sun, Y., Wang, X., Liu, Z., Miller, J., Efros, A., and Hardt, M. Test-time training with self-supervision for generaliza-tion under distribution shifts. In International conference on machine learning , pp. 9229–9248. PMLR, 2020. Sun, Y., Li, X., Dalal, K., Xu, J., Vikram, A., Zhang, G., Dubois, Y., Chen, X., Wang, X., Koyejo, S., et al. Learn-ing to (learn at test time): Rnns with expressive hidden states. arXiv preprint arXiv:2407.04620 , 2024. Thomas, V., Ma, J., Hosseinzadeh, R., Golestan, K., Yu, G., Volkovs, M., and Caterini, A. Retrieval & fine-tuning for in-context tabular models, 2024. URL https://arxiv. org/abs/2406.05207 .Wang, D., Shelhamer, E., Liu, S., Olshausen, B., and Darrell, T. tent: fully test-time adaptation by entropy minimiza-tion. 2021. Wei, J., Bosma, M., Zhao, V., Guu, K., Yu, A. W., Lester, B., Du, N., Dai, A. M., and Le, Q. V. Finetuned lan-guage models are zero-shot learners. In International Conference on Learning Representations , 2022. Wu, J., Zou, D., Chen, Z., Braverman, V., Gu, Q., and Bartlett, P. L. How many pretraining tasks are needed for in-context learning of linear regression? arXiv preprint arXiv:2310.08391 , 2023. Xie, S. M., Raghunathan, A., Liang, P., and Ma, T. An explanation of in-context learning as implicit bayesian inference. In International Conference on Learning Rep-resentations , 2022. URL https://openreview.net /forum?id=RdJVFCHjUMI .Yuan, L., Xie, B., and Li, S. Robust test-time adaptation in dynamic scenarios. In Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition ,pp. 15922–15932, 2023. Zhang, R., Frei, S., and Bartlett, P. L. Trained transformers learn linear models in-context, 2023. URL https://ar xiv.org/abs/2306.09927 .Zhang, R., Frei, S., and Bartlett, P. L. Trained transform-ers learn linear models in-context. Journal of Machine Learning Research , 25(49):1–55, 2024. 11 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+## A. Proofs for Section 3 
+
+Proposition 3.1. Consider the linear attention model with parameters W ∈ Rd×d. Suppose the test-time training loss function is defined as in (2) and define ucontext := Xcontext ⊤ ycontext ∈ Rd. Then, for any step size η > 0, the new parameter 
+
+WTT after one gradient-descent step from W is given by the rank-1 update 
+
+WTT = W + 2 η Xtrain ⊤ (ytrain − Xtrain W u context ) ucontext ⊤.
+
+Proof. We derive the update on the weight matrix W via a single gradient step using the loss function defined over the set 
+
+Ztrain = [Xtrain ytrain ] ∈ Rk×(d+1) . Note that SM (Zi, W) = ¯x⊤ 
+
+> n+i
+
+WX context ⊤ ycontext = ¯x⊤ 
+
+> n+i
+
+Wu context . Then, for the training set 
+
+Ztrain , the vector of predicted values under W is: ˆytrain (W) = Xtrain Wu context ∈ Rk.
+
+Recall the objective given by (2): ˆL(W) =
+
+> n+k
+
+X
+
+> i=n+1
+
+(¯ yi − SM( Zi, W)) 2 =
+
+> n+k
+
+X
+
+> i=n+1
+
+(¯ yi − ¯x⊤ 
+
+> i
+
+Wu context )2 = ∥ytrain − Xtrain Wu context ∥22.
+
+The gradient of ˆ L w.r.t. W is then obtained by di ff erentiating the summation: 
+
+∇W ˆL = −2
+
+> n+k
+
+X
+
+> i=n+1
+
+¯yi − ¯x⊤ 
+
+> i
+
+W u context 
+
+ ¯xi ucontext ⊤ = −2Xtrain ⊤(ytrain − Xtrain Wu context ) ucontext ⊤.
+
+This is a rank-1 update as  Xtrain ⊤(ytrain − Xtrain Wu context ) ucontext ⊤ = pq ⊤ is a rank-1 matrix. Evaluated at W, the update after one gradient step with step size η > 0 becomes: 
+
+WTT = W − η ∇W ˆL(W)
+
+= W + 2η Xtrain ⊤(ytrain − Xtrain Wu context ) ucontext ⊤.
+
+This completes the proof. 
+
+## B. Proofs for Section 4 
+
+Lemma B.1 (Validity of Gaussian Approximation – Isotropic Case) . Let X ∈ Rn×d have i.i.d N(0 , 1) entries and let ∥w∥ = 1.Define q = 1 
+
+> n
+
+X⊤ Xw . q can be written as q = w + g + e such that g ∼ N (0 , Id/n) and e is a residual random variable that obeys 
+
+E[∥e∥2] ≤ 9 · n + dn2 .
+
+Note that e represents a lower order term as we have ∥w∥ = 1 and E[∥g∥2] = d/n. Proof. Set h = Xw ∼ N (0 , In). Let P = I −ww ⊤. Decompose X⊤ = ww ⊤ X⊤ + PX ⊤ and observe that PX ⊤ is independent of 
+
+ww ⊤ X⊤ = wh ⊤. Additionally, introduce independent v ∼ N (0 , In) and set X′⊤ = PX ⊤ + wv ⊤. Finally, set g = √nX′⊤ h/∥h∥
+
+and 
+
+r = PX ⊤ h − g = PX ⊤(h − √nh/∥h∥)
+
+| {z }
+
+> r1
+
+− √nwv ⊤ h/∥h∥
+
+| {z }
+
+> r2
+
+.
+
+To proceed, observe that X′ has i.i.d N(0 , 1) entries and hence g ∼ N (0 , nId). We can write 
+
+X⊤ Xw = X⊤ h = w∥h∥2 + PX ⊤ h = w∥h∥2 + g + r (7) 
+
+= nw + g + r + (∥h∥2 − n)w. (8) Let us now set e′ = r + (∥h∥2 − n)w and investigate E[∥e′∥2]. Recalling r = r1 − r2, we can apply the standard upper bounds 
+
+E[∥e′∥2] ≤ 3 E[( ∥h∥2 − n)2] + 3 E[∥r1∥2] + 3 E[∥r2∥2]. (9) 12 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Next, from standard facts about chi-square random variable with n degrees of freedom, we have E[( ∥h∥2 − n)2] = 2n.Similarly, set ˜h = h − √nh/∥h∥. Note that E[∥ ˜h∥2] = E[( ∥h∥ − √n)2] = 2n − 2 √n E[∥h∥] ≤ 2. This step uses the fact that 
+
+E[∥h∥] =      
+
+> √2Γ(n+12)
+> Γ(n
+> 2)
+
+≥ n√n+1 , which can be obtained by induction as argued in Section 3.1 of (Chandrasekaran et al., 2012). Furthermore, considering that X′ is the sum of two orthogonal vectors, we obtain 
+
+E[∥r1∥2] = E[∥PX ⊤(h − √nh/∥h∥)∥2] ≤ E[∥X′⊤ (h − √nh/∥h∥)∥2] = d E[∥ ˜h∥2] ≤ 2d.
+
+Finally, set z = v⊤ h/∥h∥ ∼ N (0 , 1). We bound 
+
+E[∥r2∥2] ≤ E[∥ √nwz∥2] = n.
+
+Aggregating these, we obtain 
+
+E[∥e′∥2] ≤ 3(2 n + 2d + n) = 9n + 6d.
+
+To conclude, set e = e′/n. After normalizing X⊤ Xw by n and the change of variable g ← g/n with g ∼ N (0 , Id/n), we obtain 
+
+n−1 X⊤ Xw = w + g + e,
+
+such that E[∥e∥2] = E[∥e′∥2]/n2 ≤ 9/n + 6d/n2.
+
+Lemma B.2 (Population Loss Expression) . Consider the linear attention model as the sequence model described in Section 3 with weight matrix W. Suppose that the new task during the test-time training is βTT . In that case, the population loss of the model in (3) with respect to this task is given by: 
+
+L(W) = E(x,y),(xi,yi)∼D TT z (βTT )
+
+ y − x⊤WX ⊤Y2
+
+= βTT ⊤ hΣx − nΣx W Σx − nΣxW⊤ Σx + n(n + 1) ΣxW⊤ΣxWΣx + ntr (W⊤ΣxWΣx)Σx
+
+i βTT + σ2ntr (W⊤ΣxWΣx) + σ2.
+
+Proof. Since the target function f is linear, the labels are given by: 
+
+yi = f (xi) + ξi = βTT ⊤ xi + ξi.
+
+We collect the samples into X ∈ Rn×d and Y ∈ Rn as before, so that: 
+
+Y = XβTT + ξ,
+
+where ξ = (ξ1, . . . , ξ n)⊤ represents noise on the context labels. Recall the prediction by the model: SM( Z, W) = x⊤WX ⊤Y.
+
+Then, we have the following population loss for the new task βTT :
+
+L(W) = E(x,y),(xi,yi)∼D TT z (βTT )
+
+h(x⊤βTT − x⊤WX ⊤Y)2i + σ2.
+
+Since Y = XβTT + ξ, we have: SM( Z, W) = x⊤WX ⊤ XβTT + x⊤WX ⊤ξ.
+
+The error is: 
+
+x⊤βTT − x⊤WX ⊤ XβTT − x⊤WX ⊤ξ = x⊤(βTT − WX ⊤ XβTT ) − x⊤WX ⊤ξ
+
+= x⊤(I − WX ⊤ X) βTT − x⊤WX ⊤ξ.
+
+Therefore, the population loss is equal to: 
+
+L(W) = E(x,y),(xi,yi)∼D TT z (βTT )
+
+ x⊤(I − WX ⊤ X) βTT − x⊤WX ⊤ξ2
+
++ σ2
+
+= EX
+
+
+
+Ex,ξ
+
+ x⊤(I − WX ⊤ X) βTT − x⊤WX ⊤ξ2 
+
++ σ2
+
+13 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+We will first take the expectation with respect to query x and noise vector ξ. Then, using independence, we will take the expectation of the resulting expression with respect to the context matrix X. Expanding the square gives 
+
+x⊤(I − WX ⊤ X) βTT − x⊤WX ⊤ξ2
+
+= (x⊤(I − WX ⊤ X) βTT )2 − 2( x⊤(I − WX ⊤ X) βTT )( x⊤WX ⊤ξ) + (x⊤WX ⊤ξ)2.
+
+Now, let’s consider each of these three terms individually. First of all, the expectation of cross-term is: 
+
+Ex,ξ[−2( x⊤(I − WX ⊤ X) βTT )( x⊤WX ⊤ξ)] = 0.
+
+Besides, since the first term does not depend on ξ, we have: 
+
+Ex,ξ[( x⊤(I − WX ⊤ X) βTT )2] = βTT ⊤(I − WX ⊤ X)⊤Σx(I − WX ⊤ X) βTT .
+
+Consider now the last term ( x⊤WX ⊤ξ)2. Recall that ξ is zero-mean noise with E[ξξ ⊤] = σ2 In, and E[xx ⊤] = Σx. First, condition on x:(x⊤WX ⊤ξ)2 = ξ⊤(XW ⊤ xx ⊤WX ⊤)ξ.
+
+Taking expectation over ξ:
+
+Eξ[( x⊤WX ⊤ξ)2 | x] = σ2tr (XW ⊤ xx ⊤WX ⊤).
+
+Use the cyclic property of trace and the fact that xx ⊤ is rank one: 
+
+tr (XW ⊤ xx ⊤WX ⊤) = tr (xx ⊤WX ⊤ XW ⊤) = x⊤(WX ⊤ XW ⊤)x.
+
+Thus, we obtain: 
+
+Eξ[( x⊤WX ⊤ξ)2 | x] = σ2 x⊤(WX ⊤ XW ⊤)x.
+
+Taking expectation over x yields: 
+
+Ex[x⊤(WX ⊤ XW ⊤)x] = tr (WX ⊤ XW ⊤Σx),
+
+since E[xx ⊤] = Σx. Combining both expectations: 
+
+Ex,ξ[( x⊤WX ⊤ξ)2] = σ2tr (WX ⊤ XW ⊤Σx).
+
+Thus, combining the three terms yields the following expression: 
+
+βTT ⊤(I − WX ⊤ X)⊤Σx(I − WX ⊤ X) βTT + σ2tr (WX ⊤ XW ⊤Σx)Now, we aim to compute the loss function averaged over all possible in-context example sets X:
+
+L(W) = EX
+
+
+
+βTT ⊤ I − W X ⊤ X⊤
+
+Σx
+
+I − W X ⊤ X βTT + σ2tr (WX ⊤ XW ⊤Σx)
+
+
+
++ σ2.
+
+Rewrite the first expression inside the expectation as 
+
+βTT ⊤ A⊤ Σx A βTT where A = I − W X ⊤ X.
+
+Then 
+
+EX
+
+hβTT ⊤ A⊤Σx A βTT 
+
+i = βTT ⊤ EX[A⊤Σx A] βTT .
+
+We can write 
+
+A⊤Σx A = I − X⊤ XW ⊤ Σx
+
+I − WX ⊤ X .
+
+Hence 
+
+EX[A Σx A] = Σx − Σx W E[X⊤ X] − E[X⊤ X]W⊤ Σx + E[( X⊤ X) W⊤ΣxW (X⊤ X)] .
+
+We know that E[X⊤ X] = n Σx, thus, our expression becomes: 
+
+EX[A Σx A] = Σx − nΣx W Σx − nΣxW⊤ Σx + E[( X⊤ X) W⊤ΣxW (X⊤ X)] .
+
+Using Lemma B.3, we know the following fact: 
+
+EX
+
+h(X⊤ X) M (X⊤ X)i = n(n + 1) Σx MΣx + ntr (MΣx)Σx.
+
+14 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Finally, the overall expression becomes: 
+
+EX[A Σx A] = Σx − nΣx W Σx − nΣxW⊤ Σx + n(n + 1) ΣxW⊤ΣxWΣx + ntr (W⊤ΣxWΣx)Σx.
+
+Adding the constant terms to the expectation gives: 
+
+βTT ⊤ hΣx − nΣx W Σx − nΣxW⊤ Σx + n(n + 1) ΣxW⊤ΣxWΣx + ntr (W⊤ΣxWΣx)Σx
+
+i βTT .
+
+Now that we have calculated the expectation of the first term, let’s focus on the noise term involving trace inside the expectation. We have: 
+
+EX
+
+htr (WX ⊤ XW ⊤Σx)i = ntr (W⊤ΣxWΣx).
+
+As a result, we arrive at the final expression: 
+
+L(W) = EX,(x,y)∼D 
+
+ (x⊤βTT + ξ − x⊤WX ⊤Y2
+
+= βTT ⊤ hΣx − nΣx W Σx − nΣxW⊤ Σx + n(n + 1) ΣxW⊤ΣxWΣx + ntr (W⊤ΣxWΣx)Σx
+
+i βTT 
+
++ σ2ntr (W⊤ΣxWΣx) + σ2.
+
+Lemma B.3. Let X ∈ Rn×d be a random matrix whose rows xi ∈ Rd, for i = 1, . . . , n, are i.i.d. drawn from N (0, Σ). Let 
+
+M ∈ Rd×d be any fixed symmetric matrix. Then, under these assumptions, 
+
+EX
+
+h(X⊤ X) M (X⊤ X)i = n(n + 1) Σ M Σ + n tr (M Σ) Σ.
+
+Proof. We can write the matrix X⊤ X as: 
+
+X⊤ X =
+
+> n
+
+X
+
+> i=1
+
+xi x⊤ 
+
+> i
+
+.
+
+Therefore, (X⊤ X) M (X⊤ X) =
+
+
+
+> n
+
+X
+
+> i=1
+
+xi x⊤
+
+> i
+
+ M
+
+
+
+> n
+
+X
+
+> j=1
+
+x j x⊤
+
+> j
+
+ =
+
+> n
+
+X
+
+> i=1
+> n
+
+X
+
+> j=1
+
+xi
+
+x⊤ 
+
+> i
+
+M x j
+
+ x⊤ 
+
+> j
+
+.
+
+Taking expectation over X, we split the sum into the diagonal part ( i = j) and the o ff -diagonal part ( i , j): 
+
+EX
+
+h(X⊤ X) M (X⊤ X)i =
+
+> n
+
+X
+
+> i=1
+
+E hxi (x⊤ 
+
+> i
+
+M x i) x⊤
+
+> i
+
+i| {z }
+
+> (i) diagonal terms
+
++
+
+X 
+
+> i,j
+
+E hxi (x⊤ 
+
+> i
+
+M x j) x⊤
+
+> j
+
+i| {z }
+
+> (ii) o ff -diagonal terms
+
+.
+
+(i) Diagonal Terms ( i = j). Each xi ∼ N (0 , Σ), so we set 
+
+E hxi(x⊤ 
+
+> i
+
+M x i) x⊤
+
+> i
+
+i = E h x⊤ 
+
+> i
+
+M x i
+
+ xi x⊤
+
+> i
+
+i .
+
+Recall the standard result, which follows from Wick’s Theorem (Petersen & Pedersen, 2012)[Section 8.2.4] for a zero-mean Gaussian x ∼ N (0, Σ) and any symmetric matrix A:
+
+E hx(x⊤ A x ) x⊤i = 2ΣAΣ + tr (AΣ)Σ.
+
+Substituting A = M, it follows that 
+
+E hxi(x⊤ 
+
+> i
+
+M x i) x⊤
+
+> i
+
+i = 2ΣMΣ + tr (M Σ)Σ.
+
+Since we have n diagonal terms, summing over i = 1, . . . , n yields 
+
+> n
+
+X
+
+> i=1
+
+E hxi (x⊤ 
+
+> i
+
+M x i) x⊤
+
+> i
+
+i = n [2 ΣMΣ + tr (M Σ)Σ] .
+
+15 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+(ii) O ff -Diagonal Terms ( i , j). For i , j, the vectors xi and x j are independent. Then, 
+
+E hxi
+
+x⊤ 
+
+> i
+
+M x j
+
+ x⊤
+
+> j
+
+i = E[xi x⊤ 
+
+> i
+
+]M E[x j x⊤ 
+
+> j
+
+] = ΣMΣ.
+
+Hence, considering that we have n diagonal terms and n(n − 1) o ff -diagonal terms, combining (i) + (ii) gives: 
+
+EX
+
+h(X⊤ X) M (X⊤ X)i = n [2 ΣMΣ + tr (M Σ)Σ] + n(n − 1) ΣMΣ = n(n + 1) ΣMΣ + ntr (M Σ)Σ.
+
+This completes the proof. 
+
+Proposition 4.1. Let Σβ, Σx = I, σ 2 = 0 and let βTT be an arbitrary new task parameter. Then, the optimal pre-trained model’s parameter W∗ and its population loss are given by 
+
+W∗ = 1
+
+n + d + 1 I, L(W∗) = ∥βTT ∥2 d + 1
+
+n + d + 1 .
+
+Proof. Recall the loss expression from Lemma B.2: 
+
+L(W) = βTT ⊤ hΣx − nΣx W Σx − nΣxW⊤ Σx + n(n + 1) ΣxW⊤ΣxWΣx + ntr (W⊤ΣxWΣx)Σx
+
+i βTT + σ2ntr (W⊤ΣxWΣx) + σ2.
+
+We will simplify the expression under the assumptions Σx, Σβ = I and W∗ = 1 
+
+> n+d+1+σ2
+
+I, where the optimal pre-trained W∗
+
+follows from Theorem 1 of Li et al. (2024). The first expression of interest is: 
+
+Σx − nΣx W Σx − nΣxW⊤ Σx + n(n + 1) ΣxW⊤ΣxWΣx + ntr (W⊤ΣxWΣx)Σx.
+
+Substituting Σx and W∗ yields: 
+
+I − nn + d + 1 + σ2 I − nn + d + 1 + σ2 I + n(n + 1) (n + d + 1 + σ2)2 I + nd 
+
+(n + d + 1 + σ2)2 I
+
+= (d + 1 + σ2 − n)( n + d + 1 + σ2) + n(n + d + 1) (n + d + 1 + σ2)2 I
+
+= (d + 1 + σ2)( n + d + 1 + σ2) − σ2n
+
+(n + d + 1 + σ2)2 I.
+
+In addition, the noise term is: 
+
+σ2ntr (W∗⊤ ΣxW∗Σx) = σ2 n d 
+
+(n + d + 1 + σ2)2 .
+
+Combining these, the final closed-form loss is 
+
+L(W∗) = ∥βTT ∥2 (d + 1 + σ2)( n + d + 1 + σ2) − σ2n
+
+(n + d + 1 + σ2)2 + σ2 n d 
+
+(n + d + 1 + σ2)2 + σ2.
+
+Finally, setting σ2 = 0 in this expression yields the desired result. 
+
+Theorem 4.2. Let n/d = Θ (1) . Recall the definition of the expected loss LT T (WTT ) with respect to STT in (4) . In the isotropic covariance and noiseless setting ( σ2 = 0), the optimal step-size that minimizes LT T (WTT ) is 
+
+η∗ ≈ d
+
+2( k + d) n2 (n + d) ∥βTT ∥22
+
+.
+
+With this optimal step-size η∗, the improvement in the loss due to the test-time training is 
+
+L(W∗) − L T T (WTT ) ≈ kk + dd3
+
+(n + d)3 ∥βTT ∥22.
+
+16 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Proof. We consider the noiseless ( σ2 = 0) and isotropic case where Σx = Σβ = I. Throughout the proof, we omit lower order terms like +1 in ( d + 1) or 2 n in ( n2 + 2n) as they’re negligible compared to the higher order of the same variable (see Remark 4.3 for error discussion). This convention allows us to simplify the subsequent expressions. Now, we aim to calculate the expected gain in the loss with respect to ( n + k) samples used during the test-time training process. That is, we will take the expectation of the loss function given by Lemma B.2 and compute L(W∗) − L T T (WTT ) =
+
+EXtrain ,Xcontext [∆L] where ∆L is given by: 
+
+∆L = L(W∗) − L (WTT )
+
+= βTT ⊤ hΣx − nΣx W∗ Σx − nΣxW∗⊤ Σx + n(n + 1) ΣxW∗⊤ ΣxW∗Σx + ntr (W∗⊤ ΣxW∗Σx)Σx
+
+i βTT 
+
+− βTT ⊤ hΣx − nΣx WTT Σx − nΣxWTT ⊤ Σx + n(n + 1) ΣxWTT ⊤ΣxWTT Σx + ntr (WTT ⊤ΣxWTT Σx)Σx
+
+i βTT 
+
+= βTT ⊤ h n Σx (WTT − W∗) Σx + n Σx
+
+WTT ⊤ − W∗⊤  Σx + n(n + 1) Σx
+
+W∗⊤ Σx W∗ − WTT ⊤ Σx WTT 
+
+ Σx
+
++n tr (W∗⊤ Σx W∗ Σx) − tr (WTT ⊤ Σx WTT Σx) Σx
+
+i βTT . (10) In the noiseless and Σx = Σβ = I case, the optimal pre-trained W∗ becomes W∗ = 1 
+
+> n+d+1
+
+I as shown in Theorem 1 of Li et al. (2024). Recall that when there’s no noise and the linear task is βTT , the gradient update given by Proposition 3.1 becomes: 
+
+WTT = W∗ + 2ηXtrain ⊤ Xtrain (βTT − W∗ Xcontext ⊤ Xcontext βTT ) βTT ⊤ Xcontext ⊤ Xcontext .
+
+A key technical challenge while using the above update is that the expectation of ∆L in (10) involves 8 th moments of 
+
+Xcontext . To overcome this problem, we will use the Gaussian approximation following Lemma B.1 by approximating 
+
+Xcontext ⊤ Xcontext βTT ≈ nΣx βTT + √n Σ1/2 
+
+> x
+
+g where g ∼ N (0, ∥βTT ∥2 I). This non-isotropic form can be obtained by factoring out Σ1/2 
+
+> x
+
+and reducing the problem to the isotropic case from Lemma B.1. Also define ∆W := WTT − W∗. Then, using the approximation and the fact that Σx = I, we can write: 
+
+∆W = 2ηXtrain ⊤ Xtrain βTT − nn + d + 1 Σx βTT −√nn + d + 1 Σ1/2 
+
+> x
+
+g
+
+! nβTT ⊤Σx + √ng⊤Σ1/2
+
+> x
+
+
+
+= 2ηXtrain ⊤ Xtrain n βTT βTT ⊤Σx + √n βTT g⊤Σ1/2 
+
+> x
+
+− n2
+
+n + d + 1 Σx βTT βTT ⊤Σx − n √nn + d + 1 Σx βTT g⊤Σ1/2
+
+> x
+
+− n √nn + d + 1 Σ1/2 
+
+> x
+
+g βTT ⊤Σx − nn + d + 1 Σ1/2 
+
+> x
+
+gg ⊤Σ1/2
+
+> x
+
+!
+
+= 2ηXtrain ⊤ Xtrain 
+
+n(d + 1) 
+
+n + d + 1 βTT βTT ⊤ +
+
+√n(d + 1) 
+
+n + d + 1 βTT g⊤ − n √nn + d + 1 g βTT ⊤ − nn + d + 1 gg ⊤
+
+!
+
+∆W⊤ = 2η n(d + 1) 
+
+n + d + 1 βTT βTT ⊤ +
+
+√n(d + 1) 
+
+n + d + 1 g βTT ⊤ − n √nn + d + 1 βTT g⊤ − nn + d + 1 gg ⊤
+
+!
+
+Xtrain ⊤ Xtrain .
+
+Notice that plugging Σx = I in Equation (10), we observe the following di ff erence term in two of the expressions: 
+
+W∗⊤ W∗ − WTT ⊤WTT = W∗⊤ Σx W∗ − (W∗⊤ + ∆ W⊤) Σx (W∗ + ∆ W)
+
+= −W∗⊤ ∆W − ∆W⊤W∗ − ∆W⊤∆W.
+
+Hence, we need to calculate both first-order expectations EXtrain ,g [∆W] , EXtrain ,g
+
+∆W⊤ and second-order expectation 
+
+EXtrain ,g
+
+∆W⊤∆W. By direct calculation, we obtain: 
+
+EXtrain ,g [∆W] = 2ηk n(d + 1) 
+
+n + d + 1 βTT βTT ⊤ − nn + d + 1 ∥βTT ∥22 I
+
+!
+
+= EXtrain ,g
+
+h∆W⊤i . (11) For the second-order expectation EXtrain 
+
+Xtrain ⊤ Xtrain Xtrain ⊤ Xtrain 
+
+, we will benefit from the fact that EX
+
+(X⊤ X)( X⊤ X) =
+
+k(k + 1) Σ2 + ktr (Σ)Σ where X ∈ Rk×d and its rows are drawn i.i.d from N(0 , Σ). This result follows by plugging M = I
+
+into Lemma B.3. In our setting, Σx = I, which gives 
+
+EXtrain 
+
+hXtrain ⊤ Xtrain Xtrain ⊤ Xtrain 
+
+i = k(k + d + 1) I.
+
+17 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Using the above result, we obtain: 
+
+EXtrain ,g
+
+h∆W⊤∆Wi
+
+= 4η2 Eg
+
+" n(d + 1) 
+
+n + d + 1 βTT βTT ⊤ +
+
+√n(d + 1) 
+
+n + d + 1 g βTT ⊤ − n √nn + d + 1 βTT g⊤ − nn + d + 1 gg ⊤
+
+!
+
+k(k + d + 1) I
+
+n(d + 1) 
+
+n + d + 1 βTT βTT ⊤ +
+
+√n(d + 1) 
+
+n + d + 1 βTT g⊤ − n √nn + d + 1 g βTT ⊤ − nn + d + 1 gg ⊤
+
+!# 
+
+= 4η2k(k + d + 1) Eg
+
+" n(d + 1) 
+
+n + d + 1 βTT βTT ⊤ +
+
+√n(d + 1) 
+
+n + d + 1 g βTT ⊤ − n √nn + d + 1 βTT g⊤ − nn + d + 1 gg ⊤
+
+!
+
+n(d + 1) 
+
+n + d + 1 βTT βTT ⊤ +
+
+√n(d + 1) 
+
+n + d + 1 βTT g⊤ − n √nn + d + 1 g βTT ⊤ − nn + d + 1 gg ⊤
+
+!# 
+
+= 4η2 k(k + d + 1) n
+
+(n + d + 1) 2 Eg
+
+h √n(d + 1) βTT βTT ⊤ + (d + 1) g βTT ⊤ − n βTT g⊤ − √ngg ⊤  √n(d + 1) βTT βTT ⊤
+
++(d + 1) βTT g⊤ − ng βTT ⊤ − √ngg ⊤i 
+
+= 4η2 k(k + d + 1) n
+
+(n + d + 1) 2 Eg
+
+hn(d + 1) 2∥βTT ∥22 βTT βTT ⊤ − n(d + 1) βTT βTT ⊤ gg ⊤ + (d + 1) 2∥βTT ∥22 gg ⊤
+
++n2∥g∥22 βTT βTT ⊤ − n(d + 1) gg ⊤ βTT βTT ⊤ − n(d + 1) βTT βTT ⊤ gg ⊤ − n(d + 1) gg ⊤ βTT βTT ⊤ + ngg ⊤ gg ⊤i
+
+= 4η2 k(k + d + 1) n
+
+(n + d + 1) 2
+
+hn(d + 1) 2∥βTT ∥22 βTT βTT ⊤ − n(d + 1) ∥βTT ∥22 βTT βTT ⊤ + (d + 1) 2∥βTT ∥42 I
+
++n2d∥βTT ∥22 βTT βTT ⊤ − 3n(d + 1) ∥βTT ∥22 βTT βTT ⊤ + n(d + 2) ∥βTT ∥42 Ii
+
+= 4η2 k(k + d + 1) n
+
+(n + d + 1) 2
+
+hn (( d + 1)( d − 3) + nd ) ∥βTT ∥22 βTT βTT ⊤ + (d + 1) 2 + n(d + 2)  ∥βTT ∥42 Ii .
+
+Applying the first-order expectation results from (11), we obtain that the first two terms of the loss di ff erence are: 
+
+EXtrain ,g
+
+h βTT ⊤n Σx (WTT − W∗) Σx βTT 
+
+i = 2ηkn n(d + 1) 
+
+n + d + 1 ∥βTT ∥42 − nn + d + 1 ∥βTT ∥42
+
+!
+
+= 2ηkn nd n + d + 1 ∥βTT ∥42, (12) 
+
+EXtrain ,g
+
+h βTT ⊤n Σx
+
+WTT ⊤ − W∗⊤  Σx βTT 
+
+i = 2ηkn nd n + d + 1 ∥βTT ∥42. (13) The other two terms in Equation (10) are: 
+
+EXtrain ,g
+
+h βTT ⊤n(n + 1) Σx
+
+W∗⊤ Σx W∗ − WTT ⊤ Σx WTT 
+
+ Σx βTT 
+
+i
+
+= n(n + 1) βTT ⊤ EXtrain ,g
+
+h−W∗⊤ ∆W − ∆W⊤W∗ − ∆W⊤∆Wi βTT 
+
+= −4ηkn (n + 1) nd 
+
+(n + d + 1) 2 ∥βTT ∥42 − 4η2 k(k + d + 1) n2(n + 1) (n + d + 1) 2
+
+hn d2 − 2d − 3 + nd  ∥βTT ∥62 + (d + 1) 2 + n(d + 2)  ∥βTT ∥62
+
+i ,
+
+(14) and 
+
+EXtrain ,g
+
+hβTT ⊤n tr (W∗⊤ Σx W∗ Σx) − tr (WTT ⊤ Σx WTT Σx) Σx βTT 
+
+i
+
+= n ∥βTT ∥22 EXtrain ,g
+
+htr (−W∗⊤ ∆W − ∆W⊤W∗ − ∆W⊤∆W)i
+
+= −4η2 k(k + d + 1) n2
+
+(n + d + 1) 2
+
+hn d2 − 2d − 3 + nd  ∥βTT ∥62 + d (d + 1) 2 + n(d + 2)  ∥βTT ∥62
+
+i − 4ηk n2
+
+(n + d + 1) 2 ∥βTT ∥42. (15) Combining (12), (13), (14), (15) in Equation (10), the expected improvement in the loss is the following: 
+
+L(W∗) − L T T (WTT ) = 4ηk n2dn + d + 1 ∥βTT ∥42 − 4ηk n2
+
+(n + d + 1) 2 ∥βTT ∥42 − 4ηk n2(n + 1) d
+
+(n + d + 1) 2 ∥βTT ∥42
+
+− 4η2 k(k + d + 1) n2
+
+(n + d + 1) 2
+
+hn(n + 2)( d2 − 2d − 3 + nd )∥βTT ∥62 + (n + d + 1) (d + 1) 2 + n(d + 2)  ∥βTT ∥62
+
+i .
+
+18 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Rearranging and approximating by omitting lower-order terms, we obtain: 4ηk n2d2
+
+(n + d + 1) 2 ∥βTT ∥42 − 4η2 k(k + d + 1) n2d(n + d)( n2 + d)(n + d + 1) 2 ∥βTT ∥62. (16) Taking the derivative of this expression and setting to 0 yields that the optimal η∗ solution is approximately: 
+
+η∗ ≈ d
+
+2( k + d + 1)( n2 + d)( n + d) ∥βTT ∥22
+
+. (17) Plugging the optimal η∗ value in (17) into Equation (16), we obtain that the loss improvement is approximately: 
+
+∆L ≈ 2kd 3
+
+(n + d + 1) 2(k + d + 1)( n + d)(1 + dn2 ) ∥βTT ∥22 − kd 3
+
+(n + d + 1) 2(k + d + 1)( n + d)(1 + dn2 ) ∥βTT ∥22
+
+= kk + d + 1
+
+d3
+
+(n + d + 1) 2(n + d) 1 + dn2
+
+ ∥βTT ∥22.
+
+Considering that n/d = Θ (1), we conclude that 
+
+∆L ≈ kk + dd3
+
+(n + d)3 ∥βTT ∥22.
+
+Corollary 4.4. Recall the definitions of γ = k/d , α = n/d , and consider the loss LT T (WTT ) as a function of α in the isotropic covariance and noiseless setting. If γ > 12 , then the loss LT T (WTT ) is non-monotonic in α. Specifically, the loss LT T (WTT ) is increasing for α < 
+
+q 3γγ+1 − 1 and decreasing for α > 
+
+q 3γγ+1 − 1. Conversely, if γ < 12 , then LT T (WTT ) is monotonic in α.Proof. Using Theorem 4.2, the new loss LT T (WTT ) is approximately: 
+
+LT T (WTT ) ≈ ∥ βTT ∥22
+
+ dn + d − kk + d
+
+dn + d
+
+!3 = ∥βTT ∥22 a − kk + d a3
+
+!
+
+where a := dn + d ∈ (0 , 1) .
+
+Since ∥βTT ∥2 is fixed, we focus on the second multiplier and define f (a) : = a − kk+d a3. Computing the derivative of f (a)gives: 
+
+f ′(a) = 1 − 3 kk + d a2.
+
+Solving f ′(a) = 0 yields acrit =
+
+q k+d 
+
+> 3k
+
+. This lies in (0 , 1) when 
+
+q k+d 
+
+> 3k
+
+< 1, i.e. k > d 
+
+> 2
+
+. In that case, f (a) has exactly one turning point in (0 , 1), so f increases on (0 , acrit ) and decreases on ( acrit , 1), making it non-monotonic. On the other hand, in the k < d 
+
+> 2
+
+regime, one finds r k + d
+
+3k > 1 =⇒ acrit < (0 , 1) ,
+
+hence f ′(a) cannot change sign over (0 , 1). Therefore, f (a) is monotonic in a = dn+d , which implies that LT T (WTT ) is also monotonic in the ratio n/d. Finally, since a = 1 
+
+> α+1
+
+, the threshold until which LT T (WTT ) increases translates to 
+
+q 3γγ+1 − 1in terms of α. Consequently, for γ > 1/2, the new loss is non-monotonic with respect to α = n/d, whereas for γ < 1/2, it remains monotonic. This completes the argument. 
+
+Theorem 4.5. Consider the isotropic covariance and noiseless setting (σ2 = 0) . Suppose the initial weight matrix is 
+
+W∗ = 0d×d. Then, the optimal step-size that minimizes LT T (WTT ) is 
+
+η∗ = 12( k + d + 1) ( n2 + 4n + 3 + d) ∥βTT ∥22
+
+.
+
+19 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+With this optimal step-size η∗, the improvement in the loss due to test-time training is 
+
+L(W∗) − L T T (WTT ) = kk + d + 1
+
+n2
+
+n2 + 4n + 3 + d ∥βTT ∥22,
+
+where L(W∗) = ∥βTT ∥22.Proof. In the proof, we will handle the general noisy scenario, and setting σ2 = 0 in the final expression will recover the result for the noiseless setting. Similar to the proof of Theorem 4.2, we aim to calculate the expected gain in the loss with respect to ( n + k) samples used during the test-time training process. During test time, we draw ( n + k) total samples {( ¯xi, ¯yi)}n+ki=1 drawn at test time, each with an associated noise variable {ξi}n+ki=1 . Let’s denote ξtrain = hξ1 . . . ξ n
+
+i⊤
+
+and 
+
+ξcontext = hξn+1 . . . ξ n+k
+
+i⊤
+
+. We will then evaluate the expectation of the loss function given by Lemma B.2 and compute 
+
+L(W∗) − L T T (WTT ) = EXtrain ,ξtrain ,Xcontext ,ξcontext [∆L] where ∆L is given by: 
+
+∆L = L(W∗) − L (WTT )
+
+= βTT ⊤ hΣx − nΣx W∗ Σx − nΣxW∗⊤ Σx + n(n + 1) ΣxW∗⊤ ΣxW∗Σx + ntr (W∗⊤ ΣxW∗Σx)Σx
+
+i βTT 
+
++ σ2ntr (W∗⊤ ΣxW∗Σx)
+
+− βTT ⊤ hΣx − nΣx WTT Σx − nΣxWTT ⊤ Σx + n(n + 1) ΣxWTT ⊤ΣxWTT Σx + ntr (WTT ⊤ΣxWTT Σx)Σx
+
+i βTT 
+
+− σ2ntr (WTT ⊤ΣxWTT Σx)
+
+= βTT ⊤ h n Σx (WTT − W∗) Σx + n Σx
+
+WTT ⊤ − W∗⊤  Σx + n(n + 1) Σx
+
+W∗⊤ Σx W∗ − WTT ⊤ Σx WTT 
+
+ Σx
+
++n tr (W∗⊤ Σx W∗ Σx) − tr (WTT ⊤ Σx WTT Σx) Σx
+
+i βTT + σ2n tr (W∗⊤ ΣxW∗Σx) − tr (WTT ΣxWTT Σx) . (18) Recall that when the linear task is βTT and W∗ = 0d×d, the gradient update given by Proposition 3.1 becomes: 
+
+WTT = W∗ + 2 η hXtrain ⊤ Xtrain 
+
+βTT − W∗ Xcontext ⊤ ycontext 
+
+ + Xtrain ⊤ξtrain 
+
+i (Xcontext ⊤ ycontext )⊤
+
+= W∗ + 2 η hXtrain ⊤ Xtrain 
+
+βTT − W∗ Xcontext ⊤(Xcontext βTT + ξcontext ) + Xtrain ⊤ξtrain 
+
+i (Xcontext ⊤(Xcontext βTT + ξcontext )) ⊤
+
+= W∗ + 2 η hXtrain ⊤ Xtrain βTT + Xtrain ⊤ξtrain 
+
+i (Xcontext ⊤(Xcontext βTT + ξcontext )) ⊤
+
+= 2 η hXtrain ⊤ Xtrain βTT + Xtrain ⊤ξtrain 
+
+i h βTT ⊤ Xcontext ⊤ Xcontext + ξcontext ⊤ Xcontext 
+
+i .
+
+Then, we obtain its transpose as 
+
+WTT ⊤ = 2η hXcontext ⊤ Xcontext βTT + Xcontext ⊤ξcontext 
+
+i h βTT ⊤ Xtrain ⊤ Xtrain + ξtrain ⊤ Xtrain 
+
+i .
+
+Thus, the expression WTT ⊤WTT becomes: 
+
+WTT ⊤WTT = 4η2 hXcontext ⊤ Xcontext βTT + Xcontext ⊤ξcontext 
+
+i h βTT ⊤ Xtrain ⊤ Xtrain + ξtrain ⊤ Xtrain 
+
+ihXtrain ⊤ Xtrain βTT + Xtrain ⊤ξtrain 
+
+i h βTT ⊤ Xcontext ⊤ Xcontext + ξcontext ⊤ Xcontext 
+
+i .
+
+Therefore, we can write: 
+
+EXtrain ,ξtrain ,Xcontext ,ξcontext 
+
+hWTT ⊤WTT 
+
+i = 4η2 EXtrain ,ξtrain ,Xcontext ,ξcontext 
+
+hXcontext ⊤ξcontext ξtrain ⊤ Xtrain Xtrain ⊤ξtrain ξcontext ⊤ Xcontext 
+
++ Xcontext ⊤ξcontext βTT ⊤ Xtrain ⊤ Xtrain Xtrain ⊤ Xtrain βTT ξcontext ⊤ Xcontext 
+
++ Xcontext ⊤ Xcontext βTT ξtrain ⊤ Xtrain Xtrain ⊤ξtrain βTT ⊤ Xcontext ⊤ Xcontext 
+
++Xcontext ⊤ Xcontext βTT βTT ⊤ Xtrain ⊤ Xtrain Xtrain ⊤ Xtrain βTT βTT ⊤ Xcontext ⊤ Xcontext 
+
+i .
+
+By plugging M = I in Lemma B.3 and considering that Σx = I, we have the following fact: 
+
+EXtrain 
+
+hXtrain ⊤ Xtrain Xtrain ⊤ Xtrain 
+
+i = k(k + d + 1) I.
+
+20 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Applying this identity twice and using the fact that EXtrain 
+
+Xtrain Xtrain ⊤ = tr (Σx)I = dI, we obtain: 
+
+EXtrain ,ξtrain ,Xcontext ,ξcontext 
+
+hWTT ⊤WTT 
+
+i
+
+= 4η2 σ4knd I + σ2k(k + d + 1) n∥βTT ∥22 I + σ2kd n(n + 1) βTT βTT ⊤ + n∥βTT ∥22 I
+
++ k(k + d + 1) ∥βTT ∥22
+
+n(n + 1) βTT βTT ⊤ + n∥βTT ∥22 I 
+
+= 4η2 σ2kn σ2d + (k + d + 1) ∥βTT ∥22
+
+ I + k n(n + 1) βTT βTT ⊤ + n∥βTT ∥22 I  σ2d + (k + d + 1) ∥βTT ∥22
+
+ 
+
+= 4η2kn σ2d + (k + d + 1) ∥βTT ∥22
+
+  σ2 I + (n + 1) βTT βTT ⊤ + ∥βTT ∥22 I . (19) Besides that, we calculate the first order expectations of WTT as: 
+
+EXtrain ,ξtrain ,Xcontext ,ξcontext 
+
+hβTT ⊤ n Σx (WTT − W∗) Σx βTT 
+
+i = 2ηn βTT ⊤ EXtrain ,Xcontext 
+
+hXtrain ⊤ Xtrain βTT βTT ⊤ Xcontext ⊤ Xcontext 
+
+i βTT 
+
+= 2ηkn 2∥βTT ∥42, (20) and similarly, 
+
+EXtrain ,ξtrain ,Xcontext ,ξcontext 
+
+hβTT ⊤ n Σx
+
+WTT ⊤ − W∗⊤  Σx βTT 
+
+i = 2ηkn 2∥βTT ∥42. (21) The next term in the loss di ff erence is: 
+
+EXtrain ,ξtrain ,Xcontext ,ξcontext 
+
+hβTT ⊤n(n + 1) Σx
+
+W∗⊤ Σx W∗ − WTT ⊤ Σx WTT 
+
+ Σx βTT 
+
+i
+
+= −4η2kn 2(n + 1) (n + 2) ∥βTT ∥22 + σ2 ∥βTT ∥22
+
+σ2d + (k + d + 1) ∥βTT ∥22
+
+ . (22) Using (19), the last term is: 
+
+EXtrain ,ξtrain ,Xcontext ,ξcontext 
+
+hβTT ⊤n tr (W∗⊤ Σx W∗ Σx) − tr (WTT ⊤ Σx WTT Σx) Σx βTT 
+
+i
+
+= −4η2n βTT ⊤tr (EXtrain ,ξtrain ,Xcontext ,ξcontext 
+
+hWTT ⊤WTT 
+
+i) βTT .
+
+= −4η2kn 2 σ2d + (k + d + 1) ∥βTT ∥22
+
+  σ2d + (n + d + 1) ∥βTT ∥22
+
+ ∥βTT ∥22. (23) Finally, the noise term is equal to: 
+
+EXtrain ,ξtrain ,Xcontext ,ξcontext 
+
+hσ2n tr (W∗⊤ ΣxW∗Σx) − tr (WTT ΣxWTT Σx)i 
+
+= −4η2kn 2σ2 σ2d + (k + d + 1) ∥βTT ∥22
+
+  σ2d + (n + d + 1) ∥βTT ∥22
+
+ . (24) Combining the Equations (20) , (21) , (22) , (23) , (24) in the expectation of the loss di ff erence (18) , we obtain the following quadratic expression of η:
+
+L(W∗) − L T T (WTT )
+
+= 4ηkn 2∥βTT ∥42 − 4η2kn 2(n + 1) (n + 2) ∥βTT ∥22 + σ2 ∥βTT ∥22
+
+σ2d + (k + d + 1) ∥βTT ∥22
+
+
+
+− 4η2kn 2 σ2d + (k + d + 1) ∥βTT ∥22
+
+  σ2d + (n + d + 1) ∥βTT ∥22
+
+ ∥βTT ∥22
+
+− 4η2kn 2σ2 σ2d + (k + d + 1) ∥βTT ∥22
+
+  σ2d + (n + d + 1) ∥βTT ∥22
+
+
+
+= 4kn 2 hη∥βTT ∥42 − η2 σ2d + (k + d + 1) ∥βTT ∥22
+
+ h σ2 + ∥βTT ∥22
+
+  σ2d + (n + d + 1) ∥βTT ∥22
+
+
+
++(n + 1) (n + 2) ∥βTT ∥22 + σ2 ∥βTT ∥22
+
+ii 
+
+= 4kn 2 hη∥βTT ∥42 − η2 σ2d + (k + d + 1) ∥βTT ∥22
+
+  σ4d + ∥βTT ∥22
+
+(n2 + 4n + 3 + d)∥βTT ∥22 + 2σ2(n + d + 1) i .
+
+Setting the derivative to 0 and solving for η gives: 
+
+η⋆ = ∥βTT ∥42
+
+2 σ2d + (k + d + 1) ∥βTT ∥22
+
+  σ4d + ∥βTT ∥42 (n2 + 4n + 3 + d) + 2σ2(n + d + 1) ∥βTT ∥22
+
+ .
+
+21 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+At this optimal value η⋆, the improvement on the loss is: 
+
+k ∥βTT ∥22
+
+σ2d + (k + d + 1) ∥βTT ∥22
+
+n2 ∥βTT ∥42
+
+σ4d + ∥βTT ∥42 (n2 + 4n + 3 + d) + 2σ2(n + d + 1) ∥βTT ∥22
+
+ ∥βTT ∥22.
+
+In the noiseless setting, the optimal η⋆ corresponds to: 
+
+η∗ = 12( k + d + 1)( n2 + 4n + 3 + d)∥βTT ∥22
+
+.
+
+At that optimal value η⋆, the improvement is: 
+
+kk + d + 1
+
+n2
+
+n2 + 4n + 3 + d ∥βTT ∥22.
+
+This completes the proof. As a final note, recall that the initial loss is ∥βTT ∥22. Thus, the new loss of the system after the test-time-training update is: 
+
+1 − kk + d + 1
+
+n2
+
+n2 + 4n + 3 + d
+
+!
+
+∥βTT ∥22.
+
+In the proportional n, d regime and when k/d → ∞ , this gives an error of order O(n−1)-matching that of the optimal Wopt 
+
+from Lemma C.1: 4n + d + 3
+
+n2 + 4n + 3 + d ∥βTT ∥22.
+
+Corollary 4.6. Recall the definitions of α = n/d and γ = k/d . Consider the setting in Theorem 4.2 and test-time training described in Proposition 3.1 with both pre-trained and zero initializations. Then, under the isotropic covariance and noiseless setting, there exists a threshold γ⋆ given by γ ⋆ ≈ (α + 1) 2
+
+(α + 2) such that γ < γ ⋆ if and only if it is better to utilize the pre-trained initialization over the zero initialization 0d×d.Proof. Considering that the initial loss of the weight matrix W = 0d×d is ∥βTT ∥22 and the improvement given by Theorem 4.5, the new loss after the test-time-training update is approximately: 
+
+1 − kk + d
+
+!
+
+∥βTT ∥22.
+
+On the other hand, recall that by Proposition 4.1, the loss of W∗ before the update is d+1 
+
+> n+d+1
+
+∥βTT ∥22. Combining this with the improvement given by Theorem 4.2, the new loss after the test-time-training update is approximately: 
+
+dn + d − kk + dd3
+
+(n + d)3
+
+!
+
+∥βTT ∥22.
+
+Let us define β := kk+d and θ := dn+d . Then, we check when it’s better (yields smaller loss) to use the pre-trained matrix W∗
+
+over zero initialization with the below inequality: 1 − β > θ − βθ 3 ⇐⇒ 1 − θ > β 1 − θ3
+
+⇐⇒ 1
+
+β > θ 2 + θ + 1
+
+⇐⇒ dk > θ 2 + θ
+
+⇐⇒ d
+
+> dn+d
+
+1 + dn+d
+
+ > k
+
+⇐⇒ (n + d)2
+
+n + 2d > k ⇐⇒ (α + 1) 2
+
+α + 2 > γ = k/d where α = nd .
+
+Thus, we conclude our argument. 22 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+## C. Proofs for Section 5 
+
+Lemma C.1 (Optimal W). When the system is noiseless ( σ2 = 0), the optimal W which minimizes the population risk with respect to the new task βTT given by Lemma B.2 and its corresponding loss are: 
+
+Wopt = βTT βTT ⊤
+
+(n + 2) ∥βTT ∥22
+
+L(Wopt ) = 2
+
+n + 2 ∥βTT ∥22.
+
+Proof. Recall that when Σx = I and σ2 = 0, the loss formula given by Lemma B.2 becomes: 
+
+L(W) = βTT ⊤ hI − nW − nW⊤ + n(n + 1) W⊤W + ntr (W⊤W)i βTT . (25) The gradient of this expression with respect to W is: 
+
+∇W L(W) = − 2n βTT βTT ⊤ + 2n(n + 1) W βTT βTT ⊤ + 2n βTT ⊤βTT W = 0.
+
+Simplifying, this gives: (n + 1) WβTT βTT ⊤ + βTT ⊤βTT W = βTT βTT ⊤. (26) Multiply (26) on the right by βTT . This yields: 
+
+WβTT = 1
+
+n + 2 βTT .
+
+So βTT is an eigenvector of W corresponding to the eigenvalue 1 /(n + 2). Next, consider any vector v that is orthonormal (or simply orthogonal) to v, that is v⊤βTT = 0. Multiplying (26) on the right by v:
+
+∥βTT ∥2 W v = 0 =⇒ W v = 0 whenever v⊤βTT = 0.
+
+Hence, all other eigenvalues of W are 0. Using the eigendecomposition of W, this uniquely specifies W as c · βTT βTT ⊤.Solving for c yields the unique solution to ∇W L(W) = 0: 
+
+Wopt = βTT βTT ⊤
+
+(n + 2) ∥βTT ∥22
+
+Finally, plugging this Wopt to (25) yields the following error: 
+
+L(Wopt ) = 2
+
+n + 2 ∥βTT ∥22.
+
+Lemma C.2 (Eigenvalues) . Consider the optimal pre-trained W∗ matrix, which minimizes the population loss over all possible tasks sampled from Σβ in (1) . Then, all eigenvalues of ¯W∗ = Σ1/2 
+
+> x
+
+W∗Σ1/2 
+
+> x
+
+lie in the interval [0 , 1 
+
+> n+1
+
+].Proof. By Theorem 1 of Li et al. (2024), we write the following: 
+
+W∗ = Σ−1/2 
+
+> x
+
+¯W∗Σ−1/2 
+
+> x
+
+where ¯ W∗ = (n + 1) Id + M A−1−1
+
+where M = tr (A) + σ2 and A = Σ1/2 
+
+> x
+
+ΣβΣ1/2
+
+> x
+
+We know that the matrices Σx and Σβ are jointly diagonalizable with Σx = QΛxQ⊤ and Σβ = QΛβQ⊤ where Q is an orthonormal matrix Q ∈ Rd×d and Λx, Λβ ∈ Rd×d are diagonal matrices with entries {λi} and {βi}, respectively. Then, 
+
+A = Q Λ1/2 
+
+> x
+
+Λβ Λ1/2
+
+> x
+
+ Q⊤.
+
+Define ΛA := Λ1/2 
+
+> x
+
+Λβ Λ1/2 
+
+> x
+
+, which is also diagonal. Hence 
+
+A−1 = Q Λ−1 
+
+> A
+
+Q⊤,
+
+23 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+where Λ−1 
+
+> A
+
+= diag (1 /(λiβi)). Inside ¯ W∗, we have (n + 1) I + M A−1 = Q (n + 1) I Q ⊤ + M Q Λ−1 
+
+> A
+
+Q⊤ = Q h(n + 1) I + M Λ−1
+
+> A
+
+i Q⊤.
+
+We know that Λdiag := (n + 1) I + M Λ−1 
+
+> A
+
+is also diagonal with diagonal entries ( n + 1) + M 
+
+> λiβi
+
+. It follows that ¯W∗ = (n + 1) I + M A−1−1
+
+= Q diag λi βi
+
+(n + 1) λi βi + M
+
+!
+
+Q⊤,
+
+where M = tr (A) + σ2 = tr (ΛβΛx) = σ2 + Pdi=1 λiβi. This concludes the proof. 
+
+Lemma C.3 (Covariance Shift) . Consider the setting in Section 3 where 
+
+• The true labels are generated by y = x⊤β + ξ with x ∼ N (0, Σx), β ∼ N (0, Σβ), and noise ξ ∼ N (0 , σ 2).
+
+• The prediction of a linear attention model is of the form 
+
+ˆy = x⊤WX ⊤ y,
+
+where the context X in Rn×d collects previous samples x⊤ 
+
+> i
+
+as rows, y is the corresponding label vector, and W ∈ Rd×d is the model parameter matrix. Then, the invertible transformation 
+
+(x, X, β, W) 7 → ( ¯ x, ¯X, ¯β, ¯W) where ¯x = Σ−1/2 
+
+> x
+
+x, ¯X = X Σ−1/2 
+
+> x
+
+, ¯β = Σ1/2 
+
+> x
+
+β, ¯W = Σ1/2 
+
+> x
+
+W Σ1/2 
+
+> x
+
+,
+
+preserves the population risks in (1) and (3) . More precisely, defining ¯L( ¯W) to be the population loss (3) evaluated under the transformed setting ( ¯ x, ¯X, ¯β, ¯W), we have 
+
+L(W) = ¯L( ¯ W).
+
+Proof. Since x ∼ N (0, Σx), multiplying by Σ−1/2 
+
+> x
+
+yields ¯x = Σ−1/2 
+
+> x
+
+x ∼ N (0, Id). Likewise, because β ∼ N (0, Σβ), we have ¯β = Σ1/2 
+
+> x
+
+β ∼ N 0, Σ1/2 
+
+> x
+
+Σβ Σ1/2
+
+> x
+
+. Next, we observe 
+
+¯X := X Σ−1/2 
+
+> x
+
+=⇒ ¯X ¯β = X Σ−1/2
+
+> x
+
+  Σ1/2 
+
+> x
+
+β = X β,
+
+ensuring that label vector corresponding to context data y = Xβ + ξ = ¯X ¯β + ξ stays the same. Also, note that the label is preserved for the query token y = x⊤β + ξ = ¯x⊤ ¯β + ξ, as well. Under the map x 7 → ¯x = Σ−1/2 
+
+> x
+
+x, X 7 → ¯X = XΣ−1/2 
+
+> x
+
+,
+
+β 7 → ¯β = Σ1/2 
+
+> x
+
+β, W 7 → ¯W = Σ1/2 
+
+> x
+
+W Σ1/2 
+
+> x
+
+, the prediction of the linear attention model is also preserved: 
+
+x⊤WX ⊤ y = (Σ−1/2 
+
+> x
+
+x)⊤Σ1/2 
+
+> x
+
+WΣ1/2
+
+> x
+
+Σ−1/2 
+
+> x
+
+X⊤ y = ¯x⊤ Σ1/2 
+
+> x
+
+WΣ1/2
+
+> x
+
+  ¯X⊤ y = ¯x⊤ ¯W ¯X⊤ y.
+
+As a result, the errors in the labels remain numerically unchanged as (y − x⊤WX ⊤ y)2 = (y − ¯x⊤ ¯W ¯X⊤ y)2.
+
+Hence, this implies that the population losses described in (1), (3) are preserved. 
+
+L(W) = ¯L( ¯ W).
+
+In particular, if W∗ is the unique minimizer of the pre-training loss in (1) in the original coordinates, its counterpart in the transformed system is precisely ¯W∗ = Σ1/2 
+
+> x
+
+W∗ Σ1/2 
+
+> x
+
+.
+
+This completes the proof. 24 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Theorem C.4. Let n/d = Θ (1) and σ2 = 0. Suppose the covariance matrices are jointly diagonalizable by an orthogonal matrix Q ∈ Rd×d, so that Σx = QΛxQ⊤ and Σβ = QΛβQ⊤. Let W be any matrix that’s also jointly diagonalizable by 
+
+Q such that if Σ1/2 
+
+> x
+
+W Σ1/2 
+
+> x
+
+= QΛQ⊤, then all eigenvalues of Λ lie in the interval [0 , 1 
+
+> n+1
+
+]. Define ˜βTT := Q⊤Σ1/2 
+
+> x
+
+βTT ,A := ˜β⊤ 
+
+> TT
+
+(I − nΛ)2 ˜βTT , and B := n∥ ˜βTT ∥22tr (Λ2). Then, the optimal step size that minimizes the population loss given in (3) 
+
+after the test-time training update is 
+
+η∗ ≈ A
+
+2( k + d) n2 ∥ ˜βTT ∥22 (A + B) .
+
+With this optimal step-size η∗, the improvement in the loss due to test-time training and the initial loss are approximately 
+
+L(W) − L T T (WTT ) ≈ kk + dA2
+
+A + B , L(W) ≈ A + B.
+
+Proof. We consider the general non-isotropic covariance scenario where Σx and Σβ may be arbitrary covariance matrices. Our analysis will hold for any initial weight matrix W in Rd×d such that if Σ1/2 
+
+> x
+
+W Σ1/2 
+
+> x
+
+= QΛQ⊤, all eigenvalues of Λ
+
+are in h0, 1
+
+> n+1
+
+i. Now, we aim to calculate the expected gain in the loss with respect to ( n + k) samples used during the test-time training process. That is, we will take the expectation of the loss function given by Lemma B.2 and compute 
+
+L(W) − L T T (WTT ) = EXtrain ,Xcontext [∆L] where ∆L is given by: 
+
+∆L = L(W) − L (WTT )
+
+= βTT ⊤ h n Σx (WTT − W) Σx + n Σx
+
+WTT ⊤ − W⊤ Σx + n(n + 1) Σx
+
+W⊤ Σx W − WTT ⊤ Σx WTT 
+
+ Σx
+
++n tr (W⊤ Σx W Σx) − tr (WTT ⊤ Σx WTT Σx) Σx
+
+i βTT . (27) Now, recall the test-time training update from Proposition 3.1 when the new task is βTT :
+
+WTT − W = 2 η Xtrain ⊤ Xtrain 
+
+I − W X context ⊤ Xcontext 
+
+ βTT βTT ⊤ Xcontext ⊤ Xcontext ,
+
+WTT ⊤ − W⊤ = 2ηXcontext ⊤ Xcontext βTT βTT ⊤ I − Xcontext ⊤ Xcontext W⊤ Xtrain ⊤ Xtrain .
+
+As in previous theorems, we will use the Gaussian approximation following Lemma B.1 by approximating 
+
+Xcontext ⊤ Xcontext βTT ≈ nΣx βTT + √n Σ1/2 
+
+> x
+
+g where g ∼ N (0, ∥βTT 2∥ I). This non-isotropic form can be obtained by factoring out Σ1/2 
+
+> x
+
+and reducing the problem to the isotropic case from Lemma B.1. Before going forward, let’s apply the covariance shift discussed in Lemma C.3, which transforms: 
+
+¯x = Σ−1/2 
+
+> x
+
+x ∼ N (0, Id), ¯βTT = Σ1/2 
+
+> x
+
+βTT ∼ N (0, Σ1/2 
+
+> x
+
+ΣβΣ1/2 
+
+> x
+
+), and ¯W = Σ1/2 
+
+> x
+
+WΣ1/2 
+
+> x
+
+.
+
+Likewise, we define the transformed versions of training and context data as ¯Xtrain := Xtrain Σ−1/2 
+
+> x
+
+and ¯Xcontext := Xcontext Σ−1/2 
+
+> x
+
+.Now, suppose that ¯W = QΛQ⊤ and let ∆W := ¯WTT − ¯W = Σ1/2 
+
+> x
+
+WTT Σ1/2 
+
+> x
+
+− Σ1/2 
+
+> x
+
+WΣ1/2 
+
+> x
+
+. Then, 
+
+∆W = 2η ¯X⊤ 
+
+> train
+
+¯Xtrain 
+
+ ¯βTT − QΛQ⊤ ¯X⊤ 
+
+> context
+
+¯Xcontext ¯βTT 
+
+ ¯β⊤ 
+
+> TT
+
+¯X⊤ 
+
+> context
+
+¯Xcontext 
+
+≈ 2η ¯X⊤ 
+
+> train
+
+¯Xtrain 
+
+ ¯βTT − nQΛQ⊤ ¯βTT − √nQΛQ⊤ g  n ¯β⊤ 
+
+> TT
+
++ √ng⊤
+
+= 2η ¯X⊤ 
+
+> train
+
+¯Xtrain 
+
+n ¯βTT ¯β⊤ 
+
+> TT
+
++ √n ¯βTT g⊤ − n2QΛQ⊤ ¯βTT ¯β⊤ 
+
+> TT
+
+− n √n QΛQ⊤ ¯βTT g⊤ − n √n QΛQ⊤ g ¯β⊤ 
+
+> TT
+
+− nQΛQ⊤ gg ⊤
+
+= 2η ¯X⊤ 
+
+> train
+
+¯Xtrain 
+
+n I − nQΛQ⊤ ¯βTT ¯β⊤ 
+
+> TT
+
++ √n I − nQΛQ⊤ ¯βTT g⊤ − n √nQΛQ⊤ g ¯β⊤ 
+
+> TT
+
+− nQΛQ⊤ gg ⊤
+
+∆W⊤ = 2η n ¯βTT ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ + √ng ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ − n √n ¯βTT g⊤QΛQ⊤ − ngg ⊤QΛQ⊤ ¯X⊤ 
+
+> train
+
+¯Xtrain 
+
+By plugging the above definitions of ¯WTT , ¯W into Equation (27) , we encounter the following di ff erence term in two of the expressions: ¯W⊤ ¯W − ¯W⊤ 
+
+> TT
+
+¯WTT = ¯W⊤ ¯W − ( ¯ W⊤ + ∆ W⊤)( ¯W + ∆ W)
+
+= − ¯W⊤∆W − ∆W⊤ ¯W − ∆W⊤∆W. (28) 25 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Hence, we need to calculate both the first-order expectations E ¯Xtrain ,g [∆W] , E ¯Xtrain ,g
+
+∆W⊤ and the second-order expectation 
+
+E ¯Xtrain ,g
+
+∆W⊤∆W. Calculating the first-order expectations gives: 
+
+E ¯Xtrain ,g [∆W] = 2ηkn  I − nQΛQ⊤ ¯βTT ¯β⊤ 
+
+> TT
+
+− ∥ ¯βTT ∥22 QΛQ⊤ , (29) 
+
+E ¯Xtrain ,g
+
+h∆W⊤i = 2ηkn  ¯βTT ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ − ∥ ¯βTT ∥22 QΛQ⊤ . (30) Using (29) and (30), the first two terms of the loss di ff erence are: 
+
+E ¯Xtrain ,g
+
+h ¯β⊤ 
+
+> TT
+
+n  ¯WTT − ¯W ¯βTT 
+
+i = 2ηkn n∥ ¯βTT ∥22 ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ ¯βTT − n∥ ¯βTT ∥22 ¯β⊤ 
+
+> TT
+
+QΛQ⊤ ¯βTT 
+
+ , (31) 
+
+E ¯Xtrain ,g
+
+h ¯β⊤ 
+
+> TT
+
+n  ¯W⊤ 
+
+> TT
+
+− ¯W⊤ ¯βTT 
+
+i = 2ηkn n∥ ¯βTT ∥22 ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ ¯βTT − n∥ ¯βTT ∥22 ¯β⊤ 
+
+> TT
+
+QΛQ⊤ ¯βTT 
+
+ . (32) Similar to proofs of previous theorems, by plugging M = I in Lemma B.3, we know that EX
+
+(X⊤ X)( X⊤ X) = k(k + 1) Σ2 +
+
+ktr (Σ)Σ where X ∈ Rk×d has its rows drawn i.i.d from N(0 , Σ). Therefore, 
+
+E ¯Xtrain 
+
+h ¯X⊤ 
+
+> train
+
+¯Xtrain ¯X⊤ 
+
+> train
+
+¯Xtrain 
+
+i = k(k + d + 1) I.
+
+Utilizing the above fact, we compute: 
+
+E ¯Xtrain ,g
+
+h∆W⊤∆Wi
+
+= 4η2 Eg
+
+h n ¯βTT ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ + √ng ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ − n √n ¯βTT g⊤QΛQ⊤ − ngg ⊤QΛQ⊤
+
+k(k + d + 1) I n I − nQΛQ⊤ ¯βTT ¯β⊤ 
+
+> TT
+
++ √n I − nQΛQ⊤ ¯βTT g⊤ − n √n QΛQ⊤ g ¯β⊤ 
+
+> TT
+
+− nQΛQ⊤ gg ⊤i 
+
+= 4η2k(k + d + 1) Eg
+
+hn2 ¯βTT ¯β⊤
+
+> TT
+
+I − nQΛQ⊤  I − nQΛQ⊤ ¯βTT ¯β⊤ 
+
+> TT
+
+− n2 ¯βTT ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ QΛQ⊤ gg ⊤
+
+− n2 gg ⊤QΛQ⊤ I − nQΛQ⊤ ¯βTT ¯β⊤ 
+
+> TT
+
++ n2 gg ⊤QΛQ⊤QΛQ⊤ gg ⊤ + ng ¯β⊤
+
+> TT
+
+I − nQΛQ⊤  I − nQΛQ⊤ ¯βTT g⊤
+
++n3 ¯βTT g⊤QΛQ⊤QΛQ⊤ g ¯β⊤ 
+
+> TT
+
+− n2 g ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ QΛQ⊤ g ¯β⊤ 
+
+> TT
+
+− n2 ¯βTT g⊤QΛQ⊤ I − nQΛQ⊤ ¯βTT g⊤i .
+
+Let’s inspect each term inside the expectation in the above sum: 
+
+Eg
+
+hn3 ¯βTT g⊤QΛQ⊤QΛQ⊤ g ¯β⊤
+
+> TT
+
+i = n3 ¯βTT Eg
+
+hg⊤QΛ2Q⊤ gi ¯β⊤
+
+> TT
+
+= n3 ¯βTT Ez
+
+hz⊤Λ2 zi ¯β⊤ 
+
+> TT
+
+where z ∼ N 0, ∥ ¯βTT ∥22 I
+
+= n3∥ ¯βTT ∥22 tr (Λ2) ¯ βTT ¯β⊤
+
+> TT
+
+Eg
+
+hn2 g ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ QΛQ⊤ g ¯β⊤
+
+> TT
+
+i = n2 Eg
+
+hg  ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ QΛQ⊤ gi ¯β⊤
+
+> TT
+
+= n2 Eg
+
+hg g⊤QΛQ⊤ I − nQΛQ⊤ ¯βTT 
+
+i ¯β⊤
+
+> TT
+
+= n2∥ ¯βTT ∥22 QΛQ⊤ I − nQΛQ⊤ ¯βTT ¯β⊤
+
+> TT
+
+Eg
+
+hn2 ¯βTT g⊤QΛQ⊤ I − nQΛQ⊤ ¯βTT g⊤i = n2 ¯βTT Eg
+
+h g⊤QΛQ⊤ I − nQΛQ⊤ ¯βTT 
+
+ g⊤i
+
+= n2 ¯βTT Eg
+
+h ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ QΛQ⊤ g g⊤i
+
+= n2∥ ¯βTT ∥22 ¯βTT ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ QΛQ⊤
+
+Eg
+
+hng ¯β⊤
+
+> TT
+
+I − nQΛQ⊤  I − nQΛQ⊤ ¯βTT g⊤i = n Eg
+
+hg  ¯β⊤
+
+> TT
+
+I − nQΛQ⊤  I − nQΛQ⊤ ¯βTT 
+
+ g⊤i
+
+= n ¯β⊤
+
+> TT
+
+I − nQΛQ⊤  I − nQΛQ⊤ ¯βTT Eg
+
+hgg ⊤i
+
+= n ∥ ¯βTT ∥22
+
+ ¯β⊤
+
+> TT
+
+I − nQΛQ⊤  I − nQΛQ⊤ ¯βTT 
+
+ I
+
+Eg
+
+hn2 gg ⊤QΛQ⊤QΛQ⊤ gg ⊤i = n2 Eg
+
+hgg ⊤QΛ2Q⊤ gg ⊤i
+
+= n2∥ ¯βTT ∥42
+
+tr (Λ2)I + 2QΛ2Q⊤
+
+Eg
+
+hn2 gg ⊤QΛQ⊤ I − nQΛQ⊤ ¯βTT ¯β⊤
+
+> TT
+
+i = n2∥ ¯βTT ∥22QΛQ⊤ I − nQΛQ⊤ ¯βTT ¯β⊤
+
+> TT
+
+Eg
+
+hn2 ¯βTT ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ QΛQ⊤ gg ⊤i = n2∥ ¯βTT ∥22 ¯βTT ¯β⊤
+
+> TT
+
+I − nQΛQ⊤ QΛQ⊤.
+
+26 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Hence, considering that the eigenvalues of Λ are smaller than 1 
+
+> n+1
+
+, we drop lower order terms after combining the results above: 
+
+E ¯Xtrain ,g
+
+h∆W⊤∆Wi = 4η2k(k + d + 1) hn3∥ ¯βTT ∥22 tr (Λ2) ¯ βTT ¯β⊤ 
+
+> TT
+
++ n2 ¯βTT ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT ¯β⊤
+
+> TT
+
+− 2n2∥ ¯βTT ∥22 Q Λ − nΛ2 Q⊤ ¯βTT ¯β⊤ 
+
+> TT
+
+− 2n2∥ ¯βTT ∥22 ¯βTT ¯β⊤
+
+> TT
+
+Q Λ − nΛ2 Q⊤
+
++n ∥ ¯βTT ∥22
+
+ ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+ I + n2∥ ¯βTT ∥42
+
+tr (Λ2)I + 2QΛ2Q⊤i 
+
+≈ 4η2k(k + d + 1) hn3∥ ¯βTT ∥22tr (Λ2) ¯ βTT ¯β⊤ 
+
+> TT
+
++ n2 ¯βTT ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT ¯β⊤
+
+> TT
+
++n ∥ ¯βTT ∥22
+
+ ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+ Ii .
+
+Thus, we reach the following result: 
+
+E ¯Xtrain ,g
+
+h ¯β⊤
+
+> TT
+
+∆W⊤∆W ¯βTT 
+
+i ≈ 4η2k(k + d + 1) hn3∥ ¯βTT ∥62 tr (Λ2) + (n2 + n) ∥ ¯βTT ∥42 ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+i . (33) Now, recall from Equation (28) that the second-order di ff erence is in the form: ¯W⊤ ¯W − ¯W⊤ 
+
+> TT
+
+¯WTT = − ¯W⊤∆W − ∆W⊤ ¯W − ∆W⊤∆W.
+
+Therefore, we also need to calculate the expectations of the terms ¯W⊤∆W, ∆W⊤ ¯W. Using previous results (29) and (30) , we get: 
+
+E ¯Xtrain ,g
+
+h− ¯W⊤∆Wi = −2ηk QΛQ⊤ n I − nQΛQ⊤ ¯βTT ¯β⊤ 
+
+> TT
+
+− n∥ ¯βTT ∥22 QΛQ⊤
+
+= −2ηkn Q(Λ − nΛ2)Q⊤ ¯βTT ¯β⊤ 
+
+> TT
+
+− ∥ ¯βTT ∥22 QΛ2Q⊤
+
+E ¯Xtrain ,g
+
+h−∆W⊤ ¯Wi = −2ηkn  ¯βTT ¯β⊤
+
+> TT
+
+Q(Λ − nΛ2)Q⊤ − ∥ ¯βTT ∥22 QΛ2Q⊤ .
+
+This gives us: 
+
+E ¯Xtrain ,g
+
+h− ¯β⊤ 
+
+> TT
+
+¯W⊤∆W ¯βTT 
+
+i = −2ηkn ∥ ¯βTT ∥22 ¯β⊤
+
+> TT
+
+Q(Λ − nΛ2)Q⊤ ¯βTT − ∥ ¯βTT ∥22 ¯β⊤
+
+> TT
+
+QΛ2Q⊤ ¯βTT 
+
+ (34) 
+
+E ¯Xtrain ,g
+
+h− ¯β⊤
+
+> TT
+
+∆W⊤ ¯W ¯βTT 
+
+i = −2ηkn ∥ ¯βTT ∥22 ¯β⊤
+
+> TT
+
+Q(Λ − nΛ2)Q⊤ ¯βTT − ∥ ¯βTT ∥22 ¯β⊤
+
+> TT
+
+QΛ2Q⊤ ¯βTT 
+
+ . (35) Exploiting (33), (34) and (35), we get 
+
+E ¯Xtrain ,g
+
+h ¯β⊤ 
+
+> TT
+
+n(n + 1)  ¯W⊤ ¯W − ¯W⊤ 
+
+> TT
+
+¯WTT 
+
+ ¯βTT 
+
+i
+
+≈ − 4η2k(k + d + 1) n(n + 1) hn3∥ ¯βTT ∥62 tr (Λ2) + (n2 + n) ∥ ¯βTT ∥42 ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+i
+
+− 4ηkn 2(n + 1) ∥ ¯βTT ∥22 ¯β⊤
+
+> TT
+
+Q(Λ − nΛ2)Q⊤ ¯βTT − ∥ ¯βTT ∥22 ¯β⊤
+
+> TT
+
+QΛ2Q⊤ ¯βTT 
+
+ (36) 
+
+E ¯Xtrain ,g
+
+h ¯β⊤ 
+
+> TT
+
+n tr ( ¯ W⊤ ¯W) − tr ( ¯ W⊤ 
+
+> TT
+
+¯WTT ) ¯βTT 
+
+i
+
+≈ − 4η2k(k + d + 1) hn4∥ ¯βTT ∥62 tr (Λ2) + n2(n + d) ∥ ¯βTT ∥42 ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+i
+
+− 4ηkn 2 h∥ ¯βTT ∥22 ¯β⊤
+
+> TT
+
+Q(Λ − nΛ2)Q⊤ ¯βTT − ∥ ¯βTT ∥42 tr (Λ2)i . (37) Combining (31), (32), (36) and (37), and plugging into the Equation (27) gives the expected loss improvement: 
+
+L(W) − L T T (WTT ) (38) 
+
+≈ 4ηkn 2 ∥ ¯βTT ∥22 ¯β⊤ 
+
+> TT
+
+Q (I − nΛ) Q⊤ ¯βTT − ∥ ¯βTT ∥22 ¯β⊤ 
+
+> TT
+
+QΛQ⊤ ¯βTT 
+
+
+
+− 4ηkn 2(n + 1) ∥ ¯βTT ∥22 ¯β⊤ 
+
+> TT
+
+Q(Λ − nΛ2)Q⊤ ¯βTT − ∥ ¯βTT ∥22 ¯β⊤ 
+
+> TT
+
+QΛ2Q⊤ ¯βTT 
+
+
+
+− 4ηkn 2 h∥ ¯βTT ∥22 ¯β⊤ 
+
+> TT
+
+Q(Λ − nΛ2)Q⊤ ¯βTT − ∥ ¯βTT ∥42 tr (Λ2)i
+
+− 4η2k(k + d + 1) n hn3(n + 2) ∥ ¯βTT ∥62tr (Λ2) + n (n + 1) 2 + n + d ∥ ¯βTT ∥42 ¯β⊤ 
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+i
+
+≈ 4ηkn 2∥ ¯βTT ∥22 ¯β⊤ 
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT − 4η2k(k + d + 1) n2 hn3 ∥ ¯βTT ∥62 tr (Λ2) + (n2 + d) ∥ ¯βTT ∥42 ¯β⊤ 
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+i .
+
+(39) 27 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+This is a quadratic expression in η, and we can solve for the optimal η∗ by setting the derivative to 0. This way, the optimal step size is approximately: 
+
+η∗ ≈
+
+¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+2( k + d + 1) ∥ ¯βTT ∥22
+
+hn3∥ ¯βTT ∥22tr (Λ2) + (n2 + d) ¯ β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+i .
+
+Plugging this optimal η∗ value into Equation (39), the population loss gain becomes: 
+
+kk + d + 1
+
+ ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+2
+
+n ∥ ¯βTT ∥22 tr (Λ2) + 1 + dn2
+
+ ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT 
+
+.
+
+Thus, considering the definitions ˜βTT = Q⊤ ¯βTT and A = ˜β⊤ 
+
+> TT
+
+(I − nΛ)2 ˜βTT , B = ntr (Λ2) ∥ ˜βTT ∥22 (notice that ℓ2 norm is unitarily-invariant, so that ∥ ˜βTT ∥ = ∥ ¯βTT ∥ ) and recalling n/d = Θ (1) recovers the desired final expression. Also, by viewing the initial task as ˜βTT , we match the diagonal covariance form described in Section 5. Therefore, we conclude our argument 
+
+L(W) − L T T (WTT ) ≈ kk + dA2
+
+A + B .
+
+For the second part of the proposition, let’s write the initial loss by applying the covariance shift from Lemma C.3 so that the transformed features ¯x = Σ−1/2 
+
+> x
+
+x have identity covariance and ¯W = Σ1/2 
+
+> x
+
+W∗Σ1/2 
+
+> x
+
+is the corresponding minimizer of the transformed system. Again, we set ˜βTT = Q⊤ ¯βTT in order to have diagonal covariances. Assuming σ = 0 and plugging these in the population loss formula from Lemma B.2 with respect to the task ¯ βTT gives: 
+
+L(W) = ¯β⊤
+
+> TT
+
+hI − nI ¯W I − nI ¯W⊤ I + n(n + 1) I ¯W⊤ I ¯WI + ntr ( ¯W⊤ I ¯WI )Ii ¯βTT + σ2ntr ( ¯W⊤ I ¯WI ) + σ2
+
+= ∥ ¯βTT ∥22 − 2n ¯β⊤
+
+> TT
+
+QΛQ⊤ ¯βTT + n(n + 1) ¯ β⊤
+
+> TT
+
+QΛ2Q⊤ ¯βTT + ntr (Λ2)∥ ¯βTT ∥22
+
+≈ ∥ ¯βTT ∥22 − 2n ¯β⊤
+
+> TT
+
+QΛQ⊤ ¯βTT + n2 ¯β⊤
+
+> TT
+
+QΛ2Q⊤ ¯βTT + ntr (Λ2)∥ ¯βTT ∥22
+
+= ¯β⊤
+
+> TT
+
+Q (I − nΛ)2 Q⊤ ¯βTT + n∥ ¯βTT ∥22tr (Λ2)
+
+= ˜β⊤ 
+
+> TT
+
+(I − nΛ)2 ˜βTT + n ∥ ˜βTT ∥22tr (Λ2)
+
+= A + B.
+
+Hence, L(W) ≈ A + B. The proof is complete. 
+
+Proposition 5.2. Let Σx = I, σ 2 = 0 and suppose Σβ is an arbitrary diagonal covariance matrix with the first r diagonal entries being non-zero. Then, the minimizer W∗ of the pre-training loss (1) that has minimal Frobenius norm and its population loss are given by 
+
+W∗ = (n + 1) I′ + tr (Σβ)Σ†
+
+> β
+
+†
+
+, L(W∗) ≈ A + B,
+
+where I′ = diag (1r, 0d−r).Proof. While Li et al. (2024) derives the solution form in the full-rank case, the same closed-form expression can be adapted when Σβ is low-rank. Indeed, if Σβ has zeros in its last d − r diagonal entries, those coordinates do not appear in the pre-training loss. Consequently, there is a set of minimizers W which di ff er only in those degenerate directions. Among these, the minimal-Frobenius-norm criterion forces all degenerate coordinates to be zero as any nonzero component in that subspace would increase ∥W∥F . Consequently, 
+
+W∗ = (n + 1) I′ + tr (Σβ) Σ†
+
+> β
+
+−1
+
+zeroes out precisely the degenerate directions and is the unique Frobenius-minimal solution. For the second part of the proposition, the argument directly follows from the proof of Theorem 5.3. 
+
+Corollary 5.4. Consider the setting in Theorem 5.3. Recall the definitions of α = n/d and γ = k/d and define c1 = A
+
+∥βTT ∥22
+
+,c2 = B
+
+∥βTT ∥22
+
+. Then, there exists a phase transition point γ⋆ ≈ (c1 + c2) − (c1 + c2)2
+
+c2 (2 c1 + c2) such that γ < γ ⋆ if and only if it is better to utilize the pre-trained W∗ over the null initialization 0d×d.
+
+28 Test-Time Training Provably Improves Transformers as In-context Learners 
+
+Proof. Recall the population loss for W given by Lemma B.2: 
+
+L(W) = βTT ⊤ hΣx − nΣx W Σx − nΣxW⊤ Σx + n(n + 1) ΣxW⊤ΣxWΣx + ntr (W⊤ΣxWΣx)Σx
+
+i βTT + σ2ntr (W⊤ΣxWΣx) + σ2.
+
+First, plugging W = 0d×d yields the initial loss of ∥ ˜βTT ∥22. Also, setting ¯W∗ = 0d×d in Theorem 5.3, we know that the improvement by test-time-training is approximately: 
+
+kk + d ∥ ˜βTT ∥22.
+
+At the same time, still by Theorem 5.3, we know that if our initial weight matrix is the pre-trained W∗ the improvement is approximately: 
+
+kk + dA2
+
+A + B .
+
+Whereas, the corresponding initial loss is approximately L(W∗) ≈ A + B. Therefore, we check when it’s better to use pre-trained matrix W∗ over 0d×d (null) matrix with the below inequality, which compares the losses after the test-time-training update: 
+
+A + B − kk + dA2
+
+A + B < ∥ ˜βTT ∥22 − kk + d ∥ ˜βTT ∥22.
+
+In lines with the proof of Corollary 4.6, denote β := kk+d . Then, a series of algebraic manipulations give: 
+
+A + B − β A2
+
+A + B < ∥ ˜βTT ∥22 − β ∥ ˜βTT ∥22 ⇐⇒ c1 + c2 − β c21
+
+c1 + c2
+
+< 1 − β
+
+⇐⇒ β
+
+1 − c21
+
+c1 + c2
+
+ < 1 − (c1 + c2)
+
+⇐⇒ 1
+
+β > c1 + c2 − c21
+
+(c1 + c2)(1 − (c1 + c2)) 
+
+⇐⇒ 1 + dk > 1 + c2 (2 c1 + c2)
+
+c1 + c2 − (c1 + c2)2
+
+⇐⇒ kd = γ < c1 + c2 − (c1 + c2)2
+
+c2 (2 c1 + c2) .
+
+This completes our argument. 
+
+## D. Further Experimental Results for Section 6 
+
+To illustrate the improvement more clearly, we also provide a version of Figure 3a with the x-axis on a log scale, shown in Figure 4. 29 Test-Time Training Provably Improves Transformers as In-context Learners 10 0 10 1 10 2 10 3 
+
+> n(Context length)
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> Accuracy
+
+TabPFN 
+
+TabPFN + TTT 
+
+Figure 4. Accuracy of TabPFN model with and without test-time-training as a function of number of in-context samples n with the x-axis in log scale. 
+
+30

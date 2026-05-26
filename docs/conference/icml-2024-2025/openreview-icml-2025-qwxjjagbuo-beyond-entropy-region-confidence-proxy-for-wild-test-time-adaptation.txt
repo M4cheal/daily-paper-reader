@@ -1,0 +1,1609 @@
+Title: Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation
+
+URL Source: https://openreview.net/pdf?id=QwxjjaGBUo
+
+Number of Pages: 20
+
+Markdown Content:
+# Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+Zixuan Hu 1 2 Yichun Hu 1 Xiaotong Li 1 Shixiang Tang 3 Ling-Yu Duan † 1 2 
+
+## Abstract 
+
+Wild Test-Time Adaptation (WTTA) is proposed to adapt a source model to unseen domains under extreme data scarcity and multiple shifts. Pre-vious approaches mainly focused on sample se-lection strategies, while overlooking the funda-mental problem on underlying optimization. Ini-tially, we critically analyze the widely-adopted entropy minimization framework in WTTA and uncover its significant limitations in noisy opti-mization dynamics that substantially hinder adap-tation efficiency. Through our analysis, we iden-tify region confidence as a superior alternative to traditional entropy, however, its direct optimiza-tion remains computationally prohibitive for real-time applications. In this paper, we introduce a novel region-integrated method ReCAP that bypasses the lengthy process. Specifically, we propose a probabilistic region modeling scheme that flexibly captures semantic changes in embed-ding space. Subsequently, we develop a finite-to-infinite asymptotic approximation that trans-forms the intractable region confidence into a tractable and upper-bounded proxy. These inno-vations significantly unlock the overlooked po-tential dynamics in local region in a concise so-lution. Our extensive experiments demonstrate the consistent superiority of ReCAP over exist-ing methods across various datasets and wild scenarios. The source code will be available at 
+
+https://github.com/hzcar/ReCAP .
+
+## 1. Introduction 
+
+Deep neural networks have exhibited remarkable success across various visual tasks (Girshick, 2015; He et al., 2016). However, their performance is often compromised by the 
+
+> †
+
+Corresponding author 1School of Computer Science, Peking University, Beijing, China 2Peng Cheng Laboratory, Shenzhen, China 3The Chinese University of Hong Kong, Hongkong, China. Correspondence to: Ling-Yu Duan <lingyu@pku.edu.cn >.
+
+Proceedings of the 42 nd International Conference on Machine Learning , Vancouver, Canada. PMLR 267, 2025. Copyright 2025 by the author(s). Glass Blur Pixelate Brightness Fog          
+
+> Batch 1 Batch 2 Extreme Data Scarcity Multiple Concurrent Shifts (a) Glass Blur Batch 1 Batch size=1 Batch size=1 Batch size=1
+> Glass Blur Batch 2
+> Glass Blur Batch 3
+> Batch 1 Batch 2 Batch 3 Mild Wild (b) Test Sample Neighboring Samples Predicted Class
+
+Figure 1. (a) Illustration of Mild (Wang et al., 2020) and Wild (Niu et al., 2023) TTA settings. (b) Comparison of the adaptation process between mild and wild scenes on the Zoom domain of ImageNet-C dataset (Hendrycks & Dietterich, 2019). Different colors of points represent different predicted classes of samples in the local region. The results highlight that entropy minimization in the wild scenario causes significant local prediction instability. 
+
+distribution shifts between training and testing data (Ben-David et al., 2010; Koh et al., 2021; Hu et al., 2024). To tackle this issue, Test-Time Adaptation (TTA) (Iwasawa & Matsuo, 2021; Alfarra et al., 2024; Liang et al., 2024) has emerged as a critical paradigm, enabling source models to adapt to target distributions through online updates. Its dom-inant approach involves optimizing the model to minimize prediction entropy, thereby enhancing the model’s global confidence in the target domain. While TTA methods (Zhou & Levine, 2021; Wang et al., 2022) have achieved promising results under mild condi-tions, they show significant performance drops in wild sce-narios involving extreme data scarcity and multiple concur-rent shifts (Niu et al., 2023), as shown in Fig. 1(a). To enable effective adaptation under these wild settings, recent works focus on developing selection criteria to leverage reli-able samples only for entropy minimization. For example, SAR (Niu et al., 2023) excluded samples with high entropy and, DeYO (Lee et al., 2024) filtered out samples with sen-sitive prediction changes under image transformation. Orthogonal to sample selection, this paper delves into a fundamental yet overlooked challenge: the noisy optimiza-tion dynamics introduced by typical entropy minimization. 1Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+In wild scenes, we observe a notable instability where the semantically similar samples within the local scope demon-strate a hard-to-compromise prediction discrepancy in wild scenes, as shown in Fig. 1(b). Such inconsistency leads the underlying optimization dynamics for these samples to become essentially conflicting. When entropy minimization is solely based on the individual sample, this narrow atten-tion inevitably amplifies noisy dynamics, undermining both local consistency and overall adaptation efficiency. Building on the above observations, it is essential to mini-mize the bias in the optimization direction, as well as the variance of unstable local predictions. Therefore, we pro-pose a novel TTA strategy to enhance region confidence ,which reflects the model’s prediction certainty and consis-tency across the local region, rather than solely relying on biased individual predictions. We take two key statistical measures into consideration of the objective design: the bias term that quantifies the global entropy and the variance term 
+
+that captures the prediction divergence within the region. These two terms work together to rectify overall optimiza-tion dynamics and reduce prediction disparity, promoting consistent adaptation across the entire region. Despite the advantages of region confidence, the uncertain region scope and highly complex computations make it impractical for real-time testing. To overcome this, we in-troduce a new training framework, “ Re gion Confidence 
+
+Adaptive Proxy ( ReCAP )”, which incorporates a probabilis-tic region modeling mechanism and a highly efficient region optimization proxy. Specifically, ReCAP introduces a prob-abilistic representation to describe local regions as multi-variate gaussian distribution, identifying a suitable region in feature space. Building upon this foundation, we propose a finite-to-infinite optimization proxy. Initially, we conduct a quantitative analysis of region confidence statistics under finite distribution sampling. Subsequently, we develop an asymptotic approximation to convert the intractable bias 
+
+and variance terms into a concise, upper-bounded proxy. These upper bounds seamlessly integrate the extensive op-timization dynamics of infinite local samples in a straight-forward manner. As a result, our method establishes an efficient proxy for optimizing region confidence, replacing entropy-based approaches to unlock significantly enhanced adaptation efficiency. We evaluate the effectiveness and generalizability of our method through experiments on both ResNet (He et al., 2016) and ViT (Dosovitskiy et al., 2020), achieving state-of-the-art results on ImageNet-C (Hendrycks & Dietterich, 2019) with average gains of +2.0%, +1.1%, +1.9% on 15 corruption shifts in three wild scenarios. 
+
+Contributions. 1) We analyze and verify the limitation of widely adopted entropy minimization in introducing con-flicting dynamics in WTTA scenarios. To address this, we propose a superior alternative as region confidence , a novel training objective that leverages local knowledge to mitigate noisy conflicts. 2) To ensure real-time processing capabil-ity, we propose ReCAP , a novel training framework that incorporates two key components: a probabilistic modeling mechanism to flexibly capture variations in local region, and a finite-to-infinite asymptotic analysis to provide an efficient proxy for optimizing the intractable terms. 3) We demonstrate that ReCAP significantly outperforms existing WTTA methods through extensive experiments. Notably, ReCAP can seamlessly integrate with the orthogonal sample selection approaches in negligible computational overhead, showcasing a comprehensive framework for WTTA. 
+
+## 2. Related Work 
+
+We revisit the TTA methods for further analysis and put other related areas into the Appendix E due to space limits. Test-Time Adaptation aims to enhance the performance on out-of-distribution samples during inference. Depending on whether the training process is altered, TTA methods can be mainly divided into two groups: 1) Test-Time Training (TTT) (Sun et al., 2020; Bartler et al., 2022; Hakim et al., 2023; Liu et al., 2024) jointly optimizes the model on train-ing data with both supervised and self-supervised losses, and then conducts self-supervised training at test time. 2) Fully Test-Time Adaptation (Fully TTA) (Boudiaf et al., 2022; Hong et al., 2023; Zhao et al., 2023; Press et al., 2024; Hu et al., 2025) refrains from altering the training process and focuses solely on adapting the model during testing. In this paper, we focus on Fully TTA, as it is more gener-ally applicable than TTT, allowing adaptation of arbitrary pre-trained models without access to training data. Due to the broad applicability of TTA (Shin et al., 2022; Lin et al., 2023; Gao et al., 2024; Karmanov et al., 2024; Wang et al., 2024), a variety of methods have been developed. For instance, some methods adjust the affine coefficients of Batch Normalization layers to adapt to the target domain (Schneider et al., 2020; Hu et al., 2021; Lim et al., 2022). Others refine the prediction to provide a more robust train-ing process (Zhang et al., 2022; Chen et al., 2022). Since Tent (Wang et al., 2020) introduces entropy minimization to enhance model confidence and reduce error rates, numer-ous works follow this practice of entropy-based training. Building upon Tent, SAR (Niu et al., 2023) and DeYO (Lee et al., 2024) propose selection strategies for Wild TTA scenes, which exclude harmful samples to enhance the accu-racy of adaptation directions. In contrast to these selection approaches, this paper introduces a novel strategy that re-places entropy-based training with a framework designed to encourage and integrate consistent optimization dynamics, significantly enhancing adaptation efficiency. 2Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 0 500 1000 1500       
+
+> Online Batch
+> 20
+> 40
+> Accuracy (Avg)
+> (c) Optimization on Different Areas
+> EM on Area1
+> EM on Area2
+> EM on Area1&2
+> ReCAP on Area1&2
+> 0.1 0.2 0.3 0.4
+> Local Inconsistency(Probability)
+> 0
+> 2k
+> 4k
+> 6k
+> 8k
+> Number of Sample
+> (a) Distribution of Inconsistency Probability
+> Mild
+> Wild
+> 0.00 0.05 0.10 0.15
+> Local Inconsistency(KL Divergence)
+> 2
+> 4
+> 6
+> Entropy of Sample
+
+Area 1 Area 2 
+
+> (b) Entropy vs. KL Divergence
+> Mild
+> Wild
+
+Figure 2. Local consistency during the entropy minimization process under mild and wild (imbalanced label shift) scenarios. Consistency is measured by prediction discrepancies between each sample and its 256 neighboring samples. (a) shows the probability of inconsistent predictions in neighbors. (b) records the entropy and average KL Divergence between prediction probabilities of samples and their neighbors. (c) investigates adaptation performance when using samples with varying levels of local consistency. All experiments are conducted on ImageNet-C of Gaussian noise with ResNet50. ‘EM’ denotes entropy minimization and ‘ReCAP’ denotes our method. 
+
+## 3. Local Inconsistency: A Barrier to Efficient Adaptation 
+
+3.1. Preliminaries for Wild Test-Time Adaptation 
+
+In Test-Time Adaptation (TTA), we have a model Fθ
+
+that has been pre-trained on the source domain DS =
+
+{Xtrain , Y train } and need to evaluate it on the target do-main DT = {Xtest , Y test }. Here, θ denotes the model parameters, and X, Y denote samples and labels with the distribution shift P (Xtrain , Y train )̸ = P (Xtest , Y test ).Unlike mild scenes in (Wang et al., 2020), Wild TTA tackles more complex environments involving extreme data scarcity and multiple concurrent shifts, including three practical sce-narios: 1) Limited data stream, where batch size is restricted to 1. 2) Mixed testing domain, where target domain consists of k different sub-domains: DT (Xtest ) = Pki=1 Πi · D i,with Πi being mixing coefficient. 3) Imbalanced label shift, where the test label distribution is imbalanced and shifts over time according to a function Qt(y).To address these challenges, most existing methods (Niu et al., 2022; 2023; Lee et al., 2024) design various selection indicators to identify reliable samples and update θ through minimizing the entropy loss Lent :
+
+Lent (x) = −pθ (x) · log pθ (x) = −
+
+> C
+
+X
+
+> i=1
+
+pθ (x)i log pθ (x)i,
+
+(1) where C is the number of classes and pθ (x) = Fθ (x) = (pθ (x)1, . . . , p θ (x)C ) ∈ RC is prediction probability on x.
+
+3.2. Exploring Entropy Minimization via Local Consistency 
+
+Entropy minimization promotes the prediction probability to converge toward the dominant class, boosting confidence on unlabeled data. Its effectiveness heavily relies on the lo-cal consistency (nearby points share the similar prediction) to extend sample-wise confidence to a regional scale (Zhou et al., 2003; Wei et al., 2020). Intuitively, when predictions within a local space are consistent, optimization dynamics for individual points align with the overall direction, magni-fying the local effects. Conversely, inconsistencies create conflicting dynamics, introducing noise that hinders adap-tation in the affected region. Such instability often stems from blurry decision boundaries and is prevalent in real-world deployments under domain shifts (Arani et al., 2022). Hence, it is crucial to evaluate the reliability of entropy mini-mization in preserving local consistency under wild scenes. To assess local consistency, we record the prediction proba-bilities of test samples and their neighbors (sampled from the local region in feature space). From Fig. 2(a), the incon-sistent probability converts from an unimodal distribution near zero to a fat-tailed distribution in wild scenes, reflect-ing a high risk of misaligned prediction within local space. Fig. 2(b) further reveals that while the entropy value is opti-mized to a similar level in both scenarios, the wild setting exhibits notably larger prediction discrepancies. These find-ings demonstrate that conventional entropy minimization can undermine local consistency. Additionally, we evaluate the impact of using samples with varying levels of local consistency during adaptation, as shown in Fig. 2(c). Remarkably, entropy minimization us-ing samples with low entropy and low consistency (Area 2) still carries performance collapse. Conversely, training with high consistency samples (Area 1) achieves compa-rable adaptation performance compared to joint training on Areas 1&2, showcasing superior adaptation efficiency. These results suggest that entropy minimization, even when combined with advanced selection, still hinders adaptation efficiency as it fails to ensure prediction consistency. 
+
+3.3. From Sample Confidence to Region Confidence 
+
+Building on the above findings, it is essential to address the bias between the optimization direction and regional objective, while also reducing the variance of inconsistent prediction probabilities within the local region. To this end, we introduce a novel objective called region confidence 
+
+to replace vanilla entropy. This objective optimizes both region-wise confidence and stability simultaneously, thereby improving global optimization efficiency. The mathematical definition is as follows: 3Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation                               
+
+>                    Ω   =      , Σ
+> Original Prediction
+>               
+> KL Divergence
+>          ||       ∈ 
+> Entropy Minimization
+> Pre-adapt Post-adapt
+>               
+> Bias Term  ℒ             ∈ 
+> upper bound
+> Overall Optimization Procedure Region Confidence
+> upper bound
+> ℒ    +  ℒ     
+> Encoder Input  
+
+…Probabilistic Region Modeling Efficient Proxy of Region Confidence Selection              
+
+> ℒ       ⋅   ℒ           ℒ    +  ℒ     
+> From Finite Sampling to Infinite Approximation Variance Term
+
+…
+
+Figure 3. Overview of our ReCAP. ReCAP performs probabilistic modeling to determine local regions in the latent space (Sec. 4.1). We further derives two closed-form upper bounds for the intractable bias and variance terms via a finite-to-infinite asymptotic approximation, offering an efficient proxy for optimizing Region Confidence without the lengthy sampling process (Sec. 4.2 & 4.3). 
+
+Definition 3.1. (Region Confidence) Let us consider a local region Ω of a sample x. The region confidence of x
+
+on Ω is defined as integrals of entropy loss on Ω (Bias term )plus the Kullback-Leibler divergence between prediction probabilities of x and those of samples in Ω (Variance term ): 
+
+LRC (x) = 
+
+Z
+
+> Ω
+
+Lent (˜ x)d˜x
+
+| {z }
+
+> Bias term
+
++λ
+
+Z
+
+> Ω
+
+DKL (pθ (x)∥ pθ (˜ x)) d˜x
+
+| {z }
+
+> Variance term
+
+,
+
+(2) where DKL (p∥q) = PCi=1 pi log pi 
+
+> qi
+
+denotes the Kullback-Leibler divergence and λ denotes a trade-off coefficient. These two terms have distinct but complementary effects. The bias term integrates entropy loss over infinite samples in the local region, enabling an optimization that aligns with the overall training dynamics. The variance term penalizes large discrepancies, enhancing local consistency and reduc-ing the dispersion of dynamics. By combining two terms, region confidence promotes consistent and confident predic-tions within the region, harnessing the potential dynamics embedded in the local space to boost adaptation efficiency. 
+
+## 4. Region Confidence Proxy 
+
+Despite the advantages of region confidence, there are still two considerable challenges to optimize it: 1) Uncertain region scope. The static regions fix the sample location, making it difficult to determine an appropriate local scope. 2) Heavy computational burden. Both terms in Eq. 2 are intractable, relying on extensive sampling and additional model forwards for measurement. To tackle these issues, we propose a new TTA method called “ Re gion Confidence 
+
+Adaptive Proxy ( ReCAP )”, which incorporates a probabilis-tic region modeling mechanism (Sec. 4.1) and an efficient proxy for optimizing region confidence (Sec. 4.2). 
+
+4.1. Probabilistic Region Modeling 
+
+Since different directions in feature space can imply poten-tials of valuable semantic changes (Bengio et al., 2013; Li et al., 2023; Yu et al., 2024a), we model local regions in feature space to flexibly capture rich semantic information. To avoid class mixing, we further select the latent space extracted by the backbone, which ensures optimal class separability in the model. Hence, we explore region con-fidence within this latent space, and pθ (x) in Eq. 2 can be replaced by the probability of its corresponding feature z:
+
+pθ (z)i = ( softmax (Az + b)) i = eai·z+bi
+
+PCj=1 eaj ·z+bj
+
+, (3) where the subscript (·)i denotes the i-th class. A ∈ RC×d
+
+and b ∈ RC denote the linear and bias coefficients of the affine layer in the classifier, respectively. Rather than treating the local region as a static range, we model it as a probabilistic representation following a multi-variate Gaussian distribution. Specifically, the center of this distribution corresponds to each feature, while the variance, which defines the scope, is estimated using a small set of in-distribution data. The region is determined as follows: 
+
+Ω ( zt) := N (zt, τ · Σ) , Σ = Diag (Var DS (z)) , (4) where Ω ( zt) is the local region of the t-th test batch zt and 
+
+Σ is the diagonal matrix of variance on a small set of source data, e.g. , 500 samples are enough for ImageNet-C dataset. 
+
+τ is a hyper-parameter to control the scope. 
+
+4.2. Efficient Metric of Region Confidence 
+
+Based on the local region defined above, the computation of two terms depends on an infinite number of potential samples from the distribution and requires extensive sam-pling to capture the statistical information. However, the computational overhead and memory usage increase almost linearly with the number of sampling, making it impractical for real-time requirements in TTA testing. To address this issue, we develop finite-to-infinite approximation for the two terms, leading to a highly efficient implementation. Taking the bias term as an example, we first consider the case of finite sampling: 4Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+Lemma 4.1. (Bias Term under Finite Sampling) Given N features z1, . . . , z N drawn from the local region and their corresponding probabilities: pθ (z1), . . . , p θ (zN ). The bias term on these features satisfies the following inequality: 
+
+> N
+
+X
+
+> i=1
+
+Lent (pθ (zi)) ⩽ −
+
+> C
+
+X
+
+> i=1
+
+PNk=1 pθ (zk )i
+
+N ·
+
+> N
+
+X
+
+> j=1
+
+log pθ (zj )i
+
+!
+
+,
+
+(5) 
+
+where pθ (zi) is defined in Eq. 3. 
+
+In the following, we consider the case where N grows to infinity and find that     
+
+> PNk=1 pθ(zk)i
+> N
+
+in Eq. 10 gradually con-verges to the expectation of the prediction in the local region. For the remaining summation term PNj=1 log pθ (zj )i, it ac-tually corresponds to the negative log-likelihood and can be scaled using the following lemma: 
+
+Lemma 4.2. (Upper Bound of Negative Log-Likelihood) 
+
+Given a feature z and its local region Ω which follows a Gaussian distribution N (μ, Σ) . The expected value of the logarithm of the predicted probability for the i-th class sat-isfies the following inequality: 
+
+− Ez∼N (μ, Σ) log pθ (z)i
+
+≤ log 
+
+> C
+
+X
+
+> j=1
+
+e(aj −ai)·μ+( bj −bi)+ 12 (aj −ai)Σ( aj −ai)⊤
+
+, (6) 
+
+where the superscript (·)⊤ denotes the transpose operation. 
+
+Through the above two lemmas, we can further derive a closed-form upper bound for the bias term via asymptotic approximation. Refer to the Appendix A for missing proofs and detailed explanations. 
+
+Proposition 4.3. (Efficient Metric of Bias Term) Given a feature z and its local region Ω which follows a Gaussian distribution N (μ, Σ) . The expectation of entropy loss over the entire distribution has a closed-form upper bound: 
+
+EΩ[Lent ] = − E˜z∼N (z, Σ) 
+
+> C
+
+X
+
+> i=1
+
+pθ (˜ z)i log pθ (˜ z)i
+
+⩽
+
+> C
+
+X
+
+> j=1
+
+eaj ·z+bj + 12 aj  
+
+> Paj⊤
+
+PCk=1 eak ·z+bk + 12 ak 
+
+> Pa⊤
+> k
+
+log 
+
+> C
+
+X
+
+> i=1
+
+e(bi−bj )
+
+· e(ai−aj )·z+ 12 (ai−aj )Σ( ai−aj )⊤
+
+≜ LRE .
+
+(7) 
+
+where the upper bound LRE is called Regional Entropy .
+
+Notably, Proposition 4.3 offers an easy-to-compute metric without any additional sampling or model forward passes. Instead of minimizing the exact bias term in Eq. 2, we can optimize its upper bound to implicitly enhance overall sample confidence within the region with minimal cost. Meanwhile, we apply a similar mathematical framework to derive a closed-form upper bound for the variance term. 
+
+Proposition 4.4. (Efficient Metric of Variance Term) Given a feature z and its local region Ω which follows a Gaussian distribution N (μ, Σ) . The expectation of Kullback-Leibler divergence between the output probability over this distri-bution and the probability at its center has a upper bound: 
+
+E˜z∼N (z, Σ) KL (pθ (z)∥ pθ (˜ z)) 
+
+≤
+
+> C
+
+X
+
+> j=1
+
+eaj ·z+bj
+
+PCk=1 eak ·z+bk
+
+· log 
+
+> C
+
+X
+
+> i=1
+
+eai·z+bi
+
+PCk=1 eak ·z+bk
+
+· e 12 (ai−aj ) P(ai−aj )⊤
+
+≜ LRI ,
+
+(8) 
+
+where the upper bound LRI is called Regional Instability .
+
+This proposition also provides a theoretical result that cap-tures local information without the need for sampling. By combining two upper bounds, we ultimately present an effi-cient proxy of region confidence in Eq.2. 
+
+4.3. Overall Procedure of ReCAP 
+
+Following common practices (Niu et al., 2022; Lee et al., 2024), the loss function requires filtering and weighting based on reliability. Unlike traditional entropy-based crite-ria, our analysis in Sec. 3.2 shows that regional confidence can also serve as a measure of reliability from an orthogonal perspective. Building on this insight, we leverage Regional Entropy LRE to identify reliable samples and enhance their optimization dynamics during adaptation. Formally, the overall procedure is as follows: 
+
+min  
+
+> θ
+
+α(x) · I{L RE (x)<τ RE }(LRE (x) + λLRI (x)) ,
+
+where α(x) ≜ 1
+
+exp (LRE (x) − L 0) , (9) where α(x) and I{L RE (x)<τ RE } denotes the weighting and selection term. L0, τRE and λ are hyper-parameters. 
+
+## 5. Experiments 
+
+5.1. Experimental Setup 
+
+For a fair comparison, we follow the identical network ar-chitectures, optimizer, and batch sizes as the Wild TTA benchmark proposed in (Niu et al., 2023). 
+
+Datasets. We conduct our experiments on three datasets to evaluate the robustness and generalization capability of our method under diverse distribution shifts: 1) ImageNet-C (Hendrycks & Dietterich, 2019), a large-scale dataset categorized into 15 common corruption types and 5 sever-ity levels for each type. 2) ImageNet-R (Hendrycks et al., 2021) and 3) VisDA-2021 (Bashkirova et al., 2022), two datasets which encompass diverse domain shifts due to vary-ing styles and textures (e.g., sketch, cartoon), compared to ImageNet-C to assess the efficacy for more challenging wild test scenarios in the Appendix B. 
+
+Compared Methods. We compare our ReCAP with the following state-of-the-art methods: DDA (Gao et al., 2022) 5Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+Table 1. Comparisons with state-of-the-art methods on ImageNet-C (severity level 5) under Limited Batch Size = 1 regarding Accuracy (%). We report mean performance over 3 independent runs. The best results are in bold and the second-best are in underline.                                  
+
+> Model+Method Noise Blur Weather Digital Average
+> Gauss. Shot Impul. Defoc. Glass Motion Zoom Snow Frost Fog Brit. Contr. Elastic Pixel JPEG ResNet50 18.0 19.8 17.9 19.8 11.4 21.4 24.9 40.4 47.3 33.6 69.3 36.3 18.6 28.4 52.3 30.6
+
+• MEMO 18.5 20.5 18.4 17.1 12.6 21.8 26.9 40.4 47.0 34.4 69.5 36.5 19.2 32.1 53.3 31.2 
+
+• DDA 42.4 43.3 42.3 16.6 19.6 21.9 26.0 35.7 40.1 13.7 61.2 25.2 37.5 46.6 54.1 35.1 
+
+• Tent 2.5 2.9 2.5 13.5 3.6 18.6 17.6 15.3 23.0 1.4 70.4 42.2 6.2 49.2 53.8 21.5 
+
+• EATA 24.9 28.0 25.8 18.3 17.0 31.2 29.8 42.5 44.1 41.3 70.9 44.2 27.6 46.8 55.4 36.5 
+
+• SAR 25.5 28.0 24.9 18.7 16.3 28.6 31.4 46.2 44.9 33.4 72.8 44.3 15.3 47.1 56.1 35.6 
+
+• DeYO 41.2 44.3 42.5 22.4 24.7 41.8 21.9 54.8 51.6 21.9 73.1 53.2 48.5 59.8 59.6 44.1 
+
+• ReCAP (Ours) 42.5 44.4 42.9 19.4 25.0 42.2 44.0 49.7 52.4 57.5 72.9 53.6 29.5 60.4 60.0 46.4 
+
+• ReCAP+SAR 41.7 44.5 40.6 24.8 25.8 44.0 47.0 56.2 53.0 52.8 73.4 54.6 48.8 61.7 60.7 48.6 
+
+• ReCAP+DeYO 42.5 44.8 42.8 25.9 27.2 43.7 44.9 55.8 52.8 51.9 73.5 54.8 50.9 61.5 60.7 48.9                 
+
+> Vitbase 9.5 6.7 8.2 29.0 23.4 33.9 27.1 15.9 26.5 47.2 54.7 44.1 30.5 44.5 47.8 29.9
+
+• MEMO 21.6 17.3 20.6 37.1 29.6 40.4 34.4 24.9 34.7 55.1 64.8 54.9 37.4 55.4 57.6 39.1 
+
+• DDA 41.3 41.1 40.7 24.4 27.2 30.6 26.9 18.3 27.5 34.6 50.1 32.4 42.3 52.2 52.6 36.1 
+
+• Tent 42.2 1.0 43.3 52.4 48.2 55.5 50.5 16.5 16.9 66.4 74.9 64.7 51.6 67.0 64.3 47.7 
+
+• EATA 30.1 24.6 34.2 44.3 39.6 48.4 42.4 38.1 46.0 60.7 65.8 61.2 46.7 57.8 59.5 46.6 
+
+• SAR 42.7 39.5 41.9 54.6 51.2 58.3 54.4 60.2 54.7 70.3 75.9 66.8 58.4 69.5 66.3 57.6 
+
+• DeYO 53.4 50.4 55.0 58.7 59.5 64.5 52.5 68.1 66.3 73.8 78.3 67.9 68.9 73.8 70.8 64.1 
+
+• ReCAP (Ours) 53.5 56.7 56.9 59.2 60.5 65.3 64.0 69.6 67.2 74.1 78.4 64.6 70.2 74.4 71.5 65.7 
+
+• ReCAP+SAR 55.3 56.2 56.5 60.0 61.2 66.5 65.2 69.8 68.0 74.5 78.6 68.4 71.0 74.9 71.6 66.5 
+
+• ReCAP+DeYO 54.4 55.3 55.5 59.8 61.1 65.2 64.9 69.3 67.9 73.9 78.4 67.1 70.7 74.4 71.0 65.9 
+
+performs diffusion-based adaptation to map the input image back to the source domain. MEMO (Zhang et al., 2022) minimizes marginal entropy across augmented variants of test samples. EATA, SAR, and DeYO are selection-based methods with distinct designs. EATA (Niu et al., 2022) com-bines entropy-based selection with a weighting mechanism. SAR (Niu et al., 2023) minimizes entropy using sharpness-aware optimization. DeYO (Lee et al., 2024) employs dual filtering based on disentangled factors. 
+
+Table 2. Comparisons with SOTA methods on ImageNet-C (sever-ity level 5, 4) under Mixed Testing Domain .
+
+Model+Method Level=5 Level=4 Average 
+
+ResNet50 30.6 42.7 36.7 
+
+• MEMO 31.2 43.0 37.1 
+
+• DDA 35.1 43.6 39.4 
+
+• Tent 13.4 20.6 17.0 
+
+• EATA 38.1 47.7 42.9 
+
+• SAR 38.3 48.6 43.5 
+
+• DeYO 38.6 50.2 44.4 
+
+• ReCAP (Ours) 41.5 51.2 46.4 
+
+• ReCAP+SAR 42.1 51.9 47.0 
+
+• ReCAP+DeYO 42.2 52.4 47.3 
+
+VitBase 29.9 42.9 36.4 
+
+• MEMO 39.1 51.3 45.2 
+
+• DDA 36.1 45.1 40.6 
+
+• Tent 16.5 64.3 40.4 
+
+• EATA 55.7 63.7 59.7 
+
+• SAR 57.1 64.9 61.0 
+
+• DeYO 59.4 66.8 63.1 
+
+• ReCAP (Ours) 59.4 67.1 63.3 
+
+• ReCAP+SAR 60.0 67.2 63.6 
+
+• ReCAP+DeYO 59.8 67.0 63.4 
+
+Implementation Details. Following the common setting in Wild TTA (Niu et al., 2023; Lee et al., 2024), we conduct ex-periments on ResNet50-GN (Wu & He, 2018) and ViTBase-LN (Dosovitskiy et al., 2020) obtained from timm (Wight-man, 2019). For the optimizer, we use SGD, batch size of 64 (except for batch size=1), with a momentum of 0.9, and a learning rate of 0.00025/0.001 for ResNet/ViT. For our ReCAP, L0 and τRE in Eq. 9 is set to 0.7/1.0 × ln C and 
+
+0.8/1.0 × ln C (C is the number of classes) for ResNet/ViT. The hyper-parameter τ in Eq. 4 is 1.2 and λ in Eq. 9 is 0.5
+
+by default. For trainable parameters, according to common practices (Wang et al., 2020), we adapt the affine parameters of normalization layers. 
+
+5.2. Evaluation Results Evaluation on Data Scarcity. To evaluate the effectiveness of our method under severe data scarcity, we compare our ReCAP with prior approaches in challenging scenarios with limited data streams, i.e. , batch size = 1. As shown in Tab. 1, ReCAP significantly improves adaptation performance, emerging as the only method to consistently outperform the source model across all corruption types. Notably, ReCAP achieves superior results in 25 out of 30 cases, substantially surpassing the previous SOTA method by +2.3% and +1.6% on ResNet and ViT evaluations, respectively. These results underscore the robustness of our method in the face of data limitations and validate its effectiveness in enhancing adap-tation efficiency for resource-constrained, low-data training. 
+
+Evaluation on Multiple Concurrent Shifts. To evaluate the ability of our ReCAP to handle complex distribution shifts, we compare various methods under mixed testing 6Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+Table 3. Comparisons with state-of-the-art methods on ImageNet-C (severity level 5) under Imbalanced Label Shift .                                 
+
+> Model+Method Noise Blur Weather Digital Average
+> Gauss. Shot Impul. Defoc. Glass Motion Zoom Snow Frost Fog Brit. Contr. Elastic Pixel JPEG ResNet50 17.9 19.9 17.9 19.7 11.3 21.3 24.9 40.4 47.4 33.6 69.2 36.3 18.7 28.4 52.2 30.6
+
+• MEMO 18.4 20.6 18.4 17.1 12.7 21.8 26.9 40.7 46.9 34.8 69.6 36.4 19.2 32.2 53.4 31.3 
+
+• DDA 42.5 43.4 42.3 16.5 19.4 21.9 26.1 35.8 40.2 13.7 61.3 25.2 37.3 46.9 54.3 35.1 
+
+• Tent 2.6 3.3 2.7 13.9 7.9 19.5 28.7 16.5 21.9 1.8 70.5 42.2 6.6 49.4 53.7 22.8 
+
+• EATA 27.2 28.5 28.4 15.1 16.7 24.6 25.5 32.5 32.2 40.0 66.5 33.2 24.1 42.2 38.6 31.7 
+
+• SAR 34.0 36.7 36.2 21.8 20.9 33.2 32.4 38.7 45.6 50.6 72.9 46.8 14.3 52.2 56.8 39.5 
+
+• DeYO 41.7 44.0 42.5 23.4 23.9 41.3 13.0 53.9 52.2 38.6 73.1 52.3 46.8 59.3 59.1 44.3 
+
+• ReCAP (Ours) 42.0 44.1 42.7 19.8 24.3 39.7 40.2 46.0 52.2 57.3 73.1 52.4 33.7 59.4 59.5 45.8 
+
+• ReCAP+SAR 42.2 44.4 42.7 24.1 24.3 41.6 43.8 51.6 52.4 56.8 73.1 52.9 38.9 60.2 59.4 47.2 
+
+• ReCAP+DeYO 42.5 44.5 43.3 25.8 26.7 43.3 39.1 54.2 53.2 59.3 73.4 53.8 49.2 61.4 60.3 48.7                 
+
+> Vitbase 9.4 6.7 8.3 29.1 23.4 34.0 27.0 15.8 26.3 47.4 54.7 43.9 30.5 44.5 47.6 29.9
+
+• MEMO 21.6 17.4 20.6 37.1 29.6 40.6 34.4 25.0 34.8 55.2 65.0 54.9 37.4 55.5 57.7 39.1 
+
+• DDA 41.3 41.3 40.6 24.6 27.4 30.7 26.9 18.2 27.7 34.8 50.0 32.3 42.2 52.5 52.7 36.2 
+
+• Tent 32.7 1.4 34.6 54.4 52.3 58.2 52.2 7.7 12.0 69.3 76.1 66.1 56.7 69.4 66.4 47.3 
+
+• EATA 35.8 34.8 36.8 45.1 47.3 49.3 47.8 56.6 55.5 62.1 72.3 21.6 56.0 64.6 63.7 50.0 
+
+• SAR 48.2 48.7 49.0 55.4 54.5 59.2 54.3 55.8 54.5 70.0 76.9 66.1 62.2 70.2 66.5 59.4 
+
+• DeYO 53.0 34.4 48.8 57.6 58.5 63.3 35.4 67.4 66.0 73.0 77.7 66.6 68.1 73.1 69.8 60.8 
+
+• ReCAP (Ours) 53.1 38.5 49.6 57.3 59.0 63.8 60.7 67.8 66.3 72.9 77.7 66.8 68.2 73.0 70.0 63.0 
+
+• ReCAP+SAR 53.2 42.7 50.9 58.0 58.9 63.8 60.9 67.6 66.1 73.2 77.6 67.6 68.3 73.1 69.8 63.4 
+
+• ReCAP+DeYO 53.1 53.9 54.1 57.4 58.8 63.6 60.6 67.8 66.4 72.9 77.7 67.1 68.3 73.1 69.8 64.3 
+
+domain and imbalanced label shift. As shown in Tab. 2 & 3, Tent and MEMO struggle with multiple concurrent shifts, even performing worse than the no-adapt model. While se-lection methods like SAR and DeYO perform competitively in long-term adaptation scenarios, the limitations of entropy-based approaches still hinder their adaptation efficiency. In contrast, ReCAP achieves SOTA performance across nearly all corruption types. For label shifts, ReCAP showcases significant superiority over other methods, with an average gain of +1.5% and +2.2% in ResNet and ViT testing, re-spectively. These results validate the stable improvements offered by ReCAP under multiple concurrent corruptions. 
+
+ReCAP can boost entropy-based methods. To investigate the complementarity of our approach with prior entropy-based methods, we test its integration with the latest SOTA SAR and DeYO across all three wild scenarios. Through replacing entropy minimization with region confidence op-timization proxy, the performance combined with our ap-proach shows obvious gains in many downstream scenes. 
+
+Table 4. Efficiency comparison of various methods. We assess TTA approaches for processing 50,000 images in Gaussian corruption type, using a single Nvidia RTX 4090 GPU.                                 
+
+> Method Forward Backward Other computation Time No-adapt 50,000 N/A N/A 84s DDA --Diffusion model 13,277s Tent 50,000 50,000 N/A 110s EATA 50,000 19,608 regularizer 118s SAR 66,418 30,488 Model updates 164s DeYO 82,843 24,714 Data augmentation 144s ReCAP 50,000 19,512 Eq. 9 116s
+
+Specifically, our method consistently improves SAR with an average gain of +11.0% , +3.1% , and +5.9% across the three wild scenes. Similarly, DeYO achieves improvements of +3.3% , +1.6% , and +4.0% when integrated with our method. These significant gains validate the effectiveness of our proposed region confidence optimization strategy, which can seamlessly integrate with various methods to boost adaptation performance. 
+
+5.3. Running Time Comparison 
+
+We measure the running time required for the adaptation of various methods under ImageNet-C. As shown in Tab. 4, Tent achieves the fastest speed (110s) as it only performs en-tropy optimization on samples without additional operations. DDA requires significantly more time since it needs to use the source data to train additional networks. The sharpness-aware optimization in SAR and the data augmentation in DeYO require additional model forward or backward passes, resulting in more time cost. Our ReCAP achieves signifi-cantly superior performance with the second-best time cost (just +5% compared to Tent), highlighting its efficiency. 
+
+## 6. Ablation Study and Visualization 
+
+In this section, without loss of generality, we conduct ab-lation studies and visualizations on ResNet in label shift scenes for the sake of brevity. Focusing on two pivotal components of ReCAP, Probabilistic region modeling and 
+
+Efficient metric of region confidence , we perform various experiments to analyze their impacts. Refer to the Appendix C for more experiments and analysis. 7Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 0.0 0.5 1.0 1.5 2.0 2.5 
+
+> 38
+> 40
+> 42
+> 44
+> 46
+> Prior SOTA
+
+τ     
+
+> 59
+> 60
+> 61
+> 62
+> 63
+> Prior SOTA
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> 43
+> 44
+> 45
+> 46
+> Accuracy(%)
+> Prior SOTA
+> λ
+> ReCAP(ResNet)
+> ReCAP(ViT)
+> 61
+> 62
+> 63
+> 64
+> Prior SOTA
+
+Figure 4. (a) Performance with varying strengths λ of the variance term. (b) Performance with different ranges τ of the local region. 
+
+Figure 5. The t-SNE visualization of feature space in Snow corrup-tion type after model adaptation. 
+
+6.1. Hyper-parameter Robustness 
+
+There are two important hyper-parameters in our method: the coefficient λ, which determines the trade-off of bias term and variance term, and the coefficient τ , which controls the scope of the local region. We conduct ablation experiments on these two key coefficients independently: As shown in Fig. 4(a), the different strengths of variance term yields stable performance gains. However, when λ
+
+exceeds the optimal range, model updates may prioritize consistency over confidence optimization, leading to worse performance. To balance the effects of two terms in region confidence, we set λ to 0.5 by default. In Fig. 4(b), perfor-mance improves as the region scale increases, peaking at 
+
+τ = 1 .2. However, when τ exceeds a reasonable range (e.g., 2.5), the local region may suffer from category mixing, lead-ing to performance degradation. Therefore, we set τ to 1.2 by default. Within the range of τ ∈ [0 .5, 1.5] , our method consistently outperforms prior SOTA methods, demonstrat-ing the robustness of the region scale in our approach. 
+
+6.2. Class Separability after Adaptation 
+
+To analyze the effects of WTTA methods on feature repre-sentations, we visualize the feature representation of differ-ent categories after model adaptation using t-SNE (Van der Maaten & Hinton, 2008) in Fig. 5. Compared to the latest SOTA DeYO, our ReCAP exhibits more compact intra-class features and more distinct inter-class separability (e.g., class 1 in orange and class 7 in grey). Since our method facilitates a more efficient transfer process, the detrimental effects of distribution shifts on the clustering properties of the feature space can be quickly alleviated, yielding representations with clear classification boundaries in testing data. 
+
+Figure 6. Visualization of prediction results and KL Divergence of prediction probabilities in local region. Different colors of points represent different predicted classes of samples within the region. 
+
+6.3. Prediction Consistency Comparison 
+
+To analyze the effect on local consistency, we sample 128 points within the local distribution of each sample to assess fluctuations in prediction probabilities during the adapta-tion process. As shown in Fig. 6, compared to DeYO, our approach consistently exhibits significantly lower KL Di-vergence values throughout the entire optimization process. Furthermore, we visualize the prediction results during the training process. The visualization reveals that the prior method fails to ensure consistent predictions, whereas our method progressively enhances consistency, effectively re-ducing the dispersion in training dynamics. 
+
+## 7. Conclusion 
+
+In this paper, we propose ReCAP, a novel method designed to capture consistent optimization dynamics that are often disrupted by entropy minimization, offering an effective solution for leveraging the region-integrated training. We construct a novel training objective to replace vanilla en-tropy and further develop an asymptotic analysis framework to derive a more practical and flexible proxy for efficient training in TTA. We demonstrate its consistent effectiveness across a wide range of shift types, challenging wild scenar-ios, and diverse model architectures. We hope that our work will inspire future research move beyond the focus on indi-vidual data points, exploring more effective ways to leverage regional knowledge for robust and efficient adaptation. 
+
+Limitations. First, our evaluations focus on classification benchmarks. While the impact of Wild TTA in other tasks remains underexplored in existing research, it’s crucial for understanding the capability boundary of methods. In future work, we plan to establish a more comprehensive benchmark across various tasks for a broader evaluation. Second, the local region we design is domain-wise, i.e. the same shape to all samples within a domain. However, given the differences in class cluster boundaries or the distance to boundaries, the region should ideally vary at the class-wise or sample-wise level. In future work, we will explore more fine-grained region modeling mechanisms to address this limitation. 8Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+## Acknowledgements 
+
+This work was supported by the Program of Beijing Mu-nicipal Science and Technology Commission Foundation (No.Z241100003524010), in part by the National Natural Science Foundation of China under Grant 62088102, in part by AI Joint Lab of Future Urban Infrastructure sponsored by Fuzhou Chengtou New Infrastructure Group and Boyun Vision Co. Ltd, and in part by the PKU-NTU Joint Research Institute (JRI) sponsored by a donation from the Ng Teng Fong Charitable Foundation. 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of Test-Time Adaptation. Its societal impact lies primar-ily in its potential to expand the applicability of machine learning models in real-world complex scenarios. By im-proving the stability and efficiency of model adaptation, our work facilitates model deployment on edge devices where storage and computational power are limited. Ethically, it promotes more sustainable machine learning practices by re-ducing computational overhead, which in turn lowers energy consumption. This aligns with broader environmental sus-tainability goals and supports the development of more effi-cient, eco-friendly AI technologies for various industries. 
+
+## References 
+
+Alfarra, M., Itani, H., Pardo, A., shyma yaser alhuwaider, Ramazanova, M., Perez, J. C., zhipeng cai, M ¨uller, M., and Ghanem, B. Evaluation of test-time adapta-tion under computational time constraints. In Forty-first International Conference on Machine Learning ,2024. URL https://openreview.net/forum? id=6FtAXU4ean .Arani, E., Sarfraz, F., and Zonooz, B. Learning fast, learning slow: A general continual learning method based on com-plementary learning system. In International Conference on Learning Representations , 2022. Araslanov, N. and Roth, S. Self-supervised augmentation consistency for adapting semantic segmentation. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 15384–15394, 2021. Barbu, A., Mayo, D., Alverio, J., Luo, W., Wang, C., Gut-freund, D., Tenenbaum, J., and Katz, B. Objectnet: A large-scale bias-controlled dataset for pushing the lim-its of object recognition models. Advances in neural information processing systems , 32, 2019. Bartler, A., B ¨uhler, A., Wiewel, F., D ¨obler, M., and Yang, B. Mt3: Meta test-time training for self-supervised test-time adaption. In International Conference on Artificial Intelligence and Statistics , pp. 3080–3090. PMLR, 2022. Bashkirova, D., Hendrycks, D., Kim, D., Liao, H., Mishra, S., Rajagopalan, C., Saenko, K., Saito, K., Tayyab, B. U., Teterwak, P., et al. Visda-2021 competition: Universal domain adaptation to improve performance on out-of-distribution data. In NeurIPS 2021 Competitions and Demonstrations Track , pp. 66–79. PMLR, 2022. Ben-David, S., Blitzer, J., Crammer, K., Kulesza, A., Pereira, F., and Vaughan, J. W. A theory of learning from different domains. Machine learning , 79:151–175, 2010. Bengio, Y., Mesnil, G., Dauphin, Y., and Rifai, S. Better mixing via deep representations. In Proceedings of the 30th International Conference on Machine Learning , pp. 552–560. PMLR, 17–19 Jun 2013. Berthelot, D., Carlini, N., Goodfellow, I., Papernot, N., Oliver, A., and Raffel, C. A. Mixmatch: A holistic ap-proach to semi-supervised learning. Advances in neural information processing systems , 32, 2019. Boudiaf, M., Mueller, R., Ben Ayed, I., and Bertinetto, L. Parameter-free online test-time adaptation. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 8344–8353, 2022. Chen, D., Wang, D., Darrell, T., and Ebrahimi, S. Con-trastive test-time adaptation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 295–305, 2022. Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., and Fei-Fei, L. Imagenet: A large-scale hierarchical image database. In 2009 IEEE conference on computer vision and pattern recognition , pp. 248–255. Ieee, 2009. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., et al. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 , 2020. Gao, J., Zhang, J., Liu, X., Darrell, T., Shelhamer, E., and Wang, D. Back to the source: Diffusion-driven test-time adaptation. arXiv preprint arXiv:2207.03442 , 2022. Gao, J., Yao, X., and Xu, C. Fast-slow test-time adaptation for online vision-and-language navigation. In Forty-first International Conference on Machine Learning , 2024. Girshick, R. Fast r-cnn. In Proceedings of the IEEE inter-national conference on computer vision , pp. 1440–1448, 2015. 9Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+Hakim, G. A. V., Osowiechi, D., Noori, M., Cheragha-likhani, M., Bahri, A., Ben Ayed, I., and Desrosiers, C. Clust3: Information invariant test-time training. In Pro-ceedings of the IEEE/CVF International Conference on Computer Vision , pp. 6136–6145, 2023. He, K., Zhang, X., Ren, S., and Sun, J. Deep residual learn-ing for image recognition. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , June 2016. Hendrycks, D. and Dietterich, T. Benchmarking neural network robustness to common corruptions and perturba-tions. In International Conference on Learning Represen-tations , 2019. URL https://openreview.net/ forum?id=HJz6tiCqYm .Hendrycks, D., Basart, S., Mu, N., Kadavath, S., Wang, F., Dorundo, E., Desai, R., Zhu, T., Parajuli, S., Guo, M., et al. The many faces of robustness: A critical analysis of out-of-distribution generalization. In Proceedings of the IEEE/CVF international conference on computer vision ,pp. 8340–8349, 2021. Hong, J., Lyu, L., Zhou, J., and Spranger, M. Mecta: Memory-economic continual test-time model adaptation. In 2023 International Conference on Learning Represen-tations , 2023. Hu, X., Uzunbas, G., Chen, S., Wang, R., Shah, A., Neva-tia, R., and Lim, S.-N. Mixnorm: Test-time adaptation through online normalization estimation. arXiv preprint arXiv:2110.11478 , 2021. Hu, Z., Li, X., Tang, S., Liu, J., Hu, Y., and Duan, L.-Y. Lead: Exploring logit space evolution for model selec-tion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 28664– 28673, 2024. Hu, Z., Hu, Y., and Duan, L.-Y. Seva: Leveraging single-step ensemble of vicinal augmentations for test-time adap-tation. arXiv preprint arXiv:2505.04087 , 2025. Iwasawa, Y. and Matsuo, Y. Test-time classifier adjustment module for model-agnostic domain generalization. Ad-vances in Neural Information Processing Systems , 34: 2427–2440, 2021. Karmanov, A., Guan, D., Lu, S., El Saddik, A., and Xing, E. Efficient test-time adaptation of vision-language models. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pp. 14162–14171, 2024. Koh, P. W., Sagawa, S., Marklund, H., Xie, S. M., Zhang, M., Balsubramani, A., Hu, W., Yasunaga, M., Phillips, R. L., Gao, I., et al. Wilds: A benchmark of in-the-wild distribution shifts. In International conference on machine learning , pp. 5637–5664. PMLR, 2021. Lee, J., Jung, D., Lee, S., Park, J., Shin, J., Hwang, U., and Yoon, S. Entropy is not enough for test-time adap-tation: From the perspective of disentangled factors. In 
+
+The Twelfth International Conference on Learning Repre-sentations , 2024. Li, B., Wang, Y., Che, T., Zhang, S., Zhao, S., Xu, P., Zhou, W., Bengio, Y., and Keutzer, K. Rethinking distribu-tional matching based domain adaptation. arXiv preprint arXiv:2006.13352 , 2020. Li, X., Hu, Z., Liu, J., Ge, Y., Dai, Y., and Duan, L.-Y. Modeling uncertain feature representation for domain generalization. 2023. Liang, J., He, R., and Tan, T. A comprehensive survey on test-time adaptation under distribution shifts. Interna-tional Journal of Computer Vision , pp. 1–34, 2024. Lim, H., Kim, B., Choo, J., and Choi, S. Ttn: A domain-shift aware batch normalization in test-time adaptation. In The Eleventh International Conference on Learning Representations , 2022. Lin, W., Mirza, M. J., Kozinski, M., Possegger, H., Kuehne, H., and Bischof, H. Video test-time adaptation for action recognition. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 22952– 22961, 2023. Liu, W., Shen, X., Li, H., Bi, X., Liu, B., Pun, C.-M., and Cun, X. Depth-aware test-time training for zero-shot video object segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 19218–19227, 2024. Niu, S., Wu, J., Zhang, Y., Chen, Y., Zheng, S., Zhao, P., and Tan, M. Efficient test-time model adaptation with-out forgetting. In International conference on machine learning , pp. 16888–16905. PMLR, 2022. Niu, S., Wu, J., Zhang, Y., Wen, Z., Chen, Y., Zhao, P., and Tan, M. Towards stable test-time adaptation in dynamic wild world. In Internetional Conference on Learning Representations , 2023. Prabhu, V., Khare, S., Kartik, D., and Hoffman, J. Sentry: Selective entropy optimization via committee consistency for unsupervised domain adaptation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 8558–8567, 2021. Press, O., Schneider, S., K ¨ummerer, M., and Bethge, M. Rdumb: A simple approach that questions our progress 10 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+in continual test-time adaptation. Advances in Neural Information Processing Systems , 36, 2024. Sajjadi, M., Javanmardi, M., and Tasdizen, T. Regulariza-tion with stochastic transformations and perturbations for deep semi-supervised learning. Advances in neural information processing systems , 29, 2016. Schneider, S., Rusak, E., Eck, L., Bringmann, O., Bren-del, W., and Bethge, M. Improving robustness against common corruptions by covariate shift adaptation. Ad-vances in neural information processing systems , 33: 11539–11551, 2020. Shin, I., Tsai, Y.-H., Zhuang, B., Schulter, S., Liu, B., Garg, S., Kweon, I. S., and Yoon, K.-J. Mm-tta: multi-modal test-time adaptation for 3d semantic segmentation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 16928–16937, 2022. Sun, Y., Wang, X., Liu, Z., Miller, J., Efros, A., and Hardt, M. Test-time training with self-supervision for generaliza-tion under distribution shifts. In International conference on machine learning , pp. 9229–9248. PMLR, 2020. Van der Maaten, L. and Hinton, G. Visualizing data using t-sne. Journal of machine learning research , 9(11), 2008. Wang, D., Shelhamer, E., Liu, S., Olshausen, B., and Darrell, T. Tent: Fully test-time adaptation by entropy minimiza-tion. In International Conference on Learning Represen-tations , 2020. Wang, Q., Fink, O., Van Gool, L., and Dai, D. Continual test-time domain adaptation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pp. 7201–7211, 2022. Wang, Y., Cheraghian, A., Hayder, Z., Hong, J., Ramas-inghe, S., Rahman, S., Ahmedt-Aristizabal, D., Li, X., Petersson, L., and Harandi, M. Backpropagation-free net-work for 3d test-time adaptation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 23231–23241, 2024. Wei, C., Shen, K., Chen, Y., and Ma, T. Theoretical analysis of self-training with deep networks on unlabeled data. 
+
+arXiv preprint arXiv:2010.03622 , 2020. Wightman, R. Pytorch image models. https://github. com/rwightman/pytorch-image-models ,2019. Wu, Y. and He, K. Group normalization. In Proceedings of the European conference on computer vision (ECCV) , pp. 3–19, 2018. Xie, Q., Dai, Z., Hovy, E., Luong, T., and Le, Q. Un-supervised data augmentation for consistency training. 
+
+Advances in neural information processing systems , 33: 6256–6268, 2020. Yu, Y., Wang, Y., Xia, S., Yang, W., Lu, S., Tan, Y.-P., and Kot, A. Purify unlearnable examples via rate-constrained variational autoencoders. In International Conference on Machine Learning , pp. 57678–57702. PMLR, 2024a. Yu, Y., Wang, Y., Yang, W., Guo, L., Lu, S., Duan, L.-Y., Tan, Y.-P., and Kot, A. C. Robust and transferable backdoor attacks against deep image compression with selective frequency prior. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024b. Zhang, M., Levine, S., and Finn, C. Memo: Test time robustness via adaptation and augmentation. Advances in neural information processing systems , 35:38629–38642, 2022. Zhao, B., Chen, C., and Xia, S.-T. DELTA: DEGRADATION-FREE FULLY TEST-TIME ADAP-TATION. In The Eleventh International Conference on Learning Representations , 2023. Zhou, A. and Levine, S. Bayesian adaptation for covariate shift. Advances in neural information processing systems ,34:914–927, 2021. Zhou, D., Bousquet, O., Lal, T., Weston, J., and Sch¨ olkopf, B. Learning with local and global consistency. Advances in neural information processing systems , 16, 2003. 11 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+# Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation ————Appendix———— 
+
+The structure of Appendix is as follows: • Appendix A contains all missing proofs in the main manuscript. • Appendix B presents additional experimental results on supplementary datasets. • Appendix C provides further ablation studies and visualizations. • Appendix D details the datasets and the methods used for comparison. • Appendix E expands on related work in relevant fields. 
+
+## A. Theoretical Proof 
+
+Below, we will provide detailed proofs of the theoretical results presented in the methodology Sec. 4.2. 
+
+Notation. First, we recall the notation that we used in the main paper as well as this appendix: C denotes the number of classes. Fθ denotes the model and θ denotes the model parameters. x denotes a testing sample and z ∈ Rd denotes its corresponding feature. E denotes the operation of expectation. N (μ, Σ) denotes the Gaussian distribution with a mean of 
+
+μ and a covariance of Σ. The subscript (·)i denotes the i-th dimension, corresponding to the i-th class. A ∈ RC×d and 
+
+b ∈ RC denote the linear and bias coefficients of the affine layer in the classifier, with ai and bi being their i-th dimensions, respectively. pθ (z)i = ( softmax (Az + b)) i = eai·z+bi   
+
+> PCj=1 eaj·z+bj
+
+denotes the predicted probability of sample x belonging to i-th class. Lent (x) = −pθ (z) · log pθ (z) = − PCi=1 pθ (z)i log pθ (z)i denotes the prediction entropy of the sample x and its corresponding feature z.
+
+A.1. Two Lemma Inequalities 
+
+Subsequently, we provide the proof of two important inequalities that we need to use to derive the conclusion of Proposition 4.3 & 4.4 in the main paper. 
+
+Lemma A.1. (Bias Term under Finite Sampling) Given N features z1, . . . , z N drawn from the local region and their corresponding probabilities: pθ (z1), . . . , p θ (zN ). The bias term on these features satisfies the following inequality: 
+
+> N
+
+X
+
+> i=1
+
+Lent (pθ (zi)) ⩽ −
+
+> C
+
+X
+
+> i=1
+
+PNk=1 pθ (zk)i
+
+N ·
+
+
+
+> N
+
+X
+
+> j=1
+
+log pθ (zj )i
+
+ . (10) 
+
+Proof. We begin by examining the difference between the left-hand side (LHS) and the right-hand side (RHS) of the inequality. By merging identical logarithmic terms, we can reformulate the expression into multiple summations, which we then simplify using the commutative property of summation: 
+
+RHS − LHS =
+
+> N
+
+X
+
+> i=1
+> C
+
+X
+
+> j=1
+
+pθ (zi)j − 1
+
+N
+
+> N
+
+X
+
+> k=1
+
+pθ (zk )j
+
+!
+
+log pθ (zi)j
+
+= 1
+
+N
+
+> N
+
+X
+
+> i=1
+> C
+
+X
+
+> j=1
+> N
+
+X
+
+> k=1
+
+(pθ (zi)j − pθ (zk )j ) log pθ (zi)j .
+
+(11) 
+
+Since C dimensions of the probability in Eq. 11 are independent of each other, we can treat each dimension separately. Therefore, it suffices to prove the following inequality for each dimension: 
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+> N
+
+X
+
+> k=1
+
+
+
+pθ (zi)j − pθ (zk)j
+
+
+
+log pθ (zi)j ⩾ 0. (12) 12 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+Applying Fubini’s theorem allows us to interchange the order of summation in Eq. 12. We also interchange the indices i and 
+
+k to obtain the following identity: 
+
+> N
+
+X
+
+> i=1
+> N
+
+X
+
+> k=1
+
+
+
+pθ (zi)j − pθ (zk)j
+
+
+
+log pθ (zi)j =
+
+> N
+
+X
+
+> k=1
+> N
+
+X
+
+> i=1
+
+
+
+pθ (zi)j − pθ (zk)j
+
+
+
+log pθ (zi)j
+
+=
+
+> N
+
+X
+
+> i=1
+> N
+
+X
+
+> k=1
+
+
+
+pθ (zk)j − pθ (zi)j
+
+
+
+log pθ (zk)j .
+
+(13) We notice that the results in the first and third lines in Eq. 13 differ slightly, with the only variation being in the logarithm of the probability. Therefore, we replace the original expression with the average of these two terms and combine the common terms into the form of a product of two differences: 
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+> N
+
+X
+
+> k=1
+
+
+
+pθ (zi)j − pθ (zk)j
+
+
+
+log pθ (zi)j
+
+= 12 (
+
+> N
+
+X
+
+> i=1
+> N
+
+X
+
+> k=1
+
+
+
+pθ (zi)j − pθ (zk)j
+
+
+
+log pθ (zi)j +
+
+> N
+
+X
+
+> i=1
+> N
+
+X
+
+> k=1
+
+(pθ (zk)j − pθ (zi)j ) log pθ (zk)j )= 12N
+
+> N
+
+X
+
+> i=1
+> N
+
+X
+
+> k=1
+
+
+
+pθ (zi)j − pθ (zk)j
+
+
+
+(log pθ (zi)j − log pθ (zk)j ).
+
+(14) Since pθ (zi)j − pθ (zk)j and log pθ (zi)j − log pθ (zk)j have the same sign, the product of these two terms is non-negative: 
+
+
+
+pθ (zi)j − pθ (zk)j
+
+  
+
+log pθ (zi)j − log pθ (zk)j
+
+
+
+⩾ 0. (15) Combining Eq. 14 and Eq. 15, we conclude that the inequality in Eq. 12 holds. Summing over all C dimensions yields the desired result: 
+
+> N
+
+X
+
+> i=1
+
+Lent (pθ (zi)) ⩽ −
+
+> C
+
+X
+
+> i=1
+
+PNk=1 pθ (zk)i
+
+N ·
+
+
+
+> N
+
+X
+
+> j=1
+
+log pθ (zj )i
+
+ . (16) 
+
+Lemma A.2. (Upper Bound of Negative Log-Likelihood) Given a feature z and its local region Ω which follows a Gaussian distribution N (μ, Σ) . The expected value of the logarithm of the predicted probability for the i-th class satisfies the following inequality: 
+
+−Ez∼N (μ, Σ) log pθ (z)i ≤ log 
+
+> C
+
+X
+
+> j=1
+
+e(aj −ai)·μ+( bj −bi)+ 12 (aj −ai)Σ( aj −ai)⊤
+
+, (17) 
+
+where the superscript (·)⊤ denotes the transpose operation. Proof. First, we transform the left-hand side (LHS) of the inequality to eliminate the fraction, which complicates scaling. We rewrite it as follows: 
+
+LHS = Ez∼N (μ, Σ) log 
+
+> C
+
+X
+
+> j=1
+
+e(aj −ai)·z+( bj −bi). (18) Since the logarithm function is concave ( i.e. , log( x)′′ = − 1 
+
+> x2
+
+<0), we can apply Jensen’s inequality and the additivity of expectations to derive the following result: 
+
+LHS ⩽ log Ez∼N (μ, Σ) 
+
+> C
+
+X
+
+> j=1
+
+e(aj −ai)·z+( bj −bi) = log 
+
+> C
+
+X
+
+> j=1
+
+Ez∼N (μ, Σ) e(aj −ai)·z+( bj −bi). (19) 13 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+Through leveraging the moment property of the Gaussian distribution EX∼N (μ,σ 2)eX = eμ+1 /2σ2
+
+and noting that ai·z+bi ∼N  ai · μ + bi, a iΣa⊤
+
+> i
+
+, we can directly compute the expectation in Eq. 19: 
+
+log 
+
+> C
+
+X
+
+> j=1
+
+Ez∼N (μ, Σ) e(aj −ai)·z+( bj −bi) = log 
+
+> C
+
+X
+
+> j=1
+
+e(aj −ai)·μ+( bj −bi)+ 12 (aj −ai)Σ( aj −ai)⊤
+
+. (20) Combining Eq. 19 and Eq.20, we obtain the inequality that needs to be proved: 
+
+−Ez∼N (μ, Σ) log eai·z+bi
+
+PCj=1 eaj ·z+bj
+
+≤ log 
+
+> C
+
+X
+
+> j=1
+
+e(aj −ai)·μ+( bj −bi)+ 12 (aj −ai)Σ( aj −ai)⊤
+
+. (21) 
+
+A.2. Closed-form Upper Bound 
+
+Finally, we utilize the two inequalities derived above to obtain the crucial results in this paper, Regional Entropy , which provides a closed-form upper bound for the expectation of the entropy loss over the local distribution, and Regional Instability , which offers a closed-form upper bound for the expectation of the KL divergence between the prediction probability distribution over the distribution and the original prediction at its center. 
+
+Proposition A.3. (Efficient Metric of Bias Term) Given a feature z and its local region Ω which follows a Gaussian distribution N (μ, Σ) . The expectation of entropy loss over the entire distribution has a closed-form upper bound: 
+
+EΩ[Lent ] = − E˜z∼N (z, Σ) 
+
+> C
+
+X
+
+> i=1
+
+pθ (˜ z)i log pθ (˜ z)i
+
+⩽
+
+> C
+
+X
+
+> j=1
+
+eaj ·z+bj + 12 aj  
+
+> Paj⊤
+
+PCk=1 eak ·z+bk + 12 ak 
+
+> Pa⊤
+> k
+
+log 
+
+> C
+
+X
+
+> i=1
+
+e(ai−aj )·z+( bi−bj )+ 12 (ai−aj )Σ( ai−aj )⊤
+
+≜ LRE .
+
+(22) 
+
+where the upper bound LRE is called Regional Entropy .Proof. First, by the definition of expectation, we can estimate the expectation of entropy using an infinite number of sampling ˜z1, ˜z2, . . . , ˜zN , . . . i.i.d 
+
+∼ N (z, Σ) :
+
+E[Lent ] = − lim  
+
+> N→+∞
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+> C
+
+X
+
+> j=1
+
+pθ (˜ zi)j log pθ (˜ zi)j . (23) Using Lemma A.1, we can bound the values of pθ (˜ zi)j , i = 1 , 2, . . . , N in Eq. 23, by their mean. This gives us the following inequality: 
+
+E[Lent ] ⩽ − lim  
+
+> N→+∞
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+> C
+
+X
+
+> j=1
+
+PNk=1 pθ (zk)j
+
+N log pθ (˜ zi)j . (24) Next, we use the expectation to approximate     
+
+> PNk=1 pθ(zk)j
+> N
+
+as N approaches infinity. To ensure the integrability, we first take the expectation and then apply the softmax operation. This can be derived from Eq. 20 as follows: 
+
+pθ (z)i := E˜z∼N (z, Σ) eai·˜z+bi
+
+E˜z∼N (z, Σ) 
+
+PCj=1 eaj ·˜z+bj
+
+= eai·z+bi+ 12 aiΣa⊤
+
+> i
+
+PCj=1 eaj ·z+bj + 12 aj Σa⊤
+
+> j
+
+. (25) Through the definition of the limit, we have that for any ϵ ≥ 0, there exists a positive integer N0 such that for any N ≥ N0,the following inequality holds: 
+
+|
+
+PNk=1 pθ (zk)j
+
+N − pθ (z)j | ≤ ϵ. (26) 14 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+Combining Eq. 24 and Eq. 26, and substituting the specific value of pθ (z)j from Eq. 25, we have: 
+
+E[Lent ] ⩽ − lim  
+
+> N→+∞
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+> C
+
+X
+
+> j=1
+
+
+
+pθ (z)j + ϵ
+
+
+
+log pθ (˜ zi)j
+
+= − lim  
+
+> N→+∞
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+> C
+
+X
+
+> j=1
+
+eaj ·z+bj + 12 aj Σa⊤
+
+> j
+
+PCk=1 eak ·z+bk + 12 ak Σa⊤
+
+> k
+
++ ϵ
+
+!
+
+log pθ (˜ zi)j .
+
+(27) Through the discrete form of Fubini’s theorem, we can exchange the order of summation and extract terms that are independent of the limit calculation: 
+
+− lim  
+
+> N→+∞
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+> C
+
+X
+
+> j=1
+
+eaj ·z+bj + 12 aj Σa⊤
+
+> j
+
+PCk=1 eak ·z+bk + 12 ak Σa⊤
+
+> k
+
++ ϵ
+
+!
+
+log pθ (˜ zi)j
+
+=
+
+> C
+
+X
+
+> j=1
+
+eaj ·z+bj + 12 aj Σa⊤
+
+> j
+
+PCk=1 eak ·z+bk + 12 ak Σa⊤
+
+> k
+
++ ϵ
+
+!
+
+lim   
+
+> N→+∞
+
+− 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+log pθ (˜ zi)j .
+
+(28) Through the definition of the expectation and Lemma. A.2, we have: 
+
+− 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+log pθ (˜ zi)j = −E˜z∼N (z, Σ) log pθ (˜ z)j
+
+≤ log 
+
+> C
+
+X
+
+> i=1
+
+e(ai−aj )·z(bi−bj )+ 12 (ai−aj )Σ( ai−aj )⊤
+
+.
+
+(29) Combining Eq. 27, Eq. 28 and Eq. 29, we have: 
+
+E[Lent ] ⩽
+
+> C
+
+X
+
+> j=1
+
+( eaj ·z+bj + 12 aj  
+
+> Paj⊤
+
+PCk=1 eak ·z+bk + 12 ak 
+
+> Pa⊤
+> k
+
++ ϵ) log 
+
+> C
+
+X
+
+> i=1
+
+e(ai−aj )·z
+
+· e(bi−bj )+ 12 (ai−aj )Σ( ai−aj )⊤
+
+, for ∀ϵ ≥ 0.
+
+(30) Taking ϵ → 0 in Eq. 30, we obtain the inequality we need to prove in Eq. 22. 
+
+Proposition A.4. (Efficient Metric of Variance Term) Given a feature z and its local region Ω which follows a Gaussian distribution N (μ, Σ) . The expectation of Kullback-Leibler divergence between the output probability over this distribution and the probability at its center has a upper bound: 
+
+E˜z∼N (z, Σ) KL (pθ (z)∥ pθ (˜ z)) ≤
+
+> C
+
+X
+
+> j=1
+
+eaj ·z+bj
+
+PCk=1 eak ·z+bk
+
+· log 
+
+> C
+
+X
+
+> i=1
+
+eai·z+bi
+
+PCk=1 eak ·z+bk
+
+· e 12 (ai−aj ) P(ai−aj )⊤
+
+≜ LRI , (31) 
+
+where the upper bound LRI is called Regional Instability .Proof. We first transform the left-hand side of the inequality into the following form: 
+
+LHS = E˜z∼N (z, Σ) 
+
+> C
+
+X
+
+> i=1
+
+pθ (z)i log pθ (z)i
+
+pθ (˜ z)i
+
+= −E˜z∼N (z, Σ) 
+
+> C
+
+X
+
+> i=1
+
+pθ (z)i log( 1
+
+pθ (z)i
+
+· eai·˜z+bi
+
+PCj=1 eaj ·˜z+bj
+
+).
+
+(32) Since pθ (z)i is independent of the expectation operation, by applying Lemma A.2, we have: 
+
+LHS ≤
+
+> C
+
+X
+
+> i=1
+
+pθ (z)i · log 
+
+pθ (z)i ·
+
+> C
+
+X
+
+> j=1
+
+e(aj −ai)·z+( bj −bi)+ 12 (aj −ai)Σ( aj −ai)⊤
+
+ . (33) 15 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+Substituting the definition of pθ (z), we have: 
+
+pθ (z)i ·
+
+> C
+
+X
+
+> j=1
+
+e(aj −ai)·z+( bj −bi)+ 12 (aj −ai)Σ( aj −ai)⊤
+
+= eai·z+bi
+
+PCk=1 eak ·z+bk
+
+·
+
+> C
+
+X
+
+> j=1
+
+e(aj −ai)·z+( bj −bi)+ 12 (aj −ai)Σ( aj −ai)⊤
+
+=
+
+> C
+
+X
+
+> j=1
+
+eaj ·z+bj
+
+PCk=1 eak ·z+bk
+
+· e 12 (aj −ai)Σ( aj −ai)⊤
+
+.
+
+(34) Combining Eq. 23 and Eq. 24, we obtain the inequality we need to prove in Eq. 31. 
+
+## B. Further Experiments 
+
+In this section, we broaden the scope of our investigation to evaluate the performance of our method across a variety of complex and diverse scenarios. To this end, we conduct experiments on Wild TTA scenarios using two challenging datasets: ImageNet-R (Hendrycks et al., 2021) and VisDA-2021 (Bashkirova et al., 2022). Both datasets present an array of distribution shifts and variations in data styles that extend beyond the typical corruptions found in ImageNet-C (Hendrycks & Dietterich, 2019), thereby providing a more comprehensive evaluation framework. By applying our method to these datasets, we examine its robustness under mixed testing domain scenarios, incorporating the cases with label shifts or batch size restricted to 1. 
+
+B.1. Wild Scenes on ImageNet-R and VisDA-2021 
+
+We conduct additional experiments on WTTA scenarios using the ImageNet-R (Hendrycks et al., 2021) and VisDA-2021 (Bashkirova et al., 2022) datasets with ResNet and ViT architectures. These datasets are characterized by diverse distribution 
+
+Model+Method Limited Batch Size = 1 Imbalanced Label Shift Average 
+
+ResNet VitBase Avg ResNet VitBase Avg No-Adapt Model 40.8 43.1 42.0 40.8 43.1 42.0 42.0 
+
+• Tent (Wang et al., 2020) 43.2 43.8 43.5 42.4 46.8 44.6 44.1 
+
+• EATA (Niu et al., 2022) 44.1 52.5 48.3 42.1 50.5 46.3 47.3 
+
+• SAR (Niu et al., 2023) 46.7 55.5 51.1 44.3 54.4 49.4 50.2 
+
+• DeYO (Lee et al., 2024) 48.1 59.2 53.7 46.7 58.5 52.6 53.1 
+
+• ReCAP (Ours) 51.5 ±0.5 61.1 ±0.6 56.3 ±0.5 49.6 ±0.2 60.4 ±0.2 55.0 ±0.2 55.7 ±0.4
+
+Table 5. Comparisons with state-of-the-art methods on ImageNet-R under Limited Batch Size = 1 & Imbalanced Label Shift regarding Accuracy (%). We report mean&std over 3 independent runs. The best results are in bold. 
+
+Model+Method Limited Batch Size = 1 Imbalanced Label Shift Average 
+
+ResNet VitBase Avg ResNet VitBase Avg No-Adapt Model 43.5 44.3 43.9 43.5 44.3 43.9 43.9 
+
+• Tent (Wang et al., 2020) 43.9 50.6 47.3 43.7 50.1 46.9 47.1 
+
+• EATA (Niu et al., 2022) 44.2 49.5 46.9 43.5 51.6 47.6 47.2 
+
+• SAR (Niu et al., 2023) 45.2 52.8 49.0 44.7 53.9 49.3 49.2 
+
+• DeYO (Lee et al., 2024) 45.8 58.5 52.2 45.2 57.1 51.2 51.7 
+
+• ReCAP (Ours) 48.0 ±0.2 59.2 ±0.9 53.6 ±0.6 47.7 ±0.2 58.5 ±0.6 53.1 ±0.4 53.4 ±0.5
+
+Table 6. Comparisons with state-of-the-art methods on VisDA-2021 under Limited Batch Size = 1 & Imbalanced Label Shift regarding Accuracy (%). We report mean&std over 3 independent runs. The best results are in bold. 
+
+16 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+shifts, including variations in data styles that extend beyond mere corruption. Consequently, for these two datasets, we consistently consider the mixed testing domain scenarios and incorporate cases with label shifts or batch size = 1. This rigorous testing environment ensures a comprehensive assessment of model robustness under real-world conditions. All evaluations are performed using the same implementation details as outlined in the main paper. Tab. 5 presents the results on ImageNet-R for batch size = 1 and imbalanced label distribution shift scenarios. Consistent with the findings in the main paper for ImageNet-C, ReCAP demonstrates superior performance across various scenarios and architectures on the ImageNet-R benchmark. We also compare our ReCAP method with previous state-of-the-art approaches on the VisDA-2021 dataset. The results in Tab. 6 align with those observed on ImageNet-C and ImageNet-R, where ReCAP similarly exhibits the best performance across all Wild settings on VisDA-2021. We further investigate the performance of our method under different distribution shifts. As discussed in the main paper, our ReCAP approach provides an efficient proxy to optimize region confidence, effectively reducing inconsistent predictions and enhancing global optimization efficiency. Compared to other sample selection WTTA methods, ReCAP consistently improves performance across various architectures and scenarios, achieving average performance gains of +2 .6% and 
+
++1 .7% on ImageNet-R and VisDA-2021, respectively. The experimental results further validate the generalizability of our method across different types of shifts, providing a more comprehensive understanding of its effectiveness. 
+
+## C. Additional Ablation Study and Visualization 
+
+In Section 6 of the main paper, we provided a comprehensive validation of the hyperparameter robustness of λ and τ , along with visualizations that illustrate the effects of ReCAP on class separability and local consistency during the adaptation process. In this section, we extend our analysis by further investigating the sensitivity of key parameters and the evolution of the model adaptation, providing additional insights into the effectiveness and robustness of our method. 
+
+C.1. Sensitivity of τRE in ReCAP 
+
+The hyperparameter τRE plays a crucial role in determining the sample selection criterion within the ReCAP framework. To understand its impact on performance, we evaluate ReCAP under varying τRE values. As shown in Fig. 7, increasing τRE 
+
+leads to the inclusion of more samples in the training process, which results in improved performance. The performance peaks at 0.8/1.0 × ln( C) for ResNet/ViT, respectively, indicating an optimal balance between sample inclusion and computational efficiency. However, when τRE exceeds this optimal range, the sample selection mechanism becomes too permissive, allowing for the inclusion of noisy or detrimental samples, which ultimately degrades performance. Despite this, 0.4 0.6 0.8 1.0 1.2       
+
+> 39
+> 40
+> 41
+> 42
+> 43
+> 44
+> 45
+> 46
+> Accuracy(%)
+> Prior SOTA
+> τRE (ln(10 3))
+> ReCAP(ResNet)
+> 0.6 0.8 1.0 1.2 1.4
+> 60
+> 61
+> 62
+> 63
+> Prior SOTA
+> τRE (ln(10 3))
+> ReCAP(ViT)
+
+Figure 7. Performance under different selection boundary τRE for ResNet and ViT on ImageNet-C under label shifts. 
+
+Table 7. Effects of components in ReCAP. For a fair comparison, ‘+Vanilla Entropy’ uses entropy-based selection and weighting.                                 
+
+> Component Corruption Category Average Vanilla Entropy LRE in Eq. 7 LRI in Eq. 8 Noise Blur Weather Digital
+> ✔24.9 19.6 41.5 37.8 31.4
+> ✔41.9 29.9 56.4 44.5 43.3
+> ✔✔41.3 26.8 55.0 47.3 42.7
+> ✔✔42.9 31.0 57.1 51.2 45.8
+
+17 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation ReCAP Iter=0 DeYO 
+
+Iter=400 Iter=800 Iter=1200 Iter=1563  
+
+> Figure 8. The evolution of feature space under DeYO and ReCAP methods. The visualizations are conducted on ImageNet-C under labl shift scenario with ResNet50.
+
+ReCAP maintains a consistent performance advantage over prior state-of-the-art methods across a wide range of τRE values, showcasing its robustness to variations in the sample selection boundary. 
+
+C.2. Effectiveness of Components in ReCAP 
+
+We investigate the impact of individual components within the ReCAP framework by comparing the full ReCAP method with variations that omit key parts of the approach. Specifically, we compare ReCAP to a vanilla entropy minimization strategy and systematically add back components to assess their contribution to performance. The results, as shown in Tab. 7, reveal that the region confidence achieves its best effect only when both components are included, with performance gains of +2.5% and +3.1%, respectively. This demonstrates the complementary nature of these components in enhancing adaptation performance. Overall, the full ReCAP method consistently delivers the best performance, further validating the compatible effects of its key components in improving adaptation across various scenarios. 
+
+C.3. Evolution Process of Model Adaptation 
+
+To further validate the effectiveness of ReCAP in improving adaptation efficiency, we visualize the evolution of the model’s feature space using t-SNE (Van der Maaten & Hinton, 2008). Fig. 8 illustrates the adaptation process for both ReCAP and the latest SOTA method, DeYO. Notably, ReCAP demonstrates superior adaptation efficiency by achieving better class separability throughout the adaptation process. At Iteration 800, ReCAP exhibits distinct, well-separated class clusters, even outperforming DeYO’s final state (at Iteration 1563) in terms of class boundaries. This early emergence of clear class separability highlights the efficiency of our method in accelerating the adaptation process, ensuring that ReCAP achieves a more structured and organized feature space compared to DeYO. These visualizations not only reinforce the advantages of ReCAP in enhancing adaptation efficiency but also provide strong evidence of its effectiveness in real-world scenarios where quick and robust adaptation is critical. 
+
+## D. More Implementation Details 
+
+D.1. Baseline Methods 
+
+We compare ReCAP with the following SOTA methods: MEMO (Zhang et al., 2022) enhances prediction consistency by leveraging multiple augmented copies of input samples, ensuring stable model outputs despite test data variations. Tent (Wang et al., 2020) reduces the entropy of test samples to guide model updates, driving the model to make more confident predictions.EATA (Niu et al., 2022) combines sample selection based on entropy with weighted adjustments to minimize entropy specifically for the selected samples. SAR (Niu et al., 2023) introduces sharpness awareness with entropy-based selection into the entropy minimization process, ensuring more stable adaptation in challenging wild scenarios. DeYO (Lee et al., 2024) prioritizes samples with dominant shape information and applies a dual selection criterion to identify more reliable samples for adaptation. 18 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation 
+
+D.2. More Details on Dataset 
+
+In this paper, we primarily evaluate the out-of-distribution (OOD) generalization ability of all methods using a widely adopted benchmark: ImageNet-C (Hendrycks & Dietterich, 2019). ImageNet-C is derived by applying a series of corruptions to the original ImageNet (Deng et al., 2009) test set, making it a large-scale benchmark for assessing model robustness under real-world distribution shifts. The dataset consists of 15 distinct types of corruptions, including Gaussian noise, shot noise, impulse noise, defocus blur, glass blur, motion blur, zoom blur, snow, frost, fog, brightness, contrast, elastic transformation, pixelation, and JPEG compression. Each corruption type is further categorized into five severity levels, with higher severity indicating more extreme perturbations and greater distribution shifts. These corruptions simulate real-world degradations that can occur in diverse environmental conditions, making ImageNet-C an essential tool for evaluating the resilience of models in challenging, real-world scenarios. As illustrated in Fig. 9, these corruptions span a broad spectrum, challenging the model to adapt to varied distortions of input images. Additionally, we conduct experiments on two other challenging benchmarks, ImageNet-R (Hendrycks et al., 2021) and VisDA-2021 (Bashkirova et al., 2022), to further validate the robustness and adaptability of our method across different types of distribution shifts. ImageNet-R consists of 30,000 images representing artistic renditions of 200 classes from ImageNet, with each image showcasing various creative transformations, such as paintings, drawings, and sculptures, sourced from platforms like Flickr and curated through Amazon MTurk annotators. These artistic variations introduce unique challenges in terms of visual style, texture, and color distribution, which are notably different from the original ImageNet images. As shown in Fig. 10, these renditions demand the model to generalize beyond typical object recognition tasks and adapt to complex, non-photorealistic representations. 
+
+VisDA-2021 , on the other hand, is a more diverse dataset that encompasses a broader range of domain shifts. It includes images from multiple sources such as ImageNet-O/R/C and ObjectNet (Barbu et al., 2019). The domain shifts in VisDA-2021 involve a variety of challenges, such as changes in artistic visual styles, textures, viewpoints, and corruptions. This diversity in shifts ensures a comprehensive evaluation of model performance under real-world conditions with large variations in object appearance and environmental factors.  
+
+> Figure 9. Visualizations of different corruption types in ImageNet corruption benchmark, which are taken from the original paper of ImageNet-C (Hendrycks & Dietterich, 2019).
+
+19 Beyond Entropy: Region Confidence Proxy for Wild Test-Time Adaptation  
+
+> Figure 10. Visualizations of different style shift types in ImageNet-R benchmark, which are taken from the original paper of ImageNet-R (Hendrycks et al., 2021).
+
+## E. Related Work 
+
+E.1. Consistency Learning 
+
+Consistency learning is a key paradigm in semi-supervised learning (Berthelot et al., 2019), domain adaptation (Li et al., 2020; Araslanov & Roth, 2021), which enforces the model to produce stable and consistent predictions under different perturbations of the input data. It can be broadly categorized into two main approaches. First, consistency can be used as an effective criterion for identifying reliable samples (Prabhu et al., 2021; Yu et al., 2024b). This approach is based on the understanding that consistency under image transformations serves as a dependable indicator of model errors (Wei et al., 2020). For instance, methods like DeYO (Lee et al., 2024) select samples by evaluating the variation in pseudo-label probabilities under different augmentations, using this as a selection indicator. Second, consistency learning can act as a regularization technique by introducing data augmentation (Sajjadi et al., 2016). By requiring the model to maintain consistent predictions across different augmentation variants of the same data, this approach enhances the model’s robustness (Zhang et al., 2022; Xie et al., 2020). This technique has been widely used in semi-supervised learning and unsupervised domain adaptation. Unlike traditional regularization methods that rely on introducing augmented variants of the original samples, the proposed efficient proxy of Region Confidence in this work enhances local consistency directly from the features of the original samples. This eliminates the need for a lengthy process to obtain augmented variants, significantly improving the efficiency of optimizing consistency. 20
