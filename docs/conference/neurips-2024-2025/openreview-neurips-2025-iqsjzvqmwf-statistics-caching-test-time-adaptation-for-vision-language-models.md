@@ -1,21 +1,21 @@
 ---
 title: Statistics Caching Test-Time Adaptation for Vision-Language Models
-title_zh: 面向视觉语言模型的统计缓存测试时自适应
+title_zh: 视觉-语言模型的统计缓存测试时自适应
 authors: "Zenghao Guan, Zhou Yucan, Wu Liu, Xiaoyan Gu"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=iqsjzVqmWF"
 tags: ["query:tta"]
-score: 9.0
-evidence: 基于统计缓存的视觉语言模型测试时自适应
-tldr: SCA针对视觉语言模型在测试时知识积累不足和灾难性遗忘问题，提出统计缓存机制。该方法将过去特征的复用建模为最小二乘问题，维护紧凑且递增更新的特征统计量，替代原始特征存储，实现高效在线自适应。实验表明，SCA在多种分布漂移下持续提升模型性能，且不受缓存大小限制。
+score: 8.0
+evidence: 用于视觉-语言模型的统计缓存测试时自适应
+tldr: 测试时自适应需要在测试过程中持续积累知识，但传统特征缓存方法容易遗忘且受限于固定大小。SCA通过维护增量更新的特征统计量（如均值和协方差）来替代原始特征，将过去特征的重用转化为最小二乘问题。该方法在多个VLM任务上实现了鲁棒且连续的知识积累，性能优于现有缓存方法。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-iqsjzvqmwf/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1427, \"height\": 816, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-iqsjzvqmwf/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 481, \"height\": 453, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-iqsjzvqmwf/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1314, \"height\": 503, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-iqsjzvqmwf/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1441, \"height\": 219, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-iqsjzvqmwf/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1437, \"height\": 371, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-iqsjzvqmwf/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1155, \"height\": 775, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-iqsjzvqmwf/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1419, \"height\": 562, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-iqsjzvqmwf/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1420, \"height\": 563, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-iqsjzvqmwf/fig-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1277, \"height\": 508, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-iqsjzvqmwf/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1442, \"height\": 961, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-iqsjzvqmwf/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1444, \"height\": 919, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-iqsjzvqmwf/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 654, \"height\": 256, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-iqsjzvqmwf/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 758, \"height\": 349, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-iqsjzvqmwf/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1430, \"height\": 615, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-iqsjzvqmwf/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1442, \"height\": 392, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-iqsjzvqmwf/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1440, \"height\": 228, \"label\": \"Table\"}]"
-motivation: 现有测试时自适应方法难以在视觉语言模型中持续积累任务知识。
-method: 提出统计缓存方法，通过最小二乘问题高效复用过去特征，维护递增统计量。
-result: 在多个基准上，SCA实现了稳定且持续的性能提升，优于传统特征缓存方法。
-conclusion: 统计缓存机制为视觉语言模型的测试时自适应提供了鲁棒且可扩展的方案。
+motivation: 现有缓存式TTA方法受限于固定容量且容易遗忘，无法鲁棒地积累知识。
+method: 利用最小二乘公式，维护特征统计量（均值、协方差）而非原始特征，实现无容量限制的增量更新。
+result: 在多个VLM域迁移基准上，SCA持续提升性能，超越了固定缓存方法。
+conclusion: 统计缓存策略为TTA提供了一种高效且可扩展的知识积累方式，适用于多模态模型。
 ---
 
 ## Abstract

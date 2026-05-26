@@ -1,21 +1,21 @@
 ---
 title: Class-aware Domain Knowledge Fusion and Fission for Continual Test-Time Adaptation
-title_zh: 面向持续测试时自适应的类别感知领域知识融合与分裂
+title_zh: 用于连续测试时自适应的类感知域知识融合与分裂
 authors: "Jiahuan Zhou, Chao Zhu, Zhenyu Cui, Zichen Liu, Xu Zou, Gang Hua"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=F74FXkicGK"
 tags: ["query:tta"]
-score: 7.0
-evidence: 基于类别感知知识融合与分裂的持续测试时自适应
-tldr: 该文针对持续测试时自适应中灾难性遗忘与新知学习不足的矛盾，提出类别感知领域知识融合与分裂方法。通过动态管理各类别知识，在适应新域的同时保留历史知识，避免有害干扰。在多域切换场景下，该方法有效提升了模型的持续适应能力。
+score: 8.0
+evidence: 使用类感知域知识融合与分裂的连续测试时自适应
+tldr: 连续测试时自适应面临灾难性遗忘和新知识学习不足的挑战。本文提出类感知域知识融合与分裂方法，根据当前域特性动态融合或分裂不同类别的域知识，避免有害历史知识干扰，同时促进新知识学习。实验表明该方法在多个CTTA基准上取得最佳性能。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 736, \"height\": 874, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1429, \"height\": 485, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 576, \"height\": 379, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 565, \"height\": 432, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1456, \"height\": 768, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 557, \"height\": 408, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1364, \"height\": 429, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 873, \"height\": 355, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 732, \"height\": 495, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 904, \"height\": 355, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-f74fxkicgk/fig-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 876, \"height\": 352, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1460, \"height\": 685, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 652, \"height\": 338, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1458, \"height\": 434, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1458, \"height\": 489, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1459, \"height\": 486, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1183, \"height\": 470, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 714, \"height\": 201, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 890, \"height\": 203, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 710, \"height\": 203, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1386, \"height\": 134, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 709, \"height\": 202, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-f74fxkicgk/table-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 707, \"height\": 204, \"label\": \"Table\"}]"
-motivation: 持续测试时自适应中，现有方法难以平衡新知识学习与历史知识遗忘。
-method: 提出类别感知的知识融合与分裂机制，动态管理不同类别知识。
-result: 在多个持续自适应基准上，该方法显著缓解了遗忘并提升了新域性能。
-conclusion: 类别感知知识管理有效提升了持续测试时自适应的效果。
+motivation: 现有CTTA方法在域切换时难以平衡历史知识保留和新知识学习，导致性能退化。
+method: 设计类感知的域知识融合与分裂机制，根据域相似性动态整合或分离知识，减少有害信息干扰。
+result: 在标准CTTA数据集上，该方法显著减少了遗忘，适应速度更快。
+conclusion: 类感知知识管理为连续域自适应提供了有效方案，可应用于在线流式场景。
 ---
 
 ## Abstract

@@ -1,21 +1,21 @@
 ---
 title: "Protected Test-Time Adaptation via Online Entropy Matching: A Betting Approach"
-title_zh: 基于在线熵匹配的保护性测试时自适应：一种投注方法
+title_zh: 受保护的测试时间自适应：基于在线熵匹配的博弈方法
 authors: "Yarin Bar, Shalev Shaer, Yaniv Romano"
 date: 2024-09-25
 pdf: "https://openreview.net/pdf?id=qamfjyhPeg"
 tags: ["query:tta"]
 score: 9.0
-evidence: 针对流数据的在线测试时自适应
-tldr: 该论文提出一种基于在线熵匹配的测试时自适应方法，通过统计框架检测分布偏移，并利用投注机制动态更新分类器。方法驱动测试熵分布匹配源域，从而对分布偏移建立不变性。实验表明该方法在多种流数据场景下有效。
+evidence: 通过在线熵匹配的测试时间自适应技术与理论
+tldr: 现有测试时间自适应方法常忽略分布漂移的检测。本文提出受保护的自适应框架：首先通过统计方法检测分类器熵值的分布漂移，然后利用检测证据在线更新参数，使测试熵分布与源域匹配。该方法从理论上保证了自适应过程对漂移的鲁棒性，并在多个基准上验证了有效性。
 source: NeurIPS-2024-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1208, \"height\": 525, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1304, \"height\": 728, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1444, \"height\": 299, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1234, \"height\": 539, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1453, \"height\": 813, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1444, \"height\": 301, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1452, \"height\": 766, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1318, \"height\": 421, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1453, \"height\": 762, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-qamfjyhpeg/fig-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1451, \"height\": 375, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2024-qamfjyhpeg/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 445, \"height\": 297, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-qamfjyhpeg/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1453, \"height\": 391, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-qamfjyhpeg/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1083, \"height\": 589, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-qamfjyhpeg/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 733, \"height\": 229, \"label\": \"Table\"}]"
-motivation: 现有自训练方法在测试时适应中容易过度拟合，且缺乏对分布偏移的显式检测。
-method: 提出熵匹配框架，结合投注算法进行在线分类器更新。
-result: 在多个基准上优于现有在线TTA方法，具有鲁棒性。
-conclusion: 该方法为在线测试时适应提供了统计保证和高效机制。
+motivation: 为测试时间自适应提供分布漂移检测和理论保障。
+method: 基于熵值的在线检测机制和动态参数更新，使测试熵匹配源域。
+result: 在多个分类任务上有效应对域漂移，性能优于传统自训练方法。
+conclusion: 统计检测与在线自适应结合提升了TTA的可靠性和稳定性。
 ---
 
 ## Abstract

@@ -1,21 +1,21 @@
 ---
 title: Lifelong Test-Time Adaptation via Online Learning in Tracked Low-Dimensional Subspace
-title_zh: 通过在跟踪低维子空间中进行在线学习的终身测试时自适应
+title_zh: 通过跟踪低维子空间中的在线学习实现终身测试时自适应
 authors: "Dexin Duan, Rui Xu, Peilin Liu, Fei Wen"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=NFvAa2hNzH"
 tags: ["query:tta"]
 score: 9.0
-evidence: 测试时自适应中熵最小化退化的理论分析
-tldr: 本文发现测试时自适应中熵最小化方法的退化源于熵欺骗样本（高置信度但错误预测），并揭示了梯度更新的低维结构。基于此，提出在跟踪的低维子空间中进行在线学习，有效避免退化。理论分析和实验证明该方法在多种分布漂移下保持稳定且准确的自适应，为TTA提供了新理论视角。
+evidence: 在跟踪的低维子空间中进行在线学习实现终身测试时自适应
+tldr: 现有测试时自适应方法因熵欺骗样本导致退化。本文发现梯度低维结构，区分真实样本与欺骗样本，并在跟踪的低维子空间中进行在线学习，避免退化。该方法在连续分布偏移场景下保持高精度，推动终身测试时自适应发展。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 951, \"height\": 386, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1001, \"height\": 911, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1013, \"height\": 497, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1145, \"height\": 1208, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 711, \"height\": 379, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1426, \"height\": 322, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1430, \"height\": 612, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1421, \"height\": 922, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1423, \"height\": 405, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1414, \"height\": 555, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nfvaa2hnzh/fig-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1381, \"height\": 1068, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1216, \"height\": 240, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1442, \"height\": 569, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1446, \"height\": 463, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 738, \"height\": 264, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 812, \"height\": 209, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1444, \"height\": 185, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1028, \"height\": 210, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1450, \"height\": 490, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1449, \"height\": 134, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1444, \"height\": 132, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1443, \"height\": 131, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nfvaa2hnzh/table-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 1444, \"height\": 134, \"label\": \"Table\"}]"
-motivation: 现有测试时自适应方法因熵欺骗样本导致退化，产生低熵但错误的预测。
-method: 识别熵欺骗样本并利用梯度低维结构，在跟踪子空间中进行在线学习。
-result: 在多个基准上该方法避免了退化，显著提升了自适应稳定性和准确性。
-conclusion: 该工作为理解TTA退化问题提供了理论依据，并提出有效的解决方案。
+motivation: 熵最小化导致退化，因欺骗样本产生低熵错误预测。
+method: 基于梯度低维性，在跟踪的低维子空间中进行在线学习。
+result: 在多个持续分布偏移数据集上抑制退化，提升自适应鲁棒性。
+conclusion: 利用梯度结构可实现更稳定的终身测试时自适应。
 ---
 
 ## Abstract

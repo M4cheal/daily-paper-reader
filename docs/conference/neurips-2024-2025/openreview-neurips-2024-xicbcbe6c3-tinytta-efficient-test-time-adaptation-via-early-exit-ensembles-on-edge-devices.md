@@ -1,21 +1,21 @@
 ---
 title: "TinyTTA: Efficient Test-time Adaptation via Early-exit Ensembles on Edge Devices"
-title_zh: TinyTTA：基于早期退出集成的边缘设备高效测试时自适应
+title_zh: TinyTTA：通过早期退出集成在边缘设备上进行高效测试时自适应
 authors: "Hong Jia, Young D. Kwon, Alessio Orsino, Ting Dang, Domenico Talia, Cecilia Mascolo"
 date: 2024-09-25
 pdf: "https://openreview.net/pdf?id=XIcBCBe6C3"
 tags: ["query:tta"]
 score: 8.0
-evidence: 针对边缘设备流式数据的高效测试时自适应
-tldr: TinyTTA针对物联网设备在资源受限环境下模型难以持续适应数据分布漂移的问题，提出了一种基于早期退出集成的测试时自适应方法。该方法通过轻量级分类器在边缘设备上实现高效推理和快速自适应，在保持低延迟的同时显著提升了模型的鲁棒性，为资源约束下的实时自适应提供了可行方案。
+evidence: 边缘设备上高效的测试时自适应以处理流数据
+tldr: 测试时自适应在资源受限的边缘设备上尚未充分探索。本文提出TinyTTA，利用早期退出集成方法在微控制器等设备上实现高效测试时自适应，显著降低了计算开销，同时保持了适应性，适用于物联网流数据场景。
 source: NeurIPS-2024-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1437, \"height\": 376, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1445, \"height\": 331, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1446, \"height\": 467, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1449, \"height\": 262, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1441, \"height\": 392, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1466, \"height\": 590, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 584, \"height\": 395, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1434, \"height\": 320, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1448, \"height\": 307, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1457, \"height\": 690, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 575, \"height\": 338, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 507, \"height\": 404, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-013.webp\", \"caption\": \"\", \"page\": 0, \"index\": 13, \"width\": 1446, \"height\": 304, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-014.webp\", \"caption\": \"\", \"page\": 0, \"index\": 14, \"width\": 1416, \"height\": 334, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-xicbcbe6c3/fig-015.webp\", \"caption\": \"\", \"page\": 0, \"index\": 15, \"width\": 1420, \"height\": 336, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2024-xicbcbe6c3/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 659, \"height\": 279, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-xicbcbe6c3/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 880, \"height\": 143, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-xicbcbe6c3/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1456, \"height\": 550, \"label\": \"Table\"}]"
-motivation: 物联网设备面临数据分布漂移，但现有测试时自适应方法未在资源受限硬件上验证。
-method: 提出早期退出集成策略，在推理过程中动态选择退出点，结合轻量分类器实现高效自适应。
-result: 在边缘设备上实验表明，该方法在保持低能耗的同时显著提升了模型在分布漂移下的准确率。
-conclusion: TinyTTA证明了测试时自适应在资源受限边缘设备上的可行性和有效性。
+motivation: 应对物联网设备资源受限下模型持续适应分布漂移的挑战。
+method: 采用早期退出集成机制，在边缘设备上高效执行测试时自适应。
+result: 在多个流数据任务中实现了高效的适应，同时降低了计算和存储开销。
+conclusion: 为测试时自适应在边缘计算场景的落地提供了可行方案。
 ---
 
 ## Abstract

@@ -1,21 +1,21 @@
 ---
 title: A Multimodal BiMamba Network with Test-Time Adaptation for Emotion Recognition Based on Physiological Signals
-title_zh: 基于生理信号的多模态BiMamba网络与测试时间自适应情感识别
+title_zh: 结合测试时自适应的多模态BiMamba网络用于生理信号情绪识别
 authors: "Ziyu Jia, Tingyu Du, Zhengyu Tian, Hongkai Li, Yong Zhang, Chenyu Liu"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=3vLp3J7540"
 tags: ["query:tta"]
 score: 8.0
-evidence: 面向情感识别的多模态测试时间自适应
-tldr: 多模态生理信号情感识别面临长程依赖建模和缺失模态性能下降问题。本文提出BiM-TTA，包含双向Mamba网络建模模态内长程依赖和模态间相关性，以及多模态TTA策略处理缺失数据。在缺失模态场景下，TTA动态调整模型以适应可用信号。实验表明对缺失模态鲁棒，优于基线。
+evidence: 面向情绪识别的多模态测试时自适应
+tldr: 多模态情绪识别面临长程依赖和缺失模态问题。本文提出BiM-TTA，利用双向Mamba网络建模模态内长程依赖和模态间关联，并在测试时自适应处理缺失数据。在真实生理信号数据集上，该方法显著提升了情绪识别准确率，展示了多模态测试时自适应的潜力。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-3vlp3j7540/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1421, \"height\": 773, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-3vlp3j7540/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 878, \"height\": 443, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-3vlp3j7540/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1309, \"height\": 316, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-3vlp3j7540/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1200, \"height\": 314, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-3vlp3j7540/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1218, \"height\": 873, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-3vlp3j7540/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1088, \"height\": 879, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-3vlp3j7540/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 998, \"height\": 1026, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-3vlp3j7540/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1020, \"height\": 256, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-3vlp3j7540/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 865, \"height\": 589, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-3vlp3j7540/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1397, \"height\": 354, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-3vlp3j7540/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1398, \"height\": 345, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-3vlp3j7540/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1074, \"height\": 345, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-3vlp3j7540/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 457, \"height\": 462, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-3vlp3j7540/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1366, \"height\": 226, \"label\": \"Table\"}]"
-motivation: 多模态情感识别中长程依赖建模困难且缺失模态时性能显著下降。
-method: 设计双向Mamba网络捕获跨模态依赖，并引入测试时间自适应策略处理缺失模态。
-result: 在多个生理信号数据集上，缺失模态时仍保持高情感识别准确率。
-conclusion: 将TTA与高效序列模型结合，提升了多模态情感识别的实用性。
+motivation: 多模态情绪识别中长程依赖建模和缺失模态处理是挑战。
+method: 提出双向Mamba网络与测试时自适应结合的BiM-TTA框架。
+result: 在生理信号情绪识别任务上达到最高准确率，鲁棒处理缺失模态。
+conclusion: BiM-TTA有效结合多模态建模与测试时自适应，提升情绪识别性能。
 ---
 
 ## Abstract

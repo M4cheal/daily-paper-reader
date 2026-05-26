@@ -5,17 +5,17 @@ authors: "Jincen Jiang, Qianyu Zhou, Yuhang Li, Xinkui Zhao, Meili Wang, Lizhuan
 date: 2024-09-25
 pdf: "https://openreview.net/pdf?id=739jAzUXk7"
 tags: ["query:tta"]
-score: 7.0
-evidence: 面向多任务点云理解的持续测试时自适应
-tldr: PCoTTA针对多任务点云理解在持续变化目标域下的自适应问题，提出持续测试时自适应框架。通过自动原型混合、高斯散点特征移位和对比原型排斥三大组件，有效缓解灾难性遗忘并增强跨域迁移能力。实验表明，该方法在多任务点云场景下显著优于现有持续自适应方法。
+score: 8.0
+evidence: 流数据中多任务点云理解的持续测试时自适应
+tldr: 持续测试时自适应在多任务点云理解中缺乏探索。本文提出PCoTTA框架，通过自动原型混合、高斯溅射特征偏移和对比原型排斥，在连续域变化中实现多任务点云模型的持续适应，有效防止了灾难性遗忘。
 source: NeurIPS-2024-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2024-739jazuxk7/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1431, \"height\": 439, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-739jazuxk7/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1444, \"height\": 672, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-739jazuxk7/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1452, \"height\": 535, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-739jazuxk7/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1416, \"height\": 701, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-739jazuxk7/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1443, \"height\": 462, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-739jazuxk7/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1342, \"height\": 260, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-739jazuxk7/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1381, \"height\": 434, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-739jazuxk7/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1351, \"height\": 2188, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2024-739jazuxk7/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1448, \"height\": 715, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-739jazuxk7/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 665, \"height\": 227, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-739jazuxk7/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 760, \"height\": 229, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-739jazuxk7/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 497, \"height\": 264, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-739jazuxk7/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 487, \"height\": 194, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-739jazuxk7/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 661, \"height\": 267, \"label\": \"Table\"}]"
-motivation: 点云模型在持续变化环境中需要同时处理多个任务，但缺乏统一的自适应框架。
-method: 提出自动原型混合、高斯散点特征移位和对比原型排斥三种机制实现持续自适应。
-result: 在多个点云任务上验证了框架的有效性，显著减少了遗忘并提升了目标域性能。
-conclusion: PCoTTA为多任务点云理解提供了实用的持续测试时自适应方案。
+motivation: 在持续变化的点云域中实现多任务同时自适应，避免灾难性遗忘。
+method: 自动原型混合、高斯溅射特征偏移和对比原型排斥三种组件协同工作。
+result: 在多个点云任务上展示了有效的持续自适应能力，缓解了遗忘问题。
+conclusion: 为多任务点云模型的持续测试时自适应提供了系统性框架。
 ---
 
 ## Abstract

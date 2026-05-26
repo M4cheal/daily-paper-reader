@@ -1,21 +1,21 @@
 ---
 title: "Echoes of the Visual Past: Test-Time Prompt Tuning with Multi-Scale Visual Memory"
-title_zh: 视觉回声：基于多尺度视觉记忆的测试时提示调优
+title_zh: 视觉回响：具有多尺度视觉记忆的测试时提示调优
 authors: "Ziqiang Wang, Zhixiang Chi, Li Gu, Zhi Liu, Konstantinos N. Plataniotis, Yang Wang"
 date: 2025-05-11
 pdf: "https://openreview.net/pdf?id=Gsj3oN2Ipy"
 tags: ["query:tta"]
-score: 9.0
-evidence: 视觉语言模型的测试时提示调优
-tldr: 针对现有测试时提示调优（TPT）仅从单张图像学习有限类别视觉知识的问题，本文提出多尺度视觉记忆机制，存储历史视觉特征以丰富提示。在多个基准上，该方法超越了手工提示和现有TPT方法，缩小了与提示工程的性能差距。
+score: 8.0
+evidence: 利用多尺度视觉记忆的视觉-语言模型测试时提示调优
+tldr: 现有测试时提示调优（TPT）仅从单张测试图像中学习提示，性能不如手工或LLM生成的提示。本文提出多尺度视觉记忆模块，从历史测试样本中积累并检索多尺度视觉知识，以增强提示学习。实验证明该方法在多个VLM下游任务中超越了现有TPT方法，弥合了与提示工程的差距。
 source: NeurIPS-2025-Rejected-Public
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-gsj3on2ipy/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1439, \"height\": 453, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gsj3on2ipy/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1146, \"height\": 582, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gsj3on2ipy/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1425, \"height\": 445, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gsj3on2ipy/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 594, \"height\": 384, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-gsj3on2ipy/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1418, \"height\": 568, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gsj3on2ipy/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1429, \"height\": 731, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gsj3on2ipy/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 721, \"height\": 266, \"label\": \"Table\"}]"
-motivation: 现有TPT方法从单张图像获取的视觉知识有限，导致性能不如手工提示。
-method: 提出多尺度视觉记忆，结合测试时提示调优，利用历史视觉特征。
-result: 在多个分类和可视化任务上超越现有TPT和提示工程方法。
-conclusion: 多尺度视觉记忆有效增强了测试时提示的丰富性，无需手工设计。
+motivation: 现有测试时提示调优仅利用单张图像的类特定视觉知识，导致学习到的提示质量有限。
+method: 构建多尺度视觉记忆库，存储历史测试图像的视觉特征，在测试时检索相似视觉知识来指导提示生成。
+result: 在多个分类和分割数据集上，该方法超过现有TPT方法，与手工提示效果相当。
+conclusion: 多尺度视觉记忆有效提升了测试时提示调优的表现，可推广到更多视觉-语言任务。
 ---
 
 ## Abstract

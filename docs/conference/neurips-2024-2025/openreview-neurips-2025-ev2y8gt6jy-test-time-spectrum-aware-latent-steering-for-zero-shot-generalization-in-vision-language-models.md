@@ -1,21 +1,21 @@
 ---
 title: Test-Time Spectrum-Aware Latent Steering for Zero-Shot Generalization in Vision-Language Models
-title_zh: 测试时频谱感知潜空间引导：视觉语言模型零样本泛化的测试时自适应方法
+title_zh: 测试时间频谱感知潜在引导用于视觉语言模型零样本泛化
 authors: "Konstantinos M. Dafnis, Dimitris N. Metaxas"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=eV2Y8Gt6JY"
 tags: ["query:tta"]
-score: 8.0
-evidence: 频谱感知测试时引导用于视觉语言模型
-tldr: 视觉语言模型在测试时域偏移下性能下降。现有测试时提示调优需要反向传播大型编码器。本文提出频谱感知测试时引导（STS），从文本嵌入中提取光谱子空间定义主语义方向，并以频谱感知方式学习引导潜表征。仅需调整少量参数即可实现零样本泛化。
+score: 9.0
+evidence: 面向视觉语言模型的测试时间自适应
+tldr: 视觉语言模型在测试时面临域漂移。现有测试时间自适应需要反向传播或修改模型核心组件。STS提出一种轻量级框架，从文本嵌入中提取谱子空间定义语义方向，然后以谱感知方式引导潜在表示。该方法无需反向传播，在零样本泛化任务上取得了高效的域适应效果。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-ev2y8gt6jy/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1457, \"height\": 779, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ev2y8gt6jy/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1441, \"height\": 636, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ev2y8gt6jy/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 699, \"height\": 424, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ev2y8gt6jy/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 569, \"height\": 349, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ev2y8gt6jy/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1148, \"height\": 692, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1423, \"height\": 764, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1445, \"height\": 479, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1100, \"height\": 223, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1442, \"height\": 265, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1441, \"height\": 339, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 734, \"height\": 132, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1340, \"height\": 239, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1443, \"height\": 162, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1406, \"height\": 299, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 998, \"height\": 182, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1441, \"height\": 675, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ev2y8gt6jy/table-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 1148, \"height\": 692, \"label\": \"Table\"}]"
-motivation: 现有VLM测试时自适应方法需要反向传播大型编码器权重，计算开销大。
-method: 从文本嵌入中提取光谱子空间，学习引导潜表征在光谱感知方向上的变化，仅调整少量参数。
-result: 在保持性能的同时大幅降低计算成本，实现轻量级VLM自适应。
-conclusion: STS为VLM提供了一种高效的测试时自适应方案，无需修改核心模型。
+motivation: 减少测试时间自适应对反向传播和模型核心修改的依赖。
+method: 通过谱子空间学习语义方向，以少量可学习参数引导潜在表示。
+result: 在多个域漂移基准上以极低开销提升零样本分类准确率。
+conclusion: 频谱感知引导为VLM测试时间自适应提供了高效实用的方案。
 ---
 
 ## Abstract

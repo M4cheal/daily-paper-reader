@@ -6,16 +6,16 @@ date: 2025-05-10
 pdf: "https://openreview.net/pdf?id=nwqaILb1vf"
 tags: ["query:tta"]
 score: 7.0
-evidence: 利用拓扑数据分析进行异常分割的测试时自适应
-tldr: TopoTTA针对异常分割中像素级标注缺失导致的分布漂移问题，将持续同调这一拓扑数据分析工具引入测试时自适应流程。通过对异常得分图进行多级立方复形过滤，生成鲁棒的拓扑伪标签，指导轻量级测试时分类器，无需重训练骨干网络即可提升分割质量。该方法在多个基准上验证了有效性。
+evidence: 使用拓扑伪标签进行异常分割的测试时自适应
+tldr: 测试时自适应在异常分割中具有潜力但结构一致性不足。本文提出TopoTTA，将持久同调引入测试时自适应流程，通过多级立方复形滤波生成拓扑伪标签，指导轻量级分类器，无需重新训练骨干网络即可提升分割质量。
 source: NeurIPS-2025-Rejected-Public
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-nwqailb1vf/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1144, \"height\": 383, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nwqailb1vf/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1426, \"height\": 707, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nwqailb1vf/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1366, \"height\": 282, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nwqailb1vf/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1453, \"height\": 397, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nwqailb1vf/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1451, \"height\": 421, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nwqailb1vf/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 926, \"height\": 435, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nwqailb1vf/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1420, \"height\": 976, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nwqailb1vf/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1450, \"height\": 770, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-nwqailb1vf/fig-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1449, \"height\": 979, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-nwqailb1vf/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1456, \"height\": 476, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nwqailb1vf/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 700, \"height\": 438, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nwqailb1vf/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1458, \"height\": 271, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nwqailb1vf/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1453, \"height\": 216, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nwqailb1vf/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 697, \"height\": 437, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-nwqailb1vf/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1456, \"height\": 474, \"label\": \"Table\"}]"
-motivation: 异常分割中分布漂移普遍存在，但缺乏像素级标注限制了模型适应能力。
-method: 引入持续同调生成拓扑伪标签，结合轻量分类器进行测试时自适应。
-result: 在多个异常分割数据集上，TopoTTA显著优于现有方法，且无需重新训练。
-conclusion: 拓扑感知的测试时自适应能有效提升异常分割在分布漂移下的鲁棒性。
+motivation: 利用测试时自适应增强异常分割中的结构一致性。
+method: 结合持久同调生成拓扑伪标签，指导测试时分类器进行自适应。
+result: 在异常分割任务中取得了更好的结构一致性，提升了分割质量。
+conclusion: 为测试时自适应在异常分割中的应用提供了拓扑约束创新思路。
 ---
 
 ## Abstract

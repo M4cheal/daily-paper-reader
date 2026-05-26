@@ -1,21 +1,21 @@
 ---
 title: "L-TTA: Lightweight Test-Time Adaptation Using a Versatile Stem Layer"
-title_zh: L-TTA：使用通用茎层的轻量级测试时自适应
+title_zh: "L-TTA: 使用多功能主干层的轻量级测试时自适应"
 authors: "Jin Shin, Hyun Kim"
 date: 2024-09-25
 pdf: "https://openreview.net/pdf?id=G7NZljVOol"
 tags: ["query:tta"]
-score: 8.0
-evidence: 通过重构第一层实现轻量级测试时自适应
-tldr: 现有测试时自适应方法通常最小化熵，但需要整个模型的前向/反向传播。本文提出L-TTA，通过重构模型的第一层（stem层）来最小化不确定性，仅需少量主干网络参与。该方法摆脱了对熵最小化的依赖，实现了更高效的在线自适应。
+score: 9.0
+evidence: 通过重设主干层实现轻量级测试时自适应
+tldr: 现有测试时自适应方法通常需要在整个模型上进行前向和反向传播，计算成本高且仅依赖熵最小化。L-TTA通过重新建模模型的第一层（主干层），以最小化不确定性为新准则，仅需少量主干参与即可实现高效自适应。实验表明该方法在多个数据集上达到与全模型自适应相当的性能，显著降低了计算开销，为实际部署提供了实用方案。
 source: NeurIPS-2024-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2024-g7nzljvool/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1451, \"height\": 324, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-g7nzljvool/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1434, \"height\": 549, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-g7nzljvool/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1443, \"height\": 540, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-g7nzljvool/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 711, \"height\": 466, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-g7nzljvool/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 710, \"height\": 484, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-g7nzljvool/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 706, \"height\": 508, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-g7nzljvool/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 703, \"height\": 502, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-g7nzljvool/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1442, \"height\": 427, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2024-g7nzljvool/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1448, \"height\": 953, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-g7nzljvool/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1445, \"height\": 388, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-g7nzljvool/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 734, \"height\": 212, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-g7nzljvool/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 714, \"height\": 286, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-g7nzljvool/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 705, \"height\": 284, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-g7nzljvool/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1445, \"height\": 799, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-g7nzljvool/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1442, \"height\": 219, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-g7nzljvool/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 577, \"height\": 303, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-g7nzljvool/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 647, \"height\": 389, \"label\": \"Table\"}]"
-motivation: 现有TTA方法过度依赖熵最小化且需要完整模型更新，计算成本高。
-method: 通过重构模型第一层（茎层）来最小化不确定性，减少主干网络参与。
-result: 仅需轻微修改茎层即可实现高效自适应，保持主干网络不变。
-conclusion: L-TTA提供了一种轻量级、即插即用的TTA方案，降低了计算开销。
+motivation: 现有测试时自适应方法需要在整个模型上进行前向和反向传播，计算开销大，且仅依赖熵最小化可能无法充分利用数据。
+method: 提出轻量级测试时自适应方法L-TTA，通过重新设计主干层（第一层）并以不确定性最小化为学习准则，仅需最小化主干参与即可完成自适应。
+result: 在多个迁移场景下，L-TTA在保持与全模型自适应相当性能的同时，显著降低了计算量。
+conclusion: L-TTA提供了一种高效且实用的测试时自适应方案，适合资源受限的部署环境。
 ---
 
 ## Abstract

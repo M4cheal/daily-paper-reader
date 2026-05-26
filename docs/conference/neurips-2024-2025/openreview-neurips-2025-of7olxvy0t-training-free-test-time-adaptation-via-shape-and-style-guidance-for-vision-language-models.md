@@ -1,21 +1,21 @@
 ---
 title: Training-Free Test-Time Adaptation via Shape and Style Guidance for Vision-Language Models
-title_zh: 基于形状和风格引导的无训练测试时自适应方法用于视觉语言模型
+title_zh: 基于形状和风格指导的无训练测试时间自适应用于视觉语言模型
 authors: "Shenglong Zhou, Manjiang Yin, Leiyu Sun, Shicai Yang, Di Xie, Jiang Zhu"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=OF7OLxvY0t"
 tags: ["query:tta"]
 score: 9.0
-evidence: 视觉语言模型的测试时自适应
-tldr: 针对现有无训练TTA方法仅依赖熵准则的问题，本文提出形状和风格引导（SSG）方法，通过扰动输入突出形状敏感和风格不敏感因素，结合熵准则更新视觉缓存。在多个基准上，SSG提升了零样本分类性能，且无需额外训练。
+evidence: 面向视觉语言模型的无训练测试时间自适应
+tldr: 现有无训练测试时间自适应方法仅依赖熵准则选择视觉特征，忽略了形状敏感和风格不敏感等泛化因素。SSG提出通过形状和风格引导，在熵基础上额外突出这些因素。具体地，SSG对图像进行形状/风格扰动，利用特征变化筛选更鲁棒的视觉特征用于缓存更新。在多个VLM任务上，SSG显著提升了零样本域漂移自适应性能。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-of7olxvy0t/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1437, \"height\": 504, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-of7olxvy0t/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1443, \"height\": 372, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-of7olxvy0t/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1455, \"height\": 377, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-of7olxvy0t/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1336, \"height\": 1038, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-of7olxvy0t/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 713, \"height\": 314, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-of7olxvy0t/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1443, \"height\": 888, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-of7olxvy0t/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1316, \"height\": 246, \"label\": \"Table\"}]"
-motivation: 现有无训练TTA忽略形状和风格等泛化因素，仅依赖熵准则。
-method: 提出形状风格引导，通过输入扰动提取形状和风格特征，用于缓存更新。
-result: 在多个分类任务上超越现有无训练TTA方法。
-conclusion: 形状和风格引导有效提升了VLM测试时自适应的泛化能力。
+motivation: 利用形状敏感和风格不敏感因素改进无训练TTA的特征选择。
+method: 通过形状和风格扰动指导特征筛选，结合熵准则更新视觉缓存。
+result: 在多个VLM域漂移基准上取得优于现有无训练方法的性能。
+conclusion: 引入泛化先验可有效提升无训练TTA的鲁棒性。
 ---
 
 ## Abstract

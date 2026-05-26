@@ -1,21 +1,21 @@
 ---
 title: Frustratingly Easy Test-Time Adaptation of Vision-Language Models
-title_zh: 极其简单的视觉语言模型测试时自适应
+title_zh: 令人惊讶简单的视觉语言模型测试时自适应
 authors: "Matteo Farina, Gianni Franchi, Giovanni Iacca, Massimiliano Mancini, Elisa Ricci"
 date: 2024-09-25
 pdf: "https://openreview.net/pdf?id=eQ6VjBhevn"
 tags: ["query:tta"]
 score: 9.0
-evidence: 视觉语言模型的测试时自适应
-tldr: 本文理论分析了基于边际熵最小化的TTA方法，发现其中潜伏着一种强力的TTA变体，命名为ZERO（零温度）。ZERO无需在线反向传播，通过简单地调节温度参数即可达到甚至超越现有方法。实验在多个VLM基准上验证了其有效性和效率。
+evidence: 对视觉语言模型测试时自适应中边缘熵最小化的理论探究
+tldr: 边缘熵最小化主导了视觉语言模型测试时自适应，但其计算慢。本文理论分析了该方法，发现通过将温度设为0可大幅简化并获得同样有效的结果。ZERO方法无需在线反向传播，显著加速推理，为VLM高效自适应提供新理解。
 source: NeurIPS-2024-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2024-eq6vjbhevn/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1400, \"height\": 573, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-eq6vjbhevn/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 933, \"height\": 687, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-eq6vjbhevn/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 671, \"height\": 442, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-eq6vjbhevn/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1242, \"height\": 1939, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-eq6vjbhevn/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1122, \"height\": 664, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-eq6vjbhevn/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 861, \"height\": 512, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-eq6vjbhevn/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1386, \"height\": 1132, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1453, \"height\": 656, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1306, \"height\": 208, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1454, \"height\": 752, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1432, \"height\": 125, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1449, \"height\": 303, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1451, \"height\": 223, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1451, \"height\": 298, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1452, \"height\": 656, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1451, \"height\": 749, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1454, \"height\": 262, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-eq6vjbhevn/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1449, \"height\": 384, \"label\": \"Table\"}]"
-motivation: 现有基于熵最小化的TTA方法计算开销大，且存在隐藏的有效方法未被发掘。
-method: 理论推导并提出了ZERO方法，通过零温度参数实现高效TTA。
-result: 在多个VLM任务上，ZERO以极小计算开销达到SOTA性能。
-conclusion: ZERO揭示了TTA中一个简单但强大的方法，具有理论洞见。
+motivation: 现有测试时自适应计算开销大，需要深入探究其理论基础。
+method: 理论分析边缘熵最小化，提出零温度方法ZERO。
+result: ZERO在保持性能的同时大幅提升推理速度。
+conclusion: 边缘熵最小化的简化版本即可实现高效测试时自适应。
 ---
 
 ## Abstract

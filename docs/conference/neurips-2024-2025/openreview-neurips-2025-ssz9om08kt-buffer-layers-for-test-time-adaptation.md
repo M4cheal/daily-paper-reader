@@ -1,21 +1,21 @@
 ---
 title: Buffer layers for Test-Time Adaptation
-title_zh: 用于测试时自适应的缓冲层
+title_zh: 用于测试时间自适应的缓冲层
 authors: "Hyeongyu Kim, GeonHui Han, Dosik Hwang"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=sSZ9OM08KT"
 tags: ["query:tta"]
-score: 8.0
-evidence: 缓冲层替代归一化层进行测试时自适应
-tldr: 现有测试时自适应方法主要依赖更新归一化层，但归一化层对小批量敏感且受预训练统计量限制。本文提出缓冲层（Buffer layer）概念，作为一种新的TTA范式，能够更好地适应域偏移，避免归一化层的固有问题。
+score: 9.0
+evidence: 用于测试时间自适应的新型缓冲层范式
+tldr: 现有测试时间自适应多依赖归一化层更新，但归一化层对小批量敏感且受限于预训练统计。本文提出缓冲层概念，作为冻结核的额外可训练层，在测试时动态调整激活分布。缓冲层避免了归一化层的固有限制，在剧烈域漂移下表现出更稳定的自适应性能。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-ssz9om08kt/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1451, \"height\": 406, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ssz9om08kt/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1439, \"height\": 425, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ssz9om08kt/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1421, \"height\": 588, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ssz9om08kt/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 861, \"height\": 425, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ssz9om08kt/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 823, \"height\": 541, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ssz9om08kt/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1431, \"height\": 666, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-ssz9om08kt/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1452, \"height\": 636, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-ssz9om08kt/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1451, \"height\": 611, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ssz9om08kt/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1453, \"height\": 740, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ssz9om08kt/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 734, \"height\": 617, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ssz9om08kt/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1452, \"height\": 605, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ssz9om08kt/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1424, \"height\": 275, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ssz9om08kt/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 573, \"height\": 367, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ssz9om08kt/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1441, \"height\": 279, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-ssz9om08kt/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 450, \"height\": 487, \"label\": \"Table\"}]"
-motivation: 归一化层在小批量下不稳定，且预训练统计量在域偏移下泛化能力差。
-method: 引入缓冲层，替代归一化层进行测试时自适应，保持模型结构不变。
-result: 在多种域偏移场景下优于归一化层方法，尤其在大偏移下表现更稳定。
-conclusion: 缓冲层提供了一种通用且鲁棒的TTA替代方案，摆脱了对归一化层的依赖。
+motivation: 克服归一化层测试时间自适应对小批量敏感和泛化性差的问题。
+method: 引入可训练的缓冲层，在测试时调整激活分布而不依赖批量统计。
+result: 在多个域漂移基准上超越基于归一化的TTA方法。
+conclusion: 缓冲层为TTA提供了一种更灵活鲁棒的架构替代方案。
 ---
 
 ## Abstract

@@ -1,21 +1,21 @@
 ---
 title: Dual Prototype Evolving for Test-Time Generalization of Vision-Language Models
-title_zh: 面向视觉语言模型测试时泛化的双原型演进
+title_zh: 双原型演进：视觉语言模型测试时泛化方法
 authors: "Ce Zhang, Simon Stepputtis, Katia P. Sycara, Yaqi Xie"
 date: 2024-09-25
 pdf: "https://openreview.net/pdf?id=jsgYYXaSiS"
 tags: ["query:tta"]
-score: 9.0
-evidence: 基于双原型演进的视觉语言模型测试时自适应
-tldr: DPE针对视觉语言模型在测试时仅从单模态适应且缺乏知识积累的问题，提出双原型演进方法。创建并演进两组原型，分别捕获视觉和语言模态的特征分布，在适应过程中有效积累多模态任务知识。实验表明，该方法在多种分布漂移下显著提升了VLMs的泛化能力。
+score: 8.0
+evidence: 双原型演进实现视觉语言模型测试时泛化
+tldr: 现有视觉语言模型测试时自适应仅从单一模态适应，无法积累知识。DPE创建并演进两组原型，分别捕获类间和模态内部结构，随着样本处理逐步积累多模态知识。在多个基准上超越现有方法，增强跨数据泛化能力。
 source: NeurIPS-2024-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2024-jsgyyxasis/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1454, \"height\": 635, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-jsgyyxasis/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1437, \"height\": 656, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-jsgyyxasis/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 725, \"height\": 366, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-jsgyyxasis/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1447, \"height\": 475, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1442, \"height\": 904, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1442, \"height\": 754, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 802, \"height\": 343, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 800, \"height\": 271, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 730, \"height\": 124, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 894, \"height\": 241, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1442, \"height\": 879, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1440, \"height\": 187, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 752, \"height\": 379, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1410, \"height\": 142, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 652, \"height\": 290, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 1427, \"height\": 654, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-jsgyyxasis/table-013.webp\", \"caption\": \"\", \"page\": 0, \"index\": 13, \"width\": 1279, \"height\": 791, \"label\": \"Table\"}]"
-motivation: 现有视觉语言模型测试时自适应方法仅关注单模态适应，无法积累多模态知识。
-method: 提出双原型演进框架，分别维护和更新视觉和语言模态的原型。
-result: 在多个基准数据集上，DPE显著提升了模型在分布漂移下的性能。
-conclusion: 双原型演进行效促进了视觉语言模型的测试时多模态知识积累。
+motivation: 现有方法仅关注单模态适应，无法积累多模态任务知识。
+method: 构建双原型集合，从多模态信息中演进并积累知识。
+result: 在多个视觉语言任务上提升测试时泛化性能。
+conclusion: 双原型演进有效利用多模态信息实现持续测试时自适应。
 ---
 
 ## Abstract

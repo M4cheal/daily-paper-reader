@@ -1,21 +1,21 @@
 ---
 title: Test-time Adaptation in Non-stationary Environments via Adaptive Representation Alignment
-title_zh: 非平稳环境下通过自适应表征对齐的测试时自适应
+title_zh: 非平稳环境下的测试时自适应：自适应表示对齐
 authors: "Zhen-Yu Zhang, Zhiyu Xie, Huaxiu Yao, Masashi Sugiyama"
 date: 2024-09-25
 pdf: "https://openreview.net/pdf?id=0EfUYVMrLv"
 tags: ["query:tta"]
-score: 8.0
-evidence: 非平稳流中的在线测试时自适应通过表征对齐
-tldr: 在非平稳环境中，数据流连续变化且仅有少量无标签数据可用。现有持续TTA方法使用伪标签但忽略表征对齐。本文提出非平稳表征学习来自适应对齐无标签数据流与源域表征，从而提升伪标签质量并实现更鲁棒的在线自适应。
+score: 9.0
+evidence: 通过表示对齐在非平稳流式环境中进行在线测试时自适应
+tldr: 现有持续测试时自适应方法在非平稳流式数据中未能充分探索表示对齐。本文提出非平稳表示学习策略，自适应对齐未标记数据流与源域表示，提升了伪标签质量，实现了更稳定的在线自适应。
 source: NeurIPS-2024-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2024-0efuyvmrlv/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1398, \"height\": 445, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-0efuyvmrlv/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1393, \"height\": 330, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-0efuyvmrlv/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 684, \"height\": 392, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-0efuyvmrlv/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 684, \"height\": 391, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2024-0efuyvmrlv/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1422, \"height\": 498, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-0efuyvmrlv/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1418, \"height\": 497, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-0efuyvmrlv/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1265, \"height\": 111, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-0efuyvmrlv/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1412, \"height\": 499, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-0efuyvmrlv/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1406, \"height\": 89, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-0efuyvmrlv/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1414, \"height\": 498, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-0efuyvmrlv/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1423, \"height\": 496, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-0efuyvmrlv/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1418, \"height\": 496, \"label\": \"Table\"}]"
-motivation: 持续TTA中伪标签方法缺乏对源域表征的探索，在非平稳环境中性能有限。
-method: 利用非平稳表征学习自适应对齐无标签数据流与源域表征。
-result: 在多个非平稳数据流基准上达到更优的持续自适应效果。
-conclusion: 该方法强调了表征对齐在持续TTA中的重要性，适用于流式数据场景。
+motivation: 增强持续测试时自适应在非平稳流数据中的表示对齐能力。
+method: 通过非平稳表示学习自适应地对齐未标记数据流与源域表示。
+result: 在多个非平稳域漂移场景中提升了自适应稳定性和性能。
+conclusion: 为流式数据中的测试时自适应提供了有效的表示对齐策略。
 ---
 
 ## Abstract

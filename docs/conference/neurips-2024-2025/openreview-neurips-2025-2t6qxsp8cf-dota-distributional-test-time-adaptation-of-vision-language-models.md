@@ -1,21 +1,21 @@
 ---
 title: "DOTA: Distributional Test-time Adaptation of Vision-Language Models"
-title_zh: DOTA：面向视觉语言模型的分布性测试时自适应
+title_zh: "DOTA: 视觉-语言模型的分布级测试时自适应"
 authors: "Zongbo Han, Jialong Yang, Guangyu Wang, Junfan Li, Qianli Xu, Mike Zheng Shou, Changqing Zhang"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=2T6QXSP8Cf"
 tags: ["query:tta"]
-score: 9.0
-evidence: 面向视觉语言模型的分布性测试时自适应
-tldr: DOTA针对缓存式测试时自适应中灾难性遗忘问题，提出分布性测试时自适应方法。不是简单存储样本特征，而是维护整体分布统计量，在更新时可以无缝融合新知识而不丢失旧信息。实验表明，该方法在多种视觉语言任务上显著优于现有缓存方法，且不增加存储开销。
+score: 8.0
+evidence: 使用缓存统计的视觉-语言模型分布级测试时自适应
+tldr: 缓存式测试时自适应方法受限于固定容量，面临灾难性遗忘。DOTA不再存储原始特征，而是维护增量更新的特征统计量，将过去特征的重用建模为最小二乘问题。该方法在多个VLM基准上持续积累知识，避免了遗忘，实现了高效的在线自适应。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-2t6qxsp8cf/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 677, \"height\": 739, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-2t6qxsp8cf/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1433, \"height\": 397, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-2t6qxsp8cf/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 649, \"height\": 464, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1404, \"height\": 551, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 867, \"height\": 240, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1443, \"height\": 388, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 544, \"height\": 191, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 617, \"height\": 253, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1446, \"height\": 212, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 698, \"height\": 231, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1447, \"height\": 216, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 657, \"height\": 363, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 816, \"height\": 281, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1193, \"height\": 224, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 1159, \"height\": 196, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-013.webp\", \"caption\": \"\", \"page\": 0, \"index\": 13, \"width\": 1454, \"height\": 208, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-014.webp\", \"caption\": \"\", \"page\": 0, \"index\": 14, \"width\": 1019, \"height\": 229, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-015.webp\", \"caption\": \"\", \"page\": 0, \"index\": 15, \"width\": 1303, \"height\": 171, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-016.webp\", \"caption\": \"\", \"page\": 0, \"index\": 16, \"width\": 1336, \"height\": 851, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-017.webp\", \"caption\": \"\", \"page\": 0, \"index\": 17, \"width\": 1451, \"height\": 115, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-018.webp\", \"caption\": \"\", \"page\": 0, \"index\": 18, \"width\": 1457, \"height\": 134, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-019.webp\", \"caption\": \"\", \"page\": 0, \"index\": 19, \"width\": 1305, \"height\": 263, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-2t6qxsp8cf/table-020.webp\", \"caption\": \"\", \"page\": 0, \"index\": 20, \"width\": 1453, \"height\": 249, \"label\": \"Table\"}]"
-motivation: 现有缓存式测试时自适应方法因容量限制导致灾难性遗忘。
-method: 提出分布性统计量维护方法，替代原始特征缓存，实现无损知识积累。
-result: 在多个视觉语言基准上，DOTA优于现有方法且无需额外存储。
-conclusion: 分布性缓存机制为视觉语言模型的测试时自适应提供了高效的解决方案。
+motivation: 现有缓存式测试时自适应方法因固定容量导致灾难性遗忘，限制了长期适应能力。
+method: 将过去特征的重用转化为最小二乘问题，维护紧凑的特征统计量而非原始特征，实现无遗忘的增量更新。
+result: 在多个域迁移数据集上，DOTA优于现有缓存方法和全模型自适应方法，且计算开销低。
+conclusion: DOTA提供了一种可扩展的测试时自适应策略，适用于持续变化的部署环境。
 ---
 
 ## Abstract

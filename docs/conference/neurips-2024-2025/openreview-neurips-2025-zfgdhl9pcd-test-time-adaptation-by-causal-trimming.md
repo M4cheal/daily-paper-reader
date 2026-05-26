@@ -1,21 +1,21 @@
 ---
 title: Test-Time Adaptation by Causal Trimming
-title_zh: 通过因果修剪进行测试时自适应
+title_zh: 基于因果修剪的测试时间自适应
 authors: "Yingnan Liu, Rui Qiao, Mong-Li Lee, Wynne Hsu"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=zFGdHL9pcD"
 tags: ["query:tta"]
-score: 8.0
-evidence: 测试时自适应的因果修剪理论
-tldr: 测试时自适应旨在提升分布偏移下的鲁棒性。性能下降的主因是模型依赖非因果特征。本文提出因果修剪（TACT）方法，通过数据增强保留因果特征并变化非因果特征，利用主成分分析识别高方差方向并去除。基于因果视角提供了理论分析。
+score: 9.0
+evidence: 因果推理用于测试时间自适应
+tldr: 模型在域漂移下性能下降常因依赖非因果特征。TACT提出通过数据增强保持因果特征变化非因果特征，利用主成分分析识别高方差方向（对应非因果特征），然后从表征中移除这些投影。该方法在多个域漂移数据集上有效提升了鲁棒性，且无需目标域标签。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-zfgdhl9pcd/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 423, \"height\": 333, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-zfgdhl9pcd/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 356, \"height\": 298, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-zfgdhl9pcd/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1443, \"height\": 1199, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-zfgdhl9pcd/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1442, \"height\": 381, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-zfgdhl9pcd/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1442, \"height\": 647, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-zfgdhl9pcd/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1441, \"height\": 602, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-zfgdhl9pcd/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1440, \"height\": 249, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-zfgdhl9pcd/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1274, \"height\": 261, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-zfgdhl9pcd/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1375, \"height\": 317, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-zfgdhl9pcd/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1446, \"height\": 170, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-zfgdhl9pcd/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1360, \"height\": 131, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-zfgdhl9pcd/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 962, \"height\": 335, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-zfgdhl9pcd/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 687, \"height\": 138, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-zfgdhl9pcd/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1148, \"height\": 137, \"label\": \"Table\"}]"
-motivation: 分布偏移下模型依赖非因果特征导致性能下降，需要识别并去除这些特征。
-method: 通过数据增强保持因果特征、改变非因果特征，利用PCA识别高方差方向并修剪表征。
-result: 在多个域偏移数据集上显著提升模型鲁棒性，并具有理论保证。
-conclusion: TACT为测试时自适应提供了因果驱动的有效方法，揭示了特征选择的重要性。
+motivation: 减少测试时间模型对非因果特征的依赖，提升域漂移鲁棒性。
+method: 通过数据增强和PCA识别非因果特征方向，在表征中移除其投影。
+result: 在多个域漂移基准上显著提升分类准确率。
+conclusion: 因果修剪为测试时间自适应提供了可解释且有效的去偏方案。
 ---
 
 ## Abstract

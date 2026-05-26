@@ -1,21 +1,21 @@
 ---
 title: "Rethinking Entropy in Test-Time Adaptation: The Missing Piece from Energy Duality"
-title_zh: 重新审视测试时间自适应中的熵：来自能量对偶性的缺失部分
+title_zh: 重新审视测试时自适应中的熵：来自能量对偶的缺失拼图
 authors: "Mincheol Park, Heeji Won, Won Woo Ro, Suhyun Kim"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=BKYFAutCDZ"
 tags: ["query:tta"]
 score: 9.0
-evidence: TTA中熵最小化的理论分析
-tldr: 现有TTA方法依赖熵最小化，但本文通过能量对偶性发现熵最小化不能保证能量降低和可靠似然估计。核心方法分析熵与能量的二元关系，证明两者需同时优化。实验表明同时减少熵和能量提升自适应效果。为TTA理论基础提供重要修正。
+evidence: 测试时自适应中熵与能量对偶性的理论分析
+tldr: 现有测试时自适应依赖熵最小化，但仅降低熵不足以保证模型可靠性。本文从能量对偶视角分析了熵与能量的紧密关联，指出熵最小化不能确保能量降低，需同时优化二者。实验证明该理论洞见可提升TTA性能。为TTA理论提供新基础。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-bkyfautcdz/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1435, \"height\": 355, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-bkyfautcdz/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1448, \"height\": 254, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-bkyfautcdz/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 515, \"height\": 386, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-bkyfautcdz/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1437, \"height\": 332, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-bkyfautcdz/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1444, \"height\": 289, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-bkyfautcdz/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1446, \"height\": 457, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-bkyfautcdz/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1455, \"height\": 265, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-bkyfautcdz/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1453, \"height\": 217, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-bkyfautcdz/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1455, \"height\": 353, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-bkyfautcdz/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1456, \"height\": 170, \"label\": \"Table\"}]"
-motivation: 熵最小化在TTA中虽常用但不足以确保可靠预测，缺乏理论解释。
-method: 揭示熵与能量的对偶关系，提出同时优化二者的方法。
-result: 理论证明和实验验证表明联合优化熵和能量优于单独熵最小化。
-conclusion: 为TTA提供了更坚实的理论基础，指导设计更有效的目标函数。
+motivation: 熵最小化在测试时自适应中的充分性不足，需引入能量视角。
+method: 分析熵与能量的对偶关系，提出同时减少两者的必要性。
+result: 揭示了熵最小化的局限，新方法在多个分布偏移基准上效果提升。
+conclusion: 测试时自适应需同时考虑熵与能量，为稳健自适应提供理论基础。
 ---
 
 ## Abstract

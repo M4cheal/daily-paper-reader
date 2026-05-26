@@ -1,20 +1,20 @@
 ---
 title: Monitoring Risks in Test-Time Adaptation
-title_zh: 监控测试时间适应中的风险
+title_zh: 监控测试时自适应中的风险
 authors: "Mona Schirmer, Metod Jazbec, Christian A. Naesseth, Eric Nalisnick"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=TzHX2RWUdE"
 tags: ["query:tta"]
-score: 8.0
-evidence: 测试时间适应中的风险监控
-tldr: 现有测试时间自适应（TTA）方法能处理分布偏移，但模型性能仍可能严重下降而未被察觉。本文提出将TTA与风险监控框架结合，基于序贯测试和置信序列来追踪预测性能并报警。此方法扩展了现有监控工具以适配TTA场景。实验表明能有效检测需要离线重训的失败情况。
+score: 9.0
+evidence: 用于测试时自适应的风险监控框架以检测性能故障
+tldr: 测试时自适应（TTA）能延长模型部署寿命，但无法保证始终有效。本文提出将TTA与风险监控框架结合，利用置信序列的序贯检验跟踪性能，当性能显著下降时触发警报。该方法无需标注数据，并提供理论保障，使TTA在安全关键应用中更加可靠。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 344, \"height\": 335, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 627, \"height\": 615, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1407, \"height\": 1303, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 542, \"height\": 668, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 609, \"height\": 397, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1407, \"height\": 1303, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1359, \"height\": 1002, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1420, \"height\": 320, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1418, \"height\": 1225, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-tzhx2rwude/fig-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1007, \"height\": 1264, \"label\": \"Figure\"}]"
-motivation: TTA虽能适应分布偏移，但性能下降仍可能严重到需要离线重训，当前缺乏监控手段。
-method: 将TTA与基于置信序列的序贯测试框架配对，实时追踪预测性能并触发警报。
-result: 在多种分布偏移场景下有效检测到性能显著下降，及时发出告警。
-conclusion: 提出一种实用的TTA风险监控方案，提升部署可靠性。
+motivation: TTA可能仍无法阻止模型性能严重下降，需要监控机制来判断是否应下线重新训练。
+method: 将TTA与基于置信序列的序贯检验结合，持续监控模型性能，检测到违反预设标准时发出警报。
+result: 在多种域偏移场景下的实验表明，该方法能及时检测到性能下降，且误报率可控。
+conclusion: 为TTA提供了理论基础上的安全监控工具，确保模型在部署中保持可接受的性能。
 ---
 
 ## Abstract

@@ -1,21 +1,21 @@
 ---
 title: "DAA: Amplifying Unknown Discrepancy for Test-Time Discovery"
-title_zh: DAA：放大未知差异用于测试时发现
+title_zh: DAA：通过放大未知差异实现测试时发现
 authors: "Tianle Liu, Fan Lyu, Chenggong Ni, Zhang Zhang, Fuyuan Hu, Liang Wang"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=gVKxz6M1ov"
 tags: ["query:tta"]
-score: 7.0
-evidence: 测试时发现涉及在推理时适应新类别，与测试时自适应相关。
-tldr: 该论文针对测试时发现（TTD）任务中静态表示泛化差的问题，提出了差异放大适配器（DAA）。DAA通过训练模拟未知类别并采用热身策略，在测试时实时放大已知与未知类别的特征差异，从而在保持已知类性能的同时发现新类别。实验表明DAA在多个基准上优于现有方法，为动态环境下的模型适应提供了有效工具。
+score: 4.0
+evidence: 通过差异放大实现测试时发现，与自适应技术相关
+tldr: 测试时发现任务要求在推理时识别新类别并保持已知类性能。DAA提出差异放大适配器，在线放大了已知与未知类的特征差异，并通过模拟未知样本训练。在多个数据集上提升了发现性能，但更偏向开集发现而非传统TTA。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1438, \"height\": 640, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1431, \"height\": 520, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1429, \"height\": 344, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1451, \"height\": 286, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 743, \"height\": 257, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 703, \"height\": 225, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 698, \"height\": 247, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 699, \"height\": 227, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1409, \"height\": 392, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1432, \"height\": 405, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1431, \"height\": 525, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 1414, \"height\": 442, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gvkxz6m1ov/fig-013.webp\", \"caption\": \"\", \"page\": 0, \"index\": 13, \"width\": 1401, \"height\": 444, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1441, \"height\": 187, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1440, \"height\": 672, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 781, \"height\": 311, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 584, \"height\": 317, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1444, \"height\": 349, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1448, \"height\": 187, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1436, \"height\": 667, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1152, \"height\": 491, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1153, \"height\": 411, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gvkxz6m1ov/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1150, \"height\": 349, \"label\": \"Table\"}]"
-motivation: 现有测试时发现方法依赖冻结模型和静态表示，泛化能力差，无法有效识别新类别。
-method: 设计可训练适配器，通过模拟未知类别和热身策略放大已知与未知类别的特征差异，实现实时适应。
-result: DAA在多个测试时发现基准数据集上取得最优结果，显著提升了新类别识别能力。
-conclusion: 特征差异放大策略能有效提升测试时发现性能，为动态环境下的模型自适应提供了新思路。
+motivation: 测试时发现需要实时适应新类别，现有方法泛化差。
+method: 提出可训练差异放大适配器，在线放大已知与未知类差异。
+result: 在测试时发现基准上优于现有静态方法。
+conclusion: 差异放大适配器有效支持实时测试时新类发现。
 ---
 
 ## Abstract

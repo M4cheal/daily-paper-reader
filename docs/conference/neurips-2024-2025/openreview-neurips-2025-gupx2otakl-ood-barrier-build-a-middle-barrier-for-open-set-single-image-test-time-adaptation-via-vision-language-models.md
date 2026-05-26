@@ -1,21 +1,21 @@
 ---
 title: "OOD-Barrier: Build a Middle-Barrier for Open-Set Single-Image Test Time Adaptation via Vision Language Models"
-title_zh: OOD-Barrier：通过视觉语言模型为开放集单图像测试时自适应构建中间屏障
+title_zh: OOD-Barrier：通过视觉语言模型为开集单图像测试时间自适应构建中间屏障
 authors: "Boyang Peng, Sanqing Qu, Tianpei Zou, Fan Lu, Ya Wu, Kai Chen, Siheng Chen, Yong Wu, Guang Chen"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=GUPx2otaKL"
 tags: ["query:tta"]
 score: 8.0
-evidence: 面向数据流的开放集单图像测试时自适应
-tldr: 现实环境中模型需要处理动态分布，包括分布内和分布外样本的在线到达。现有开放集测试时自适应依赖批处理，难以应对单样本流。本文提出Open-IRT框架，基于中间表示进行单图像测试时自适应，结合视觉语言模型，能有效处理单样本数据流中的开放集环境。
+evidence: 面向视觉语言模型的开集单图像测试时间自适应
+tldr: 现实环境中的测试样本可能是开集（包含分布外样本）且逐张到达，现有方法依赖批处理。Open-IRT提出基于中间表示的测试时间自适应框架，通过构建屏障将分布内和分布外样本分开，从而在单样本流中安全自适应。在开集TTA基准上，该方法有效兼顾了分布内性能和对分布外样本的拒绝能力。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-gupx2otakl/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 982, \"height\": 443, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gupx2otakl/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1438, \"height\": 620, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gupx2otakl/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 711, \"height\": 579, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gupx2otakl/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 844, \"height\": 382, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gupx2otakl/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1490, \"height\": 353, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-gupx2otakl/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1479, \"height\": 280, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-gupx2otakl/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1454, \"height\": 641, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gupx2otakl/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1454, \"height\": 395, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gupx2otakl/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1465, \"height\": 232, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gupx2otakl/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 853, \"height\": 436, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-gupx2otakl/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 818, \"height\": 335, \"label\": \"Table\"}]"
-motivation: 现有开放集TTA方法依赖批处理，无法处理单样本数据流中的开放集环境。
-method: 提出基于中间表示的开放集TTA框架Open-IRT，专门用于单图像流，结合视觉语言模型。
-result: 在单样本流场景下有效处理分布内和分布外样本，实现稳健自适应。
-conclusion: Open-IRT弥合了开放集TTA在流式场景中的空白，适用于实时应用。
+motivation: 解决开集单图像场景下批处理TTA无法适用的问题。
+method: 构建中间表示屏障，分离分布内与分布外样本，逐图像自适应。
+result: 在开集TTA基准上分布内准确率和OOD拒绝率均达最优。
+conclusion: 基于中间屏障的框架为实时开集TTA提供了可行方案。
 ---
 
 ## Abstract

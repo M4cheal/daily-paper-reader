@@ -1,21 +1,21 @@
 ---
 title: Variational Continual Test-Time Adaptation
-title_zh: 变分连续测试时自适应
+title_zh: 变分持续测试时自适应
 authors: "Fan Lyu, Kaile Du, Yuyang Li, hanyu zhao, Fuyuan Hu, Zhang Zhang, Guangcan Liu, Liang Wang"
 date: 2024-05-10
 pdf: "https://openreview.net/pdf?id=mdK1vhgpa5"
 tags: ["query:tta"]
 score: 9.0
-evidence: 提出变分连续测试时自适应方法
-tldr: 针对连续测试时自适应（CTTA）中的误差累积和不确定性问题，本文提出了VCoTTA方法。该方法在源阶段通过变分预热策略将预训练模型转换为贝叶斯神经网络，在测试阶段利用均值教师框架进行变分推断。实验表明，该方法有效缓解了误差累积，提升了在连续域偏移下的鲁棒性。
+evidence: 变分贝叶斯方法用于持续测试时自适应中的不确定性量化
+tldr: 持续测试时自适应面临严重误差累积问题。本文提出VCoTTA方法，通过变分贝叶斯神经网络注入不确定性，并在测试阶段采用均值教师策略进行变分推理，有效缓解了误差累积，为CTTA提供了稳健的理论框架。
 source: NeurIPS-2024-Rejected-Public
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2024-mdk1vhgpa5/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1059, \"height\": 473, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-mdk1vhgpa5/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1028, \"height\": 376, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-mdk1vhgpa5/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 887, \"height\": 722, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-mdk1vhgpa5/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 714, \"height\": 424, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-mdk1vhgpa5/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 711, \"height\": 424, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2024-mdk1vhgpa5/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 992, \"height\": 512, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 875, \"height\": 186, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1440, \"height\": 371, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1434, \"height\": 373, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1439, \"height\": 318, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 705, \"height\": 212, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 710, \"height\": 218, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 728, \"height\": 320, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 705, \"height\": 323, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1062, \"height\": 340, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 841, \"height\": 245, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1313, \"height\": 224, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 843, \"height\": 246, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-013.webp\", \"caption\": \"\", \"page\": 0, \"index\": 13, \"width\": 676, \"height\": 224, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2024-mdk1vhgpa5/table-014.webp\", \"caption\": \"\", \"page\": 0, \"index\": 14, \"width\": 702, \"height\": 224, \"label\": \"Table\"}]"
-motivation: 连续测试时自适应面临模型更新不确定性导致的误差累积问题。
-method: 提出变分贝叶斯方法VCoTTA，包括变分预热和均值教师变分推断。
-result: 在多个CTTA基准上取得SOTA性能，有效降低误差累积。
-conclusion: VCoTTA通过贝叶斯框架为CTTA提供了一种鲁棒的解决方案。
+motivation: 解决持续测试时中模型更新不确定性导致的误差累积问题。
+method: 将预训练模型转换为贝叶斯神经网络，采用变分推理和均值教师更新策略。
+result: 在多种持续域偏移场景下降低了误差累积，提升了自适应效果。
+conclusion: 为持续测试时自适应提供了不确定性量化的有效解决方案。
 ---
 
 ## Abstract

@@ -1,21 +1,21 @@
 ---
 title: "PAID: Pairwise Angular-Invariant Decomposition for Continual Test-Time Adaptation"
-title_zh: PAID：用于持续测试时自适应的成对角度不变分解
+title_zh: "PAID: 用于连续测试时自适应的成对角度不变分解"
 authors: "Kunyu Wang, Xueyang Fu, Yuanfei Bao, Chengjie Ge, Chengzhi Cao, Wei Zhai, Zheng-Jun Zha"
 date: 2025-09-18
 pdf: "https://openreview.net/pdf?id=HWTdOSKK3n"
 tags: ["query:tta"]
 score: 8.0
-evidence: 持续测试时自适应结合角度不变分解
-tldr: 持续测试时自适应需要在推理过程中在线适应变化环境。现有方法仅利用目标数据而忽略了预训练权重中蕴含的域不变先验。本文通过分析权重的几何属性，发现成对角度结构在多种损坏域下保持稳定并编码域不变语义。提出PAID方法，在自适应过程中保留该结构，从而提升持续TTA的性能。
+evidence: 利用几何不变分解进行连续测试时自适应以应对流式数据
+tldr: 连续测试时自适应（CTTA）需要模型在线适应不断变化的环境。现有方法仅关注目标数据，忽略了预训练权重中蕴含的域不变先验。PAID系统分析了权重的几何属性，发现成对角度结构在不同域中保持稳定，以此设计成对角度不变分解。实验表明PAID在多个连续域偏移数据集上显著减少了灾难性遗忘，并提升了适应性能。
 source: NeurIPS-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-neurips-2025-hwtdoskk3n/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1446, \"height\": 474, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-hwtdoskk3n/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1426, \"height\": 401, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-hwtdoskk3n/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1454, \"height\": 568, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-hwtdoskk3n/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1444, \"height\": 560, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-hwtdoskk3n/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 789, \"height\": 843, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-hwtdoskk3n/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1425, \"height\": 325, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-neurips-2025-hwtdoskk3n/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1451, \"height\": 352, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1443, \"height\": 129, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1440, \"height\": 162, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1436, \"height\": 165, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1445, \"height\": 145, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 655, \"height\": 332, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 740, \"height\": 244, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1442, \"height\": 219, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1444, \"height\": 251, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1445, \"height\": 507, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1446, \"height\": 419, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1447, \"height\": 418, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 1447, \"height\": 439, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-neurips-2025-hwtdoskk3n/table-013.webp\", \"caption\": \"\", \"page\": 0, \"index\": 13, \"width\": 1440, \"height\": 206, \"label\": \"Table\"}]"
-motivation: 持续TTA中预训练权重的域不变先验未被充分利用，现有方法仅关注目标数据。
-method: 保留预训练权重中稳定的成对角度结构，在自适应过程中维持域不变语义信息。
-result: 在多个持续TTA基准上取得最优性能，有效缓解灾难性遗忘。
-conclusion: PAID揭示了预训练权重几何结构在持续TTA中的价值，为稳健在线自适应提供新视角。
+motivation: 现有连续测试时自适应方法忽略预训练权重的域不变几何信息，导致在流式数据中性能下降。
+method: 提取预训练权重的成对角度结构作为域不变先验，在自适应过程中保留该结构，同时更新其他几何分量。
+result: 在CIFAR-10C等连续域偏移数据集上，PAID优于现有CTTA方法，有效缓解了遗忘问题。
+conclusion: PAID揭示了预训练权重的几何结构价值，为在线流式场景下的自适应提供了新思路。
 ---
 
 ## Abstract
