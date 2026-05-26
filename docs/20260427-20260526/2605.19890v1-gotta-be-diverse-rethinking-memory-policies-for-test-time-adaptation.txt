@@ -1,0 +1,462 @@
+Title: GoTTA be Diverse: Rethinking Memory Policies for Test-Time Adaptation
+
+URL Source: https://arxiv.org/pdf/2605.19890v1
+
+Published Time: Wed, 20 May 2026 01:19:43 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# GoTTA be Diverse: Rethinking Memory Policies for Test-Time Adaptation 
+
+Shyma Alhuwaider ∗ Yasmeen Alsaedy ∗ Merey Ramazanova Silvio Giancola Bernard Ghanem 
+
+Center of Excellence in Generative AI, KAUST, Saudi Arabia 
+
+{shyma.alhuwaider, yasmeen.alsaedi}@kaust.edu.sa 
+
+## Abstract 
+
+Test-time adaptation (TTA) enables a pre-trained model to adapt online to an unla-beled test stream under distribution shift. While most TTA research focuses on the adaptation objective, practical streams also depend critically on the memory used to select which test samples drive adaptation. Existing memory mechanisms are usually evaluated as components of specific TTA algorithms, making it difficult to isolate which memory design choices matter and when they matter. In this work, we provide a systematic benchmark that decouples memory from the adaptation algorithm and evaluates memory policies under unified conditions across i.i.d., non-i.i.d., continual, and practical test streams. Our study shows that effective memory management requires more than retaining recent or class-balanced samples. In particular, intra-class diversity is a key factor for avoiding redundant buffers and maintaining representative adaptation signals under temporally correlated and label-skewed streams. Motivated by this finding, we introduce Guided Observational Test-Time Adaptation (GOTTA), a family of diversity-aware memory policies that combine class-balanced allocation with feature-space diversity. GOTTA memories act as drop-in replacements for existing buffers and can be paired with differ-ent TTA objectives. Across corruption benchmarks and video-stream settings, diversity-aware memory improves adaptation most clearly under constrained mem-ory budgets and challenging non-i.i.d. streams, while remaining competitive as memory capacity increases. These results highlight memory management as a first-class component of robust test-time adaptation and identify diversity as a central principle for practical TTA. 
+
+## 1 Introduction 
+
+Deep neural networks are typically trained under the assumption that training and test samples are independently and identically distributed (i.i.d.). In deployment, however, models face test distributions that shift over time due to changes in appearance, environment, acquisition conditions, or class prevalence [ 1]. Test-Time Adaptation (TTA) addresses this problem by adapting a pre-trained, source-free model online using only the incoming unlabeled test stream, without revisiting source data [2, 3]. Early TTA methods address static or mildly varying target distributions through batch normalization recalibration [ 4, 5 ], entropy minimization [ 6], pseudo-labeling [ 7], or self-supervised objectives [ 8]. These methods become less reliable in practical dynamic settings , where test streams are non-stationary and non-i.i.d., combining gradual appearance shifts ( e.g., sunny → rainy) with abrupt 
+
+> ∗Equal contribution Preprint.
+> arXiv:2605.19890v1 [cs.CV] 19 May 2026
+
+Figure 1: We evaluate memory selection strategies on a two-class CIFAR-10 subset under a Dirichlet-skewed stream ( γ=0 .1) with memory capacity M =32 and 128 streaming batches. To stress-test each strategy’s ability to mitigate redundancy, every image in the dataset is duplicated four times prior to streaming, deliberately injecting near-duplicate samples into the stream. class-prevalence changes. In such streams, consecutive batches may be highly correlated, class-imbalanced, or visually redundant, leading to amplified prediction errors and accelerated forgetting. Recent practical and continual TTA methods mitigate this issue with memory replay buffers. Methods such as NOTE [ 9] and RoTTA [ 10 ] store selected test samples to stabilize adaptation, often using class balance, confidence, uncertainty, or recency as selection criteria. However, these memories are usually evaluated as internal components of specific TTA algorithms, making it difficult to isolate which memory design choices matter and when they matter. 
+
+In this work, we argue that memory is a first-class, modular component of TTA. The memory determines which samples drive adaptation, and therefore shapes the empirical distribution seen by the model at test time. An effective memory should not only maintain class balance , but also preserve 
+
+intra-class diversity . While existing memory-based TTA methods help enforce class balance, they do not explicitly prevent near-duplicate samples within each class, which can waste limited memory capacity and weaken the adaptation signal. We therefore decouple memory from the adaptation algorithm and provide a systematic benchmark of memory policies under unified conditions. Our analysis compares uninformed, class-guided, and diversity-aware memories across multiple TTA objectives and stream settings. It identifies three key factors for effective memory management: class balance , uncertainty weighting , and, critically, intra-class feature diversity . Diversity is especially important under tight memory budgets and temporally correlated streams, where each retained sample must contribute non-redundant information. 2Guided by these findings, we propose Guided Observational Test-Time Adaptation (GOTTA) , a family of diversity-aware memory modules for TTA. GOTTA serves as a drop-in replacement for existing replay buffers and combines class-balanced allocation with intra-class geometric diversity. It instantiates two complementary samplers: Farthest Point Sampling (FPS) 3.4, which promotes feature-space coverage via a nearest-neighbor diversity filter with eviction, and Cosine Diversity Sampling (CDS) 3.4, which promotes angular diversity within class partitions. Figure 1 illustrates this principle through a controlled diagnostic experiment on a two-class CIFAR-10 subset under a Dirichlet-skewed stream with duplicated samples. Naive memories such as FIFO form dense, overlapping clusters, while class-guided memories improve balance but can still retain redundant samples. In contrast, CDS and FPS spread retained samples more broadly across the embedding space while preserving class balance. The corresponding diversity metrics show that these policies improve coverage and reduce near-duplicate memory entries. These observations motivate the central design principle of GOTTA: diversity and balance are not competing objectives, they can and should be enforced simultaneously . Our experiments show that diversity-aware memories are most beneficial under constrained memory, non-i.i.d. streams, and temporal correlation, while remaining competitive as memory capacity increases. Overall, our results suggest that robust TTA requires not only effective adaptation losses, but also memory policies that control the samples used for adaptation. 
+
+Contributions. 
+
+• We decouple memory from the adaptation algorithm and evaluate memory policies under unified conditions across multiple TTA methods and stream settings. • We show that memory effectiveness depends on class balance, uncertainty weighting, and intra-class feature diversity. • We propose Guided Observational Test-Time Adaptation (GOTTA), a family of diversity-aware memory modules that combine class-balanced allocation with intra-class geometric diversity for practical test-time adaptation. 
+
+## 2 Related Work 
+
+Unsupervised domain adaptation. Unsupervised domain adaptation (UDA) addresses domain shift by adapting a model from a labeled source domain to an unlabeled target domain [ 11 , 2]. Classical UDA methods align source and target distributions through statistical distances such as Maximum Mean Discrepancy [ 12 ], adversarial domain confusion [ 13 , 14 ], or self-training with pseudo-labels [15]. Several works further introduce class-balancing or confidence-based filtering to reduce pseudo-label bias and error accumulation [ 16 ]. However, UDA is typically an offline setting that assumes access to source data and target samples during adaptation. In contrast, TTA operates online, without source data, and must adapt from the incoming unlabeled test stream alone. 
+
+Continual learning. Continual learning (CL) studies how models can learn from sequential tasks while mitigating catastrophic forgetting [ 17 ]. Major strategies include regularization-based methods that constrain important parameters [ 18 , 19 ], parameter-isolation methods that allocate task-specific capacity, and rehearsal-based methods that replay stored examples from previous tasks [ 20 , 21 ]. Our work is most related to rehearsal-based CL because it also relies on a compact memory buffer. However, CL commonly assumes labeled task sequences, while TTA must adapt to a continuous unlabeled stream with unknown and shifting distributions. We therefore borrow the idea of memory-based stabilization, but study it under the stricter constraints of online source-free adaptation. 
+
+Test-time adaptation and practical streams. Test-time adaptation adapts a pre-trained model during inference using only unlabeled test samples [ 22 ]. Early methods focused on static or ap-proximately i.i.d. target shifts by updating batch-normalization statistics [ 23 , 5, 4 ], adapting model parameters through entropy minimization [ 6], using pseudo-labels [ 7 ], or relying on self-supervised objectives [ 8 ]. Other approaches adapt selected layers or the full model depending on the stability and plasticity required at test time [ 24 –26 ]. While these methods are effective under standard corruption benchmarks, practical streams are often temporally correlated, non-stationary, and class-imbalanced. Recent work therefore shifted toward continual and practical TTA settings, where distribution drift, redundancy, and forgetting become central challenges [ 27 , 9, 10 ]. NOTE [ 9] and RoTTA [ 10 ] intro-duced memory-based adaptation for temporally correlated streams, and ITD [ 28 ] further advances 3evaluation realism by introducing a tracklet-based video benchmark where non-i.i.d. structure is inherent rather than simulated. Our work follows this practical TTA direction, focusing specifically on the memory policy rather than proposing a new adaptation objective. 
+
+Memory mechanisms in practical TTA. Memory buffers are increasingly used to stabilize adaptation under temporally correlated streams [ 9, 10 , 29 ]. Existing policies include uninformed strategies such as FIFO and reservoir sampling [ 30 ], class-guided strategies that maintain pseudo-label balance [ 9,10 ], and selective filtering methods that reject unreliable or outlier samples [ 29 ]. These designs improve stability, but they are usually introduced as components of specific TTA methods. This makes it difficult to separate the effect of memory management from the effect of the adaptation objective. In this paper, we decouple memory from adaptation and compare memory policies under a unified protocol, allowing us to isolate which memory properties matter across methods and streams. 
+
+Geometric diversity and coreset selection. Temporally correlated streams often contain redundant samples, making memory capacity a scarce resource. This motivates viewing memory as a compact coreset of observed test samples rather than a passive replay buffer. Diversity-based selection has been widely studied in active learning and coreset construction, where informative subsets are chosen to cover the feature space efficiently [ 31 , 32 ]. Common mechanisms include farthest point sampling, which greedily maximizes the distance to the selected set [ 33 , 34 ], and determinantal point processes, which favor diverse subsets through repulsive sampling [ 35 , 36 ]. Inspired by these principles, we study whether feature-space diversity can improve memory management for TTA. Unlike standard coreset selection, our setting is online, source-free, pseudo-labeled, and constrained by the evolving predictions of the adapting model. 
+
+## 3 Methodology 
+
+3.1 Problem definition 
+
+Let fθs : X → Y be a model pre-trained on a labeled source dataset Ds = {(xs, y s)} drawn from a source distribution Ps. In test-time adaptation, only the source model parameters θs are available at deployment, while the source data Ds is inaccessible. The model receives a continuous unlabeled test stream X1, . . . , XT drawn from a target distribution that differs from the source distribution. In practical settings, this target distribution is not fixed, but evolves over time as a sequence {P t}Tt=1 ,where Pt may differ from Pt−1 due to appearance shifts, temporal correlation, or changes in class prevalence. At each step t, the model observes a batch Xt and updates its parameters by minimizing an unsuper-vised adaptation loss: 
+
+θt ← Adapt( θt−1, Xt; Ladapt ).
+
+The updated model is then used for subsequent predictions. Without additional control over the samples used for adaptation, this online process can be sensitive to redundant batches, class imbalance, and error accumulation in non-i.i.d. streams. 
+
+3.2 Test-time adaptation with memory 
+
+Memory-augmented TTA replaces direct adaptation on the current batch with adaptation on a curated buffer of observed test samples. The memory M is a fixed-capacity buffer of size N . At time t, it contains K ≤ N entries, 
+
+Mt = {m1, . . . , m K }.
+
+Each memory entry stores an observed sample and model-derived metadata: 
+
+mi = ( xi, ˆyi, u i, z i, a i),
+
+where xi is the input sample, ˆyi is its pseudo-label, ui is its uncertainty, zi is the stored model-derived representation, and ai is its age since insertion. For standard memory updates, ˆyi is obtained from the maximum softmax prediction, ui is the predictive entropy over the softmax distribution, and 
+
+zi ∈ ∆C−1 is the corresponding softmax probability vector. These quantities are fixed at insertion time for static memory policies. For the dynamic variant, stored samples are periodically re-forwarded through the current model to refresh their representations, pseudo-labels, and uncertainty estimates. 4At each time step, memory-augmented adaptation proceeds in two stages: 
+
+Mt ← Π( Mt−1, Xt),θt ← Adapt( θt−1, Mt; Ladapt ),
+
+where Π is the memory policy that determines insertion and eviction. This formulation decouples the adaptation objective from the memory policy, allowing us to evaluate memory mechanisms independently of the underlying TTA method. 
+
+3.3 A taxonomy of memory policies 
+
+We organize memory policies into three families according to the information they use. 
+
+Uninformed memories. Uninformed policies ignore model predictions and representations. FIFO keeps the most recent samples by evicting the oldest entry when memory is full. Reservoir sampling maintains a uniformly random subset of all observed samples [ 30 ]. These policies are simple, but they directly inherit stream imbalance and temporal redundancy. 
+
+Class-guided memories. Class-guided policies use pseudo-labels to partition memory and en-courage class balance. PBRS applies reservoir sampling within pseudo-label partitions, preventing frequent classes from occupying the entire memory. CSTU further combines class balancing with a timeliness and uncertainty based eviction rule [ 10 ]. These methods improve over uninformed buffers, but they do not explicitly control redundancy within each class partition. 
+
+Diversity-aware memories. We introduce Guided Observational Test-Time Adaptation (GOTTA), a family of diversity-aware memory policies that jointly enforce class balance and intra-class diver-sity. GOTTA treats memory as a compact coreset of the observed test stream. Rather than only balancing pseudo-label counts, it also encourages the retained samples within each class to cover the representation space. We instantiate this principle with two policies, Cosine Diversity Sampling (CDS) and Farthest Point Sampling (FPS). 
+
+3.4 Guided Observational Test-Time Adaptation: diversity-aware memory for TTA 
+
+GOTTA is built on the principle that balance and diversity should be enforced jointly. Each incoming sample is first assigned to a pseudo-label partition, and insertion or eviction is then decided using a combination of class allocation, uncertainty, age, and geometric redundancy. The resulting memory remains class-balanced while avoiding near-duplicate samples within each class. 
+
+Shared eviction score. When two entries compete for the same slot, GOTTA uses the following CSTU-style heuristic score [10]: 
+
+H(mi) = λt
+
+11 + exp( −ai/N ) + λu
+
+ui
+
+log C ,
+
+where ai is the age of the entry, ui is its uncertainty, C is the number of classes, and N is the memory capacity. The weights λt and λu control the relative importance of temporal age and uncertainty. Larger values of H indicate entries that are less desirable to retain: older or more uncertain samples receive higher scores and are therefore more likely to be evicted. When an incoming candidate competes with a stored entry, the entry with the larger score is treated as more evictable. 
+
+Farthest Point Sampling. FPS promotes diversity by comparing each incoming sample to the closest stored sample within the same pseudo-label partition. Although we keep the name FPS for brevity, our implementation is an efficient online nearest-neighbor diversity filter with eviction, rather than a full offline farthest point traversal. Let mt = ( xt, ˆyt, u t, z t, a t) be an incoming entry. Let M(ˆ yt) denote the memory partition associated with its pseudo-label. For each stored entry mi ∈ M (ˆ yt), we compute 
+
+di = ∥zt − zi∥2.
+
+5If the partition has free capacity, the candidate proceeds directly to the diversity check. If the partition is full, we identify the nearest stored entry, 
+
+mr = arg min 
+
+> mi∈M ( ˆ yt)
+
+di.
+
+The candidate is compared only against this nearest neighbor. If H(mr ) ≥ H (mt), the stored neighbor is evicted and the candidate is considered for insertion. Otherwise, the candidate is discarded. Thus, larger values of H correspond to entries that are older or more uncertain, and therefore less desirable to retain. The diversity check accepts the candidate only if 
+
+min  
+
+> i
+
+di > ϵ. 
+
+where ϵ = 0 .005 , determined empirically; we ablate its effect in the paragraph 4.1. This prevents the memory from storing samples that are too close to existing entries in the same class partition. 
+
+FPS with dynamic representation updates. FPSD extends FPS with a periodic refresh mechanism to account for the evolving feature space during adaptation. Every τ steps, all stored samples are re-encoded through the current model, updating their representations, pseudo-labels, and uncertainty estimates simultaneously. This ensures that diversity comparisons and sample selection remain consistent with the model’s current understanding, rather than being anchored to an increasingly stale feature space from earlier in adaptation. 
+
+Cosine Diversity Sampling. CDS promotes angular diversity within each pseudo-label partition. For an incoming entry mt, CDS first checks whether the corresponding partition M(ˆ yt) has free capacity. If so, the candidate is inserted directly. If the partition is full, CDS forms the candidate set 
+
+C = M(ˆ yt) ∪ { mt}.
+
+CDS first applies a lightweight redundancy filter. It samples a subset S ⊆ M (ˆ yt) and computes cosine similarities using normalized representations, 
+
+˜zi = zi
+
+∥zi∥2 + ε0
+
+, sim( mt, m i) = ˜ z⊤ 
+
+> t
+
+˜zi.
+
+If 
+
+max  
+
+> mi∈S
+
+sim( mt, m i) ≥ 1 − ϵcos ,
+
+the candidate is discarded as redundant, where we set ϵcos = ϵ = 0 .005 . If the candidate passes the filter, CDS identifies the most redundant entry in the candidate set. It computes the full cosine similarity matrix over C and finds 
+
+i∗ = arg max 
+
+> i
+
+max   
+
+> j̸=i
+
+˜z⊤ 
+
+> i
+
+˜zj .
+
+If i∗ corresponds to an existing memory entry, that entry is evicted and mt is inserted. If i∗
+
+corresponds to the candidate itself, the candidate is discarded. This rule removes the most redundant element while preserving the class allocation. 
+
+Compatibility and Modularity The proposed memories are designed to be modular. They do not change the adaptation loss, model architecture, or training protocol of the underlying TTA method. Instead, they change only the empirical distribution used for test-time updates. This makes GOTTA compatible with different adaptation objectives and allows us to study memory management as an independent component of TTA. 
+
+## 4 Experiments 
+
+Datasets and streams. We evaluate on CIFAR-10-C , ImageNet-C [ 37 ], and ITD [ 28 ], which apply 15 common corruptions across five severity levels on the test set. Following standard TTA protocols [ 6], we report results at severity level 5. We consider two stream regimes: i.i.d. streams, where samples are drawn uniformly at random, and temporally correlated non-i.i.d. streams constructed using 6the Practical Test-Time Adaptation (PTTA) protocol [ 9, 10 ], where per-batch class proportions are sampled from a Dirichlet distribution. Unless stated otherwise, we set the concentration parameter to 
+
+γ = 10 −1. Further implementation details for the ITD setup are provided in Appendix 6.4 
+
+Adaptation protocol and metrics. We evaluate both episodic and continual adaptation. In the episodic setting, the model is reset to its source parameters at the beginning of each corruption. In the continual setting, the model is updated continuously without reset across the corruptions. We report top-1 classification accuracy averaged over the evaluated test streams and then across corruption types when multiple corruptions are used. We fix the random seed within each stream setting to ensure controlled comparisons. 
+
+TTA baselines and memory modules. We evaluate memory policies across a set of representative TTA methods: TENT [ 6], SHOT [ 24 ], PL [ 7 ], CoTTA [ 27 ], NOTE [ 9], RoTTA [ 10 ], EATA/ETA [ 38 ], SAR [ 39 ], and Energy [ 40 ]. We also report the Source model, which evaluates the pre-trained network directly on the test stream without adaptation. For each adaptation method, we use the hyperparameters reported in the corresponding original work. For memory, we compare policies from the three families defined in Section 3.3. Uninformed memories include FIFO and Reservoir [ 30 ]. Class-guided memories include PBRS [ 9 ] and CSTU [ 10 ]. Our GOTTA memories include FPS, FPSD, and CDS, which combine class-balanced allocation with intra-class diversity. We also consider a no-memory baseline, which processes the stream as-is and is grouped with uninformed memories. 
+
+Models. We adopt standard backbones for each benchmark: WRN-28-10-BN [ 41 ] for CIFAR-10-C, ResNet-50 [ 42 ] for ImageNet-C, and ResNet-18 for ITD, where the backbone is pretrained on the ITD training split following [ 28 ]. All experiments are conducted on a single NVIDIA V100 or A100 GPU. Additional results with ViT[43] on ImageNet-C are provided in Appendix 6.5. 
+
+4.1 Main Results Memory-constrained continual adaptation. Table 1 reports continual adaptation results under temporally correlated PTTA streams [ 9, 10 ] with a memory budget M = 32 . Guided observa-tional memories provide strong gains for continual methods such as RoTTA and NOTE, while also substantially improving Norm despite its simpler normalization-based design. This suggests that memory-induced batch diversity can stabilize adaptation even when the adaptation rule itself is not explicitly made for non-i.i.d. streams. Table 1: Memory-constrained comparison on CIFAR-10-C in continual temporal streams with 
+
+M = 32 for all memory-based methods. Best results per method are shown in bold , second-best underlined, and the best overall in blue . We mark — for no-memory baseline. 2                                                                                                     
+
+> Policy Memory Source Norm RoTTA NOTE SAR EATA CoTTA TENT PL SHOT Energy Uninformed —56.49 24.75 50.14 22.78 24.86 24.71 22.42 14.80 13.21 16.75 12.37
+> FIFO –72.63 68.85 70.97 23.11 22.90 20.81 12.42 14.43 12.54 10.36 Reservoir –50.50 40.33 54.20 23.13 22.95 21.76 12.41 10.24 12.61 10.74 Class-guided PBRS –72.50 69.66 70.26 23.01 22.95 21.60 15.70 15.44 14.04 11.30 CSTU –71.49 69.23 72.75 22.96 22.95 22.11 15.04 11.18 13.95 10.87 Guided observational CDS –70.26 66.47 60.47 22.96 22.94 22.50 13.88 13.16 14.84 11.10 FPSD –69.83 66.30 65.18 22.96 22.96 22.58 15.61 15.55 15.12 11.34 FPS –76.11 73.90 69.34 22.96 22.96 22.56 13.16 12.10 13.47 11.16
+
+When paired with FPS, Norm achieves the best overall result ( 76.11 ); RoTTA also benefits substan-tially, reaching 73.90 with the same memory policy. Both results outperform uninformed memories such as FIFO ( 72 .63 ) and class-guided memories such as CSTU ( 72 .75 ). The gains are especially pronounced in continual temporal streams, where retaining diverse and representative samples is critical. Overall, these results show that diversity-aware memory is particularly beneficial under tight capacity and temporal correlation. 
+
+Effect of memory capacity. Table 3 extends our evaluation to ImageNet-C [ 37 ] and ITD video clips [ 28 ]. Following Yuan et al. [10] , we simulate non-i.i.d. test streams using a symmetric Dirichlet distribution with concentration parameter γ, where smaller values induce stronger temporal class 
+
+> 2Formatting for other tables follows this convention
+
+7Table 2: Memory-capacity scaling on CIFAR-10-C under temporal continual test-time adaptation. Rows report individual memory mechanisms grouped by memory-policy family, while columns report NORM, and RoTTA across memory budgets M ∈ { 8, 16 , 32 , 64 }.Policy Memory NORM RoTTA                                                                          
+
+> M= 8 M= 16 M= 32 M= 64 M= 8 M= 16 M= 32 M= 64
+> Uninformed —24.75 24.75 24.75 24.75 50.15 50.14 50.14 50.14 Reservoir 30.55 37.71 50.50 64.89 17.49 27.96 40.33 57.72 Class-guided PBRS 62.89 67.80 72.50 76.58 37.67 56.29 69.66 75.67
+> CSTU 51.76 62.61 71.49 75.46 32.58 54.18 69.23 75.21 Guided observational CDS 51.76 67.42 70.26 67.87 31.20 53.15 66.47 66.45 FPSD 63.97 69.77 69.83 74.13 39.30 59.84 66.30 71.68 FPS 52.44 67.13 76.11 76.49 34.85 55.65 73.90 75.46
+
+skew. ImageNet-C is particularly challenging because it spans 1,000 classes while the memory bank contains only M = 64 samples, leaving substantially less than one slot per class on average. In this severely under-provisioned setting, strict class balance alone is difficult to maintain, making per-instance selection especially important. CDS and FPS are designed for this regime: rather than passively filling class slots by recency or uncertainty alone, they explicitly favor non-redundant samples within the available memory. This behavior is reflected in the ImageNet-C results. CDS achieves the best RoTTA accuracy at both 
+
+γ = 10 −1 (38 .65 ) and γ = 10 −4 (32 .76 ), while FPS performs best with NOTE. On ITD video clips, non-i.i.d. video adaptation remains challenging. Nevertheless, FPS performs best among the memory policies when paired with RoTTA. This suggests that an appropriate memory policy can improve adaptation when combined with a method designed for non-i.i.d. streams, although the benefit depends on the dataset and adaptation objective. 
+
+Implications of memory design. Our results highlight the important role of memory selection in test-time adaptation. GOTTA methods consistently outperform classical strategies in memory-constrained regimes, particularly under continual and temporally correlated streams. As memory capacity increases, the performance gap between methods narrows, indicating that larger buffers can partially compensate for weaker selection strategies. Table 3: Memory-equipped episodic test-time adaptation on ImageNet-C and ITD. ImageNet-C experiments use a ResNet-50 backbone and report episodic temporal adaptation with M = 64 under two sampler settings, γ = 10 −1 and γ = 10 −4. ITD experiments use a ResNet-18 backbone and report episodic video adaptation under sampler settings γ = 10 −1. . 
+
+ImageNet-C , γ = 10 −1 ImageNet-C , γ = 10 −4 ITD , γ = 10 −1
+
+Policy Memory Norm RoTTA NOTE Norm RoTTA NOTE Norm RoTTA NOTE Uninformed — 26.37 30.78 11.88 5.88 20.50 2.07 2.22 5.08 0.23 Reservoir 32.17 31.74 10.25 31.59 27.20 10.79 8.27 0.25 0.13 Class-guided PBRS 32.08 29.78 13.64 31.47 20.91 8.99 8.87 0.63 18.11 
+
+CSTU 32.02 38.65 16.16 30.60 32.75 11.76 5.07 24.17 0.14 Guided-obs. CDS 32.02 38.65 16.16 30.50 32.76 11.76 4.59 18.83 0.14 FPS 31.14 37.78 18.38 29.35 32.48 15.40 4.19 34.15 0.14 
+
+Scaling to ImageNet-C and video streams. Table 3 extends our evaluation to ImageNet-C [ 37 ] and ITD video clips [ 28 ]. Following [ 10 ], we simulate non-i.i.d. test streams via a symmetric Dirichlet distribution with concentration parameter γ, where smaller values induce more temporally correlated, class-skewed streams. ImageNet-C spans 1,000 classes while the memory bank holds only M = 64 
+
+samples, meaning each class is allocated less than one slot on average. Despite this severe under-provisioning, CDS and FPS maintain competitive performance, demonstrating that per-instance 8NORM  
+
+> NOTE
+> RoTTA
+> Adaptation method
+> None
+> FIFO
+> RES
+> PBRS
+> CSTU
+> Uninformed Class-guided
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> CDS
+> FPS
+> FPSD
+> Guided Observational
+> 60
+> 65
+> 70
+> 75
+> 80
+> Mean accuracy (%)
+
+Figure 2: Memory mechanism comparison on CIFAR-10-C under continual temporal TTA streams with memory budget M = 32 . We compare three memory guidance classes: uninformed (None, FIFO, Reservoir), class-guided (PBRS, CSTU), and guided observational (CDS, FPS, FPSD). For guided observational methods, we ablate over diversity thresholds ϵ, which control similarity between samples (Euclidean distance for FPS and cosine similarity for CDS), where larger ϵ enforces stronger diversity. The best result overall across all methods and strategies is indicated with a ⋆.diversity is a more robust and scalable selection criterion than class balance. A detailed analysis of memory budget effects is provided in Appendix 6.3. CDS and FPS are precisely designed for this: rather than passively filling class slots by recency or uncertainty alone, they actively enforce. Ensuring that the limited slots per class capture maximally distinct representations. This pays off clearly in the results: CDS achieves the best RoTTA accuracy at both γ = 10 −1 (38 .65 ) and γ = 10 −4 (32 .76 ), while FPS leads on NOTE ( 18 .38 and 15 .40 ), with gains most pronounced in the high-correlation regime where the memory-free baseline collapses to 2.07 . On the ITD video stream, non-i.i.d. video adaptation remains challenging. Still, FPS performs best among the memory policies in this setting. This suggests that the right memory policy, when paired with an adaptation method designed for non-i.i.d. streams, can lead to clear improvements. In particular, FPS performs best on the ITD video stream when combined with RoTTA. 
+
+Effect of diversity threshold ϵ. We ablate the impact of the diversity threshold ϵ used in GOTTA memory selection (CDS, FPS, FPSD), which controls the minimum dissimilarity re-quired between stored samples. We implement ϵ as a threshold on pairwise distances (Euclidean for FPS, cosine-based for CDS), such that larger values enforce stronger diversity by preventing similar samples from being retained in memory. Figure 3 shows that guided observational methods consistently outperform classical baselines across episodic and continual temporal streams under a constrained memory budget ( M = 32 ), with FPS achieving the strongest performance. This trend persists when the memory budget is increased to M = 64 (see Appendix Figure 4). We observe that 
+
+ϵ = 0 .005 consistently provides the best or near-best performance across all settings (continual vs. episodic, M = 32 vs. M = 64 ) and across adaptation methods. Smaller values (e.g., ϵ = 0 .001 )allow redundant samples to accumulate, while larger values (e.g., ϵ = 0 .01 ) can overly restrict memory updates and reduce coverage of the data distribution. These results indicate that ϵ = 0 .005 
+
+strikes a favorable balance between diversity and representativeness, and we adopt it as the default setting in all experiments. 
+
+## 5 Discussion and Conclusion 
+
+We revisited the role of memory in test-time adaptation (TTA), showing that memory should be treated as an actively curated coreset rather than a passive buffer. Classical strategies based on recency or class balance can retain redundant or unrepresentative samples under realistic, temporally correlated streams. In contrast, Guided Observational Test-Time Adaptation (GOTTA) combines class balance with intra-class diversity through FPS and CDS policies, improving adaptation across memory budgets, stream regimes, and TTA methods. Our results establish memory selection, rather than memory size alone, as a key design principle for robust and practical TTA under real-world distribution shifts. 9Limitations. GOTTA relies on feature-space distances, whose reliability depends on representation quality during adaptation, and introduces additional curation cost relative to FIFO or reservoir memories. Our evaluation focuses mainly on corruption benchmarks and controlled video streams, leaving broader validation on deployment data for future work. Finally, the interaction between memory selection and method-specific adaptation objectives remains an open direction. 
+
+## References 
+
+[1] Joaquin Quinonero-Candela, Masashi Sugiyama, Anton Schwaighofer, and Neil D Lawrence. 
+
+Dataset shift in machine learning . 2008. [2] Mei Wang and Weihong Deng. Deep visual domain adaptation: A survey. Neurocomputing ,312:135–153, 2018. [3] Kaiyang Zhou, Ziwei Liu, Yu Qiao, Tao Xiang, and Chen Change Loy. Domain generalization: A survey. IEEE Trans. Pattern Anal. Mach. Intell. , 2022. [4] Steffen Schneider, Evgenia Rusak, Luisa Eck, Oliver Bringmann, Wieland Brendel, and Matthias Bethge. Improving robustness against common corruptions by covariate shift adaptation. In 
+
+NeurIPS 2020 , 2020. [5] Zachary Nado, Shreyas Padhy, D. Sculley, Alexander D’Amour, Balaji Lakshminarayanan, and Jasper Snoek. Evaluating prediction-time batch normalization for robustness under covariate shift. CoRR , abs/2006.10963, 2020. [6] Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno A. Olshausen, and Trevor Darrell. Tent: Fully test-time adaptation by entropy minimization. In ICLR , 2021. [7] Dong-Hyun Lee et al. Pseudo-label: The simple and efficient semi-supervised learning method for deep neural networks. In Workshop on challenges in representation learning, ICML ,volume 3, page 896, 2013. [8] Yu Sun, Xiaolong Wang, Zhuang Liu, John Miller, Alexei Efros, and Moritz Hardt. Test-time training with self-supervision for generalization under distribution shifts. In ICML , pages 9229–9248, 2020. [9] Taesik Gong, Jongheon Jeong, Taewon Kim, Yewon Kim, Jinwoo Shin, and Sung-Ju Lee. Robust continual test-time adaptation: Instance-aware BN and prediction-balanced memory. In 
+
+NeurIPS , 2022. [10] Longhui Yuan, Binhui Xie, and Shuang Li. Robust test-time adaptation in dynamic scenarios, 2023. URL https://arxiv.org/abs/2303.13899 .[11] Shuang Li, Binhui Xie, Qiuxia Lin, Chi Harold Liu, Gao Huang, and Guoren Wang. Generalized domain conditioned adaptation network. IEEE Trans. Pattern Anal. Mach. Intell. , 44(8):4093– 4109, 2022. [12] Mingsheng Long, Yue Cao, Zhangjie Cao, Jianmin Wang, and Michael I. Jordan. Transferable representation learning with deep adaptation networks. IEEE Trans. Pattern Anal. Mach. Intell. ,41(12):3071–3085, 2019. [13] Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan, Pascal Germain, Hugo Larochelle, François Laviolette, Mario Marchand, and Victor S. Lempitsky. Domain-adversarial training of neural networks. J. Mach. Learn. Res. , 17:59:1–59:35, 2016. [14] Kuniaki Saito, Kohei Watanabe, Yoshitaka Ushiku, and Tatsuya Harada. Maximum classifier discrepancy for unsupervised domain adaptation. In CVPR , pages 3723–3732, 2018. [15] Binhui Xie, Shuang Li, Mingjia Li, Chi Harold Liu, Gao Huang, and Guoren Wang. Sepico: Semantic-guided pixel contrast for domain adaptive semantic segmentation. IEEE Trans. Pattern Anal. Mach. Intell. , pages 1–17, 2023. [16] Yang Zou, Zhiding Yu, BVK Vijaya Kumar, and Jinsong Wang. Unsupervised domain adaptation for semantic segmentation via class-balanced self-training. In ECCV , pages 289–305, 2018. 10 [17] Matthias De Lange, Rahaf Aljundi, Marc Masana, Sarah Parisot, Xu Jia, Ales Leonardis, Gregory G. Slabaugh, and Tinne Tuytelaars. A continual learning survey: Defying forgetting in classification tasks. IEEE Trans. Pattern Anal. Mach. Intell. , 44(7):3366–3385, 2022. doi: 10.1109/TPAMI.2021.3057446. URL https://doi.org/10.1109/TPAMI.2021.3057446 .[18] James Kirkpatrick, Razvan Pascanu, Neil C. Rabinowitz, Joel Veness, Guillaume Des-jardins, Andrei A. Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, Demis Hassabis, Claudia Clopath, Dharshan Kumaran, and Raia Hadsell. Over-coming catastrophic forgetting in neural networks. CoRR , abs/1612.00796, 2016. URL 
+
+http://arxiv.org/abs/1612.00796 .[19] Rahaf Aljundi, Min Lin, Baptiste Goujaud, and Yoshua Bengio. Gradient based sample selection for online continual learning. In NeurIPS , pages 11816–11825, 2019. [20] Francisco M Castro, Manuel J Marín-Jiménez, Nicolás Guil, Cordelia Schmid, and Karteek Alahari. End-to-end incremental learning. In ECCV , pages 233–248, 2018. [21] Sylvestre-Alvise Rebuffi, Alexander Kolesnikov, Georg Sperl, and Christoph H. Lampert. icarl: Incremental classifier and representation learning. In CVPR , pages 5533–5542, 2017. [22] Jian Liang, Ran He, and Tieniu Tan. A comprehensive survey on test-time adaptation under distribution shifts. International Journal of Computer Vision , 133(1):31–64, 2025. [23] Sergey Ioffe and Christian Szegedy. Batch normalization: Accelerating deep network training by reducing internal covariate shift. In ICML , pages 448–456, 2015. [24] Jian Liang, Dapeng Hu, and Jiashi Feng. Do we really need to access the source data? source hypothesis transfer for unsupervised domain adaptation. In ICML , pages 6028–6039, 2020. [25] Minguk Jang and Sae-Young Chung. Test-time adaptation via self-training with nearest neighbor information. CoRR , abs/2207.10792, 2022. [26] Yusuke Iwasawa and Yutaka Matsuo. Test-time classifier adjustment module for model-agnostic domain generalization. In NeurIPS , pages 2427–2440, 2021. [27] Qin Wang, Olga Fink, Luc Van Gool, and Dengxin Dai. Continual test-time domain adaptation. In CVPR , pages 7191–7201, 2022. [28] Shyma Alhuwaider, Motasem Alfarra, Juan C. Perez, Merey Ramazanova, and Bernard Ghanem. Advmem: Adversarial memory initialization for realistic test-time adaptation via tracklet-based benchmarking, 2025. URL https://arxiv.org/abs/2509.02182 .[29] Yongcan Yu, Lijun Sheng, Ran He, and Jian Liang. Stamp: Outlier-aware test-time adaptation with stable memory replay, 2024. URL https://arxiv.org/abs/2407.15773 .[30] Jeffrey S. Vitter. Random sampling with a reservoir. ACM Trans. Math. Softw. , 11(1):37–57, March 1985. ISSN 0098-3500. doi: 10.1145/3147.3165. URL https://doi.org/10.1145/ 3147.3165 .[31] Ozan Sener and Silvio Savarese. Active learning for convolutional neural networks: A core-set approach. arXiv preprint arXiv:1708.00489 , 2017. [32] Silvio Giancola, Anthony Cioppa, Julia Georgieva, Johsan Billingham, Andreas Serner, Kerry Peek, Bernard Ghanem, and Marc Van Droogenbroeck. Towards active learning for action spotting in association football videos. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops , pages 5098–5108, June 2023. [33] Yuval Eldar, Michael Lindenbaum, Moshe Porat, and Yehoshua Y Zeevi. The farthest point strategy for progressive image sampling. IEEE transactions on image processing , 6(9):1305– 1315, 1997. [34] Charles Ruizhongtai Qi, Li Yi, Hao Su, and Leonidas J Guibas. Pointnet++: Deep hierarchical feature learning on point sets in a metric space. Advances in neural information processing systems , 30, 2017. 11 [35] Alex Kulesza Ben Taskar. Determinantal point processes for machine learning. stat , 1050:10, 2013. [36] Laming Chen, Guoxin Zhang, and Eric Zhou. Fast greedy map inference for determinantal point process to improve recommendation diversity. Advances in neural information processing systems , 31, 2018. [37] Dan Hendrycks and Thomas G. Dietterich. Benchmarking neural network robustness to common corruptions and perturbations. In ICLR , 2019. [38] Shuaicheng Niu, Jiaxiang Wu, Yifan Zhang, Yaofo Chen, Shijian Zheng, Peilin Zhao, and Mingkui Tan. Efficient test-time model adaptation without forgetting. In ICML , volume 162, pages 16888–16905, 2022. [39] Shuaicheng Niu, Jiaxiang Wu, Yifan Zhang, Zhiquan Wen, Yaofo Chen, Peilin Zhao, and Mingkui Tan. Towards stable test-time adaptation in dynamic wild world, 2023. URL https: //arxiv.org/abs/2302.12400 .[40] Yige Yuan, Bingbing Xu, Liang Hou, Fei Sun, Huawei Shen, and Xueqi Cheng. Tea: Test-time energy adaptation, 2024. URL https://arxiv.org/abs/2311.14402 .[41] Sergey Zagoruyko and Nikos Komodakis. Wide residual networks. In BMVC , 2016. [42] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In CVPR , pages 770–778, 2016. [43] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale. In ICLR , 2021. [44] Malik Boudiaf, Romain Mueller, Ismail Ben Ayed, and Luca Bertinetto. Parameter-free online test-time adaptation. In CVPR , pages 8344–8353, 2022. 12 6 Appendix 
+
+6.1 Test-Time Adaptation settings 
+
+Following Yuan et al. [10] , we distinguish four TTA settings of increasing difficulty, all sharing the same protocol: a source-trained model fθs is adapted online using only sequential unlabeled batches 
+
+{X t}Tt=0 .• Fully Test-Time Adaptation (TTA) [6 ]. The target distribution Pt is stationary and batches are i.i.d. The goal is a one-shot adaptation to a fixed shift Pt̸ = Ps.• Continual Test-Time Adaptation (CoTTA) [ 27 ]. The target distribution drifts as a sequence {P t},while batches remain i.i.d. within each Pt. The challenge is tracking distributional drift without forgetting. • Non-i.i.d. Test-Time Adaptation [ 44 , 9]. The target distribution is stationary, but class proportions within each batch are skewed by a Dirichlet distribution Dir (γ). A small concentration parameter γ
+
+produces highly imbalanced streams where certain classes dominate. • Practical Test-Time Adaptation (PTTA) [ 10 ]. The most realistic setting: Pt evolves over time 
+
+and batches are class-imbalanced via Dir (γ), jointly capturing temporal drift and label skew. We follow PTTA setting in this work. 
+
+6.2 Additional CIFAR-10-C Experiments 
+
+Table 4: Comparison on CIFAR-10-C under relaxed memory budget M = 64 for memory-based methods. in continual temporal streams Policy Memory Source Norm RoTTA NOTE SAR EATA CoTTA TENT PL SHOT Energy Uninformed — 56.49 24.75 50.14 22.78 24.86 24.72 22.42 16.50 12.48 16.21 12.06 FIFO – 76.06 75.52 71.90 24.84 24.71 23.90 18.96 24.46 15.95 12.49 Reservoir – 64.89 57.72 62.91 25.11 24.72 24.07 14.12 10.41 14.77 11.77 Class-guided PBRS – 76.58 75.67 70.37 24.94 24.72 23.96 19.15 17.03 15.96 12.06 CSTU – 75.46 75.21 72.21 24.75 24.70 24.25 17.64 22.63 15.90 12.29 Guided observational CDS – 67.87 66.45 65.47 24.75 24.73 24.44 17.30 14.82 19.88 12.40 FPSD – 74.13 71.68 64.00 24.75 24.74 24.09 19.57 20.03 18.99 12.67 FPS – 76.49 75.46 71.09 24.75 24.74 24.01 18.34 13.80 15.30 12.97 
+
+Scaling to additional methods. Table 4 reports results under a memory budget ( M = 64 ), where capacity constraints are less restrictive, across an expanded set of TTA methods. In this setting, we observe that guided observational memory selection remains competitive with strong baseline memory strategies. In particular, FPS (Static) achieves performance comparable to the best class-guided and uninformed methods, e.g., 76.49 for Norm and 75.46 for RoTTA, closely matching PBRS (76.58, 75.67) and CSTU (75.46, 75.21). Unlike the memory-constrained regime, where guided observational methods provide clear gains, performance differences between memory strategies diminish as capacity increases. Overall, these results highlight that the primary advantage of guided observational memory lies in its ability to maintain representative and diverse samples under tight memory budgets, rather than relying on increased capacity. 
+
+Extended diversity threshold ablation. Figures 3 and 4 extend the diversity threshold ablation to the temporal TTA stream setting. At M = 32 (Figure 3), guided observational memories consistently outperform uninformed and class-guided baselines across all TTA methods. FPS achieves the overall best result for NORM ( 76 .2% at ϵ = 0 .001 ) and RoTTA ( 74 .9% at ϵ = 0 .001 ), while for NOTE guided observational memories remain competitive with the best class-guided method PBRS ( 74 .3% ). At M = 64 (Figure 4), the same trends hold across both episodic and continual stream types. In the episodic setting, FPS at ϵ = 0 .01 achieves the overall best of 76 .8% for NORM, FPS reaches 76 .2% for RoTTA, and FPSD leads for NOTE at 74 .7% . In the continual setting, FPS at 
+
+ϵ = 0 .005 attains 76 .8% for RoTTA and 76 .6% for NORM, while FPS achieves 73 .6% for NOTE. Across both memory budgets and stream types, performance remains stable over the evaluated range 
+
+ϵ ∈ { 0.001 , 0.005 , 0.01 }, confirming that guided observational memories are robust to the precise choice of threshold. 13 NORM  
+
+> NOTE
+> RoTTA
+> Adaptation method
+> None
+> FIFO
+> RES
+> PBRS
+> CSTU
+> Uninformed Class-guided
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> CDS
+> FPS
+> FPSD
+> Guided Observational
+> 60
+> 65
+> 70
+> 75
+> 80
+> Mean accuracy (%)
+
+Figure 3: Memory mechanism comparison on CIFAR-10-C under episodic temporal TTA streams with memory budget M = 32 . We compare three memory guidance classes: uninformed (None, FIFO, Reservoir), class-guided (PBRS, CSTU), and guided observational (CDS, FPS, FPSD). For guided observational methods, we ablate over diversity thresholds ϵ, which control similarity between samples (Euclidean distance for FPS and cosine similarity for CDS), where larger ϵ enforces stronger diversity. The best result overall across all methods and strategies is indicated with a ⋆.  
+
+> (a) Episodic NORM
+> NOTE
+> RoTTA
+> Adaptation method
+> None
+> FIFO
+> RES
+> PBRS
+> CSTU
+> Uninformed Class-guided
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> CDS
+> FPS
+> FPSD
+> Guided Observational
+> 60
+> 65
+> 70
+> 75
+> 80
+> Mean accuracy (%) (b) Continual NORM
+> NOTE
+> RoTTA
+> Adaptation method
+> None
+> FIFO
+> RES
+> PBRS
+> CSTU
+> Uninformed Class-guided
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> ε = 0.001
+> ε = 0.005
+> ε = 0.01
+> CDS
+> FPS
+> FPSD
+> Guided Observational
+> 60
+> 65
+> 70
+> 75
+> 80
+> Mean accuracy (%)
+
+Figure 4: Memory mechanism comparison on CIFAR-10-C under episodic (a) and continual(b) temporal TTA streams with memory budget M = 64 . The best result overall across all methods and strategies is indicated with a ⋆.
+
+6.3 Effect of Memory Budget on Diversity-Aware Sample Selection Memory capacity and diversity. The memory-scaling results in Figure 5 indicate that diversity-aware selection is particularly beneficial in the constrained-memory regime. At small buffer sizes, redundant samples consume a substantial fraction of the available memory, making the choice of which samples to retain valuable. Guided observational memories therefore provide a stronger advantage by explicitly encouraging intra-class feature diversity and maintaining a more representative buffer. This benefit becomes less pronounced as memory capacity increases. With larger buffers, even simpler selection strategies are more likely to retain diverse samples, reducing the relative advantage of explicit diversity enforcement. These results suggest that the primary value of diversity-aware 14 8 16 32 64  
+
+> Memory size
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> Accuracy (%)
+> Temporal memory scaling NORM
+> None
+> FIFO
+> Reservoir
+> PBRS
+> CSTU
+> CDS
+> FPSD
+> FPS
+
+(a) NORM 8 16 32 64  
+
+> Memory size
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> Accuracy (%)
+> Temporal memory scaling NOTE
+> None
+> FIFO
+> Reservoir
+> PBRS
+> CSTU
+> CDS
+> FPSD
+> FPS
+
+(b) NOTE 8 16 32 64  
+
+> Memory size
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> Accuracy (%)
+> Temporal memory scaling RoTTA
+> None
+> FIFO
+> Reservoir
+> PBRS
+> CSTU
+> CDS
+> FPSD
+> FPS
+
+(c) RoTTA 
+
+Figure 5: Memory-capacity scaling under temporal continual test-time adaptation for NORM, NOTE, and RoTTA. Each curve shows the performance of one memory mechanism as the memory size varies from M = 8 to M = 64 on CIFAR-10-C . Memory mechanisms are grouped by policy family: uninformed memories, class-guided memories, and guided observational memories. memory lies in improving sample efficiency: it helps the buffer remain informative when only a small number of examples can be stored. Notably, the three TTA methods exhibit distinct sensitivity profiles to memory capacity. For RoTTA ,small memory budgets can be actively harmful: at M = 8 , several mechanisms perform worse than the no-memory baseline, suggesting that a poorly populated buffer misleads the adaptation process more than it helps. Reservoir sampling is particularly susceptible in this regime, as its i.i.d. assumption conflicts with the temporally correlated stream, leading to a biased and unrepresentative buffer under distribution shift. For NORM , the picture is different: while any memory consistently outperforms no memory, the gap between uninformed and diversity-aware strategies remains large at small budgets, and uninformed methods require substantially larger memory capacities before approaching the performance of guided observational memories. This underscores that for NORM, diversity-aware selection is not merely an efficiency gain but a prerequisite for competitive performance in the low-memory regime. 15 6.4 ImageNet-C and ITD Evaluation Setups 
+
+For ImageNet-C, we evaluate all methods on the standard 15 corruption types under temporal episodic test-time adaptation streams. We use a ResNet-50 backbone and report results with memory size 
+
+M = 64 under two PTTA sampler settings, γ = 10 −1 and γ = 10 −4.For ITD, we evaluate episodic video adaptation using a ResNet-18 backbone pretrained on clean ITD data. To construct the video stream, we use the Gaussian noise corruption and evaluate under the PTTA setting. The stream contains 1024 video clips, with each clip consisting of 32 frames. Unless otherwise stated, all ITD experiments use memory size M = 32 and sampler parameter γ = 10 −1.This setup is intended to test memory-equipped adaptation under temporally coherent video streams while keeping the ITD evaluation computationally tractable. 
+
+6.5 Backbone Generalization: ViT on ImageNet-C 
+
+To test whether diversity-aware memory remains effective beyond convolutional backbones, we evaluate memory-equipped episodic TTA with a Vision Transformer on ImageNet-C. This setting uses temporal streams with memory budget M = 64 and diversity threshold ϵ = 0 .005 . Table 5 shows that diversity-aware memories remain competitive on ViT features. For RoTTA, FPS achieves the best result, slightly improving over CSTU and CDS. For NOTE, FPSD provides the strongest performance, suggesting that refreshing stored representations can be beneficial when the model backbone and adaptation dynamics differ from the convolutional setting. Table 5: Memory-equipped episodic test-time adaptation on ViT ImageNet-C and ITD video clips. ViT ImageNet-C experiments use temporal streams with M = 64 and ϵ = 0 .005 .Policy Memory RoTTA NOTE Uninformed Reservoir 53.67 47.77 Class-guided CSTU 54.02 54.12 Guided observational CDS 54.02 54.12 FPSD 53.64 58.38 
+
+FPS 54.03 52.84 16
