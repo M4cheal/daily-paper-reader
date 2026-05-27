@@ -6,35 +6,32 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-26
-- 运行时间：2026-05-26 20:48:01 UTC
+- 最新运行日期：2026-05-27
+- 运行时间：2026-05-27 21:34:10 UTC
 - 运行状态：成功
-- 本次总论文数：5
+- 本次总论文数：4
 - 精读区：3
-- 速读区：2
+- 速读区：1
 
 ### 今日简报（AI）
-今日精读聚焦不对称自适应故障诊断与伪装感知中的测试时适应，速读涵盖连续分割和成本感知自适应推断。最值得关注的是实时故障诊断与层次一致性学习两大方向，均以自适应机制应对动态场景。下一步建议优先阅读《Asymmetric Adaptation-based Real-time Fault Diagnosis》中过渡工况处理思路。
-- 详情：[/202605/26/README](/202605/26/README)
+今日精读三篇，聚焦在线模型选择与自适应MPC，其中高光为敏捷在线模型选择与时间嵌入MPC。最值得关注的两篇：Agile Online Model Selection以高学习率解决自适应滞后，T2S-MPC针对时变动力学提供在线自适应控制。建议优先精读这两篇，掌握动态环境下的模型快速适应策略。
+- 详情：[/202605/27/README](/202605/27/README)
 
 ### 精读区论文标签
-1. [Asymmetric Adaptation-based Real-time Fault Diagnosis Under Transitional Operating Conditions](/202605/26/2605.24457v1-asymmetric-adaptation-based-real-time-fault-diagnosis-under-transitional-operating-conditions)  
+1. [Agile Online Model Selection: Resolving Adaptation Lag via Safeguarded Large Learning Rates](/202605/27/2605.26919v1-agile-online-model-selection-resolving-adaptation-lag-via-safeguarded-large-learning-rates)  
    标签：评分：9.0/10、query:tta
-   evidence：提出针对流数据的在线测试时自适应方法
-2. [Hierarchical Consistency Learning for Test-time Adaptation in Camouflage Perception](/202605/26/2605.25651v1-hierarchical-consistency-learning-for-test-time-adaptation-in-camouflage-perception)  
-   标签：评分：9.0/10、query:tta
-   evidence：提出测试时间自适应用于伪装检测
-3. [Concept Drift Adaptation Using Self-Supervised and Reinforcement Learning In Android Malware Detection](/202605/26/2605.24294v1-concept-drift-adaptation-using-self-supervised-and-reinforcement-learning-in-android-malware-detection)  
+   evidence：在线模型选择解决非平稳环境下的适应滞后
+2. [T2S-MPC: Time-Embedded Online Adaptive Model Predictive Control for Time-Varying Dynamics](/202605/27/2605.24852v1-t2s-mpc-time-embedded-online-adaptive-model-predictive-control-for-time-varying-dynamics)  
    标签：评分：8.0/10、query:tta
-   evidence：针对流数据的概念漂移适应与在线轻量级微调
+   evidence：提出在线自适应学习残差动力学模型，适配流式数据的在线测试时自适应
+3. [Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration](/202605/27/2605.24989v1-selective-test-time-compute-scaling-for-click-through-rate-prediction-via-uncertainty-triggered-feature-path-exploration)  
+   标签：评分：8.0/10、query:tta
+   evidence：为点击率预测的选择性测试时计算扩展
 
 ### 速读区论文标签
-1. [Continual Segmentation under Joint Nonstationarity](/202605/26/2605.20538v1-continual-segmentation-under-joint-nonstationarity)  
-   标签：评分：7.0/10、query:tta
-   evidence：针对流数据中分割任务的联合非平稳性在线适应
-2. [Cost-Aware Adaptive Conformal Inference for Runtime Assurance in Dynamic Environments](/202605/26/2605.24463v1-cost-aware-adaptive-conformal-inference-for-runtime-assurance-in-dynamic-environments)  
+1. [Dynamic TMoE: A Drift-Aware Dynamic Mixture of Experts Framework for Non-Stationary Time Series Forecasting](/202605/27/2605.20678v1-dynamic-tmoe-a-drift-aware-dynamic-mixture-of-experts-framework-for-non-stationary-time-series-forecasting)  
    标签：评分：6.0/10、query:tta
-   evidence：动态环境中的自适应共形推断，提供在线运行时保证
+   evidence：漂移感知动态专家混合用于非平稳时间序列
 
 
 <div class="dpr-home-promo-card">
