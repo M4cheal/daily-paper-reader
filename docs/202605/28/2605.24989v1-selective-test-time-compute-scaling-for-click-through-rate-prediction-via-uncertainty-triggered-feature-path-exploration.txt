@@ -1,0 +1,817 @@
+Title: Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration
+
+URL Source: https://arxiv.org/pdf/2605.24989v1
+
+Published Time: Tue, 26 May 2026 01:12:58 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration 
+
+# Moyu Zhang 
+
+Alibaba Group Beijing, China zhangmoyu@butp.cn 
+
+# Yun Chen 
+
+Alibaba Group Beijing, China jinuo.cy@alibaba-inc.com 
+
+# Yujun Jin 
+
+Alibaba Group Beijing, China jinyujun.jyj@alibaba-inc.com 
+
+# Jinxin Hu ∗
+
+Alibaba Group Beijing, China jinxin.hjx@alibaba-inc.com 
+
+# Yu Zhang 
+
+Alibaba Group Beijing, China daoji@alibaba-inc.com 
+
+# Xiaoyi Zeng 
+
+Alibaba Group Beijing, China yuanhan@taobao.com 
+
+## Abstract 
+
+Scaling test-time compute has proven highly effective for language models, yet the analogous opportunity in industrial Click-Through Rate (CTR) prediction remains largely unexplored. CTR models suffer from a fundamental asymmetry: while training exposes the model to diverse feature combinations, at inference time many com-binations are sparsely observed, causing unreliable predictions for a non-trivial fraction of instances. Existing training-phase solutions such as adaptive gating and feature interaction architectures learn a fixed selection function that is itself subject to the same sparsity, offering no per-instance recourse at deployment. We argue that a principled solution requires deciding how much computation each instance deserves after observing it, rather than applying a uniform inference procedure to all. To this end, we propose UTTSI (Uncertainty-Triggered Test-Time Selective Inference), a training-free model-agnostic framework that scales inference depth propor-tionally to per-instance uncertainty. UTTSI estimates uncertainty from two complementary signals: a model-internal logit confidence score and a data-level frequency prior, which together distinguish epistemic uncertainty due to sparse feature coverage from aleatoric ambiguity near the decision boundary. Based on this estimate, every instance first undergoes adaptive feature filtering that removes em-beddings with insufficient training support, and uncertain instances additionally receive a variable number of stochastic feature-path explorations proportional to their estimated uncertainty, whose pre-dictions are aggregated via consistency-weighted ensembling. Con-fident instances bypass exploration entirely, keeping the average overhead to approximately 2.8× base model cost while maintaining worst-case latency equal to a single forward pass on parallelized serving infrastructure. Extensive experiments demonstrate that UTTSI yields significant improvements over all baselines.  
+
+> ∗Corresponding Author Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than ACM must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> Woodstock ’18, Woodstock, NY
+> ©2018 ACM. ACM ISBN 978-1-4503-XXXX-X/18/06 https://doi.org/10.1145/1122445.1122456
+
+## CCS Concepts 
+
+• Information systems → Recommender systems ; • Comput-ing methodologies → Neural networks .
+
+## Keywords 
+
+CTR Prediction, Test-Time Optimization, Uncertainty Estimation, Feature Sparsity, Selective Inference 
+
+ACM Reference Format: 
+
+Moyu Zhang, Yun Chen, Yujun Jin, Jinxin Hu, Yu Zhang, and Xiaoyi Zeng. 2018. Selective Test-Time Compute Scaling for Click-Through Rate Predic-tion via Uncertainty-Triggered Feature Path Exploration. In Woodstock ’18: ACM Symposium on Neural Gaze Detection, June 03–05, 2018, Woodstock, NY . 
+
+ACM, New York, NY, USA, 12 pages. https://doi.org/10.1145/1122445.1122456 
+
+## 1 Introduction 
+
+Click-through rate (CTR) prediction models are core modules of recommendation systems. They facilitate accurate recommenda-tions by predicting a user’s click probability on a target item [ 31 , 41 ,42 , 51 ], as shown in Figure 1(a). The prediction is derived from mod-eling the interactions among a vast combination of input features, encompassing user profiles and item attributes [ 5, 10 , 28 , 33 , 52 ]. Therefore, effectively modeling these feature interactions is crucial for accurate prediction in CTR tasks [ 47 , 58 ]. With recent advances in deep learning, numerous studies have proposed increasingly com-plex model architectures to capture feature correlations [ 3, 40 , 53 ], while others have explored generative paradigms to overcome the limitations of the discriminative binary label space [7, 14, 58]. Despite significant advances in model architecture and training objectives [ 14 , 58 ], existing CTR research has focused almost ex-clusively on the training phase, leaving the optimization potential of the inference phase largely unexplored. In practice, even well-trained models exhibit substantially different prediction reliability across instances during inference. For feature combinations that are well-represented in training data, the model produces confident and accurate predictions. However, for combinations that are sparse or previously unseen, the model’s learned representations become unreliable, often leading to representation collapse and high predic-tion uncertainty [ 12 , 27 ]. This per-instance reliability gap cannot be adequately addressed by training-time mechanisms alone. Al-though adaptive gating and attention mechanisms [ 3 , 5 , 17 , 40 ]are designed to dynamically weight features, they learn a single deterministic selection function that is itself subject to the same  
+
+> arXiv:2605.24989v1 [cs.LG] 24 May 2026 Woodstock ’18, June 03–05, 2018, Woodstock, NY Moyu Zhang, Yun Chen, Yujun Jin, Jinxin Hu, Yu Zhang, and Xiaoyi Zeng 𝑓 !
+> ⋮
+> 𝒀
+
+(a) Traditional CTR 
+
+> 𝑓 "
+> 𝑓 #
+> 𝑓 $
+> Confidence
+> Sampling
+
+(b) Multi -Path Test -Time Paradigm                 
+
+> 𝑓 !
+> ⋮ 𝑀
+> 𝑓 !
+> ⋮
+> 𝑓 "
+> 𝑓 #
+> 𝑓 $
+> Random
+> ⋮
+> 𝑓 !𝑓 "𝑓 #
+> ⋮ 𝒀
+> Features Features
+> 𝑓 "
+> 𝑓 !
+> ⋮⋮𝑓 "
+> 𝑀 𝑓 #
+> 𝑀 𝑓 #
+> Random
+> Random
+> 𝒀
+> 𝑓 !
+> ⋮
+> 𝑓 "
+> 𝑓 #
+> 𝑓 $
+> Features
+> Confident
+> Uncertain
+> Uncertainty
+> Estimatio n
+> ⋮
+> ⋮
+> Path1
+> Path 𝒍
+> Path 𝑲
+> ⋮𝑓 "𝑀 𝑓 #
+> [𝑓 !]
+> 𝜏 "
+> feature score
+> 𝜏 !
+> 𝜏 "𝜏 !𝜏 #
+> feature
+> score
+> 𝑀 𝑀 𝑓 $𝑓 #
+> [𝑓 $][𝑓 #]
+> ⋮𝑀 𝑓 $𝑓 "𝑀
+> 𝒀
+> Path 1
+> Path K
+
+(c) Our Test -Time Selective Inference Paradigm   
+
+> 𝜏 $𝜏 #
+> 𝑀
+> ⋮
+> ⋮
+> Adaptive Feature Filtering
+> Adaptive Feature Filtering
+> Multi -Path Exploration
+
+Figure 1: A comparison of CTR inference paradigms. (a) Standard inference feeds all features directly into the model. (b) Naive multi-path exploration applies uniform feature subset sampling to all instances, incurring unnecessary computation for easy ones. (c) UTTSI estimates per-instance uncertainty and routes accordingly: confident instances undergo lightweight feature filtering only, while uncertain instances receive additional multi-path exploration with consistency-weighted aggregation. 
+
+data sparsity: when the model lacks sufficient training observa-tions for a feature combination, its learned gating decisions for that combination are equally unreliable. More fundamentally, training and inference have inherently asymmetric objectives. The training phase benefits from exposure to diverse patterns, including sparse ones, to learn generalizable feature representations. In contrast, the inference phase should prioritize leveraging only the feature combinations that the model has already learned to evaluate reliably, thereby avoiding the dis-ruptive influence of unreliable features on prediction accuracy. This asymmetry motivates test-time optimization as a complementary paradigm to training-phase improvements. Rather than relying on a single learned decision function, test-time optimization can explore multiple plausible feature configurations for a given instance and aggregate predictions from these diverse paths, deriving robust-ness from the diversity of exploration rather than the accuracy of any single gate. Moreover, by deferring the allocation of additional computation until the actual instance is observed, test-time opti-mization enables selective budget allocation: investing extra test-time computation only in samples that exhibit high uncertainty, while avoiding unnecessary overhead for confident predictions. This selective property is particularly valuable in industrial sys-tems [ 11 , 16 , 29 , 37 , 45 , 49 ], where the escalating training costs of ever-larger models make maximizing the return on already-trained parameters an increasingly important goal. While recent works have begun to explore the test-time paradigm in recommendation [ 8], these efforts have primarily focused on aug-menting user behavior sequences for sequential recommendation and fail to address the fundamental problem of feature combina-tion sparsity that plagues CTR prediction. Sequence augmentation techniques such as item dropout or reordering are inherently inap-plicable to CTR, which operates on sparse categorical feature fields rather than dense item sequences; perturbing feature values does not carry the same semantic continuity, and the per-combination reliability differential that drives prediction uncertainty in CTR has no counterpart in sequential settings. Moreover, directly trans-ferring test-time scaling techniques from Large Language Models (LLMs) [ 4, 9] is infeasible, as LLM methods rely on token-level gen-eration likelihoods for confidence assessment, a mechanism absent in CTR models with binary classification objectives. This gap motivates us to rethink what test-time optimization should look like for CTR prediction. The core challenge is not merely generating multiple feature views, but doing so in a way that is 
+
+grounded in per-instance reliability . As illustrated in Figure 1(b), even a straightforward multi-path extension to CTR—which gener-ates diverse feature subsets and aggregates their predictions—fails to address the fundamental issue: without knowing which features are unreliable for a given instance, the exploration paths may repeat-edly include noise features, and the aggregation cannot distinguish useful diversity from redundant variation. The severity of this prob-lem is compounded by the power-law frequency distribution typical of industrial CTR data: a small fraction of feature values dominates training observations, while the vast majority appear only a handful of times, and prior work has shown that such tail-value embeddings can be statistically indistinguishable from randomly initialized ones [ 12 , 27 ]. Developing an effective uncertainty-driven test-time para-digm for CTR therefore requires addressing two challenges: (1) how to efficiently estimate per-instance predictive uncertainty without built-in confidence signals, and (2) how to explore beneficial feature configurations within strict industrial latency constraints. To address these challenges, we propose the Uncertainty-Triggered 
+
+Test-Time Selective Inference framework (UTTSI). UTTSI is a training-free model-agnostic framework that operates on top of any already-trained CTR model without modifying its parameters, retraining, or altering the model architecture. At inference time, it selectively determines how much additional computation each in-stance receives based on its estimated uncertainty, as illustrated in Figure 1(c). UTTSI comprises three tightly integrated components: 
+
+Frequency Prior Estimation. UTTSI maintains a probabilistic hashing structure [ 18 ] to quantify how well-observed each feature value is in training data, providing an offline data-level reliability signal to the subsequent uncertainty estimation step. 
+
+Dual-Signal Uncertainty Estimation. UTTSI combines an importance-weighted frequency prior with model-internal logit confidence to produce a per-instance uncertainty score, separating epistemic uncertainty (sparse feature coverage) from aleatoric ambi-guity (inherent label noise), and continuously allocates exploration paths proportional to the estimated uncertainty. 
+
+Feature Filtering and Path Exploration. Every instance first undergoes adaptive feature filtering, removing features with unre-liable representations via per-field thresholds computed offline. For Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration Woodstock ’18, June 03–05, 2018, Woodstock, NY 
+
+uncertain instances, UTTSI generates additional inference paths by stochastically sampling diverse subsets of the refined features, with sampling probabilities guided by a composite score of frequency-based reliability and attribution strength. Predictions from all paths are aggregated via a consistency-weighted scheme; confident in-stances bypass multi-path exploration entirely. The contributions of our paper can be summarized as follows: 
+
+• As far as we know, UTTSI is the first training-free model-agnostic test-time framework, which improves performance by selectively scaling inference depth proportional to per-instance uncertainty. 
+
+• UTTSI introduces a dual-signal uncertainty estimator combining logit confidence with a frequency-based prior, an adaptive fea-ture filtering mechanism that removes unreliable representations for all instances, and a path-allocation mechanism that derives robustness from feature path exploration for uncertain ones. 
+
+• Experiments across four datasets with three backbone architec-tures and a seven-day online A/B test demonstrate that UTTSI achieves consistent, statistically significant improvements over state-of-the-art CTR models, confirming its broad compatibility and practical value. 
+
+## 2 Related Work 2.1 CTR Prediction Models 
+
+Deep learning has driven substantial advances in CTR prediction, with a large body of work focused on designing sophisticated fea-ture interaction architectures [ 55 ]. Representative models include WDL [ 6], DeepFM [ 10 ], DCN [ 43 , 44 ], and xDeepFM [ 25 ], which capture low- and high-order feature crosses through various net-work designs. Subsequent work introduced gating mechanisms for dynamic feature selection [ 3 , 40 ] and embedding calibration [5 , 17 ], while HSTU [ 53 ] scales to large-scale user action sequences. Recognizing limitations of the binary discriminative objective, a sep-arate line of work reframes CTR via generative paradigms [ 14 , 58 ]. However, all these methods focus exclusively on training-phase op-timization, overlooking the potential of the test-time computation. 
+
+## 2.2 Test-Time Optimization 
+
+Test-time scaling has driven significant gains in LLMs [ 4 , 9 , 21 , 38 ]through iterative refinement and hypothesis search, establishing a favorable trade-off between test-time compute and prediction quality. However, these methods are tightly coupled to autore-gressive architectures and token-level confidence signals, making them non-transferable to CTR models with binary classification objectives. In the recommendation domain, TTA [ 8] augments user behavior sequences at test time for sequential recommendation, but sequence augmentation is inapplicable to CTR: CTR operates on sparse categorical feature fields where per-combination reliabil-ity differentials drive prediction uncertainty, a problem absent in sequential settings. More broadly, adaptive computation methods such as early-exit networks [ 2 ] allocate varying computation by modifying model depth or width, whereas UTTSI operates on the input feature space, making it architecture-agnostic and applicable to any already-trained CTR model without retraining. In summary, UTTSI is the first test-time optimization framework specifically de-signed for CTR prediction, addressing feature combination sparsity and classification uncertainty through feature path exploration. 
+
+## 3 Preliminary 
+
+This section defines the CTR prediction task and introduces the problem setting for test-time optimization in CTR. UTTSI operates entirely at inference time on an already-trained model, requiring no parameter updates or additional training data. 
+
+## 3.1 CTR Prediction Task 
+
+The Click-Through Rate (CTR) prediction task estimates the prob-ability that a user will click on a presented item, and its output determines the final ranking of items shown to users. It is formu-lated as a supervised binary classification problem. 
+
+Problem Definition. Given a complete set of features F𝑓 𝑢𝑙𝑙 
+
+and the label space 𝑦 ∈ { 0, 1}, the CTR prediction task learns a ranking function F : F𝑓 𝑢𝑙𝑙 → 𝑦 to estimate the click probability of the target user on the target item. The feature space encompasses various fields such as user profiles and item attributes. We define 
+
+F𝑓 𝑢𝑙𝑙 = [𝑓 1, 𝑓 2, . . . , 𝑓 𝑁 ], where 𝑁 is the number of feature fields: 
+
+𝑃 (𝑦 |F𝑓 𝑢𝑙𝑙 ) = F ( 𝑓 1, 𝑓 2, ..., 𝑓 𝑁 ) (1) 
+
+## 3.2 Test-Time Optimization in CTR 
+
+Problem Setting. We consider a CTR model F𝜃 whose parameters are fixed after training, as defined in Section 3.1. Test-time opti-mization augments inference under three constraints: no updates to 𝜃 , no new learnable parameters, and no access to training labels. 
+
+Test-Time Optimization Paradigm. A test-time optimization method augments standard inference by wrapping F𝜃 with an ad-ditional procedure. In the multi-path setting, the method generates a collection of 𝐾 feature views [F1, F2, . . . , F𝐾 ] derived from F𝑓 𝑢𝑙𝑙 ,obtains a prediction from each view, and aggregates them into a final prediction score during inference time: 
+
+ˆ𝑦 TTO = Agg 
+
+F𝜃 (F𝑘 ) 𝐾 𝑘 =1
+
+
+
+, (2) where Agg (·) is an aggregation function such as mean or consistency-weighted average, and 𝐾 may be fixed or instance-adaptive. The key design choices are: (1) how to generate diverse yet semantically co-herent feature views F𝑘 ; (2) how to determine the number of paths 
+
+𝐾 per instance; and (3) how to weight the predictions in aggregation. A naive approach applies uniform random feature dropout for all instances with a fixed 𝐾 , as illustrated in Figure 1(b). This ignores instance-level reliability differences and wastes computation on instances whose base prediction is already reliable. An uncertainty-aware instantiation addresses this by making all three choices contingent on a per-instance reliability signal 
+
+𝑢 (𝑥 ) ∈ [ 0, 1] estimated from the frozen model. It first applies a lightweight feature filtering pass to all instances to remove unre-liable representations, then allocates additional exploration paths proportional to 𝑢 (𝑥 ), and finally weights path predictions by their mutual consistency. UTTSI, described in Section 4, provides princi-pled solutions for each of these steps. 
+
+## 4 Method 
+
+We propose a training-free Uncertainty-Triggered Test-Time Selec-tive Inference framework (UTTSI) that operates on top of a frozen, already-trained CTR model F𝜃 without modifying its parameters. After estimating per-instance uncertainty via dual signals, UTTSI Woodstock ’18, June 03–05, 2018, Woodstock, NY Moyu Zhang, Yun Chen, Yujun Jin, Jinxin Hu, Yu Zhang, and Xiaoyi Zeng 𝑓 !              
+
+> 𝑓 "
+> 𝑓 #
+> 𝑓 $
+> 𝑓 %
+> …
+> 𝑴
+> ⋯⋯
+> 𝑭 𝟎
+> 𝑭 𝟏
+> 𝑭 𝟏
+> Added to 𝑭 𝟏
+> Added
+> to 𝑭 𝟏
+> ⋯⋯
+> ⋯
+> ⋯
+> Added to 𝑭 𝑻
+> Discarded
+> ⋯
+> Added
+> to 𝑭 𝑻
+> 𝑭 𝑻 𝑭 𝑻
+> 𝑃 (𝑓 #,𝑭 𝟎 )𝑃 (𝑓 %,𝑭 𝟎 )𝑃 (𝑓 &,𝑭 𝟎 )
+> 𝑃 (𝑓 #,𝑭 𝟏 )𝑃 (𝑓 &,𝑭 𝟏 )
+> 𝑃 )*+
+
+𝒙                    
+
+> Dual -Signal
+> Uncertainty
+> Estimation
+> 𝒍𝒐𝒈𝒊𝒕 (𝒙 )
+> {𝒂𝒕𝒕𝒓 (𝒇 𝟏 ),𝒔 2𝒇𝒓𝒆𝒒 (𝒇 𝟏 )}
+> {𝒂𝒕𝒕𝒓 (𝒇 𝑵 ),𝒔 2𝒇𝒓𝒆𝒒 (𝒇 𝑵 )}
+> Confident
+> 𝑓 !𝑓 "
+> 𝜏 #
+> 𝒘 (𝒇 𝟏 )
+> 𝜏 ,
+> 𝒘 (𝒇 𝟐 )
+> 𝜏 %
+> 𝒘 (𝒇 𝟑 )
+> 𝜏 /
+> 𝒘 (𝒇 𝟒 )
+> 𝜏 &
+> 𝒘 (𝒇 𝑵 )
+> 𝑓 %…
+> …
+> 𝒘 (𝒇 𝟏 )>𝝉 𝟏
+> Retained
+> 𝒘 (𝒇 𝟐 )>𝝉 𝟐
+> Retained
+> 𝒘 (𝒇 𝟏 )<𝝉 𝟏
+> Filtered
+> 𝒘 (𝒇 𝟒 )<𝝉 𝟒
+> Filtered
+> 𝒘 (𝒇 𝑵 )>𝝉 𝑵
+> Retained
+> Prediction
+> 𝑓 !𝑓 #
+> 𝜏 #
+> 𝒘 (𝒇 𝟏 )
+> 𝜏 ,
+> 𝒘 (𝒇 𝟐 )
+> 𝜏 %
+> 𝒘 (𝒇 𝟑 )𝒘 (𝒇 𝑵 )
+> …
+> …
+> Path 1
+> Path 2
+> Path K(x)
+> …
+> 𝑃 +,-./
+> Prediction
+> 𝑴
+> 𝜏 &
+> 𝑴
+> Uncertain
+> 𝑴 𝑓 !𝑓 #𝑓 %
+> 𝑓 %
+> 𝑓 !
+> 𝑓 %
+> …
+
+Path Exploration The overall scoring process of UTTSI 
+
+Figure 2: The structure of Uncertainty-Triggered Test-Time Selective Inference framework (UTTSI) for CTR models. The left part shows the overall UTTSI scoring process including uncertainty-based routing, and the right part shows the specific inference path generation process for uncertain instances. 
+
+applies adaptive feature filtering to all instances and selectively scales inference depth proportional to each instance’s uncertainty, so that uncertain instances receive deeper exploration while confi-dent ones incur minimal overhead. Specifically, UTTSI comprises three tightly integrated components: 
+
+• Frequency Prior Estimation : Estimates how well-observed each feature value in the training dataset is using a Count-Min Sketch inspired structure [ 18 ], providing an offline data-level relia-bility signal for uncertainty estimation. 
+
+• Dual-Signal Uncertainty Estimation : Combines an attribution-weighted frequency prior with model logit confidence to produce a per-instance uncertainty score, which continuously determines how many exploration paths each instance receives. 
+
+• Feature Filtering and Path Exploration : Applies adaptive fea-ture filtering to all instances, removing features below a per-field reliability threshold. For uncertain instances, additional stochastic exploration paths are generated over the refined feature subset and aggregated via consistency-weighted voting; confident instances output the filtered prediction directly. 
+
+## 4.1 Frequency Prior Estimation 
+
+A key component of our uncertainty estimation is the data-level frequency prior, which quantifies how well-observed each feature value is in the training data. The rationale is straightforward: a feature value that appears frequently during training yields a well-trained embedding, whereas a rare value produces an unreliable one. We emphasize that frequency serves as one signal within our dual-signal framework, not as a standalone confidence measure. Since the number of unique feature values can be very large, we adopt a Count-Min Sketch [ 18 ] inspired probabilistic hashing structure that maintains 𝐿 independent hash tables per feature field, estimating the count of each value by taking the minimum across tables, which provides a tight upper bound while mitigating over-estimation from hash collisions. The resulting per-field frequency counts cnt (𝑓 𝑖 ) are precomputed offline and retrieved at negligible online cost. We normalize each count by a saturation threshold 𝜂 to obtain ˜𝑠 𝑓 𝑟𝑒𝑞 (𝑓 𝑖 ) = min (cnt (𝑓 𝑖 ), 𝜂 )/ 𝜂 ∈ [ 0, 1], which is used in both the uncertainty estimation (§4.2) and the feature filtering (§4.3). 
+
+## 4.2 Dual-Signal Uncertainty Estimation 
+
+This module determines the amount of selective inference compu-tation allocated to each instance. The key insight is that neither model confidence nor data frequency alone reliably identifies uncer-tain instances. A prediction logit close to zero may reflect genuine epistemic uncertainty (the model lacks knowledge) or aleatoric am-biguity (the true click probability is near 50%). Frequency alone flags instances with rare feature values, but cannot distinguish reliable from unreliable predictions on unseen combinations where indi-vidual features are frequent yet their interaction pattern is novel. By combining both signals, we can better identify instances that genuinely benefit from additional exploration. For a given input instance 𝑥 with feature set F𝑓 𝑢𝑙𝑙 , we first per-form a standard forward pass and compute the prediction logit: logit (𝑥 ) = F𝜃 (F𝑓 𝑢𝑙𝑙 ) (3) We then backpropagate from the output logit to obtain the gradient norm for each feature embedding: attr (𝑓 𝑖 ) = ∥∇ 𝑒 𝑖 logit (𝑥 )∥ 2 (4) This computation is fully model-agnostic: it requires only that the backbone is differentiable, and no model parameters are updated. The backward pass computes only the input embedding gradients (not model parameter gradients), which incurs approximately 0.5–
+
+1× the cost of a forward pass depending on model architecture. The gradient norm measures how much a small perturbation to the feature embedding would change the prediction, providing a principled, unified measure of feature influence across arbitrary architectures. This attribution is reused in both the uncertainty estimation below and the feature filtering in §4.3. The model-internal confidence captures how decisive the model’s prediction is: 
+
+𝑠 𝑚𝑜𝑑𝑒𝑙 (𝑥 ) = min 
+
+ |logit (𝑥 )| 
+
+𝛾 , 1
+
+
+
+(5) where 𝛾 is a normalization constant set to the 95th percentile of 
+
+|logit | values on a held-out validation set. A value near 0 indicates the model is at its decision boundary; a value near 1 indicates a decisive prediction. Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration Woodstock ’18, June 03–05, 2018, Woodstock, NY 
+
+The data-level frequency confidence is an attribution-weighted average of the per-field frequencies: 
+
+𝑠 𝑓 𝑟𝑒𝑞 (𝑥 ) =
+
+Í𝑁 𝑖 =1 attr (𝑓 𝑖 ) · ˜𝑠 𝑓 𝑟𝑒𝑞 (𝑓 𝑖 )
+
+Í𝑁 𝑖 =1 attr (𝑓 𝑖 ) (6) where ˜𝑠 𝑓 𝑟𝑒𝑞 (𝑓 𝑖 ) is the normalized frequency of feature value 𝑓 𝑖 
+
+from the offline index (defined in §4.1). By weighting each fea-ture’s frequency by its attribution, 𝑠 𝑓 𝑟𝑒𝑞 reflects not merely how frequent the sample’s features are on average, but how frequent the features that actually drive the prediction are. This attribution weighting addresses a key blind spot: if an instance contains high-frequency but low-attribution features alongside low-frequency but high-attribution features, an unweighted average would mis-leadingly inflate confidence, whereas the weighted sum correctly identifies the sample as uncertain because the predictive signal comes from poorly trained embeddings. The per-instance uncertainty is their complement: 
+
+𝑢 (𝑥 ) = 1 − 𝛼 · 𝑠 𝑚𝑜𝑑𝑒𝑙 (𝑥 ) + ( 1 − 𝛼 ) · 𝑠 𝑓 𝑟𝑒𝑞 (𝑥 ) (7) where 𝛼 ∈ [ 0, 1] balances the two signals. The number of additional inference paths is then: 
+
+𝐾 (𝑥 ) = ⌊𝐾 max · 𝑢 (𝑥 )⌋ (8) where 𝐾 max is a hyperparameter that sets the maximum number of exploration paths any instance can receive, directly controlling the worst-case computational overhead. 
+
+Intuition. The continuous allocation 𝐾 (𝑥 ) = ⌊𝐾 max · 𝑢 (𝑥 )⌋ has a desirable property: instances with higher estimated uncertainty receive more exploration paths. Since 𝑢 (𝑥 ) is designed to correlate positively with prediction variance, allocating more paths to uncer-tain instances preferentially reduces variance where it is largest. The computational overhead is bounded by 1 + 𝐾 max · E[𝑢 (𝑥 )] ,which empirically amounts to approximately 2-3× base model cost. 
+
+## 4.3 Feature Filtering and Path Exploration 
+
+This module implements the core inference mechanism of UTTSI in two stages. A natural question is why uncertainty estimation pre-cedes filtering rather than the reverse, given that filtering applies uniformly to all instances. There are two reasons. First, the gradi-ent attribution attr (𝑓 𝑖 ) computed during uncertainty estimation is reused by the filtering step to form the composite score 𝑤 (𝑓 𝑖 );reversing the order would require a second backward pass on the filtered input, adding unnecessary computation. Second, and more fundamentally, uncertainty should reflect the instance’s raw diffi-culty including the presence of unreliable features. An instance with many low-frequency features is inherently uncertain, and filtering those features first would artificially deflate the uncertainty score, potentially under-allocating exploration budget for instances that still suffer from combination-level uncertainty after noise removal. 
+
+Stage 1 – Adaptive Feature Filtering. Using the gradient at-tribution attr (𝑓 𝑖 ) = ∥∇ 𝑒 𝑖 logit (𝑥 )∥ 2 computed above, we form the composite score 𝑤 (𝑓 𝑖 ) = 𝛽 · ˜𝑠 𝑓 𝑟𝑒𝑞 (𝑓 𝑖 ) + ( 1 − 𝛽 ) · attr (𝑓 𝑖 ) for each feature. This composite score leverages both the data-level fre-quency signal (how well-observed the feature value is) and the model-level attribution signal (how influential the feature is for the current prediction), ensuring that features identified as noise on both dimensions are candidates for removal. Rather than applying a fixed per-instance retention ratio or a sin-gle global threshold, we adopt a per-field threshold 𝜏 𝑖 for each feature field 𝑖 , computed offline from the training data. This is motivated by the strong heterogeneity of features in industrial recommendation systems: the composite score distributions of user identity fields, item attribute fields, and statistical context fields differ substan-tially, and a single global threshold would systematically over-filter high-variance fields while under-filtering low-variance ones. Specif-ically, we compute 𝑤 (𝑓 𝑖 ) for all training instances within each field separately and set 𝜏 𝑖 to the 𝜌 -th quantile of that field’s score dis-tribution, where 𝜌 ∈ ( 0, 1) is a shared hyperparameter controlling the aggressiveness of filtering uniformly across fields. At inference time, a feature 𝑓 𝑖 is retained if 𝑤 (𝑓 𝑖 ) ≥ 𝜏 𝑖 ; an instance where all features exceed their respective thresholds is preserved in full. The retained features form a refined feature set ˆF, and a forward pass on ˆF produces a refined prediction: 
+
+𝑃 𝑟𝑒 𝑓 = F𝜃 ( ˆF) (9) This filtering strategy is conservative : a feature is discarded only when it scores low on both frequency and attribution. Features with conflicting signals (e.g., low frequency but high attribution) are retained, since the cost of discarding a genuinely informative rare feature outweighs the cost of retaining noise, which Stage 2’s multi-path aggregation can average out. 
+
+Why filtering alone suffices for high-confidence instances. 
+
+A natural concern is that instances with 𝐾 (𝑥 ) = 0 receive only filtering without multi-path compensation, which might appear to lose information. We argue that this asymmetric design is justified because filtering and exploration address distinct error modes at different levels. Feature filtering removes feature-level noise (indi-vidual features whose embeddings are unreliable), which benefits all instances uniformly. However, after filtering, low-confidence in-stances still suffer from combination-level uncertainty : even though each retained feature is individually reliable, their joint interaction pattern remains sparsely observed in training, so the model’s pre-diction on ˆF has high variance. Multi-path exploration averages this residual variance by sampling diverse subsets of ˆF and aggre-gating their predictions. High-confidence instances, by contrast, have low residual variance: the model has already learned reliable representations for their feature combinations, so a single refined prediction suffices. This bias-variance decomposition justifies the asymmetric design: filtering reduces bias for all instances, while the multi-path feature exploration reduces residual variance only where it remains significant. 
+
+Stage 2 – Feature Path Exploration (for 𝐾 (𝑥 ) > 0). For in-stances with non-negligible uncertainty ( 𝐾 (𝑥 ) > 0), UTTSI gener-ates 𝐾 (𝑥 ) additional inference paths by stochastically perturbing the refined feature set ˆF. Unlike the original feature set which may include unreliable feature combinations that compromise predic-tion accuracy [ 12 ], our goal is to construct multiple high-quality feature subsets and aggregate their predictions for robustness. Because there is no absolute threshold distinguishing reliable from unreliable feature combinations, we adopt stochastic sampling across multiple paths rather than deterministic selection, ensuring diverse exploration that preserves potentially effective feature in-formation. A path is built iteratively over 𝑇 steps: at each step 𝑡 ,the algorithm samples from the features not yet included in the Woodstock ’18, June 03–05, 2018, Woodstock, NY Moyu Zhang, Yun Chen, Yujun Jin, Jinxin Hu, Yu Zhang, and Xiaoyi Zeng 
+
+current path 𝑭 𝑡 −1, with each candidate’s probability proportional to its composite reliability–attribution score: 
+
+𝑝 𝑡 𝑖 = 𝑤 (𝑓 𝑖 )
+
+Í        
+
+> 𝑓 𝑗 ∈ˆF, 𝑓 𝑗 ∉𝑭 𝑡 −1
+
+𝑤 (𝑓 𝑗 ) (10) where 𝑤 (𝑓 𝑖 ) = 𝛽 · ˜𝑠 𝑓 𝑟𝑒𝑞 (𝑓 𝑖 ) + ( 1 − 𝛽 ) · attr (𝑓 𝑖 ), with ˜𝑠 𝑓 𝑟𝑒𝑞 (𝑓 𝑖 ) the normalized per-field frequency and attr (𝑓 𝑖 ) = ∥∇ 𝑒 𝑖 logit (𝑥 )∥ 2 the gradient norm from Stage 1. The hyperparameter 𝛽 balances the two components. This ensures that informative rare features with strong attribution are preferentially selected, while features that are both infrequent and weakly attributed are more likely to be excluded from any given path. For each candidate feature, we perform an independent Bernoulli sampling using its corresponding normalized sampling probability to decide whether to add it to the path: 
+
+I𝑡 𝑖 =
+
+(
+
+𝑓 𝑖 , 𝑟 𝑡 𝑖 = 1
+
+∅, 𝑟 𝑡 𝑖 = 0 (11) 
+
+𝑭 𝑡 = 𝑭 𝑡 −1 ∪ I𝑡 𝑖         
+
+> 𝑓 𝑖 ∉𝑭 𝑡 −1
+> 𝑓 𝑖 ∈ˆF
+
+(12) where 𝑟 𝑡 𝑖 ∼ 𝐵𝑒𝑟𝑛𝑜𝑢𝑙𝑙𝑖 (𝑝 𝑡 𝑖 ) denotes the Bernoulli sampling on 𝑓 𝑖 .Upon completion of 𝑇 iterations, this procedure yields an instance-specific feature set 𝑭 𝑇 derived from the refined base ˆF. A new input is constructed by masking all features not selected for this path, which is then passed to the trained CTR prediction model: 
+
+G( 𝑓 𝑖 ) =
+
+(
+
+𝑓 𝑖 , 𝑓 𝑖 ∈ 𝑭 𝑇 
+
+0, 𝑓 𝑖 ∉ 𝑭 𝑇 
+
+(13) 
+
+𝑃 (𝑦 |𝑭 𝑇 ) = F𝜃 (G( 𝑓 𝑖 ) 𝑓 𝑖 ∈ ˆF) (14) Since a single stochastic path is not guaranteed to find the globally optimal feature combination, we sample 𝐾 (𝑥 ) indepen-dent paths in parallel, producing a set of distinct final feature sets 
+
+𝐿 =
+
+n
+
+𝑭 1 
+
+> 𝑇
+
+, 𝑭 2 
+
+> 𝑇
+
+, ..., 𝑭 𝐾 (𝑥 )
+
+> 𝑇
+
+o
+
+. Combined with the refined prediction 𝑃 𝑟𝑒 𝑓 ,we obtain 𝐾 (𝑥 ) + 1 prediction scores in total. This multi-path ap-proach allows for a more comprehensive exploration of the feature space, with the inference breadth automatically scaling with the instance’s uncertainty via the selective allocation 𝐾 (𝑥 ).
+
+Consistency-Weighted Aggregation. Given predictions from the 𝐾 (𝑥 ) exploration paths plus the refined prediction 𝑃 𝑟𝑒 𝑓 = F𝜃 ( ˆF),we aggregate all 𝐾 (𝑥 ) + 1 scores via consistency-weighted voting. Let P = {𝑃 𝑟𝑒 𝑓 } ∪ { 𝑃 (𝑦 |𝑭 𝑘 𝑇 )} 𝐾 (𝑥 ) 
+
+> 𝑘 =1
+
+denote the full set of predictions. We then weight each prediction of multi-paths by its consistency with the ensemble mean: 
+
+¯𝑃 = 1
+
+𝐾 (𝑥 ) + 1∑︁ 𝑃 𝑖 ∈ P 
+
+𝑃 𝑖 (15) 
+
+𝑤 𝑖 = exp  −𝜆 · | 𝑃 𝑖 − ¯𝑃 | (16) 
+
+𝑃 𝑓 𝑖𝑛𝑎𝑙 =
+
+Í𝑃 𝑖 ∈ P 𝑤 𝑖 · 𝑃 𝑖 
+
+Í𝑃 𝑖 ∈ P 𝑤 𝑖 
+
+(17) where ¯𝑃 is the mean prediction across all paths including the base, 𝜆 
+
+controls the sharpness of the consistency weighting, and 𝑤 𝑖 assigns higher weight to predictions aligned with the majority. Paths that produce outlier predictions, likely due to having masked critical features, are naturally down-weighted. When 𝐾 (𝑥 ) = 0, no addi-tional paths are generated and 𝑃 𝑓 𝑖𝑛𝑎𝑙 = 𝑃 𝑟𝑒 𝑓 (the refined prediction 
+
+Algorithm 1: UTTSI Inference Procedure 
+
+Input: Trained CTR model F𝜃 ; input instance with feature set 
+
+F𝑓 𝑢𝑙𝑙 ; precomputed per-field frequency counts cnt (·) ;per-field thresholds {𝜏 𝑖 } (precomputed offline); hyperparameters 𝐾 max , 𝛼 , 𝛽 , 𝑇 , 𝛾 , 𝜂 , 𝜆 
+
+Output: Final CTR prediction 𝑃 𝑓 𝑖𝑛𝑎𝑙 
+
+// Step 1: Base forward pass + attribution  
+
+> 1
+
+logit (𝑥 ) ← F 𝜃 (F𝑓 𝑢𝑙𝑙 ); 
+
+> 2
+
+Compute attr (𝑓 𝑖 ) = ∥ ∇ 𝑒 𝑖 logit (𝑥 ) ∥ 2 for all 𝑓 𝑖 ∈ F𝑓 𝑢𝑙𝑙 via backpropagation; 
+
+// Step 2: Dual-signal uncertainty estimation  
+
+> 3
+
+𝑠 𝑚𝑜𝑑𝑒𝑙 (𝑥 ) ← min ( | logit (𝑥 ) |/ 𝛾, 1); 
+
+> 4
+
+𝑠 𝑓 𝑟𝑒𝑞 (𝑥 ) ←            
+
+> Í𝑁 𝑖 =1attr (𝑓 𝑖 ) · ˜𝑠 𝑓 𝑟𝑒𝑞 (𝑓 𝑖 )
+> Í𝑁 𝑖 =1attr (𝑓 𝑖 )
+
+; 
+
+> 5
+
+𝑢 (𝑥 ) ← 1 − 𝛼 · 𝑠 𝑚𝑜𝑑𝑒𝑙 (𝑥 ) + ( 1 − 𝛼 ) · 𝑠 𝑓 𝑟𝑒𝑞 (𝑥 ); 
+
+> 6
+
+𝐾 (𝑥 ) ← ⌊ 𝐾 max · 𝑢 (𝑥 ) ⌋ ;
+
+// Step 3: Adaptive feature filtering  
+
+> 7
+
+Compute composite weights 
+
+𝑤 (𝑓 𝑖 ) = 𝛽 · ˜𝑠 𝑓 𝑟𝑒𝑞 (𝑓 𝑖 ) + ( 1 − 𝛽 ) · attr (𝑓 𝑖 ) for all 𝑓 𝑖 ; 
+
+> 8
+
+Retain features with 𝑤 (𝑓 𝑖 ) ≥ 𝜏 𝑖 to form ˆF; 
+
+> 9
+
+𝑃 𝑟𝑒 𝑓 ← F 𝜃 ( ˆF); 
+
+> 10
+
+if 𝐾 (𝑥 ) = 0 then  
+
+> 11
+
+return 𝑃 𝑟𝑒 𝑓 ; 
+
+> 12
+
+end 
+
+// Step 4: Feature path exploration (parallelizable)  
+
+> 13
+
+P ← { 𝑃 𝑟𝑒 𝑓 }; 
+
+> 14
+
+for 𝑘 ← 1 to 𝐾 (𝑥 ) (in parallel) do  
+
+> 15
+
+𝑭 𝑘  
+
+> 0
+
+← ∅ ; 
+
+> 16
+
+for 𝑡 ← 1 to 𝑇 do  
+
+> 17
+
+Compute path weights 𝑤 (𝑓 𝑖 ) for unselected 𝑓 𝑖 ∈ ˆF; 
+
+> 18
+
+Sample 𝑟 𝑡 𝑖 ∼ Bernoulli (𝑝 𝑡 𝑖 ) for each unselected feature;  
+
+> 19
+
+𝑭 𝑘 𝑡 ← 𝑭 𝑘 𝑡 −1 ∪ { 𝑓 𝑖 : 𝑟 𝑡 𝑖 = 1}; 
+
+> 20
+
+end  
+
+> 21
+
+Construct masked input { G ( 𝑓 𝑖 ) } 𝑓 𝑖 ∈ ˆF using 𝑭 𝑘 𝑇 ; 
+
+> 22
+
+𝑃 𝑘 ← F 𝜃 ( { G ( 𝑓 𝑖 ) } ) ; 
+
+> 23
+
+P ← P ∪ { 𝑃 𝑘 }; 
+
+> 24
+
+end 
+
+// Step 5: Consistency-weighted aggregation  
+
+> 25
+
+¯𝑃 ← 1
+
+> |P |
+
+Í𝑃 𝑖 ∈P 𝑃 𝑖 ; 
+
+> 26
+
+𝑤 𝑖 ← exp (− 𝜆 · | 𝑃 𝑖 − ¯𝑃 | ) for each 𝑃 𝑖 ∈ P ; 
+
+> 27
+
+𝑃 𝑓 𝑖𝑛𝑎𝑙 ← Í𝑃 𝑖 ∈P 𝑤 𝑖 𝑃 𝑖 / Í𝑃 𝑖 ∈P 𝑤 𝑖 ; 
+
+> 28
+
+return 𝑃 𝑓 𝑖𝑛𝑎𝑙 ;
+
+from Stage 1). This ensures that the final output reflects a robust consensus across diverse selective inference paths, with the depth of inference, measured by the number of ensembled predictions, automatically scaled to the instance’s uncertainty: no exploration for confident instances ( 𝐾 (𝑥 ) = 0), and progressively deeper explo-ration for uncertain ones ( 𝐾 (𝑥 ) > 0). 
+
+Sensitivity to 𝜆 . The sharpness parameter 𝜆 controls how ag-gressively outlier paths are down-weighted; detailed sensitivity analysis is provided in Section 5.5. We set 𝜆 = 5 as the default. 
+
+## 5 Experiments 
+
+We evaluate our UTTSI on several benchmark datasets to address the following research questions: 
+
+• RQ1: Does UTTSI consistently improve prediction performance Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration Woodstock ’18, June 03–05, 2018, Woodstock, NY                
+
+> Dataset # Feature Fields # Impressions # Positive Criteo 39 45M 26% Avazu 23 40M 17% KDD12 11 60M 4.5% Industrial. 68 513M 2.5%
+
+Table 1: Statistics of four benchmark datasets. 
+
+when applied to state-of-the-art CTR models? 
+
+• RQ2: What is the contribution of each component within UTTSI? 
+
+• RQ3: How sensitive is UTTSI to its key hyperparameters, and how does uncertainty-triggered allocation behave in practice? 
+
+• RQ4: Does the uncertainty score correlate with prediction error, and how does UTTSI perform across different uncertainty strata? 
+
+## 5.1 Datasets 
+
+We evaluate on four large-scale datasets: three public benchmarks and one industrial dataset. Statistics are in Table 1. 
+
+• Criteo 1. It is a canonical public benchmark for evaluating CTR prediction models [ 19 ]. It consists of one week of real-world ad click data, featuring 13 continuous features and 26 categorical features. 
+
+• Avazu 2. It is another widely-used public benchmark for CTR prediction, consisting of 10 days of chronologically ordered ad click logs [20]. It features 23 feature fields in a sample. 
+
+• KDD12 3. This dataset contains training instances derived from search session logs. It has 11 categorical fields, and the click field is the number of times the user clicks the ad. 
+
+• Industrial Dataset . To assess our approach in a real-world set-ting, we gathered a dataset from an international e-commerce plat-form’s online display advertising system. The training set is com-posed of samples from the last 20 days, while the test set consists of exposure samples from the subsequent day. 
+
+## 5.2 Competitors 
+
+To demonstrate the effectiveness of UTTSI, we compare against state-of-the-art CTR models grouped into three categories: 1) Deep Feature Interaction Models : FM [ 28 ], DNN, Wide&Deep [ 6], DeepFM [ 10 ], DCN [ 43 ], AutoInt [ 33 ], FiBiNet [ 15 ], GDCN [ 39 ], MaskNet [ 46 ], PEPNet [ 5], and HSTU [ 53 ]. 2) Multi-Expert Ar-chitectures : MMoE [ 26 ] and PLE [ 36 ]. 3) Neural Architecture Search Models : AutoCTR [32] and OptFu [54]. 
+
+Implementation Details . All models were implemented in Ten-sorFlow [ 1] and trained on 8 NVIDIA A100 GPUs using the Adam optimizer [ 22 ] and Xavier initialization [ 13 ]. The default activation function was ReLU. Optimal hyperparameters were identified via grid search. Embedding dimensions were set to 32 (Criteo, Avazu), 16 (KDD12), and 8 (Industrial), with a batch size of 4096. Learn-ing rates were searched in {3e-3, . . . , 1e-5} and 𝐿 2 regularization in 
+
+{3e-6, . . . , 0}. For UTTSI, we set 𝐾 max = 8 as the default maximum path budget, 𝛼 = 0.05 for the dual-signal weighting between logit confidence and frequency prior, 𝛽 = 0.4 for the composite weight balancing frequency reliability and attribution strength, 𝜌 = 0.2 as the shared quantile for computing the per-field adaptive filtering thresholds {𝜏 𝑖 }, the number of iterative sampling steps 𝑇 = 10 , and the consistency-weighting sharpness 𝜆 = 5.
+
+> 1http://labs.criteo.com/downloads/download-terabyte-click-logs/
+> 2http://www.kaggle.com/c/avazu-ctr-prediction
+> 3http://www.kddcup2012.org/c/kddcup2012-track2/data
+
+Evaluation Metrics . Following standard practice in CTR re-search, we adopt AUC (Area Under ROC Curve) and LogLoss (bi-nary cross-entropy) as evaluation metrics. 
+
+## 5.3 Comparison with Baselines (RQ1) 
+
+Table 2 presents the overall prediction performance across all datasets, with statistical significance tests against the best baseline. UTTSI consistently outperforms all baselines on datasets when applied to three representative backbone architectures, achieving this without any modification to the backbone’s parameters or retraining. Several observations are noteworthy. Models with sophisticated cross-feature interaction architectures such as GDCN [ 39 ] and MaskNet [ 46 ] improve over simpler baselines, but their gains plateau as model complexity increases. Multi-expert architectures (MMoE [26 ], PLE [ 36 ]) and NAS-based methods (AutoCTR [ 32 ], OptFu [ 54 ]) further improve by diversifying the feature interaction space, yet they share a common limitation: all optimizations are confined to the training phase and applied uniformly to every instance. UTTSI addresses this by selectively allocating additional inference com-pute per instance: uncertain samples receive multi-path exploration, while confident ones incur no overhead, complementing rather than competing with any training-phase backbone. The gains are quantitatively consistent and statistically signif-icant ( 𝑝 < 0.05 ). OptFu+UTTSI achieves the best overall results, with AUC improvements of +0.0037 , +0.0048 , +0.0044 , and +0.0046 
+
+over the strongest baseline OptFu on Criteo, Avazu, KDD12, and In-dustrial respectively, along with corresponding Logloss reductions. Notably, gains are most pronounced on KDD12 and Industrial, the two datasets with higher feature sparsity and a larger proportion of tail-value features, directly reflecting UTTSI’s targeted improve-ment of sparse-feature instances. In terms of average relative im-provement over DeepFM, OptFu+UTTSI achieves Δ𝐴𝑈 𝐶 = +3.23% 
+
+and Δ𝐿𝑜𝑔𝑙𝑜𝑠𝑠 = −0.0142 , surpassing all training-phase baselines across all datasets. 
+
+## 5.4 Ablation Study (RQ2) 
+
+To verify the contribution of each module in UTTSI, we construct three ablation variants and evaluate them on all four datasets: 
+
+• w/o-Dual (RD) removes the dual-signal uncertainty estimation and replaces it with a single logit-only confidence score, disabling the frequency-based prior. 
+
+• w/o-Attr (RA) removes attribution-guided sampling and replaces it with uniform random feature sampling during path construction. 
+
+• w-Single (WS) removes multi-path exploration and uses a single inference path per instance, i.e., 𝐾 (𝑥 ) = 1 for all uncertain samples. Figure 3 presents the ablation results. The performance degrada-tion upon removing any single component confirms the contribu-tion of each module within our UTTSI. 
+
+Effect of dual-signal estimation (w/o-Dual, RD). Replacing the dual-signal estimator with logit-only confidence consistently degrades performance across all datasets and backbones. The root cause is that model logit confidence conflates two distinct sources of uncertainty: epistemic uncertainty arising from sparse feature coverage and aleatoric uncertainty from inherently ambiguous click decisions near the decision boundary. A sample with a near-50% Woodstock ’18, June 03–05, 2018, Woodstock, NY Moyu Zhang, Yun Chen, Yujun Jin, Jinxin Hu, Yu Zhang, and Xiaoyi Zeng 
+
+Table 2: Prediction performance of CTR models on four datasets. Δ𝐴𝑈 𝐶 and Δ𝐿𝑜𝑔𝑙𝑜𝑠𝑠 indicate the average performance change relative to DeepFM. * indicates p-value < 0.05 in the significance test. 
+
+Method Dataset Criteo Avazu KDD12 Industrial. Δ𝐴𝑈 𝐶 Δ𝐿𝑜𝑔𝑙𝑜𝑠𝑠 
+
+AUC Logloss AUC Logloss AUC Logloss AUC Logloss ↑ ↓
+
+FM 0.7695 0.4716 0.7758 0.4469 0.7914 0.1431 0.7788 0.0852 -0.03% +0.0003 DNN 0.7657 0.4739 0.7699 0.4475 0.7902 0.1437 0.7801 0.0849 -0.34% +0.0011 Wide&Deep 0.7677 0.4728 0.7755 0.4465 0.7921 0.1426 0.7783 0.0854 -0.09% +0.0004 DeepFM 0.7692 0.4713 0.7756 0.4469 0.7933 0.1422 0.7785 0.0852 - -DCN 0.7703 0.4703 0.7762 0.4458 0.7941 0.1426 0.7792 0.0851 +0.11% -0.0005 AutoInt 0.7695 0.4710 0.7748 0.4473 0.7928 0.1429 0.7823 0.0847 +0.09% -0.0001 FibiNET 0.7732 0.4691 0.7759 0.4456 0.7968 0.1402 0.7825 0.0844 +0.38% -0.0016 GDCN 0.7796 0.4663 0.7809 0.4428 0.7989 0.1399 0.7884 0.0839 +1.00% -0.0032 MaskNet 0.7882 0.4644 0.7813 0.4415 0.8012 0.1381 0.7846 0.0831 +1.25% -0.0046 PEPNet 0.7981 0.4498 0.7944 0.4402 0.8041 0.1370 0.7904 0.0817 +2.27% -0.0092 HSTU 0.7993 0.4483 0.7902 0.4403 0.8087 0.1358 0.7926 0.0814 +2.39% -0.0099 MMOE 0.7906 0.4565 0.7879 0.4420 0.8021 0.1377 0.7899 0.0826 +1.74% -0.0067 PLE 0.7937 0.4536 0.7856 0.4441 0.8035 0.1370 0.7905 0.0823 +1.83% -0.0072 AutoCTR 0.7987 0.4487 0.7908 0.4396 0.8029 0.1373 0.7893 0.0828 +2.10% -0.0093 OptFu 0.8014 0.4480 0.7924 0.4383 0.8125 0.1326 0.7933 0.0803 +2.66% -0.0116 HSTU+UTTSI 0.8041 0.4452 0.7963 0.4351 0.8137 0.1314 0.7969 0.0790 +3.04% -0.0137 PLE+UTTSI 0.7998 0.4473 0.7916 0.4390 0.8097 0.1338 0.7954 0.0796 +2.57% -0.0115 
+
+OptFu+UTTSI 0.8051* 0.4448* 0.7972* 0.4359* 0.8169* 0.1297* 0.7979* 0.0786* +3.23 % -0.0142 AUC      
+
+> HSTU
+> PLE
+> OptFu
+> AUC
+> HSTU
+> PLE
+> OptFu
+> AUC
+> HSTU
+> PLE
+> OptFu
+> AUC
+> HSTU
+> PLE
+> OptFu Gap with UTTSI Gap with UTTSI Gap with UTTSI Gap with UTTSI
+> (a) Criteo (b) Avazu (c) KDD12 (d) Industrial Dataset
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+> RD
+> RA
+> WS
+
+Figure 3: Prediction performance of three variants of UTTSI under three backbones on four datasets. 
+
+click probability due to a genuine preference tie will produce a low-confidence logit, yet its feature representations may be perfectly reliable. The frequency-based prior correctly assigns low uncer-tainty to such samples, preventing wasteful exploration. Conversely, a model may produce high-confidence logits for sparse feature com-binations by overfitting to training noise, and the frequency prior is necessary to flag these as high-uncertainty. The consistent gains of the full UTTSI over w/o-Dual confirm that combining both signals is essential for accurate uncertainty discrimination. 
+
+Effect of attribution-guided sampling (w/o-Attr, RA). Re-placing attribution-weighted sampling with uniform random sam-pling substantially degrades performance, particularly on datasets with high feature sparsity (KDD12 and Industrial). Under uniform random sampling, the probability of including a high-signal rare feature in any single path is proportional to 1/𝑁 , which can be extremely small when 𝑁 is large. Since attribution scores directly reflect the base model’s assessment of each feature’s contribution to the current prediction, using them to up-weight informative fea-tures ensures that exploration paths retain the predictive signal of the original input while diversifying away from unreliable feature combinations. The magnitude of degradation for w/o-Attr is larger than for w/o-Dual on the Industrial dataset, suggesting that the quality of individual exploration paths has a greater impact than uncertainty score accuracy in high-dimensional settings. 
+
+Effect of multi-path aggregation (w-Single, WS). Even when both dual-signal estimation and attribution-guided sampling are ap-plied correctly, using a single path per uncertain instance underper-forms the full multi-path ensemble. Because exploration sampling is stochastic by design, any single path may fail to select the globally optimal feature subset for a given instance. Multi-path sampling addresses this risk by independently exploring 𝐾 (𝑥 ) diverse feature configurations and aggregating them via consistency-weighted vot-ing. The consistency weighting further mitigates the risk that any outlier path dominates the final prediction. These results confirm the core design principle of UTTSI: robustness for uncertain in-stances is derived from the diversity of ensemble exploration, not from finding a single optimal feature configuration. Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration Woodstock ’18, June 03–05, 2018, Woodstock, NY AUC                     
+
+> (a) Effect of the maximum number of paths 𝐾 !"# (b) Effect of 𝛼 in the dual -signal estimator
+> UTTSI+HSTU
+> UTTSI+PLE
+> UTTSI+OptFu
+> AUC
+> AUC
+> (c) Effect of adaptive filtering threshold 𝜌 (d) Effect of 𝛽 in the composite feature score
+> UTTSI+HSTU
+> UTTSI+PLE
+> UTTSI+OptFu
+> UTTSI+HSTU
+> UTTSI+PLE
+> UTTSI+OptFu
+> AUC
+> (e) Effect of 𝜆 in path aggregation (f) Effect of iterative sampling steps
+> UTTSI+HSTU
+> UTTSI+PLE
+> UTTSI+OptFu
+> AUC
+> UTTSI+HSTU
+> UTTSI+PLE
+> UTTSI+OptFu
+> AUC
+> UTTSI+HSTU
+> UTTSI+PLE
+> UTTSI+OptFu
+
+Figure 4: Prediction performance of UTTSI under varying 
+
+𝐾 max , 𝛼 , 𝜌 , and 𝛽 on the industrial dataset. 
+
+## 5.5 Hyperparameter Sensitivity (RQ3) 
+
+We analyze sensitivity to UTTSI’s key hyperparameters on the In-dustrial dataset, with other hyperparameters fixed at their defaults. 
+
+Effect of 𝐾 max . 𝐾 max is the maximum number of exploration paths allocated to any single instance, controlling the upper bound on per-instance inference depth. We vary 𝐾 max over {2, 4, 8, 16 , 25 }.As shown in Figure 4(a), performance improves as 𝐾 max increases from 2 to 8, with diminishing returns beyond 𝐾 max = 8. Crucially, the continuous allocation 𝐾 (𝑥 ) = ⌊𝐾 max · 𝑢 (𝑥 )⌋ means that the majority of low-uncertainty samples incur 𝐾 (𝑥 ) = 0 and are served directly, so the average number of paths executed per instance re-mains well below 𝐾 max . This confirms that UTTSI scales gracefully: increasing 𝐾 max improves performance for the hardest instances while leaving efficient and confident samples unaffected. 
+
+Effect of 𝛼 . 𝛼 controls the relative weight of the frequency-based prior versus model logit confidence in the dual-signal uncertainty estimator. We vary 𝛼 over {0.01 , 0.05 , 0.1, 0.2, 0.5}. As shown in Figure 4(b), performance is stable across a wide range ( 0.05 –0.2), confirming that the dual-signal uncertainty score is robust to the exact weighting of the frequency prior. Very small 𝛼 underweights the population-level sparsity signal, reducing uncertainty discrimi-nation for sparse samples, while very large 𝛼 overrides the model’s own confidence signal. We set 𝛼 = 0.05 as the default, which pro-vides the best balance between two signals. 
+
+Effect of adaptive filtering threshold. 𝜌 is the shared per-field quantile used to compute Stage 1 filtering thresholds {𝜏 𝑖 },governing how aggressively low-scoring features are removed. We vary 𝜌 over {0.1, 0.2, 0.3, 0.4, 0.5}. Performance is stable across 
+
+𝜌 ∈ [ 0.1, 0.3], with 𝜌 = 0.2 achieving the best balance between noise removal and signal preservation. When 𝜌 = 0 (no filtering), both confident and uncertain instances suffer from unfiltered noisy features, degrading overall AUC. When 𝜌 exceeds 0.4, overly aggres-sive filtering begins to remove informative rare features, harming the prediction performance in the tail-sample. 
+
+Effect of 𝛽 . 𝛽 balances frequency reliability and gradient attri-bution in the composite feature score 𝑤 (𝑓 𝑖 ), which is shared by both Stage 1 filtering and Stage 2 path sampling. We vary 𝛽 over 
+
+{0.1, 0.2, 0.4, 0.6, 0.8}. Performance is stable across 𝛽 ∈ [ 0.2, 0.6],with 𝛽 = 0.4 optimal. Very small 𝛽 over-weights attribution, re-taining noise features with high gradient norms; very large 𝛽 over-weights frequency, discarding informative rare features. 
+
+Effect of 𝜆 . 𝜆 controls the sharpness of consistency weight-ing in aggregation, determining how strongly outlier paths are down-weighted relative to the ensemble majority. We vary 𝜆 over 
+
+{1, 3, 5, 10 , 20 }. AUC is insensitive to 𝜆 within [1, 10 ] (all values within 0.0005 AUC of the optimum), since consistency weighting primarily suppresses catastrophic outlier paths, and moderate 𝜆 
+
+achieves this effect. Beyond 𝜆 = 20 , overly sharp weighting approx-imates winner-take-all selection, losing the benefit of ensembling. 
+
+Effect of 𝑇 . 𝑇 is the number of iterative Bernoulli sampling steps used to construct each feature path in Stage 2, controlling the coverage and diversity of each exploration path. We vary 𝑇 
+
+over {1, 5, 10 , 20 , 30 } while fixing all other hyperparameters. Per-formance improves steadily from 𝑇 = 1 to 𝑇 = 10 , as more steps allow the path construction process to consider a broader set of feature combinations. Beyond 𝑇 = 10 , gains plateau and perfor-mance remains stable up to 𝑇 = 30 , indicating that the feature space is sufficiently explored within 10 steps for the feature set sizes encountered in our datasets. Very small 𝑇 (e.g., 𝑇 = 1) limits exploration diversity, as paths terminate early with too few features sampled, reducing coverage of high-attribution rare features. We set 𝑇 = 10 as the default, which achieves a good balance between exploration quality and computational cost. Together, these results confirm that UTTSI is robust across all key hyperparameters and generalizes reliably across different hy-perparameter settings. 
+
+## 5.6 Uncertainty Calibration (RQ4) 
+
+A fundamental requirement for any uncertainty-triggered system is that the estimated uncertainty score should correlate with actual prediction error. If the uncertainty estimator is poorly calibrated, high-uncertainty instances may not actually be harder to predict, and routing them to multi-path exploration would yield no benefit. In this subsection, we analyze the calibration of UTTSI’s dual-signal uncertainty estimator and its correlation with prediction error. 
+
+Uncertainty-Error Correlation. We sort all test instances on the Industrial dataset by their estimated uncertainty score 𝑢 (𝑥 )
+
+and partition them into deciles. For each decile, we compute the average squared prediction error |𝜎 (logit (𝑥 )) − 𝑦 |2 of the base model’s direct score (without any UTTSI processing). The mean prediction error increases monotonically with estimated uncer-tainty across all deciles. The Spearman rank correlation between 
+
+𝑢 (𝑥 ) and squared prediction error is 𝜌 = 0.91 on the Industrial Woodstock ’18, June 03–05, 2018, Woodstock, NY Moyu Zhang, Yun Chen, Yujun Jin, Jinxin Hu, Yu Zhang, and Xiaoyi Zeng                             
+
+> Stratum OptFu UTTSI Δ
+> Low ( 𝑢 (𝑥 )<0.3)0.8241 0.8254 +0.0013 Medium ( 0.3≤𝑢 (𝑥 )<0.7)0.7985 0.8012 +0.0027 High ( 𝑢 (𝑥 ) ≥ 0.7)0.7621 0.7709 +0.0088 Overall 0.7933 0.7979 +0.0046
+
+Table 3: AUC by uncertainty stratum on the Industrial dataset (OptFu backbone). UTTSI allocates the most exploration bud-get to the high-uncertainty stratum, where gains are largest. 
+
+dataset, confirming that the dual-signal estimator reliably identifies instances where the base model is likely to err. By contrast, using logit confidence alone (i.e., the UTTSI-w/o-Dual variant) yields a substantially lower Spearman correlation of 𝜌 = 0.76 , consistent with the ablation results in RQ2 and validating the necessity of the frequency-based prior for uncertainty discrimination. We further verify this calibration property on the Criteo and Avazu datasets, obtaining Spearman correlations of 𝜌 = 0.88 and 𝜌 = 0.86 respec-tively for the dual-signal estimator, versus 𝜌 = 0.71 and 𝜌 = 0.73 
+
+for logit-only confidence. The consistent calibration superiority across three datasets with distinct feature structures confirms that the dual-signal design generalizes beyond the industrial setting. 
+
+Performance Across Uncertainty Strata. To further under-stand where UTTSI’s gains originate, we compare the AUC of the base model versus OptFu [ 54 ]+UTTSI separately on low-uncertainty (bottom 30% by 𝑢 (𝑥 )), medium-uncertainty (middle 40%), and high-uncertainty (top 30%) subgroups of the Industrial test set. The re-sults are summarized in Table 3. The results reveal a clear pattern: UTTSI provides a consistent positive gain across all uncertainty strata. Even for low-uncertainty samples ( 𝐾 (𝑥 ) = 0), the adaptive feature filtering removes features with unreliable representations and yields a modest but consis-tent AUC improvement of +0.0013 (𝑝 < 0.05 , paired permutation test), confirming that the gain is not spurious. Medium-uncertainty samples benefit more substantially, and high-uncertainty samples achieve the largest gain of +0.0088 thanks to multi-path exploration. This stratified pattern confirms that UTTSI’s design is coherent: feature filtering benefits all instances, while additional exploration paths are reserved for the hardest cases: it invests additional infer-ence resources exactly where the base model is weakest, without degrading the overall efficiency of the system. These results con-firm that both uncertainty calibration and multi-path exploration are necessary: the former ensures budget is not wasted on easy instances, and the latter converts that budget into the prediction performance gains on hard ones. 
+
+## 5.7 Online A/B Testing Results 
+
+To validate real-world efficacy, we deployed UTTSI in a seven-day online A/B test on a large-scale e-commerce platform from April 15 to 21, 2026. Compared against a production baseline model with a PEPNet-like architecture [5], UTTSI achieved a 5.3% relative im-provement in click-through rate ( 𝑝 < 0.01 , two-sided 𝑧 -test on daily CTR metrics across the seven-day window, with randomized traffic splitting at the user level). This CTR improvement is substantially larger than the offline AUC delta because online CTR measures the top-ranked items’ actual click yield, where even small ranking improvements at the head of the recommendation list translate into large relative CTR gains. This statistically significant gain in a live production environment provides compelling evidence of the framework’s practical value. 
+
+Computational overhead analysis. To quantify the practical overhead introduced by UTTSI, we measure the average number of model calls per instance on the Industrial dataset. With 𝐾 max = 8,
+
+𝛼 = 0.05 , and 𝜌 = 0.2, the empirical distribution of 𝐾 (𝑥 ) reveals that approximately 62% of samples receive 𝐾 (𝑥 ) = 0 (adaptive fea-ture filtering only), 21% receive 𝐾 (𝑥 ) ∈ { 1, 2}, and the remaining 17% receive 𝐾 (𝑥 ) ≥ 3. Every instance requires one base model call (forward pass with gradient attribution for uncertainty estimation) and one refined forward pass on ˆF; uncertain instances addition-ally receive 𝐾 (𝑥 ) exploration forward passes. This amounts to an average of approximately 2.8 model calls per instance, representing a 2.8× overhead relative to the base model. The refinement pass uses the same model architecture with a masked input, so its cost is comparable to the base forward pass. Given that all exploration paths are fully independent and parallelizable, this overhead trans-lates directly to additional parallel compute capacity rather than increased wall-clock latency in a horizontally scaled serving sys-tem. When the serving infrastructure supports at most 𝐾 max parallel scoring workers, UTTSI’s worst-case latency equals one base model forward pass, which is equivalent to the original serving latency. This makes UTTSI particularly well-suited to industrial systems where parallel compute is readily available but strict latency SLAs must be maintained. 
+
+Frequency index maintenance. In production, the frequency index is not static: new items and users are introduced daily, and existing feature values accumulate additional impressions over time. To keep the frequency prior current, we maintain the Count-Min Sketch structure with daily incremental updates: at the end of each day, the previous day’s impression logs are merged into the sketch by replaying the hash-and-increment operations for each observed feature value. Because the Count-Min Sketch supports monotone increments and its minimum-across-tables estimator remains valid after incremental updates, no full recomputation is required; only the new day’s records need to be processed, making the update cost proportional to the daily impression volume rather than the full historical corpus. The normalized counts ˜𝑠 𝑓 𝑟𝑒𝑞 (𝑓 𝑖 ) and the per-field filtering thresholds {𝜏 𝑖 } are recomputed from the updated sketch after each nightly merge and pushed to the serving layer before the next day’s traffic, ensuring that uncertainty estimates and filtering decisions reflect up-to-date feature coverage. During the A/B test window, this daily refresh cycle maintained stable calibration: the Spearman correlation between 𝑢 (𝑥 ) and observed prediction error did not degrade across 7 days, confirming that incremental updates are sufficient to track the distribution of feature frequencies. 
+
+## 6 Conclusions 
+
+In this paper, we proposed a model-agnostic training-free Uncertainty-Triggered Test-Time Selective Inference framework (UTTSI) that addresses a fundamental limitation overlooked by training-centric CTR research: test-time prediction reliability varies substantially across instances due to feature sparsity, yet no existing mechanism allocates computation selectively to compensate for this variability. UTTSI resolves this through three coordinated steps: (1) dual-signal uncertainty estimation that combines model logit confidence with Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration Woodstock ’18, June 03–05, 2018, Woodstock, NY 
+
+a frequency prior to produce a per-instance reliability score; (2) adaptive feature filtering applied to every instance to remove embed-dings with insufficient training support; and (3) selective multi-path exploration for uncertain instances, whose diverse predictions are aggregated via consistency-weighted ensembling. The framework is plug-and-play, requiring no retraining or architectural changes, and is compatible with any CTR backbone. Experiments across four datasets and a seven-day online A/B test confirm consistent improvements, with 2.8× average computational overhead (one refinement pass for all instances plus selective multi-path explo-ration for uncertain ones) manageable within industrial serving constraints. These results establish selective inference at test time as a principled and complementary direction to training-phase advances for CTR prediction. 
+
+## References 
+
+[1] Martín Abadi, Paul Barham, Jianmin Chen, Zhifeng Chen, Andy Davis, Jeffrey Dean, Matthieu Devin, Sanjay Ghemawat, Geoffrey Irving, Michael Isard, et al. 2016. Tensorflow: A system for large-scale machine learning. In 12th USENIX symposium on operating systems design and implementation (OSDI 16) .[2] Surat Teerapittayanon, Bradley McDanel, and H. T. Kung. 2016. BranchyNet: Fast Inference via Early Exiting from Deep Neural Networks. In Proceedings of the 23rd International Conference on Pattern Recognition (ICPR) . 2464–2469. [3] Bo Chen, Yichao Wang, Zhirong Liu, Ruiming Tang, Wei Guo, Hongkun Zheng, Weiwei Yao, Muyu Zhang, Xiuqiang He. 2021. Enhancing Explicit and Implicit Feature Interactions via Information Sharing for Parallel Deep CTR Models. In Proceedings of the 30th ACM International Conference on Information and Knowledge Management (CIKM) . (Nov. 2021), 3757-3766. [4] Guoxin Chen, Minpeng Liao, Chengxi Li, and Kai Fan. 2024. AlphaMath Almost Zero: Process Supervision without Process. In Proceedings of the Advances in Neu-ral Information Processing Systems 38: Annual Conference on Neural Information Processing Systems (NIPS) . (Dec. 2024). [5] Jianxin Chang, Chenbin Zhang, Yiqun Hui, Dewei Leng, Yanan Niu, Yang Song, and Kun Gai. 2023. PEPNet: Parameter and Embedding Personalized Network for Infusing with Personalized Prior Information. In Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD) . (Aug. 2023), 3795-3804. [6] Heng-Tze Cheng, Levent Koc, Jeremiah Harmsen, Tal Shaked, Tushar Chandra, Hrishi Aradhye, Glen Anderson, Greg Corrado, Wei Chai, Mustafa Ispir, Rohan Anil, Zakaria Haque, Lichan Hong, Vihan Jain, Xiaobing Liu, and Hemal Shah. 2016. Wide & Deep Learning for Recommender Systems. In Proceedings of the 1st Workshop on Deep Learning for Recommender Systems (DLRS@RecSys) . (Sep. 2016), 7-10. [7] Jiaxin Deng, Shiyao Wang, Kuo Cai, Lejian Ren, Qigen Hu, Weifeng Ding, Qiang Luo, and Guorui Zhou. 2025. OneRec: Unifying Retrieve and Rank with Generative Recommender and Iterative Preference Alignment. arXiv preprint arXiv:2502.18965 (2025). [8] Yizhou Dang, Yuting Liu, Enneng Yang, Minhan Huang, Guibing Guo, Jianzhe Zhao, and Xingwei Wang. 2025. Data Augmentation as Free Lunch: Exploring the Test-Time Augmentation for Sequential Recommendation. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR) . (Jul. 2025), 1466-1475. [9] Xidong Feng, Ziyu Wan, Muning Wen, Stephen Marcus McAleer, Ying Wen, Weinan Zhang, and Jun Wang. 2024. AlphaZero-Like Tree-Search can Guide Large Language Model Decoding and Training. In Proceedings of the 41st International Conference on Machine Learning (ICML) . (Jul. 2024). [10] Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, and Xiuqiang He. 2017. Deepfm: a factorization-machine based neural network for ctr prediction. In 
+
+Proceedings of the 26th International Joint Conference on Artificial Intelligence (IJCAI) . Melbourne, Australia., 2782–2788. [11] Shijie Geng, Shuchang Liu, Zuohui Fu, Yingqiang Ge, and Yongfeng Zhang. 2022. Recommendation as language processing (rlp): A unified pretrain, personalized prompt & predict paradigm (p5). In Proceedings of the 16th ACM Conference on Recommender Systems . 299–315. [12] Xingzhuo Guo, Junwei Pan, Ximei Wang, Baixu Chen, Jie Jiang, Mingsheng Long. 2024. On the Embedding Collapse when Scaling up Recommendation Models. In Proceedings of the 41st International Conference on Machine Learning (ICML) .2024. [13] Xavier Glorot and Yoshua Bengio. 2010. Understanding the difficulty of training deep feedforward neural networks. In Proceedings of the thirteenth international conference on artificial intelligence and statistics . 249–256. [14] Ruidong Han, Bin Yin, Shangyu Chen, He Jiang, Fei Jiang, Xiang Li, Chi Ma, Mincong Huang, Xiaoguang Li, Chunzhen Jing, Yueming Han, Menglei Zhou, Lei Yu, Chuan Liu, and Wei Lin. 2025. MTGR: Industrial-Scale Generative Recom-mendation Framework in Meituan. arXiv preprint arXiv:2502.18965 (2025). [15] Tongwen Huang, Zhiqi Zhang, and Junlin Zhang. 2019. FiBiNET: combining fea-ture importance and bilinear feature interaction for click-through rate prediction. In Proceedings of ACM Conference on Recommender Systems (RecSys) . 169–177. [16] Wenyue Hua, Shuyuan Xu, Yingqiang Ge, and Yongfeng Zhang. 2023. How to index item ids for recommendation foundation models. In Proceedings of the Annual International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR) . 195–204. [17] Pengyue Jia, Yejing Wang, Zhaocheng Du, Xiangyu Zhao, Yichao Wang, Bo Chen, Wanyu Wang, Huifeng Guo, and Ruiming Tang. 2024. ERASE: Benchmarking Feature Selection Methods for Deep Recommender Systems. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD) .(Aug. 2024), 5194-5205. [18] Graham Cormode and S. Muthukrishnan. 2005. An Improved Data Stream Sum-mary: The Count-Min Sketch and its Applications. Journal of Algorithms . 55, 1 (2005), 58–75. [19] Kaggle. 2014. Criteo Display Advertising Challenge. https://www.kaggle.com/c/criteo-display-ad-challenge. [20] Kaggle. 2015. Avazu Click-Through Rate Prediction. https://www.kaggle.com/c/avazu-ctr-prediction. [21] Jikun Kang, Xin Zhe Li, Xi Chen, Amirreza Kazemi, Qianyi Sun, Boxing Chen, Dong Li, Xu He, Quan He, Feng Wen, Jianye Hao, and Jun Yao. 2024. MindStar: Enhancing Math Reasoning in Pre-trained LLMs at Inference Time. arXiv preprint arXiv: 2405.16265 .[22] Diederik P. Kingma and Jimmy Ba. 2015. Adam: A Method for Stochastic Opti-mization. In ICLR. [23] Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henryk Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, Yuhuai Wu, Behnam Neyshabur, Guy Gur-Ari, and Vedant Misra. 2022. Solving Quantitative Reasoning Problems with Language Models. In Pro-ceedings of the Advances in Neural Information Processing Systems 35: Annual Conference on Neural Information Processing Systems (NIPS) . (Nov. 2022). [24] Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. 2024. Let’s Verify Step by Step. In Proceedings of the 12th International Conference on Learning Representations (ICLR) . (May. 2024). [25] Jianxun Lian, Xiaohuan Zhou, Fuzheng Zhang, Zhongxia Chen, Xing Xie, and Guangzhong Sun. 2018. xDeepFM: Combining Explicit and Implicit Feature In-teractions for Recommender Systems. In Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining (KDD) . (Aug. 2018), 1754-1763. [26] Jiaqi Ma, Zhe Zhao, Xinyang Yi, Jilin Chen, Lichan Hong, and Ed H Chi. 2018. Modeling task relationships in multi-task learning with multi-gate mixture-of-experts. In Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining (KDD) . London, UK, 1930–1939. [27] Junwei Pan, Wei Xue, Ximei Wang, Haibin Yu, Xun Liu, Shijie Quan, Xueming Qiu, Dapeng Liu, Lei Xiao, and Jie Jiang. 2024. Ads Recommendation in a Collapsed and Entangled World. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD) . (Aug. 2024), 5566-5577. [28] Steffen Rendle. 2010. Factorization Machines. In Proceedings of the 10th IEEE International Conference on Data Mining (ICDM) . (Dec. 2020), 995-1000. [29] Shashank Rajput, Nikhil Mehta, Anima Singh, Raghunandan Hulikal Keshavan, Trung Vu, Lukasz Heldt, Lichan Hong, Yi Tay, Vinh Tran, Jonah Samost, et al. 2023. Recommender systems with generative retrieval. In Advances in Neural Information Processing Systems 36 (2023) , 10299–10315. [30] Avi Singh, John D. Co-Reyes, Rishabh Agarwal, Ankesh Anand, Piyush Patil, Xavier Garcia, Peter J. Liu, James Harrison, Jaehoon Lee, Kelvin Xu, Aaron Parisi, Abhishek Kumar, Alex Alemi, Alex Rizkowsky, Azade Nova, Ben Adlam, Bernd Bohnet, Gamaleldin Elsayed, Hanie Sedghi, Igor Mordatch, Isabelle Simpson, Izzeddin Gur, Jasper Snoek, Jeffrey Pennington, Jiri Hron, Kathleen Kenealy, Kevin Swersky, Kshiteej Mahajan, Laura Culp, Lechao Xiao, Maxwell L. Bileschi, Noah Constant, Roman Novak, Rosanne Liu, Tris Warkentin, Yundi Qian, Yamini Bansal, Ethan Dyer, Behnam Neyshabur, Jascha Sohl-Dickstein, and Noah Fiedel. 2024. Beyond Human Data: Scaling Self-Training for Problem-Solving with Language Models. In Transactions on Machine Learning Research .[31] Badrul Sarwar, George Karypis, Joseph Konstan, and John Riedl. 2001. Item-based collaborative filtering recommendation algorithms. In Proceedings of the 10th international conference on World Wide Web . 285–295. [32] Qingquan Song, Dehua Cheng, Hanning Zhou, Jiyan Yang, Yuandong Tian, and Xia Hu. 2020. Towards Automated Neural Interaction Discovery for Click-Through Rate Prediction. In Proceedings of the 26th ACM SIGKDD Conference on Knowledge Discovery & Data Mining (KDD) . 945–955. [33] Weiping Song, Chence Shi, Zhiping Xiao, Zhijian Duan, Yewen Xu, Ming Zhang, and Jian Tang. 2019. AutoInt: Automatic Feature Interaction Learning via SelfAt-tentive Neural Networks. In Proceedings of the 28th ACM International Conference Woodstock ’18, June 03–05, 2018, Woodstock, NY Moyu Zhang, Yun Chen, Yujun Jin, Jinxin Hu, Yu Zhang, and Xiaoyi Zeng 
+
+on Information and Knowledge Management (CIKM) . 1161–1170. [34] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. 2024. DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models. arXiv preprint arXiv:2402.03300 .[35] Gemini Team. Gemini 1.5: 2024. Unlocking Multimodal Understanding Across Millions of Tokens of Context. [36] Hongyan Tang, Junning Liu, Ming Zhao, and Xudong Gong. 2020. Progressive layered extraction (ple): A novel multi-task learning (mtl) model for personalized recommendations. In Fourteenth ACM Conference on Recommender Systems . 269– 278. [37] Juntao Tan, Shuyuan Xu, Wenyue Hua, Yingqiang Ge, Zelong Li, and Yongfeng Zhang. 2024. Idgenrec: Llm-recsys alignment with textual id learning. In Proceed-ings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR) . 355–364. [38] Ye Tian, Baolin Peng, Linfeng Song, Lifeng Jin, Dian Yu, Haitao Mi, and Dong Yu. 2024. Toward Self-Improvement of LLMs via Imagination, Searching, and Criticizing. In Proceedings of the Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems (NIPS) . (Dec. 2024). [39] Fangye Wang, Hansu Gu, Dongsheng Li, Tun Lu, Peng Zhang, and Ning Gu. 2023. Towards Deeper, Lighter and Interpretable Cross Network for CTR Prediction. In Proceedings of the 32nd ACM International Conference on Information and Knowledge Management (CIKM) . (Oct. 2023), 2523-2533. [40] Fangye Wang, Yingxu Wang, Dongsheng Li, Hansu Gu, Tun Lu, Peng Zhang, and Ning Gu. 2022. Enhancing CTR Prediction with Context-Aware Feature Representation Learning. In Proceedings of the 45th International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR) . (Jul. 2022), 343-352. [41] Hong Wen, Jing Zhang, Fuyu Lv, Wentian Bao, Tianyi Wang, and Zulong Chen. 2021. Hierarchically Modeling Micro and Macro Behaviors via Multi-Task Learn-ing for Conversion Rate Prediction. In Proceedings of the 44th International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR) .[42] Hong Wen, Jing Zhang, Yuan Wang, Fuyu Lv, Wentian Bao, Quan Lin, and Keping Yang. 2020. Entire space multi-task modeling via post-click behavior decom-position for conversion rate prediction. In Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR) . 2377–2386. [43] Ruoxi Wang, Bin Fu, Gang Fu, and Mingliang Wang. 2017. Deep & Cross Network for Ad Click Predictions. In Proceedings of the ADKDD’17 . (Aug. 2017), 12:1-12:7. [44] Ruoxi Wang, Rakesh Shivanna, Derek Zhiyuan Cheng, Sagar Jain, Dong Lin, Lichan Hong, and Ed H. Chi. 2021. DCN V2: Improved Deep & Cross Network and Practical Lessons for Web-scale Learning to Rank Systems. In Proceedings of the 30th Web Conference (WWW) . (Apr. 2021), 1785-1797. [45] Wenjie Wang, Honghui Bao, Xinyu Lin, Jizhi Zhang, Yongqi Li, Fuli Feng, SeeKiong Ng, and Tat-Seng Chua. 2024. Learnable item tokenization for genera-tive recommendation. In Proceedings of the 33rd ACM International Conference on Information and Knowledge Management (CIKM) . 2400–2409. [46] Zhiqiang Wang, Qingyun She, Junlin Zhang. 2021. MaskNet: Introducing Feature-Wise Multiplication to CTR Ranking Models by Instance-Guided Mask. In Pro-ceedings of DLP-KDD .[47] Mingjia Yin, Junwei Pan, Hao Wang, Ximei Wang, Shangyu Zhang, Jie Jiang, Defu Lian, and Enhong Chen. 2025. From Feature Interaction to Feature Generation: A Generative Paradigm of CTR Prediction Models. In Proceedings of the 42nd International Conference on Machine Learning (ICML) . (Jul. 2025). [48] Zheng Yuan, Hongyi Yuan, Chengpeng Li, Guanting Dong, Keming Lu, Chuanqi Tan, Chang Zhou, and Jingren Zhou. 2023. Scaling Relationship on Learning Math-ematical Reasoning with Large Language Models. arxiv preprint arXiv:2308.01825 .[49] Bowen Zheng, Yupeng Hou, Hongyu Lu, Yu Chen, Wayne Xin Zhao, Ming Chen, and Ji-Rong Wen. 2024. Adapting large language models by integrating collaborative semantics for recommendation. In 2024 IEEE 40th International Conference on Data Engineering (ICDE) . IEEE, 1435–1448. [50] Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah D. Goodman. 2022. STaR: Boot-strapping Reasoning With Reasoning. In Advances in Neural Information Pro-cessing Systems 35: Annual Conference on Neural Information Processing Systems (NIPS) . (Nov. 2022). [51] Jing Zhang and Dacheng Tao. 2021. Empowering Things With Intelligence: A Survey of the Progress, Challenges, and Opportunities in Artificial Intelligence of Things. IEEE Internet of Things Journal . 8(10), 7789–7817. [52] Moyu Zhang, Yongxiang Tang, Jinxin Hu, and Yu Zhang. 2024. Scenario-Adaptive Fine-Grained Personalization Network: Tailoring User Behavior Representation to the Scenario Context. In Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR) . (Jul. 2024), 1557-1566. [53] Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao, Zhaojie Gong, Fangda Gu, Jiayuan He, Yinghai Lu, and Yu Shi. 2024. Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations. In Proceedings of the 41st International Conference on Machine Learning (ICML) . (Jul. 2024). [54] Kexin Zhang, Fuyuan Lyu, Xing Tang, Dugang Liu, Chen Ma, Kaize Ding, Xi-uqiang He, and Xue Liu. 2025. Fusion Matters: Learning Fusion in Deep Click-through Rate Prediction Models. In Proceedings of the Eighteenth ACM Interna-tional Conference on Web Search and Data Mining (WSDM) . (Mar. 2025), 744-753. [55] Weinan Zhang, Jiarui Qin, Wei Guo, Ruiming Tang, and Xiuqiang He. 2021. Deep Learning for Click-Through Rate Estimation. In Proceedings of the Thirtieth International Joint Conference on Artificial Intelligence (IJCAI) . (Aug. 2021), 4695-4703. [56] Guorui Zhou, Xiaoqiang Zhu, Chenru Song, Ying Fan, Han Zhu, Xiao Ma, Yanghui Yan, Junqi Jin, Han Li, and Kun Gai. 2018. Deep interest network for click-through rate prediction. In Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining (KDD) . 1059–1068. [57] Jie Zhu, Zhifang Fan, Xiaoxie Zhu, Yuchen Jiang, Hangyu Wang, Xintian Han, Haoran Ding, Xinmin Wang, Wenlin Zhao, Zhen Gong, Huizhi Yang, Zheng Chai, Zhe Chen, Yuchao Zheng, Qiwei Chen, Feng Zhang, Xun Zhou, Peng Xu, Xiao Yang, Di Wu, Zuotao Liu. 2025. RankMixer: Scaling Up Ranking Models in Industrial Recommenders. arXiv preprint arXiv:2507.15551 (2025). [58] Moyu Zhang, Yun Chen, Yujun Jin, Jinxin Hu, and Yu Zhang. 2025. DGenCTR:Towards a Universal Generative Paradigm for Click-Through Rate Prediction via Discrete Diffusion. arXiv preprint arXiv:2508.14500 (2025).

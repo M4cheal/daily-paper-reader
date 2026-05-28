@@ -6,32 +6,38 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-27
-- 运行时间：2026-05-27 21:34:10 UTC
+- 最新运行日期：2026-05-28
+- 运行时间：2026-05-28 21:07:56 UTC
 - 运行状态：成功
-- 本次总论文数：4
+- 本次总论文数：6
 - 精读区：3
-- 速读区：1
+- 速读区：3
 
 ### 今日简报（AI）
-今日精读三篇，聚焦在线模型选择与自适应MPC，其中高光为敏捷在线模型选择与时间嵌入MPC。最值得关注的两篇：Agile Online Model Selection以高学习率解决自适应滞后，T2S-MPC针对时变动力学提供在线自适应控制。建议优先精读这两篇，掌握动态环境下的模型快速适应策略。
-- 详情：[/202605/27/README](/202605/27/README)
+今日聚焦测试时自适应与计算缩放，特别在点击率预测和模型可学习性上取得突破；推荐精读《Selective Test-Time Compute Scaling》和《On the Learnability of Test-Time Adaptation》，前者通过不确定性触发特征路径探索提升效率，后者从恢复复杂度视角分析可学习性；普通读者可关注测试时优化方法在有限标注资源下的潜力，并尝试在自身任务中引入不确定性机制。
+- 详情：[/202605/28/README](/202605/28/README)
 
 ### 精读区论文标签
-1. [Agile Online Model Selection: Resolving Adaptation Lag via Safeguarded Large Learning Rates](/202605/27/2605.26919v1-agile-online-model-selection-resolving-adaptation-lag-via-safeguarded-large-learning-rates)  
+1. [Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration](/202605/28/2605.24989v1-selective-test-time-compute-scaling-for-click-through-rate-prediction-via-uncertainty-triggered-feature-path-exploration)  
    标签：评分：9.0/10、query:tta
-   evidence：在线模型选择解决非平稳环境下的适应滞后
-2. [T2S-MPC: Time-Embedded Online Adaptive Model Predictive Control for Time-Varying Dynamics](/202605/27/2605.24852v1-t2s-mpc-time-embedded-online-adaptive-model-predictive-control-for-time-varying-dynamics)  
+   evidence：CTR预测的测试时计算缩放
+2. [On the Learnability of Test-Time Adaptation: A Recovery Complexity Perspective](/202605/28/2605.28057v1-on-the-learnability-of-test-time-adaptation-a-recovery-complexity-perspective)  
+   标签：评分：9.0/10、query:tta
+   evidence：提出了测试时间自适应的可学习性理论框架，包括恢复复杂度
+3. [RW-TTT: Batched Serving for Request-Owned Test-Time Training State](/202605/28/2605.28053v1-rw-ttt-batched-serving-for-request-owned-test-time-training-state)  
    标签：评分：8.0/10、query:tta
-   evidence：提出在线自适应学习残差动力学模型，适配流式数据的在线测试时自适应
-3. [Selective Test-Time Compute Scaling for Click-Through Rate Prediction via Uncertainty-Triggered Feature Path Exploration](/202605/27/2605.24989v1-selective-test-time-compute-scaling-for-click-through-rate-prediction-via-uncertainty-triggered-feature-path-exploration)  
-   标签：评分：8.0/10、query:tta
-   evidence：为点击率预测的选择性测试时计算扩展
+   evidence：在线测试时训练的批量服务方法
 
 ### 速读区论文标签
-1. [Dynamic TMoE: A Drift-Aware Dynamic Mixture of Experts Framework for Non-Stationary Time Series Forecasting](/202605/27/2605.20678v1-dynamic-tmoe-a-drift-aware-dynamic-mixture-of-experts-framework-for-non-stationary-time-series-forecasting)  
+1. [Towards end-to-end LLM-based censoring-aware survival analysis](/202605/28/2605.25399v1-towards-end-to-end-llm-based-censoring-aware-survival-analysis)  
+   标签：评分：7.0/10、query:tta
+   evidence：基于LLM的生存分析，测试时风险聚合
+2. [HyLoVQA: Dynamic Hypernetwork-Generated Low-Rank Adaptation for Continual Visual Question Answering](/202605/28/2605.22035v1-hylovqa-dynamic-hypernetwork-generated-low-rank-adaptation-for-continual-visual-question-answering)  
    标签：评分：6.0/10、query:tta
-   evidence：漂移感知动态专家混合用于非平稳时间序列
+   evidence：利用超网络生成的LoRA适配器进行连续视觉问答中的非平稳流适应
+3. [MATO: Multi-objective Personalized Alignment with Test-time Optimization for Large Language Models](/202605/28/2605.25342v1-mato-multi-objective-personalized-alignment-with-test-time-optimization-for-large-language-models)  
+   标签：评分：6.0/10、query:tta
+   evidence：测试时优化用于大语言模型对齐
 
 
 <div class="dpr-home-promo-card">
