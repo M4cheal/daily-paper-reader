@@ -1,21 +1,21 @@
 ---
 title: Self-Bootstrapping for Versatile Test-Time Adaptation
-title_zh: 自举式通用测试时自适应
+title_zh: 自引导通用测试时自适应
 authors: "Shuaicheng Niu, Guohao Chen, Peilin Zhao, Tianyi Wang, Pengcheng Wu, Zhiqi Shen"
 date: 2025-05-01
 pdf: "https://openreview.net/pdf?id=Li4rieeClO"
 tags: ["query:tta"]
 score: 8.0
-evidence: 适用于分类和回归的通用TTA目标
-tldr: 现有TTA目标多针对特定任务。本文提出自举方案，通过优化测试图像与其退化视图的预测一致性，实现分类、回归、目标检测和像素级任务的通用TTA。分析表明低频信息保留是关键，实验证明该方法在多种分布偏移下均有效。
+evidence: 直接提出适用于像素级预测的通用测试时自适应方法
+tldr: 该文针对测试时自适应（TTA）提出一个自引导框架，通过优化测试图像与其退化视图的预测一致性来适应分布偏移。核心在于设计既能保留几何信息（如目标大小和位置）又提供足够学习信号的劣化增强。在频域分析中揭示分布偏移对低频信息的影响，从而在像素级任务（如语义分割）中保持空间准确性。该方法在多种任务（分类、回归、像素级）上验证了有效性，尤其为需要精确空间预测的Referring Image Segmentation提供了直接的TTA解决方案。
 source: ICML-2025-Accepted
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/openreview/openreview-icml-2025-li4rieeclo/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1426, \"height\": 515, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-icml-2025-li4rieeclo/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1772, \"height\": 362, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-icml-2025-li4rieeclo/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 876, \"height\": 644, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-icml-2025-li4rieeclo/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 846, \"height\": 364, \"label\": \"Figure\"}, {\"url\": \"assets/figures/openreview/openreview-icml-2025-li4rieeclo/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1586, \"height\": 1270, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1770, \"height\": 547, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 781, \"height\": 311, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1502, \"height\": 382, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1683, \"height\": 347, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 853, \"height\": 262, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1771, \"height\": 494, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 858, \"height\": 342, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 862, \"height\": 228, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 857, \"height\": 96, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 858, \"height\": 452, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1771, \"height\": 338, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 856, \"height\": 369, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-013.webp\", \"caption\": \"\", \"page\": 0, \"index\": 13, \"width\": 855, \"height\": 439, \"label\": \"Table\"}, {\"url\": \"assets/tables/openreview/openreview-icml-2025-li4rieeclo/table-014.webp\", \"caption\": \"\", \"page\": 0, \"index\": 14, \"width\": 608, \"height\": 345, \"label\": \"Table\"}]"
-motivation: 需要一种适用于多种视觉任务的统一TTA目标。
-method: 通过自举优化测试图像与其退化视图的一致性。
-result: 在分类、回归、检测和分割任务上均取得优异性能。
-conclusion: 自举方案提供了跨任务的通用TTA解决方案。
+motivation: 现有TTA方法多针对特定任务，缺乏统一框架，且对于像素级任务（如分割）需保留几何信息。
+method: 提出自引导方案，通过优化测试图像与其频域感知退化视图的一致性来实现TTA，并设计保留几何信息的低频增强。
+result: 在图像分类、目标检测和语义分割等多个任务上超越现有TTA方法，尤其保持了像素级预测的空间准确性。
+conclusion: 所提通用TTA框架可有效处理多种分布偏移，并为像素级任务提供稳健的适应策略，具有广泛适用性。
 ---
 
 ## Abstract
