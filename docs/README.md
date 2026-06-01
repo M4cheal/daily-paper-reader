@@ -6,39 +6,42 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-31
-- 运行时间：2026-05-31 20:28:38 UTC
+- 最新运行日期：2026-06-01
+- 运行时间：2026-06-01 22:39:18 UTC
 - 运行状态：成功
-- 本次总论文数：5
-- 精读区：1
-- 速读区：4
+- 本次总论文数：6
+- 精读区：5
+- 速读区：1
 
 ### 今日简报（AI）
-今日精读探索了协作并行思考减少搜索、提升测试时效率，速读覆盖机器人控制分布偏移、RAG上下文优化与提示方法。
+今日6篇论文精读5篇，重点围绕测试时自适应与多样性计算两大方向。
 
-最值得关注的方向是协作并行思考（高效测试时缩放）和机器人控制中离线到在线模仿学习的鲁棒自适应方案。
+强烈推荐《Test-Time Self-Adaptive Conditioning for Stable Audio-Driven Talking-Head Generation》和《Diversity Matters: Revisiting Test-Time Compute in Vision-Language Models》，前者解决音频驱动头像生成的稳定性，后者反思视觉语言模型中测试时计算的多样性价值。
 
-建议优先了解协作并行思考的实际应用，并关注梯度下降视角下的RAG优化思路。
-- 详情：[/202605/31/README](/202605/31/README)
+普通读者可关注“测试时自适应”技术如何提升多媒体生成效果，以及多样性在模型推理中的关键作用。
+- 详情：[/202606/01/README](/202606/01/README)
 
 ### 精读区论文标签
-1. [Share More, Search Less: Collaborative Parallel Thinking for Efficient Test-Time Scaling](/202605/31/2605.27030v1-share-more-search-less-collaborative-parallel-thinking-for-efficient-test-time-scaling)  
-   标签：评分：8.0/10、query:tta
-   evidence：面向大语言模型的测试时扩展
+1. [Test-Time Self-Adaptive Conditioning for Stable Audio-Driven Talking-Head Generation](/202606/01/2605.25488v1-test-time-self-adaptive-conditioning-for-stable-audio-driven-talking-head-generation)  
+   标签：评分：9.0/10、query:tta
+   evidence：测试时自适应条件推理框架
+2. [Diversity Matters: Revisiting Test-Time Compute in Vision-Language Models](/202606/01/2605.30713v1-diversity-matters-revisiting-test-time-compute-in-vision-language-models)  
+   标签：评分：9.0/10、query:tta
+   evidence：视觉语言模型的测试时计算策略，直接与测试时适应相关
+3. [UniScale: Adaptive Unified Inference Scaling via Online Joint Optimization of Model Routing and Test-Time Scaling](/202606/01/2605.30898v1-uniscale-adaptive-unified-inference-scaling-via-online-joint-optimization-of-model-routing-and-test-time-scaling)  
+   标签：评分：9.0/10、query:tta
+   evidence：在线联合优化模型路由与测试时缩放
+4. [Remembering by Reconstructing: Domain Incremental Learning With Test-Time Training on Video Streams](/202606/01/2605.31108v1-remembering-by-reconstructing-domain-incremental-learning-with-test-time-training-on-video-streams)  
+   标签：评分：9.0/10、query:tta
+   evidence：视频流上的在线测试时训练
+5. [Personalize Your Large Vision-language Models With In-context Prompt Tuning](/202606/01/2605.31513v1-personalize-your-large-vision-language-models-with-in-context-prompt-tuning)  
+   标签：评分：9.0/10、query:tta
+   evidence：通过上下文提示调优实现LVLM测试时自适应，无需推理时训练
 
 ### 速读区论文标签
-1. [How to Mitigate the Distribution Shift Problem in Robotics Control: A Robust and Adaptive Approach Based on Offline to Online Imitation Learning](/202605/31/2605.25414v1-how-to-mitigate-the-distribution-shift-problem-in-robotics-control-a-robust-and-adaptive-approach-based-on-offline-to-online-imitation-learning)  
+1. [EVIDENT: Routing MLLM Adaptation through Entity-Grounded Visual Evidence for Cross-Domain Video Temporal Grounding](/202606/01/2605.26104v1-evident-routing-mllm-adaptation-through-entity-grounded-visual-evidence-for-cross-domain-video-temporal-grounding)  
    标签：评分：7.0/10、query:tta
-   evidence：离线到在线自适应学习应对模仿学习中的分布偏移
-2. [In-Context Optimization for Retrieval-Augmented Generation: A Gradient-Descent Perspective](/202605/31/2605.26356v1-in-context-optimization-for-retrieval-augmented-generation-a-gradient-descent-perspective)  
-   标签：评分：7.0/10、query:tta
-   evidence：上下文学习与梯度下降的理论联系，可应用于测试时自适应
-3. [PinPoint: Prompting with Informative Interior Points](/202605/31/2605.26689v1-pinpoint-prompting-with-informative-interior-points)  
-   标签：评分：7.0/10、query:tta
-   evidence：在测试时通过提示工程改进指代图像分割
-4. [Modeling Dynamic Mixtures of Time-Delay Systems from Streaming Time Series](/202605/31/2605.26191v1-modeling-dynamic-mixtures-of-time-delay-systems-from-streaming-time-series)  
-   标签：评分：6.0/10、query:tta
-   evidence：流式时间序列的在线自适应建模
+   evidence：对多模态大模型进行跨域视频定位的适应，解决测试时的域偏移
 
 
 <div class="dpr-home-promo-card">
