@@ -1,0 +1,630 @@
+Title: Entropy Minimization without Model Collapse: Mitigating Prediction Bias in Medical Imaging
+
+URL Source: https://arxiv.org/pdf/2606.02339v1
+
+Published Time: Tue, 02 Jun 2026 03:12:49 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# Entropy Minimization without Model Collapse: Mitigating Prediction Bias in Medical Imaging 
+
+Tim Nielen 1∗
+
+, Sameer Ambekar 1,2,4,5 ∗
+
+, Johannes Kiechle 1,2,4,6 , Daniel M. Lang 1,2 †,Julia A. Schnabel 1,2,3,4,5 †
+
+> 1
+
+School of Computation, Information and Technology, Technical University of Munich, Germany 
+
+> 2
+
+Institute of Machine Learning in Biomedical Imaging, Helmholtz Munich, Germany 
+
+> 3
+
+School of Biomedical Engineering and Imaging Sciences, King’s College London, UK 
+
+> 4
+
+Munich Center for Machine Learning (MCML) 
+
+> 5
+
+relAI – Konrad Zuse School of Excellence in Reliable AI 
+
+> 6
+
+TUM University Hospital Rechts der Isar 
+
+## Abstract 
+
+Entropy minimization (EM) is the dominant objective for test-time adaptation, yet its failure mode, model collapse, remains poorly understood. In this work, we show that distribution shifts can cause feature clusters corresponding to distinct classes in the model’s representation space to merge, while the decision boundary remains fixed. This induces a systematic skew in the predicted class distribution, referred to as prediction bias. Prediction bias refers to a shift in the predicted class distribution, with some classes overrepresented and others suppressed. We show that entropy minimization amplifies this prediction bias by tightening the existing clusters, reinforcing the incorrect groupings until all predictions collapse to a trivial solution. Next, to demonstrate the significance of prediction bias and mitigate it, we further propose Distribution Shift Bias Reduction (DSBR), a bias-correcting objective that specifically targets this failure mode by equalizing the contribution of each predicted class to the unsupervised entropy minimization loss. To study this failure mode, we design suitable adaptation settings using four medical - imaging datasets and additionally evaluate on ImageNet - C. We find that DSBR consistently stabilizes test -time adaptation, prevents model collapse, and matches or outperforms state -of - the -art methods. Moreover, DSBR operates solely at test-time. 
+
+## 1 Introduction 
+
+Machine learning models face a fundamental challenge during real-world deployment: a model trained on source data must adapt to unseen data at inference time, without access to the training data or labels from the unseen deployment domain [ 9 , 80 , 86 ]. This challenge arises through distribution shifts caused by, e.g., changes in sensor properties [ 87 ], environmental conditions [ 31 ], and acquisition protocols [ 87 ] that alter the input data distribution while leaving the semantic task itself unchanged. Such shifts can lead to substantial drops in model performance when the learned representation is no longer well aligned with the target data [ 25 , 33 , 58 ]. Medical imaging is a particularly important example of this setting [ 76 ]. A pathology image acquired with a different scanner or stain remains semantically the same, yet becomes statistically misaligned with the source domain [ 34 , 70 ]. In these scenarios, the model’s confidence and prediction reliability can deteriorate significantly [4, 40, 70]. In natural vision, Entropy Minimization (EM) has emerged as the dominant objective for Test-Time Adaptation (TTA) methods designed to handle distribution shifts during deployment [ 49 , 56 , 60 , 78 ].                             
+
+> *Shared first-authorship †Shared last-authorship Preprint.
+> arXiv:2606.02339v1 [cs.LG] 1 Jun 2026 Unseen Domain
+> Hospital Nr. 5
+> After Adaptation
+> Training Domain
+> Hospital Nr. 2
+> Pre -Trained Before Adaptation
+> Feature Space Feature Space Feature Space
+> 𝑦 =Normal
+> 𝑦 )=Normal
+> 𝑦 =Tumor
+> 𝑦 )=Tumor
+> ytrue =Normal
+> ypred =Normal
+> 𝒚 tru e=𝐓𝐮𝐦𝐨𝐫
+> ypred =𝐍𝐨𝐫𝐦𝐚𝐥
+> ytrue =Tumor
+> ypred =Tumor
+> Entropy
+> Minimization
+> DSBR (ours )Distribution Shift
+> Clusters Merge
+> →Prediction Bias
+> Model
+> collapsed
+> Well
+> separated
+> Well
+> separated Normal (True) Normal (Predicted) Tumor (True) Tumor (Predicted) Decision Boundary
+
+Figure 1: Feature space clusters merge under distribution shift, inducing severe prediction bias, which is prone to failure for Entropy Minimization (EM). We show the 2-dimensional t-SNE embeddings from WILDSCamelyon [ 40 ] dataset featurized by ResNet50-GN. The background colors indicate the area of the feature space the model classifies as each class which we obtain by fitting a 
+
+k-nearest neighbors classifier on the 2D embeddings and corresponding model predictions. Entropy minimization [ 44 , 78 ] is prone to model collapse. In contrast, DSBR (ours) mitigates model collapse and prevents cluster merging across multiple iterations. A seminal work on EM, Tent [ 78 ] showed that minimizing the Shannon entropy [ 67 ] of the model’s predictions over the affine parameters of batch normalization layers reliably reduces prediction error under mild distribution shift. Since then, EM-based unsupervised loss has been widely used as an unsupervised objective for many TTA methods [ 55 , 56 , 90 , 91 ]. Subsequent work has focused on making EM more robust in wild scenarios, including limited batch sizes and mixed distribution shifts [ 56 ], through filtering unreliable samples [ 44 , 56 ], modified loss functions [ 91 ], sharpness-aware optimization [ 56 ], and preventing model collapse [ 56 ]. With model collapse depicting a critical failure mode in which the model outputs only one or a few classes, irrespective of the input [ 16 , 17 ]. The progress of TTA methods for natural - image tasks has been largely driven by benchmarks that introduce synthetic distribution shifts in the form of severe corruptions or do not fully capture the real-world shifts [ 30 , 59 , 88 ]. In contrast, the shifts encountered in medical imaging are typically much subtler [ 37 ]. They often preserve the underlying pathology while being driven by clinically relevant factors such as changes in patient demographics, scanner hardware, staining protocols, or acquisition parameters. These variations modify the input statistics in ways that are difficult to detect visually [ 87 ], thereby posing a challenging problem for TTA methods. Moreover, as stated above, model collapse poses a critical risk because it produces single-dominant class outputs regardless of the input [ 16 , 17 ]. In clinical settings, such failures may go unnoticed in practice, allowing compromised models to influence decisions in ways that can lead to serious, potentially life-threatening effects [6, 19, 45, 84]. Therefore, a rethinking of entropy minimization for medical imaging is needed. In this setting, de-ployment shifts are not only unknown in advance but also subtle and heterogeneous across acquisition protocols, scanners, and patient populations [ 37 , 87 ]. Consequently, heuristics that perform well on synthetic corruption benchmarks do not transfer reliably to the medical domain [ 19 , 37 , 61 ]. While Press et al. [60] show that entropy minimization can succeed or fail under distribution shifts, the mechanisms driving model collapse remain unclear. In particular, it remains unclear why the same EM improves adaptation under some shifts yet leads to catastrophic collapse under others. As illustrated in Fig. 1, distribution shift distorts the feature space geometry. As class clusters drift and partially merge while the classifier boundary remains fixed, prediction bias amplifies, with some classes absorbing ambiguous samples and others becoming suppressed. To understand and improve entropy minimization, we make the following contributions: 2• Prediction bias as the root cause of model collapse, amplified by entropy minimization. 
+
+We identify prediction bias, a skew in the predicted class distribution induced by distribution shift, as the central failure mode of entropy minimization. We show that the shift distorts feature geometry, causing class clusters to drift and partially merge while the classifier boundary remains fixed. Entropy minimization amplifies this bias by reinforcing already dominant clusters, ultimately leading to model collapse. • Mitigating model collapse with Distribution Shift Bias Reduction (DSBR). We propose DSBR, an importance reweighting method that equalizes the contributions of each predicted class to the entropy loss. By preventing primarily predicted classes from dominating the optimization signal, DSBR mitigates prediction bias and promotes a more stable separation of feature clusters during adaptation, as shown in Fig. 1. • We design challenging entropy-minimization scenarios for medical imaging. We eval-uate state-of-the-art baselines and DSBR on challenging entropy-minimization settings, including clinically grounded scenarios and clinical shifts in medical imaging. In addition, we demonstrate the effectiveness of DSBR in preventing model collapse. 
+
+## 2 Background and Related Work 
+
+Notations. We focus on the task of image classification. Let X denote the input space, where random samples X are distributed according to a probability distribution pX (x) for x ∈ X , and let 
+
+K := {1, . . . , K } denote the set of classes. We consider a pre-trained model fθ : X → ∆K−1 with parameters θ, and write it as the composition fθ (x) = h(ϕ(x)) , where ϕ is a featurizer mapping inputs to a representation space and h is a classifier acting on these representations. We define the per-sample entropy loss as l(x) := H(fθ (x)) and the predicted class as ˆy(x) := arg max fθ (x).Finally, p ˆY (k) describes the predicted class distribution given ˆY = ˆ y(X) and k ∈ K .
+
+The Entropy Minimization Enigma. In test-time adaptation, a model trained on source data must adapt to unlabeled test data at inference time, without access to source data or any labels [ 78 ]. Approaches include, but are not limited to, updating batch normalization statistics using an unsupervised loss [ 54 , 63 ], leveraging surrogate tasks to learn test-time representations [ 75 ], utilizing pseudo-labels [ 42 ], and minimizing the entropy of model predictions [ 78 ]. Among these, entropy minimization (EM) has become the dominant choice for a wide range of methods [ 55 , 56 , 81 , 91 ], and is also the focus of this work. Specifically, it minimizes the Shannon entropy [ 67 ] of the softmax output, H(p) = − PKi=1 pi log pi where p = fθ (x) ∈ ∆K−1.This equation assumes that lower-entropy predictions correlate with higher accuracy [ 78 ]. Tent [ 78 ]uses EM to update the affine parameters of batch normalization layers and achieves strong results on image corruption benchmarks such as ImageNet-C and CIFAR-10/100-C. However, Niu et al. [56] showed that Tent is prone to failure in more realistic wild TTA scenarios. Overall, the inner mechanisms driving both the successes and failures of EM remain poorly understood, a phenomenon Press et al. [60] termed Entropy Enigma . They showed that EM acts as a cluster-refinement process, tightening feature representations within clusters of predicted classes, and identified a failure case in which these clusters drift away from their original class centers. We show that this failure is even seeded before adaptation begins: distribution shifts can cause clusters of distinct classes to merge, leading EM to reinforce incorrect groupings. 
+
+Stabilizing Entropy Minimization. The standard approach to mitigate EM failure is to identify and discard unreliable samples [ 44 , 55 , 56 ]. A common proxy for reliability is prediction entropy: samples above a fixed entropy threshold are considered too uncertain and excluded from the backward pass [ 44 , 55 , 56 ]. DeYO [ 44 ] argues that entropy alone is an unreliable signal and augments it with a shape-based score that measures how much a structure-destroying augmentation changes the model’s prediction. Notably, such methods require hyperparameters to be fixed, dataset- and model-dependent. However, high-entropy samples are not always harmful as stated in Press et al. [60] .Moreover, filtering is wasteful and problematic when data is scarce, as is often the case in medical imaging. Several methods further stabilize EM by modifying the loss or the optimization. EATA [ 55 ]adds a Fisher information-based regularizer to prevent the model from forgetting its source-domain knowledge during adaptation. SAR [ 56 ] applies sharpness-aware minimization [ 20 ] to encourage convergence to flat minima, making updates more robust to noisy gradients. ROID [51] maintains a running weight ensemble between the adapted and source models to prevent parameter drift. Recently, 3Table 1: Prediction bias leads to Model collapse. Predicted class distributions before and after EM with ResNet50-GN pre-trained on WILDSCamelyon Hospital 2 (a,c) and ImageNet (b,d), on 20% holdouts of respective target domains. The color shadings indicate the prediction bias; the greater the color difference between True and Before EM , the more likely it is that model collapse occurs. 
+
+(a) WILDSCamelyon : Hospital Nr. 2 → 4           
+
+> ✓Stable Predicted Class True Before EM After EM
+> Normal 49.8% 62.8% 52.4% Tumor 50.2% 37.2% 47.6%
+
+(b) ImageNet-C : Gaussian Noise level 3            
+
+> ✓Stable Predicted Class True Before EM After EM
+> Christmas stocking 0.1% 0.2% 0.3% (max) 999 other (median) 0.1% 0.1% 0.1%
+
+(c) WILDSCamelyon : Hospital Nr. 2 → 5           
+
+> ✘Model Collapse Predicted Class True Before EM After EM
+> Normal 49.6% 85.0% 100.0%
+> Tumor 50.4% 15.0% 0.0%
+
+(d) ImageNet-C : Fog level 5            
+
+> ✘Model Collapse Predicted Class True Before EM After EM
+> Geyser 0.2% 25.5% 99.3%
+> 999 other (median) 0.1% 0.1% 0.0%
+
+COME [ 91 ] replaces the entropy loss with one derived from a Dirichlet prior and down-weights the low-evidence predictions. We deliberately avoid all of these strategies for our method, as our goal is to isolate and directly target prediction bias as the primary driver of EM failure. 
+
+Importance Reweighting. Importance reweighting is also used to address distribution shifts [ 24 ,32 , 48 , 69 , 73 ]. Existing work addresses input shift by reweighting the pre-training loss with 
+
+pX (x)/q X (x) [ 24 , 32 , 69 , 73 ], but this requires access to source data and it is distribution qX and is thus not applicable in fully test-time adaptation. In our setting, input shift induces a bias in the predicted class distribution p ˆY . To target this, ROID [ 51 ] performs diversity weighting through cosine dissimilarity over the model’s softmax outputs. These are known to be miscalibrated in modern network architectures [26]. We, however, reweight the entropy loss proportional to 1/p ˆY directly. 
+
+## 3 Prediction Bias Leads to Model Collapse and Is Amplified by Entropy Minimization 
+
+3.1 Prediction Bias Is the Root Cause of Model Collapse 
+
+Model collapse under entropy minimization is rooted in a skew of the predicted class prior on the target domain. We refer to this skew as prediction bias , consistent with prior work [ 15 , 44 , 51 , 79 ]. Our central claim, however, is different: under distribution shift, prediction bias is already present before adaptation, and during adaptation, entropy minimization subsequently amplifies it until collapse. To explain the origin of this bias, consider a standard model of the form fθ (x) = h(ϕ(x)) , where ϕ is a featurizer and h is a classifier. After source training, the learned representation typically organizes samples of different classes into compact and approximately separable regions in feature space. The classifier h then induces a decision boundary 
+
+H := {z ∈ ϕ(X ) | h(z)i = h(z)j , i ̸ = j},
+
+which partitions the feature space into regions associated with different predicted classes. Under distribution shifts, however, the feature distribution changes while the classifier remains fixed. Some class clusters remain stable, whereas others drift toward neighboring classes and partially cross the decision boundary. This produces a skew in the model’s predictions: certain classes absorb ambiguous samples from others, becoming overrepresented, while others are suppressed. Crucially, this prediction bias is present before any adaptation takes place. Table 1 illustrates how prediction bias leads to model collapse. Under mild shift, the pre-adaptation predicted distribution is only moderately distorted, and entropy minimization does not collapse the model. Under severe shift, however, the model is already strongly biased before adaptation begins, and entropy minimization amplifies this skew into a nearly single-class solution. Table 1 therefore 4Before Adaptation After 550 steps After 1100 steps After 1650 steps After 2200 steps Normal (True) Normal (Predicted) Tumor (True) Tumor (Predicted) Decision Boundary 
+
+Figure 2: Entropy minimization amplifies prediction bias and ultimately causes model collapse. 
+
+We show 2D UMAP embeddings of WILDS-Camelyon features from a ResNet50-GN pretrained on Hospital 2, before and during adaptation. Background colors denote predicted regions in feature space, obtained by fitting a k-nearest neighbors classifier to the embeddings and model predictions. As entropy minimization sharpens biased predictions, samples are increasingly reassigned to the dominant class, leading to cluster merging and collapse. shows that collapse does not emerge from an initially balanced state, but from a sufficiently biased initialization. Entropy minimization does not create this bias, but amplifies it. By sharpening already dominant predictions and tightening entangled clusters, it pulls ambiguous samples further into overrepresented classes, thereby reinforcing the existing skew. As this feedback loop intensifies, the model collapses to a trivial dominant-class solution. In this sense, prediction bias is not a byproduct of collapse, but its root cause. From Table 1, the ImageNet-C Fog example illustrates this mechanism concretely. Before adaptation, the model already assigns 25.5% of samples to Geyser , despite its true frequency being only 0.2%, and after entropy minimization, this class absorbs nearly all probability mass. A plausible explanation is that fog introduces appearance statistics resembling those of geysers, displacing many samples toward this region in feature space before adaptation. 
+
+3.2 Why Entropy Minimization Amplifies Prediction Bias 
+
+In the failure case shown in Fig. 2, more than half of the tumor samples have crossed the decision boundary into the Normal cluster. EM treats this merged region as a single cluster and refines it on one side of the boundary, which is precisely how prediction bias amplifies into collapse. This behavior follows from the geometry of entropy minimization. Because EM-based test-time adaptation typically updates only the affine parameters of normalization layers, the classifier h and the decision boundary 
+
+H remain fixed throughout adaptation. EM therefore operates entirely within a fixed decision geometry, pushing representations ϕ(x) toward more confident predictions. Since the entropy loss is continuous, nearby samples receive similar gradients, so EM refines groups of similarly predicted samples rather than correcting each sample independently. When the distribution shift has already caused true-class clusters to overlap across H, EM tightens this merged region instead of separating it. Ambiguous samples are pulled further toward the dominant predicted class, p ˆY (k) becomes increasingly skewed, and each subsequent update starts from an even more biased state. Entropy minimization and prediction bias thus form a positive feedback loop, with model collapse as its endpoint. 
+
+## 4 Proposed Method: Distribution Shift Bias Reduction (DSBR) 
+
+4.1 Balanced Target Distribution 
+
+To counteract the effect of prediction bias leading to model collapse during EM, we define a balanced target distribution that assigns equal probability mass to each predicted cluster while preserving the within-cluster relative density: 
+
+p∗ 
+
+> X
+
+(x) = pX (x)
+
+p ˆY (ˆ y(x)) · 1
+
+K (1) which is derived from pX (x) = pX, ˆY (x | ˆy(x)) · p ˆY (ˆ y(x)) by replacing the potentially biased 
+
+p ˆY (ˆ y(x)) with the uniform distribution 1/K . Minimizing the expected loss under p∗ 
+
+> X
+
+rather than 5pX prevents any single cluster from dominating the gradient signal. Because EM’s dynamics are gradient-driven, redistributing gradient mass away from dominant clusters provides a corrective force that directly opposes the merging dynamic: samples within an overrepresented cluster, many of which were incorrectly absorbed from other classes, contribute less to each update, while samples in underrepresented clusters, precisely those that resisted incorrect reassignment, contribute more. This rebalancing actively encourages the separation of merged clusters rather than their further consolidation. At test-time, we cannot sample from p∗ 
+
+> X
+
+, only from pX . We recover the target loss L∗ via importance reweighting [69]: 
+
+L∗ := EX∼p∗ 
+
+> X
+
+[l(X)] = EX∼pX
+
+ p∗ 
+
+> X
+
+(X)
+
+pX (X) l(X)
+
+
+
+= EX∼pX
+
+ l(X)
+
+K · p ˆY (ˆ y(X)) 
+
+
+
+(2) The importance weight is large for samples in underrepresented clusters and small for those in overrepresented ones. 
+
+4.2 Approximating the Cluster Probabilities at Test-Time 
+
+The weights in Eq. (2) require knowledge of p ˆY (k), which is unknown at test-time. Given a batch 
+
+Bt = {X1, . . . , X B } ∼ pX (x) of size B and sampled at adaptation step t, a natural approximation for p ˆY (k) at adaptation step t, which we refer to as P (k) 
+
+> t
+
+, is the empirical cluster frequency 
+
+˜P (k) 
+
+> t
+
+= B(k)
+
+> t
+
+B , B(k) 
+
+> t
+
+:= {X ∈ B t | ˆy(X) = k} . (3) For datasets with fewer classes, a single-batch estimate is sufficient. For datasets with a high number of classes, such as ImageNet-C ( K=1000 ), however, batches with B ≪ K omit most classes, making per-batch estimates degenerate. Increasing the batch size would address this, but it is inefficient. Instead, assuming adaptation steps are small so that P (k) 
+
+> t
+
+≈ P (k)
+
+> t−1
+
+, we maintain an exponential moving average (EMA) of cluster frequencies across batches: 
+
+ˆP (k) 
+
+> t
+
+= α ˆP (k) 
+
+> t−1
+
++ (1 − α) B(k)
+
+> t
+
+B , (4) initialized at ˆP (k)0 = 1 /K and with decay α = 0 .9. The initialization reflects the prior that clusters are balanced before any evidence is observed. Substituting into Eq. (2), the DSBR loss estimate over batch Bt is 
+
+ˆL∗ 
+
+> t
+
+= 1
+
+B
+
+X
+
+> X∈B t
+
+l(X)
+
+K · ˆP (ˆ y(X)) 
+
+> t
+
+. (5) We provide the detailed algorithm in Appendix A. 
+
+## 5 Experiments 
+
+Datasets. We evaluate on four medical datasets and one natural-vision dataset each with multiple domains and spanning microscopy, X-ray, and MRI, with both 2D and 3D inputs and diverse anatom-ical sites. WILDSCamelyon [ 40 ], derived from Camelyon17 [ 74 ], is a breast histopathology dataset with 455,954 binary classification patches from five hospital domains differing in staining, scanners, and lab procedures. Histopantum [ 89 ] is a binary tumor histopathology dataset on TCGA-derived patches [ 83 ], with four domains corresponding to colorectal, ovarian, stomach, and uterine cancers, yielding biological rather than instrumental shift. MammoBench [22 ] unifies six mammography datasets (domains) [ 2, 11 , 36 , 41 , 52 , 57 ] into a Normal-vs-Abnormal dataset; excluding CMMD [11 ], which lacks Normal cases, leaves 14,529 images across the remaining domains. GliomaMRI 
+
+follows Scholz et al. [64] and combines UCSF-PDGM [ 7], EGD [ 77 ], and TCGA [ 3 ] for three-class glioma subtype classification under the 2021 WHO CNS taxonomy [ 50 ]; with 1,146 volumes, it is the smallest dataset and the only 3D one. We use ImageNet-C [ 30 ], which comprises 75 corruption domains across 15 corruption types and 5 severity levels on ImageNet [ 14 ], to study the high-K regime. Moreover, we use this dataset with multiple challenging scenarios. We provide additional dataset details in Appendix B. 6Table 2: Balanced accuracy (%) on the four medical benchmarks. The results are averaged over all source-target configurations of each dataset. We re-implement the baselines on the medical datasets and report the average improvement over the corresponding non-adapted baseline (ResNet, ViT) as ∆ Average. 
+
+Bold marks the best result per column, and underlined the second-best. DSBR is either the top performer or performs competitively. Model & Method Histopantum MammoBench WILDSCamelyon GliomaMRI ∆ Average 
+
+ResNet 86.6 ±0.0 59.4 ±0.0 87.4 ±0.0 42.9 ±0.0 ▲ 0.0 ±0.0
+
+• Tent [78] 88.5 ±0.1 58.8 ±0.1 87.9 ±0.0 44.3 ±1.3 ▲ 0.8 ±0.4
+
+• SAR [43] 86.6 ±0.0 59.4 ±0.0 87.4 ±0.0 44.2 ±1.4 ▲ 0.3 ±0.4
+
+• ROID [51] 87.2 ±1.7 56.6 ±0.5 94.8 ±0.6 44.4 ±1.3∗ ▲ 1.7 ±1.0
+
+• DeYO [44] 76.1 ±2.8 60.9 ±0.2 92.7 ±0.5 n/a † ▼ 0.9 ±0.9
+
+• DSBR (ours) 89.9 ±0.4 62.7 ±0.5 96.5 ±0.1 44.0 ±1.1 ▲ 4.2 ±0.5
+
+ViT 87.1 ±0.0 54.4 ±0.0 87.0 ±0.0 37.2 ±0.0 ▲ 0.0 ±0.0
+
+• Tent [78] 87.4 ±0.0 54.4 ±0.0 87.4 ±0.1 37.4 ±0.2 ▲ 0.2 ±0.1
+
+• SAR [43] 87.1 ±0.0 54.4 ±0.0 87.0 ±0.0 37.2 ±0.0 ▲ 0.0 ±0.0
+
+• ROID [51] 88.0 ±0.3 54.5 ±0.8 94.3 ±0.2 38.2 ±5.0∗ ▲ 2.3 ±1.6
+
+• DeYO [44] 87.9 ±0.2 55.2 ±0.1 93.5 ±0.3 n/a † ▲ 2.0 ±0.2
+
+• DSBR (ours) 88.8 ±0.4 55.2 ±0.5 95.6 ±0.3 36.5 ±0.9 ▲ 2.6 ±0.5
+
+Implementation details. We use two backbones for all 2D datasets: ResNet50-GN [ 29 , 85 ] and ViT-B/16 [ 18 ]. Following seminal works [ 44 , 56 ], we use ResNet’s Group Normalization model to avoid known issues of entropy minimization, such as limited batch sizes, and use the same model for all our ablations. For GliomaMRI, we use volumetric architectures from the MONAI framework [ 8]: a 3D ResNet10 and a 3D ViT-T/16. For source-target, i.e., training and adaptation data pairing on each medical dataset, every pair of distinct domains forms one configuration, except for MammoBench and GliomaMRI, where the small training sets motivate leave-one-domain-out pre-training instead. We use a batch size of 32 for pre-training and adaptation on the medical datasets, and 64 on ImageNet-C, matching prior work [ 44 , 56 , 78 ]. In line with [ 60 ], for all baselines and our method, we hold out a 20% split that is excluded from adaptation and used solely for evaluation in each medical domain since online accuracy can mask late-stage collapse and the final adapted state is what matters for clinical deployment. For ImageNet-C, we follow prior work [ 44 , 78 ] and adapt to the full corruption domain without a holdout split. We compare DSBR against four state-of-the-art EM-based baselines, all re-implemented for the medical datasets. Throughout, all reported accuracies are balanced accuracies; ROC-AUC results are reported in Appendix G. DSBR uses an EMA decay of α = 0 .9 unless specified otherwise. We provide additional details in the appendix. 
+
+5.1 Eliminating Model Collapse for Medical Imaging H1 H2   
+
+> H1 H3
+> H1 H4
+> H1 H5
+> H2 H1
+> H2 H3
+> H2 H4
+> H2 H5
+> H3 H1
+> H3 H2 H3 H4 H3 H5
+> H4 H1
+> H4 H2
+> H4 H3
+> H4 H5
+> H5 H1
+> H5 H2
+> H5 H3
+> H5 H4
+> 50%
+> 75%
+> 100%
+> WILDSCamelyon (Source Hospital Target Hospital)
+> Tent (ResNet50-GN)
+> Tent (ViT-B/16)
+> DSBR (ResNet50-GN)
+> DSBR (ViT-B/16)
+
+Figure 3: DSBR stabilizes Entropy Minimiza-tion where ‘H’ denotes the Hospital domain id. Balanced accuracy results on all WILDSCamelyon 
+
+configurations for Tent (EM) and DSBR. In Tab. 2, we provide the balanced accuracy on the medical datasets averaged over all source-target configurations. DSBR achieves the high-est average improvement on both backbones, 
+
++4 .2% for ResNet and +2 .6% for ViT, consid-erably more than the next-best baseline (ROID, 
+
++1 .7% and +2 .3% ). On individual datasets, DSBR is the top performer on Histopantum, MammoBench, and WILDSCamelyon for both backbones, and within 0.4% of the best on GliomaMRI. The only non-leading entries are on GliomaMRI, where ROID is best with its consistency component disabled, and DeYO is inapplicable, since both depend on 2D augmen-tations that do not transfer to 3D MRI volumes. From Tab. 2, the dataset-level averages do not reveal the instability of EM. Figure 3 reports per-configuration accuracy on WILDSCame-7Table 3: Accuracy (%) on ImageNet-C on default and wild settings [ 56 ] at severity level 5. 
+
+Results are averaged over 15 corruption types, except Mixed Corruptions where one run comprises a mixture of all 15 corruptions. We report the average improvement over the corresponding non-adapted baseline as ∆ Average. DSBR is best (bold) or competitive across settings and is the top performer on average. 
+
+Model & Method Default Label Shifts Mixed Corruptions Batch Size 1 ∆ Average 
+
+ResNet50-GN 31.4 ±0.0 31.4 ±0.0 31.4 ±0.0 31.4 ±0.0 ▲ 0.0 ±0.0
+
+• Tent [78] 32.2 ±0.3 30.3 ±0.7 32.1 ±1.7 30.8 ±0.3 ▲ 0.0 +0 .7
+
+• SAR [56] 36.7 ±3.0 37.8 ±0.5 38.5 ±0.1 35.8 ±0.3 ▲ 5.8 ±1.0
+
+• ROID [51] 46.8 ±0.1 2.7 ±0.1 37.6 ±0.1 0.1 ±0.0 ▼ 9.6 ±0.1
+
+• DeYO [44] 44.1 ±4.9 44.1 ±5.6 39.4 ±1.1 43.9 ±4.3 ▲ 11.4 ±4.0
+
+• DSBR (α = 0 .99 ) 49.7 ±0.1 46.8 ±0.2 43.0 ±0.2 41.6 ±0.1 ▲ 13.9 ±0.1
+
+• DSBR (α = 0 .9) 48.8 ±0.1 38.2 ±0.3 41.4 ±0.2 38.3 ±0.1 ▲ 10.2 ±0.2
+
+ViT-B/16 39.8 ±0.0 39.8 ±0.0 39.8 ±0.0 39.8 ±0.0 ▲ 0.0 ±0.0
+
+• Tent [78] 51.9 ±0.5 53.0 ±0.3 33.1 ±4.5 51.7 ±0.3 ▲ 7.6 ±1.4
+
+• SAR [56] 54.2 ±0.3 56.2 ±0.1 53.7 ±0.2 56.2 ±0.3 ▲ 15.3 ±0.2
+
+• ROID [51] 64.6 ±0.1 86.4 ±4.9 57.2 ±0.1 0.1 ±0.0 ▲ 12.2 ±1.3
+
+• DeYO [44] 61.8 ±2.0 62.4 ±1.1 53.6 ±0.8 61.8 ±0.9 ▲ 20.1 ±1.2
+
+• DSBR (α = 0 .99 ) 64.9 ±0.3 56.2 ±0.2 60.9 ±0.7 58.2 ±0.1 ▲ 20.2 ±0.3
+
+• DSBR (α = 0 .9) 64.4 ±0.2 42.2 ±0.2 59.5 ±1.0 55.9 ±0.4 ▲ 15.7 ±0.5
+
+lyon for Tent and DSBR. In our single-source pairing, Tent collapses to chance-level accuracy (≈ 50% ) on a substantial fraction of hospital pairs for both backbones, while DSBR shows no such collapses: every configuration attains near-optimal accuracy (visible as the outer ring in Fig. 3). Targeting prediction bias does not just improve average accuracy; it eliminates the configurations in which Tent fails outright. 
+
+Figure 4: Model collapse in Tent (EM) and its mitigation by DSBR. Initial bias is present for both models. Left: Tent amplifies bias until the model converges to a single class for almost every input ( Model collapse ) by the end of the episode. Right: DSBR progressively dampens bias until it vanishes by approximately batch 400. 
+
+5.2 Performance on natural imaging by mitigating Bias 
+
+Table 3 reports results on ImageNet-C in four settings: standard adaptation, online imbalanced label shifts with imbalance ratio ∞, mixed corruptions across all 15 types, and batch size 1, all at severity 5 [ 56 ]. We report DSBR with two EMA decays: the default α = 0 .9 and a higher α = 0 .99 ,motivated by Sec. 4.2: when K ≫ B (K = 1000 , B = 64 ), the per-batch frequency is sharply peaked on the few classes that appear in the batch, and a higher decay softens it across batches before reweighting. On the standard and mixed-corruption settings, DSBR achieves the highest accuracy on both backbones. 8For label shifts and batch size 1, DSBR with α = 0 .99 performs better than DSBR with α = 0 .9
+
+since each batch is dominated by a single class. Moreover, this DSBR α = 0 .99 performs best on label shifts for ResNet50-GN ( +2 .7% over the next-best baseline) and second-best at batch size 1 on both backbones, demonstrating that the EMA preserves cluster-frequency information across batches even when a single batch is uninformative. Figure 4 visualizes the mechanism behind these gains on a single ImageNet-C Fog (severity 5) episode. Both Tent and DSBR start from the same source model and inherit the same noticeable initial prediction bias toward a small set of dominant classes induced by the corruption. Under Tent, this bias is amplified rather than corrected: within a few hundred batches, predictions concentrate on a single class, and by the end of the episode, the model has collapsed. Under DSBR, the same initial bias is progressively dampened by the importance reweighting; by the second half of the episode, the predicted distribution has spread across the full label space and remains spread thereafter. 
+
+5.3 EMA stabilizes DSBR for limited batch sizes 20        
+
+> 0
+> 20
+> Accuracy (%)
+> ImageNetC (Gauss. Noise, Severity 5)
+> 1416 64 128
+> Batch size
+> 20
+> 0
+> 20
+> Accuracy (%)
+> WILDSCamelyon (Hospital Nr. 2 5)
+> ResNet50-GN
+> DSBR( = 0.0 )
+> DSBR( = 0.9 )
+> Tent
+
+Figure 5: EMA stabilizes DSBR for limited batch sizes. with varying batch sizes on ImageNet-C and WILDSCame-lyon using ResNet50-GN. Evaluation is performed on a holdout set comprising 20% of the total data for both datasets. DSBR performs well on limited batch sizes, including batch size of 1. We demonstrate the benefits of using EMA for DSBR in Figure 5. DSBR’s effectiveness depends on the quality of the running estimate ˆP (k) 
+
+> t
+
+of the predicted class distri-bution, which in turn depends on the batch size B, the number of classes K, and the EMA decay α. We ablate these by reporting DSBR with α = 0 .9 and α = 0 across batch sizes from 1 to 128, on representative configurations from each end of the K spectrum: ImageNet-C Gaussian Noise at severity 5 ( K = 1000 ) and WILDSCamelyon Hospital Nr. 2 → 5 ( K = 2 ). At batch size 1 and α = 0 ,without EMA, DSBR degrades to standard Tent for both datasets, since the loss reduces to Tent’s up to a constant factor of 1/K . Enabling the EMA recovers near-optimal performance immediately on WILDSCamelyon. For low-
+
+K benchmarks, the per-batch estimator alone matches the EMA estimator at moderate batch sizes ( B ≥ 4); for high-
+
+K benchmarks, the EMA remains necessary throughout. DSBR’s reweighting works straightforwardly when B is on the order of K or larger, and the EMA is what extends it to the regime B ≪ K.
+
+## 6 Conclusion 
+
+We identify the root cause of entropy - minimization (EM) failure under distribution shift: the merging of feature - space clusters. The merging induces prediction bias, and EM, which refines whatever clusters are present in feature space, treats the merged region as a single dom-inant cluster and further compresses it. This reinforces the bias and ultimately results in a single-class collapse. To address this failure, we propose Distribution Shift Bias Reduction (DSBR), which balances the contributions of predicted classes during adaptation. In contrast to other EM state-of-the-art methods, DSBR does not require sample filtering or domain-specific augmentations and uses only a single hyperparameter (the EMA decay). In addition, DSBR operates solely at test time. We extensively evaluate DSBR across medical - imaging and natural-vision datasets. Across all settings, DSBR consistently stabilizes test - time adaptation, prevents model collapse, and performs competitively or outperforms current state - of -the -art methods. DSBR depends on an accurate estimate of the predicted -class distribution. This estimate may deteriorate in a few specific cases, such as imbalanced label shifts or extremely small batch sizes relative to the number of classes. However, our experiments demonstrate that correcting a single, mechanistically grounded quantity, the prediction bias that arises from cluster merging, is sufficient to stabilize entropy minimization on both medical - imaging and natural - image benchmarks. This provides strong empirical evidence that 9cluster merging (as reflected by prediction bias) is the primary objective to address when stabilizing EM. More broadly, our findings highlight the importance of a principled, mechanistic understanding for developing robust, reliable test-time adaptation methods under distribution shift. 
+
+## Acknowledgments 
+
+This work is supported by DAAD programme Konrad Zuse Schools of Excellence in Artificial Intelligence and the Munich Center for Machine Learning, both sponsored by the Federal Ministry of Research, Technology and Space. DML and JAS received funding from HELMHOLTZ IMAGING, a platform of the Helmholtz Information and Data Science Incubator. 10 References 
+
+[1] S. Agarwal, Z. Zhang, L. Yuan, J. Han, and H. Peng. The unreasonable effectiveness of entropy minimization in LLM reasoning. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2026. URL https://openreview.net/forum?id=UfFTBEsLgI .[2] A. S. Alsolami, W. Shalash, W. Alsaggaf, S. Ashoor, H. Refaat, and M. Elmogy. King abdulaziz university breast cancer mammogram dataset (kau-bcmd). Data , 6(11):111, 2021. [3] S. Bakas, H. Akbari, A. Sotiras, M. Bilello, M. Rozycki, J. S. Kirby, J. B. Freymann, K. Farahani, and C. Davatzikos. Advancing the cancer genome atlas glioma mri collections with expert segmentation labels and radiomic features. Scientific data , 4(1):170117, 2017. [4] A. Balendran, C. Beji, F. Bouvier, O. Khalifa, T. Evgeniou, P. Ravaud, and R. Porcher. A scoping review of robustness concepts for machine learning in healthcare. npj Digital Medicine ,8(1):38, 2025. [5] Y. Bar, S. Shaer, and Y. Romano. Protected test-time adaptation via online entropy matching: A betting approach. In Advances in Neural Information Processing Systems , 2024. [6] M. Bernhardt, F. D. S. Ribeiro, and B. Glocker. Failure detection in medical image classification: A reality check and benchmarking testbed. Transactions on Machine Learning Research , 2022. ISSN 2835-8856. URL https://openreview.net/forum?id=VBHuLfnOMf .[7] E. Calabrese, J. E. Villanueva-Meyer, J. D. Rudie, A. M. Rauschecker, U. Baid, S. Bakas, S. Cha, J. T. Mongan, and C. P. Hess. The university of california san francisco preoperative diffuse glioma mri dataset. Radiology: Artificial Intelligence , 4(6):e220058, 2022. [8] M. J. Cardoso, W. Li, R. Brown, N. Ma, E. Kerfoot, Y. Wang, B. Murrey, A. Myronenko, C. Zhao, D. Yang, et al. Monai: An open-source framework for deep learning in healthcare. 
+
+arXiv preprint arXiv:2211.02701 , 2022. [9] D. Chen, D. Wang, T. Darrell, and S. Ebrahimi. Contrastive test-time adaptation. In IEEE Conference on Computer Vision and Pattern Recognition , pages 295–305, 2022. [10] H. Chen, G. Zheng, A. Awadallah, and Y. Ji. Pathologies of pre-trained language models in few-shot fine-tuning. In Proceedings of the Third Workshop on Insights from Negative Results in NLP , pages 144–153, 2022. [11] C. Cui, L. Li, H. Cai, Z. Fan, L. Zhang, T. Dan, J. Li, and J. Wang. The chinese mammography database (cmmd): An online mammography database with biopsy confirmed types for machine diagnosis of breast. The Cancer Imaging Archive , 1, 2021. [12] H. Dang, T. Tran, S. Osher, H. Tran-The, N. Ho, and T. Nguyen. Neural collapse in deep linear networks: from balanced to imbalanced data. In Proceedings of the 40th International Conference on Machine Learning , ICML’23. JMLR.org, 2023. [13] M. Z. Darestani, J. Liu, and R. Heckel. Test-time training can close the natural distribution shift performance gap in deep learning based compressed sensing. In International Conference on Machine Learning , 2022. [14] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei. ImageNet: A large-scale hierarchical image database. In IEEE Conference on Computer Vision and Pattern Recognition ,pages 248–255, 2009. [15] R. Deng, W. Bao, T. Wei, and J. He. Panda: Test-time adaptation with negative data augmenta-tion. In Proceedings of the AAAI Conference on Artificial Intelligence , 2026. [16] E. Dohmatob, Y. Feng, and J. Kempe. Model collapse demystified: The case of regression. In 
+
+The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. URL 
+
+https://openreview.net/forum?id=bioHNTRnQk .[17] E. Dohmatob, Y. Feng, A. Subramonian, and J. Kempe. Strong model collapse. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview. net/forum?id=et5l9qPUhm .11 [18] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly, et al. An image is worth 16x16 words: Transformers for image recognition at scale. In International Conference on Learning Representations , 2020. [19] H. Evans and D. Snead. Understanding the errors made by artificial intelligence algorithms in histopathology in terms of patient impact. NPJ Digital Medicine , 7(1):89, 2024. [20] P. Foret, A. Kleiner, H. Mobahi, and B. Neyshabur. Sharpness-aware minimization for efficiently improving generalization. International Conference on Learning Representations (ICLR) , 2021. [21] D. Gambetta, G. Gezici, F. Giannotti, D. Pedreschi, A. Knott, and L. Pappalardo. Learning by surprise: Surplexity for mitigating model collapse in generative ai, 2025. URL https: //arxiv.org/abs/2410.12341 .[22] N. P. Gaurav Bhole, S Suba. Mammo-bench: A large-scale benchmark dataset of mammography images. 2025. [23] S. Goyal, M. Sun, A. Raghunathan, and J. Z. Kolter. Test time adaptation via conjugate pseudo-labels. In Advances in Neural Information Processing Systems , 2022. [24] A. Gretton, A. Smola, J. Huang, M. Schmittfull, K. Borgwardt, B. Schölkopf, et al. Covariate shift by kernel mean matching. Dataset shift in machine learning , 3(4):5, 2009. [25] I. Gulrajani and D. Lopez-Paz. In search of lost domain generalization. In International Conference on Learning Representations , 2021. URL https://openreview.net/forum? id=lQdXeXDoWtI .[26] C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger. On calibration of modern neural networks. In 
+
+International Conference on Machine Learning , pages 1321–1330. PMLR, 2017. [27] Y. Guo, M. Guo, J. Su, Z. Yang, M. Zhu, H. Li, M. Qiu, and S. S. Liu. Bias in large language models: Origin, evaluation, and mitigation. arXiv preprint arXiv:2411.10915 , 2024. [28] J. Han, J. Na, and W. Hwang. Ranked entropy minimization for continual test-time adap-tation. In Forty-second International Conference on Machine Learning , 2025. URL 
+
+https://openreview.net/forum?id=lHaGLJ65J9 .[29] K. He, X. Zhang, S. Ren, and J. Sun. Deep residual learning for image recognition. In IEEE Conference on Computer Vision and Pattern Recognition , pages 770–778, 2016. [30] D. Hendrycks and T. Dietterich. Benchmarking neural network robustness to common cor-ruptions and perturbations. International Conference on Learning Representations (ICLR) ,2019. [31] J. Hoffman, E. Tzeng, T. Park, J.-Y. Zhu, P. Isola, K. Saenko, A. Efros, and T. Darrell. Cycada: Cycle-consistent adversarial domain adaptation. In International Conference on Machine Learning , 2018. [32] J. Huang, A. Gretton, K. Borgwardt, B. Schölkopf, and A. Smola. Correcting sample selection bias by unlabeled data. Advances in neural information processing systems , 19, 2006. [33] Y. Iwasawa and Y. Matsuo. Test-time classifier adjustment module for model-agnostic domain generalization. In Advances in Neural Information Processing Systems , volume 34, 2021. [34] N. Karani, E. Erdil, K. Chaitanya, and E. Konukoglu. Test-time adaptable neural networks for robust medical image segmentation. Medical Image Analysis , 68:101907, 2021. [35] J. Kazdan, R. Schaeffer, A. Dey, M. Gerstgrasser, R. Rafailov, D. L. Donoho, and S. Koyejo. Collapse or thrive? perils and promises of synthetic data in a self-generating world. arXiv preprint arXiv:2410.16713 , 2024. [36] R. Khaled, M. Helal, O. Alfarghaly, O. Mokhtar, A. Elkorany, H. El Kassas, and A. Fahmy. Cate-gorized digital database for low energy and subtracted contrast enhanced spectral mammography images. The Cancer Imaging Archive , 16, 2021. 12 [37] O. Kilim, A. Olar, T. Joó, T. Palicz, P. Pollner, and I. Csabai. Physical imaging parameter variation drives domain shift. Scientific Reports , 12(1):21302, 2022. [38] E. Kim, M. Sun, C. Baek, A. Raghunathan, and J. Z. Kolter. Test-time adaptation induces stronger accuracy and agreement-on-the-line. In The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. URL https://openreview.net/forum?id= giXUx4VH9t .[39] D. P. Kingma and J. Ba. Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980 , 2014. [40] P. W. Koh, S. Sagawa, H. Marklund, S. M. Xie, M. Zhang, A. Balsubramani, W. Hu, M. Ya-sunaga, R. L. Phillips, I. Gao, et al. Wilds: A benchmark of in-the-wild distribution shifts. In 
+
+International Conference on Machine Learning , 2021. [41] D. Kopans, R. Moore, K. Bowyer, P. Kegelmeyer, and P. Shile. Ddsm: digital database for screening mammography, 2020. [42] D.-H. Lee et al. Pseudo-label: The simple and efficient semi-supervised learning method for deep neural networks. In Workshop on challenges in representation learning, International Conference on Machine Learning (ICML) , page 896, 2013. [43] J. Lee, D. Das, J. Choo, and S. Choi. Towards open-set test-time adaptation utilizing the wisdom of crowds in entropy minimization. In IEEE International Conference on Computer Vision ,2023. [44] J. Lee, D. Jung, S. Lee, J. Park, J. Shin, U. Hwang, and S. Yoon. Entropy is not enough for test-time adaptation: From the perspective of disentangled factors. In International Conference on Learning Representations , 2024. [45] K. Lekadir, A. F. Frangi, A. R. Porras, B. Glocker, C. Cintas, C. P. Langlotz, E. Weicken, F. W. Asselbergs, F. Prior, G. S. Collins, et al. Future-ai: international consensus guideline for trustworthy and deployable artificial intelligence in healthcare. bmj , 388, 2025. [46] J. Liang, R. He, and T. Tan. A comprehensive survey on test-time adaptation under distribution shifts. International Journal of Computer Vision , 133(1):31–64, 2025. [47] R. Lin and Y. You. Optimizing class-level probability reweighting coefficients for equitable prompting accuracy. arXiv preprint arXiv:2405.07623 , 2024. [48] Z. Lipton, Y.-X. Wang, and A. Smola. Detecting and correcting for label shift with black box predictors. In International conference on machine learning , pages 3122–3130. PMLR, 2018. [49] Y. Liu, P. Kothari, B. van Delft, B. Bellot-Gurlet, T. Mordan, and A. Alahi. Ttt++: When does self-supervised test-time training fail or thrive? In Advances in Neural Information Processing Systems , volume 34, 2021. [50] D. N. Louis, A. Perry, P. Wesseling, D. J. Brat, I. A. Cree, D. Figarella-Branger, C. Hawkins, H. Ng, S. M. Pfister, G. Reifenberger, et al. The 2021 who classification of tumors of the central nervous system: a summary. Neuro-oncology , 23(8):1231–1251, 2021. [51] R. A. Marsden, M. Döbler, and B. Yang. Universal test-time adaptation through weight ensembling, diversity weighting, and prior correction. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , pages 2555–2565, 2024. [52] I. C. Moreira, I. Amaral, I. Domingues, A. Cardoso, M. J. Cardoso, and J. S. Cardoso. Inbreast: toward a full-field digital mammographic database. Academic radiology , 19(2):236–248, 2012. [53] S. Mounsaveng, F. Chiaroni, M. Boudiaf, M. Pedersoli, and I. Ben Ayed. Bag of tricks for fully test-time adaptation. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , pages 1936–1945, 2024. [54] Z. Nado, S. Padhy, D. Sculley, A. D’Amour, B. Lakshminarayanan, and J. Snoek. Evaluat-ing prediction-time batch normalization for robustness under covariate shift. arXiv preprint arXiv:2006.10963 , 2020. 13 [55] S. Niu, J. Wu, Y. Zhang, Y. Chen, S. Zheng, P. Zhao, and M. Tan. Efficient test-time model adaptation without forgetting. In International Conference on Machine Learning , 2022. [56] S. Niu, J. Wu, Y. Zhang, Z. Wen, Y. Chen, P. Zhao, and M. Tan. Towards stable test-time adaptation in dynamic wild world. In International Conference on Learning Representations ,2023. [57] P. Oza, R. Oza, U. Oza, P. Sharma, S. Patel, P. Kumar, and B. Gohel. Digital mam-mography Dataset for Breast Cancer Diagnosis Research (DMID). 11 2023. doi: 10.6084/m9.figshare.24522883.v2. URL https://figshare.com/articles/dataset/_b_ Digital_mammography_Dataset_for_Breast_Cancer_Diagnosis_Research_DMID_ b_DMID_rar/24522883 .[58] P. Pandey, A. K. Tyagi, S. Ambekar, and A. Prathosh. Unsupervised domain adaptation for semantic segmentation of nir images through generative latent search. In Computer Vision– ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part VI 16 , pages 413–429. Springer, 2020. [59] X. Peng, B. Usman, N. Kaushik, J. Hoffman, D. Wang, and K. Saenko. Visda: The visual domain adaptation challenge. arXiv preprint arXiv:1710.06924 , 2017. [60] O. Press, R. Shwartz-Ziv, Y. LeCun, and M. Bethge. The entropy enigma: Success and failure of entropy minimization. arXiv preprint arXiv:2405.05012 , 2024. [61] M. Roschewitz, G. Khara, J. Yearsley, N. Sharma, J. J. James, É. Ambrózay, A. Heroux, P. Kecskemethy, T. Rijken, and B. Glocker. Automatic correction of performance drift under acquisition shift in medical image classification. Nature Communications , 14(1):6608, 2023. [62] R. Schaeffer, J. Kazdan, A. C. Arulandu, and S. Koyejo. Position: Model collapse does not mean what you think. arXiv preprint arXiv:2503.03150 , 2025. [63] S. Schneider, E. Rusak, L. Eck, O. Bringmann, W. Brendel, and M. Bethge. Improving robustness against common corruptions by covariate shift adaptation. In Advances in Neural Information Processing Systems , volume 33, pages 11539–11551, 2020. [64] D. Scholz, A. C. Erdur, J. A. Buchner, J. C. Peeken, D. Rueckert, and B. Wiestler. Imbalance-aware loss functions improve medical image classification. In Medical imaging with deep learning , 2024. [65] S. Seto, B.-J. Theobald, F. Danieli, N. Jaitly, and D. Busbridge. Realm: Robust entropy adaptive loss minimization for improved single-sample test-time adaptation, 2023. URL 
+
+https://arxiv.org/abs/2309.03964 .[66] D. S. Shah, H. A. Schwartz, and D. Hovy. Predictive biases in natural language processing models: A conceptual framework and overview. In Proceedings of the 58th annual meeting of the association for computational linguistics , pages 5248–5264, 2020. [67] C. E. Shannon. A mathematical theory of communication. The Bell system technical journal ,27(3):379–423, 1948. [68] L. Shi, M. Wu, H. Zhang, Z. Zhang, M. Tao, and Q. Qu. A closer look at model collapse: From a generalization-to-memorization perspective. arXiv preprint arXiv:2509.16499 , 2025. [69] H. Shimodaira. Improving predictive inference under covariate shift by weighting the log-likelihood function. Journal of statistical planning and inference , 90(2):227–244, 2000. [70] K. Stacke, G. Eilertsen, J. Unger, and C. Lundström. Measuring domain shift for deep learning in histopathology. IEEE journal of biomedical and health informatics , 25(2):325–336, 2020. [71] Y. Su, Y. Ji, J. Li, H. Ye, and M. Zhang. Beware of model collapse! fast and stable test-time adaptation for robust question answering. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 12998–13011, 2023. 14 [72] Y. Su, X. Xu, and K. Jia. Towards real-world test-time adaptation: Tri-net self-training with balanced normalization. In AAAI Conference on Artificial Intelligence , 2024. [73] M. Sugiyama, M. Krauledat, and K.-R. Müller. Covariate shift adaptation by importance weighted cross validation. Journal of Machine Learning Research , 8(5), 2007. [74] T. Sun, T. Meng, and Y. Liu. Camelyon 17 challenge: A comparison of traditional machine learning (svm) with the deep learning method. Wireless Communications and Mobile Computing ,2022(1):9910471, 2022. [75] Y. Sun, X. Wang, Z. Liu, J. Miller, A. Efros, and M. Hardt. Test-time training with self-supervision for generalization under distribution shifts. In International Conference on Machine Learning , 2020. [76] J. Van der Laak, G. Litjens, and F. Ciompi. Deep learning in histopathology: the path to the clinic. Nature medicine , 27(5):775–784, 2021. [77] S. R. van der Voort, F. Incekara, M. M. Wijnenga, G. Kapsas, R. Gahrmann, J. W. Schouten, H. J. Dubbink, A. J. Vincent, M. J. van den Bent, P. J. French, et al. The erasmus glioma database (egd): Structural mri scans, who 2016 subtypes, and segmentations of 774 patients with glioma. Data in brief , 37:107191, 2021. [78] D. Wang, E. Shelhamer, S. Liu, B. Olshausen, and T. Darrell. Tent: Fully test-time adaptation by entropy minimization. In International Conference on Learning Representations (ICLR) ,2021. [79] G. Wang, F. Lyu, and C. Ding. Partition-then-adapt: Combating prediction bias for reliable multi-modal test-time adaptation. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2026. URL https://openreview.net/forum?id=T6RkYsuoMW .[80] M. Wang and W. Deng. Deep visual domain adaptation: A survey. Neurocomputing , 2018. [81] Q. Wang, O. Fink, L. Van Gool, and D. Dai. Continual test-time domain adaptation. In IEEE Conference on Computer Vision and Pattern Recognition , pages 7201–7211, 2022. [82] Z. Wang, Y. Luo, L. Zheng, Z. Chen, S. Wang, and Z. Huang. In search of lost online test-time adaptation: A survey. arXiv preprint arXiv:2310.20199 , 2023. [83] J. N. Weinstein, E. A. Collisson, G. B. Mills, K. R. Shaw, B. A. Ozenberger, K. Ellrott, I. Shmulevich, C. Sander, and J. M. Stuart. The cancer genome atlas pan-cancer analysis project. 
+
+Nature genetics , 45(10):1113–1120, 2013. [84] J. Wiens, S. Saria, M. Sendak, M. Ghassemi, V. X. Liu, F. Doshi-Velez, K. Jung, K. Heller, D. Kale, M. Saeed, et al. Do no harm: a roadmap for responsible machine learning for health care. Nature medicine , 25(9):1337–1340, 2019. [85] Y. Wu and K. He. Group normalization. In European Conference on Computer Vision , pages 3–19, 2018. [86] Z. Xiao and C. G. Snoek. Beyond model adaptation at test time: A survey. arXiv preprint arXiv:2411.03687 , 2024. [87] J. S. Yoon, K. Oh, Y. Shin, M. A. Mazurowski, and H.-I. Suk. Domain generalization for medical image analysis: A review. Proceedings of the IEEE , 112(10):1583–1609, 2024. [88] Y. Yu, L. Sheng, R. He, and J. Liang. Benchmarking test-time adaptation against distribution shifts in image classification. arXiv preprint arXiv:2307.03133 , 2023. [89] N. Zamanitajeddin, M. Jahanifar, K. Xu, F. Siraj, and N. Rajpoot. Benchmarking domain generalization algorithms in computational pathology. arXiv preprint arXiv:2409.17063 , 2024. [90] M. Zhang, S. Levine, and C. Finn. Memo: Test time robustness via adaptation and augmentation. In Advances in Neural Information Processing Systems , volume 35, pages 38629–38642, 2022. 15 [91] Q. Zhang, Y. Bian, X. Kong, P. Zhao, and C. Zhang. Come: Test-time adaption by conservatively minimizing entropy. arXiv preprint arXiv:2410.10894 , 2024. [92] H. Zhao, Y. Liu, A. Alahi, and T. Lin. On pitfalls of test-time adaptation. In International Conference on Machine Learning , 2023. [93] Z. Zhong, J. Cui, Y. Yang, X. Wu, X. Qi, X. Zhang, and J. Jia. Understanding imbalanced semantic segmentation through neural collapse. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 19550–19560, 2023. 16 Appendix 
+
+A Additional Implementation Details 18 B Additional Datasets details 18 C Pre-training Results 19 D Compute resources 20 E High Gradient Norm is an Effect of Model Collapse rather than its Cause. 21 F Entropy filtering as one solution for cluster separation 24 G ROC-AUC reveals a structural limit of EM. 24 
+
+17 A Additional Implementation Details 
+
+Our method’s code is based on Domainbed [ 25 ] and is efficient. We pre-train all source models using a unified DomainBed-based pipeline [ 25 ], modified to allow for early stopping when validation losses stop decreasing and gradient accumulation for 3D volumes where no full batch fits into VRAM. Each domain is split 80/20 into IN and OUT subsets. Pre-training uses source-IN for training and source-OUT for validation, while adaptation uses target-IN as the stream of inputs the model adapts on and target-OUT as the held-out evaluation set on which we report performance. Evaluating on a held-out target split rather than online during adaptation is a deliberate choice, because online accuracy can mask late-stage collapse: a model can produce reasonable predictions for the first several thousand samples and then collapse to a trivial constant predictor in the final thousand, leaving the running average of online accuracy looking acceptable while the model is in fact unusable. In clinical settings, where the input stream has no natural endpoint, we need to be confident that the model does not degrade at any point during deployment, which makes the final adapted state more informative than the online accuracy. We use batch size 32 on the medical datasets (constrained by VRAM for the volumetric inputs) and 64 on ImageNet-C, matching prior work. For ImageNet-C we follow prior-work convention instead [ 44 , 55 , 56 , 78 ]: we use publicly available ImageNet-pretrained checkpoints as source models and adapt on the full target corruption domain without a held-out split. All reported numbers are averaged over 5 seeds for the medical datasets and 3 seeds for ImageNet-C; 2 standard deviations across seeds are calculated using pandas library std function and reported alongside each mean. For the re-implementation of related work’s baselines [ 44 , 51 , 56 , 78 ] we stick closely to the official repositories and use the default hyperparameters and optimizers of each method. 
+
+Algorithm 1 D istribution Shift Bias Reduction (DSBR)                                                                                                           
+
+> Input: Test samples X={xi}Ntest
+> i=1 , model fθ(x)with trainable parameters ˜θ⊂θ, batch size B, optimizer
+> Oη(·)with learning rate η > 0, EMA decay α
+> Output: Predictions {ˆyi}Ntest
+> i=1 , adapted parameters ˜θ.
+> 1: Initialize model parameters ˜θwith a chosen scheme.
+> 2: Initialize ˆP(k)←1/K for all k∈ { 1, . . . , K }
+> 3: for b= 1 to Ntest step Bdo
+> 4: B ← { b, . . . , min( b+B−1, N )}
+> 5: ˆyi←arg max jfθ(xi)jfor every i∈ B
+> 6: B(k)← |{ i∈ B | ˆyi=k}| for every k∈ { 1, . . . , K }
+> 7: ˆP(k)←αˆP(k)+ (1 −α)B(k)/|B| for every k∈ { 1, . . . , K }▷Eq. (4)
+> 8: li←H(fθ(xi)) for every i∈ B
+> 9: L ← 1
+> B
+> X
+> i∈B
+> li
+> K·ˆP(ˆ yi)▷Eq. (5)
+> 10: Update ˜θ← O η
+> ˜θ, ∇˜θL
+> 
+> 11: end for
+
+Full Algorithm and Optimizer. Algorithm 1 provides the pseudo-code for our method. As optimizer 
+
+Oη we use Adam [ 39 ] with default hyperparameters: β1 = 0 .9, β2 = 0 .999 , ϵ = 10 −8, and λ = 0 
+
+(no weight decay). For the learning rate η we use the same per batch size defaults as Wang et al. [78] .
+
+Comparison with results from other works. For the ImageNet-C datasets, our re-implementation obtains higher results than the results reported in baseline methods. We verified that this is due to the usage of pip packages instead of conda. We encourage the community to adopt pip to implement Tent for baselines. 
+
+## B Additional Datasets details 
+
+We evaluate on four medical datasets and one natural vision dataset. We do not cover the full breadth of medical imaging in this evaluation, but the four datasets below span a substantial cross-section of it: three modalities (microscopy, X-ray, and MRI), two- and three-dimensional inputs, and several anatomical sites (breast, brain, and a range of organs covered by the histopathology datasets). 18 WILDSCamelyon [ 40 ] is a histopathology dataset for breast cancer metastasis detection, derived from Camelyon17 [ 74 ] by extracting patches from whole-slide images for binary cancerous-vs-noncancerous classification; the five domains correspond to five hospitals, each with its own staining protocol, scanner, and lab procedure, totaling 455,954 patches. License: Creative Commons Zero (CC0) 
+
+Histopantum [89 ] is a histopathology dataset for binary tumor classification on patches derived from TCGA [ 83 ], where the four domains correspond to four cancer types: colorectal, ovarian, stomach, and uterus; adaptation across these domains is biological rather than instrumental. The dataset comprises 281,142 patches sourced from whole-slide images annotated by experienced pathologists License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) 
+
+MammoBench [22 ] aggregates six mammography datasets [ 2, 11 , 36 , 41 , 52 , 57 ] into a unified Normal-vs-Abnormal dataset; we exclude CMMD [ 11 ] because it does not contain Normal cases, leaving 14,529 images across the remaining datasets, each treated as a domain. The dataset underwent rigorous preprocessing including breast segmentation, pectoral muscle removal, and intelligent cropping to ensure consistency across images from diverse sources while preserving clinically relevant features. License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) 
+
+GliomaMRI follows Scholz et al. [64] and combines three 3D brain MRI datasets (UCSF-PDGM [ 7], EGD [ 77 ], and TCGA [ 3]) for three-class glioma subtype classification under the 2021 WHO classification of CNS tumors [ 50 ], with the three classes being IDH-wildtype glioblastoma, IDH-mutant 1p/19q-intact astrocytoma, and IDH-mutant 1p/19q-codeleted oligodendroglioma; with 1,146 volumes it is the smallest dataset and the only one with volumetric inputs. The UCSF-PDGM dataset includes 501 subjects with histopathologically-proven diffuse gliomas imaged with a standardized 3 Tesla preoperative brain tumor MRI protocol featuring predominantly 3D imaging and advanced diffusion and perfusion imaging techniques. License: TCIA Data Usage Policy (open access with attribution); TCGA: NIH Genomic Data Sharing Policy (open and controlled access tiers); EGD: Open access 
+
+ImageNet-C [ 30 ] provides 75 corruption domains, each consisting of one of 15 corruption types at one of 5 severity levels, applied to the ImageNet [ 14 ] validation set, with 50,000 images and 1,000 classes per domain; we use it to compare DSBR against prior TTA work calibrated on this dataset and to study the high-K regime. The corruption types span noise, blur, weather, digital, and additional degradation categories to comprehensively evaluate classifier robustness. License: Creative Commons Attribution 4.0 International (CC BY 4.0) (for corruptions); ImageNet base dataset: Non-commercial research and educational use 
+
+## C Pre-training Results 
+
+We perform pre-training on four multi-domain medical imaging datasets containing 5, 4, 3, and 5 domains for WILDSCamelyon , Histopantum , GliomaMRI , and MammoBench , respectively. The strategy for selecting training domains differs by dataset. For WILDSCamelyon and Histopantum ,we use each individual domain as a separate training set, since these datasets are large enough to produce reasonable models from a single source. This also matches the realistic scenario in which a practitioner has access to data from only one institution. For GliomaMRI and MammoBench ,the per-domain data is too small for stand-alone training, so we instead train on every leave-one-out combination of domains. With two backbone architectures evaluated per dataset, this yields 10, 8, 6, and 10 pretrained models per dataset, for a total of 34 pretrained models .Per-dataset results are reported in Tables 4, 5, 6, and 7. The histopathology datasets, WILDSCame-lyon and Histopantum , yield strong pretrained models: their Avg. Source OUT scores approach 100%, indicating that the models reliably fit the source distribution. In contrast, GliomaMRI and 
+
+MammoBench exhibit substantially weaker in-domain generalization, with Avg. Source OUT scores well below this level, suggesting that the available training data is insufficient to even fit the source distribution well, let alone generalize to held-out domains. 19 Table 4: Balanced accuracy (%) after pre-training on the WILDSCamelyon benchmark across five hospitals used as separate domains. Each row represents a hospital dataset which was used for training; per-hospital columns report performance on the respective IN and OUT splits. Avg. Source 
+
+averages over training hospitals, Avg. Target over out-of-distribution dataset. 
+
+(a) WILDSCamelyon – ViT-B/16                                                                                            
+
+> Domain Hospital 1 Hospital 2 Hospital 3 Hospital 4 Hospital 5 Avg. Source Avg. Target Split IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT Training Domains (Source) Hospital 1 99.0 98.9 94.6 94.1 96.3 96.5 96.5 96.6 94.1 94.1 99.0 98.9 95.4 95.3 Hospital 2 81.9 82.5 98.5 98.1 66.7 67.0 89.6 89.6 58.9 58.8 98.5 98.1 74.3 74.5 Hospital 3 95.4 95.3 86.3 86.2 98.6 98.6 91.7 91.5 79.0 79.5 98.6 98.6 88.1 88.1 Hospital 4 92.6 92.8 89.0 89.0 91.7 91.6 98.8 98.6 76.6 76.7 98.8 98.6 87.5 87.5 Hospital 5 92.2 92.2 85.0 84.5 90.0 90.1 91.7 91.8 98.8 98.8 98.8 98.8 89.7 89.6
+
+(b) WILDSCamelyon – ResNet50-GN                                                                                            
+
+> Domain Hospital 1 Hospital 2 Hospital 3 Hospital 4 Hospital 5 Avg. Source Avg. Target Split IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT Training Domains (Source) Hospital 1 99.2 99.0 94.9 94.8 95.3 95.4 96.4 96.5 79.6 79.7 99.2 99.0 91.6 91.6 Hospital 2 90.7 90.5 99.5 98.9 62.4 63.0 92.1 92.2 64.3 64.2 99.5 98.9 77.4 77.5 Hospital 3 95.4 95.3 88.0 87.3 99.1 98.9 90.2 90.4 96.1 96.4 99.1 98.9 92.4 92.4 Hospital 4 94.2 94.6 93.7 93.6 84.2 84.4 98.9 98.8 62.1 62.1 98.9 98.8 83.6 83.7 Hospital 5 93.3 93.5 90.1 90.0 92.1 92.3 91.3 91.3 98.6 98.6 98.6 98.6 91.7 91.8
+
+Table 5: Balanced accuracy (%) after pre-training on the Histopantum benchmark across four organ datasets used as separate domains. Each row represents the set of datasets which were used for training; per-dataset columns report performance on the respective IN and OUT splits. Avg. Source 
+
+averages over training datasets, Avg. Target over out-of-distribution datasets. 
+
+(a) Histopantum – ViT-B/16 
+
+Domain colon ovarian stomach uterus Avg. Source Avg. Target Split IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT Training Domains (Source) colon 98.8 98.2 92.3 91.9 86.1 85.3 84.0 84.1 98.8 98.2 87.5 87.1 ovarian 87.3 86.6 99.1 98.9 81.2 79.9 93.9 94.2 99.1 98.9 87.5 86.9 stomach 89.1 88.8 85.5 85.3 98.4 97.0 86.2 86.5 98.4 97.0 86.9 86.9 uterus 83.9 83.2 96.1 96.0 84.8 83.4 99.0 98.9 99.0 98.9 88.3 87.5 
+
+(b) Histopantum – ResNet50-GN 
+
+Domain colon ovarian stomach uterus Avg. Source Avg. Target Split IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT Training Domains (Source) colon 99.3 98.5 91.3 91.6 83.9 82.8 85.1 85.4 99.3 98.5 86.8 86.6 ovarian 87.3 86.9 99.1 98.6 85.0 83.6 91.9 92.1 99.1 98.6 88.1 87.5 stomach 90.8 90.5 86.7 86.4 97.7 96.7 79.3 79.2 97.7 96.7 85.6 85.4 uterus 83.1 82.7 96.5 96.3 84.0 82.3 98.9 99.0 98.9 99.0 87.9 87.1 
+
+## D Compute resources 
+
+For our experiments we utilize a SLURM cluster with varying hardware. GPUs used include NVIDIA RTX A5000 24GB, A100 40GB, H100 40GB, and H100 80GB. Except for the experiments on the 3D MRI dataset GliomaMRI, all experiments can be reproduced on a GPU with at least 24GB of VRAM. For pre-training the GliomaMRI models, we required the H100 80GB GPUs as the 3D volumes and models consumed more than 50GB of VRAM. Even though we utilize different GPUs in our adaptation experiments, the total consumed time per experiment is almost equal for all GPUs. Tab. 8 and 9 report the average runtime of each method for every dataset. Note, that these numbers refer to a single adaptation run of a single configuration 20 Table 6: Balanced accuracy (%) after pre-training on the GliomaMRI benchmark across three dataset used as separate domains. Each row represents the set of datasets which were used for training; per-dataset columns report performance on the respective IN and OUT splits. Avg. Source averages over training datasets, Avg. Target over out-of-distribution datasets. 
+
+(a) GliomaMRI – MONAI ViT-T/16 
+
+Domain erasmus tcga ucsf Avg. Source Avg. Target Split IN OUT IN OUT IN OUT IN OUT IN OUT Training Domains (Source) erasmus, tcga 88.7 47.4 98.5 45.4 43.6 33.0 93.6 46.4 43.6 33.0 erasmus, ucsf 100.0 50.8 37.6 41.1 100.0 33.1 100.0 42.0 37.6 41.1 tcga, ucsf 37.0 37.6 100.0 43.7 100.0 36.4 100.0 40.0 37.0 37.6 
+
+(b) GliomaMRI – MONAI ResNet10 
+
+Domain erasmus tcga ucsf Avg. Source Avg. Target Split IN OUT IN OUT IN OUT IN OUT IN OUT Training Domains (Source) erasmus, tcga 100.0 64.0 100.0 40.7 54.4 41.1 100.0 52.4 54.4 41.1 erasmus, ucsf 100.0 55.2 42.9 41.7 100.0 44.9 100.0 50.0 42.9 41.7 tcga, ucsf 42.9 45.8 100.0 50.0 100.0 40.2 100.0 45.1 42.9 45.8 
+
+Table 7: Balanced accuracy (%) after pre-training on the MammoBench benchmark across five dataset used as separate domains. Each row represents the set of datasets which were used for training; per-dataset columns report performance on the respective IN and OUT splits. Avg. Source averages over training datasets, Avg. Target over out-of-distribution datasets. 
+
+(a) MammoBench – ViT-B/16                                                                                            
+
+> Domain cdd-cesm ddsm dmid inbreast kau-bcmd Avg. Source Avg. Target Split IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT Training Domains (Source) cdd-cesm, ddsm, dmid, inbreast 90.8 66.5 81.3 75.0 100.0 80.4 99.8 61.8 48.5 48.2 93.0 70.9 48.5 48.2 cdd-cesm, ddsm, dmid, kau-bcmd 90.0 71.7 74.3 72.4 99.7 75.1 60.7 65.0 62.3 61.8 81.6 70.2 60.7 65.0 cdd-cesm, ddsm, inbreast, kau-bcmd 82.6 60.1 73.8 70.9 52.7 52.4 99.8 50.9 72.4 68.4 82.1 62.6 52.7 52.4 cdd-cesm, dmid, inbreast, kau-bcmd 90.4 67.6 56.9 54.5 99.7 77.1 100.0 52.5 82.5 79.5 93.2 69.2 56.9 54.5 ddsm, dmid, inbreast, kau-bcmd 53.8 52.0 77.9 69.9 99.7 75.9 100.0 59.5 59.9 57.8 84.4 65.8 53.8 52.0
+
+(b) MammoBench – ResNet50-GN                                                                                            
+
+> Domain cdd-cesm ddsm dmid inbreast kau-bcmd Avg. Source Avg. Target Split IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT Training Domains (Source) cdd-cesm, ddsm, dmid, inbreast 86.0 73.7 79.0 76.1 100.0 82.0 100.0 58.6 50.1 51.0 91.2 72.6 50.1 51.0 cdd-cesm, ddsm, dmid, kau-bcmd 90.2 68.2 76.5 72.3 100.0 78.8 59.5 65.6 74.4 76.3 85.3 73.9 59.5 65.6 cdd-cesm, ddsm, inbreast, kau-bcmd 91.6 74.1 76.4 73.5 63.7 61.6 100.0 56.2 77.0 71.4 86.2 68.8 63.7 61.6 cdd-cesm, dmid, inbreast, kau-bcmd 80.6 76.8 54.6 53.7 88.7 81.6 94.6 57.1 90.5 88.8 88.6 76.1 54.6 53.7 ddsm, dmid, inbreast, kau-bcmd 62.8 65.2 78.1 76.0 97.9 77.5 98.8 59.5 79.9 78.3 88.7 72.8 62.8 65.2
+
+and we repeat each experiment for 5 and 3 seeds for medical datasets and ImageNet-C respectively. For example, WILDSCamelyon has a total number of 20 source–target configurations, so the total runtime of each method needs to be multiplied by 20( configurations ) · 5( seeds ) = 100 .To pretrain all models using the codebase build on Domainbed [ 25 ], we require approximately 10 hours for each model on a dataset. 
+
+## E High Gradient Norm is an Effect of Model Collapse rather than its Cause. 
+
+Niu et al. [56] attribute model collapse to a small subset of samples that produce disproportionately large gradient updates and destabilize adaptation. Their argument is empirical: during runs that end in collapse, the per-batch gradient norm grows sharply just before predictions concentrate on a 21 Table 8: Average adaptation runtime in seconds per adaptation source–target configuration for medical datasets. Bold = lowest runtime per column; underline = second lowest. DSBR consistently ranks among the fastest methods across both architectures, matching the baseline with the lowest runtime in nearly every setting. Model Type Method GliomaMRI Histopantum MammoBench WILDSCamelyon                                           
+
+> ResNet Tent [78] 22 82 63 149
+> SAR [56] 26 100 64 209 ROID [51] 21 106 65 207 DeYO [44] n/a 85 61 167
+> DSBR 23 82 63 149
+> ViT Tent [78] 20 162 70 395
+> SAR [56] 19 236 79 613 ROID [51] 18 241 75 551 DeYO [44] n/a 184 74 426
+> DSBR 19 167 70 396
+
+Table 9: Average adaptation runtime in seconds per adaptation domain (corruption) for all ImageNet-C based experiments. Bold = lowest runtime per column; underline = second lowest. DSBR achieves the lowest or second-lowest runtime in the majority of settings, making it a computationally efficient method while remaining competitive in accuracy. Model Type Method Batch Size 1 Default Label Shifts Mixed Corruptions                                                       
+
+> ResNet Tent [78] 737 77 111 876 SAR [56] 1349 101 175 1418 ROID [51] 1632 98 166 1173 DeYO [44] 692 81 131 896
+> DSBR (α= 0 .99 )734 82 117 802
+> DSBR (α= 0 .9)717 75 115 817 ViT Tent [78] 555 186 428 2967
+> SAR [56] 1142 241 808 6118 ROID [51] 1273 206 526 4456 DeYO [44] 686 182 505 4058
+> DSBR (α= 0 .99 )612 167 478 3162
+> DSBR (α= 0 .9)639 172 477 3362
+
+single class. The proposed remedy is to identify and discard high-gradient-norm samples before they contribute to the update. We test this attribution directly. For each adaptation configuration we precompute every sample’s 
+
+initial gradient norm by running the model on it as a single-sample batch and recording the resulting gradient before any update is applied. This gives us a per-sample ranking of the gradient signal each input would contribute to the very first adaptation step. We then form subsets of the data corresponding to fixed percentiles of this ranking and run full adaptation on each subset separately. If the high-gradient-norm hypothesis is correct, subsets containing the highest-percentile samples should produce visibly worse outcomes than subsets containing only low-percentile samples. Fig. 6 shows the result. Performance is essentially equal across gradient-norm percentiles, both in configurations where adaptation succeeds (b, c) and in configurations where it fails (a, d). The samples with the largest initial gradient norms are not, on their own, harmful to adaptation: removing them does not prevent collapse in the failure cases, and including them does not damage adaptation in the success cases. We therefore argue that the temporal correlation observed by Niu et al. [56] is read in the wrong direction. The high gradient norms that precede collapse are an effect of the model already drifting toward a degenerate state, in which the loss surface becomes locally steep. Whatever drives collapse must therefore originate upstream of the gradient signal, in the geometry of the feature space. We note that the SAR algorithm proposed by Niu et al. [56] does not filter on gradient norms but on 22 0 1500 3000 
+
+> Online Batch
+> 0.0
+> 0.5
+> 1.0
+> Balanced Accuracy
+
+(a) WILDSCamelyon 
+
+H2 H5   
+
+> 01500 3000
+> Online Batch
+
+(b) WILDSCamelyon 
+
+H3 H5   
+
+> 0500 1000
+> Online Batch
+
+(c) ImageNetC 
+
+Gauss. Noise 3   
+
+> 0500 1000
+> Online Batch
+
+(d) ImageNetC 
+
+Gauss. Noise 5 
+
+Initial gradient norm percentiles     
+
+> 20% 40% 60% 80% 100%
+
+Figure 6: Initial gradient norm has no effect on entropy minimization. We compute the initial gradient norm for each sample by running adaptation on a pre-trained ResNet50-GN with batch size 1 and resetting the model after each step. Afterward, we run normal adaptation on varying percentiles of gradient norms. entropy in practice, motivated as a model- and dataset-independent proxy for gradient-norm filtering; we state in Sec. F that entropy filtering does work, but for a reason different from the one this proxy implies. 23 Table 10: ROC-AUC (%) on the four medical benchmarks, in the same configuration as Tab. 2. ∗Disabled consistency component because it relies on 2D augmentations. †Not available because whole method relies on 2D augmentations. Model & Method Histopantum MammoBench WILDSCamelyon GliomaMRI ∆ Average ResNet 94.1 ±0.0 61.3 ±0.0 97.0 ±0.0 70.0 ±0.0 ▲ 0.0 ±0.0
+
+• Tent [78] 94.5 ±0.0 61.1 ±0.1 93.9 ±0.0 67.8 ±0.7 ▼ 1.3 ±0.2
+
+• SAR [43] 94.1 ±0.0 61.3 ±0.0 97.0 ±0.0 67.8 ±0.7 ▼ 0.5 ±0.2
+
+• ROID [51] 94.4 ±0.4 60.3 ±0.9 98.6 ±0.1 68.0 ±0.5∗ ▼ 0.3 ±0.5
+
+• DeYO [44] 89.8 ±1.8 63.7 ±0.1 97.1 ±0.4 n/a † ▼ 0.5 ±0.6
+
+• DSBR (ours) 93.9 ±0.4 62.6 ±0.4 98.8 ±0.1 68.1 ±0.6 ▲ 0.2 ±0.4
+
+ViT 94.5 ±0.0 58.9 ±0.0 97.3 ±0.0 57.4 ±0.0 ▲ 0.0 ±0.0
+
+• Tent [78] 94.5 ±0.0 58.9 ±0.0 96.1 ±0.2 57.9 ±0.5 ▼ 0.2 ±0.2
+
+• SAR [43] 94.5 ±0.0 58.9 ±0.0 97.3 ±0.0 57.4 ±0.0 ▲ 0.0 ±0.0
+
+• ROID [51] 94.6 ±0.0 59.1 ±0.3 98.4 ±0.0 59.9 ±1.1∗ ▲ 1.0 ±0.4
+
+• DeYO [44] 94.5 ±0.1 59.0 ±0.1 98.3 ±0.0 n/a † ▲ 0.3 ±0.1
+
+• DSBR (ours) 93.0 ±0.3 59.9 ±0.4 97.9 ±0.2 58.0 ±0.4 ▲ 0.2 ±0.3
+
+## F Entropy filtering as one solution for cluster separation Hospital 5 (before adaptation) 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Normalized Entropy
+> Decision Boundary
+
+Figure 7: Entropy is highest close to the decision boundary. The setup is the same as in Fig. 1. Each sample is colored based on the entropy of the model’s respective prediction normal-ized by 1/ log n where n = 2 .The cluster-refinement view also explains why entropy fil-tering, despite our argument in Section E that the gradient-norm motivation for it is false, can still work. Samples close to the decision boundary have high entropy, since the model’s confidence falls off with distance from the boundary, as illustrated in Fig. 7. Under cluster merg-ing, the region near the boundary is densely populated with samples that have been incorrectly reassigned across it. Filtering high-entropy samples [ 44 , 55 , 56 ] therefore removes a disproportionate share of these reassigned sam-ples from the gradient update, and additionally cuts an artificial trench through the boundary region that helps the merged clusters separate again. This is, in our view, the actual mechanism by which entropy-based filtering stabi-lizes Tent, rather than the gradient-norm proxy argument given in Niu et al. [56]. We do not pursue filtering in our work: it is wasteful when data are scarce, and the samples it discards are possibly very informative about how the model is misaligned with the target domain. The next section develops an alternative that addresses prediction bias directly while keeping every sample in the adaptation signal. 
+
+## G ROC-AUC reveals a structural limit of EM. 
+
+Table 10 reports ROC-AUC scores for the same configurations. Across the board, the gains in ROC-AUC are negligible: no method, DSBR included, exceeds +1 .0% average improvement on either backbone, and several methods slightly degrade the source model’s ROC-AUC despite improving its balanced accuracy substantially. The reason is that by construction, EM sharpens the model’s predictions toward the simplex corners. Balanced accuracy depends only on the argmax and benefits from sharper peaks; ROC-AUC depends on the relative ordering of the underlying scores and is degraded when high confidence is assigned indiscriminately, including to misclassified samples. This is a property of the entropy objective, not of any specific algorithm built on it. 24
